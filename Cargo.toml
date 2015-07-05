@@ -1,0 +1,20 @@
+[package]
+name = "cortex"
+version = "0.0.1"
+authors = ["Deyan Ginev <d.ginev@jacobs-university.de>"]
+
+[lib]
+name = "cortex"
+crate-type = ["rlib", "dylib", "staticlib"]
+
+[dependencies.rustlibxml]
+git = "https://github.com/jfschaefer/rust-libxml.git"
+
+[dependencies.gnuplot]
+git = "https://github.com/SiegeLord/RustGnuplot.git"
+
+[dependencies]
+libc = "~0.1"
+regex = "0.1.8"
+mysql = "~0.14"
+zmq = "~0.7"
