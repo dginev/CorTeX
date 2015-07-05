@@ -10,3 +10,8 @@ System-level prerequisites:
  ```
   sudo apt-get install libzmq3 libzmq3-dev
  ```
+
+ * GnuPlot for classic plotting:
+ ```
+  sudo apt-get install libgd2-noxpm-dev libcairo2-dev gnuplot
+ ```

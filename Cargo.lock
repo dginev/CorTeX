@@ -6,6 +6,7 @@ dependencies = [
  "libc 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "mysql 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 0.1.39 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rustc-serialize 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustlibxml 0.0.1 (git+https://github.com/jfschaefer/rust-libxml.git)",
  "zmq 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -161,6 +162,11 @@ dependencies = [
 [[package]]
 name = "regex-syntax"
 version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "rustc-serialize"
+version = "0.3.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
