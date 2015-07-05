@@ -55,7 +55,8 @@ fn main() {
   let mut min_size = u64::MAX;
   let mut max_size = 0;
   let arxiv_root = &Path::new(&args[1]);
-  let mut arxiv_sizes: HashMap<String, u64> = HashMap::new();
+  let mut arxiv_size_frequencies: HashMap<u64, u64> = HashMap::new();
+  let mut arxiv_monthly_sizes: HashMap<String, u64> = HashMap::new();
   let mut arxiv_counts: HashMap<String, u64> = HashMap::new();
   let arxiv_month_dirs = get_path_subdirs(arxiv_root);
 
@@ -67,7 +68,7 @@ fn main() {
 
     for paper_dir in month_papers.iter() {
       // Record the size of each paper directory
-      let paper_size = get_dir_size(paper_dir);
+      let paper_size = get_dir_size(paper_dir) / 1024; // In KB
       if paper_size > max_size {
         max_size = paper_size;
       }
@@ -75,14 +76,16 @@ fn main() {
         min_size = paper_size;
       }
       monthly_size += paper_size;
-      arxiv_sizes.insert(paper_dir.file_name().to_str().unwrap().to_string(), paper_size as u64);
+      
+      let size_frequency = arxiv_size_frequencies.entry(paper_size).or_insert(0);
+      *size_frequency += 1;
     }
-    arxiv_sizes.insert(month_dir.file_name().to_str().unwrap().to_string(), monthly_size);
+    arxiv_monthly_sizes.insert(month_dir.file_name().to_str().unwrap().to_string(), monthly_size);
   }
 
   // Print the recorded stats
   println!("Counts: {:?}", arxiv_counts);
-  println!("Sizes: {:?}", arxiv_sizes);
+  println!("Sizes: {:?}", arxiv_monthly_sizes);
 
   // arXiv months in order
   // TODO: Only current as of 1505, you'll have to extend manually next time this is run
@@ -127,20 +130,36 @@ fn main() {
   fg.set_terminal("pngcairo", "arxiv_submission_counts.png");
   fg.show();
 
-  // Plot of submission size by month:
+  // Plot of submission counts by month:
   let ordered_sizes = ordered_months.iter().map(|m| 
-    match arxiv_sizes.get(&m.to_string()) {
-        Some(counts) => counts / (1024 * 1024), // MB
+    match arxiv_monthly_sizes.get(&m.to_string()) {
+        Some(&counts) => counts,
         None => zero
     });
   fg = Figure::new();
   fg.axes2d()
-  .points(ordered_month_xcoords, ordered_sizes, &[PointSymbol('D'), Color("#ffaa77"), PointSize(0.5)])
+  .points(ordered_month_xcoords.clone(), ordered_sizes, &[PointSymbol('D'), Color("#ffaa77"), PointSize(0.5)])
   .set_x_label("arXiv month", &[Rotate(45.0)])
   .set_y_label("Submission size in MB", &[Rotate(90.0)])
-  .set_title("arXiv TeX submission sizes", &[]);
+  .set_title("arXiv TeX submission sizes by month", &[]);
 
   fg.set_terminal("pngcairo", "arxiv_submission_sizes.png");
+  fg.show();
+
+  // Plot average paper size in KB
+  // Plot of submission size by month:
+ 
+  let freq_keys = arxiv_size_frequencies.clone().into_iter().map(|entry| entry.0);
+  let freq_values = arxiv_size_frequencies.clone().into_iter().map(|entry| entry.1);
+
+  fg = Figure::new();
+  fg.axes2d()
+  .points(freq_keys, freq_values, &[PointSymbol('D'), Color("#ffaa77"), PointSize(0.5)])
+  .set_x_label("Paper size in KB", &[Rotate(45.0)])
+  .set_y_label("Paper count", &[Rotate(90.0)])
+  .set_title("arXiv TeX paper sizes", &[]);
+
+  fg.set_terminal("pngcairo", "arxiv_paper_sizes.png");
   fg.show();
 
 
