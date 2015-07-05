@@ -61,6 +61,7 @@ fn main() {
   let arxiv_month_dirs = get_path_subdirs(arxiv_root);
 
   for month_dir in arxiv_month_dirs.iter() {
+    println!("-- Measuring {:?}", month_dir.file_name().to_str().unwrap());
     let mut monthly_size = 0;
     let month_papers = get_subdirs(month_dir);
     // Record how many papers were submitted in that month
