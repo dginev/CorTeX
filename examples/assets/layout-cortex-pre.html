@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>{{ title }}</title>
+    <style type="text/css">
+      html, body {height: 92%;}
+
+      #wrap {min-height: 92%;}
+
+      #main {overflow:auto;
+      margin-left: 40px;
+      padding-bottom: 150px;}  /* must be same height as the footer */
+
+      #footer {position: relative;
+      border-top: 1px solid #B2BEB5;
+      margin-top: 0px; /* negative value of footer height */
+      height: 150px;
+      clear:both;} 
+
+      /*Opera Fix*/
+      body:before {
+      content:"";
+      height:100%;
+      float:left;
+      width:0;
+      margin-top:-32767px;/
+      }
+
+      span.ok { color:green; }
+      span.fatal { color:red; }
+      span.error { color:orange; }
+      span.warning { color:SeaGreen; }
+      table.summary-table
+      {
+        font-family: "Lucida Sans Unicode", "Lucida Grande", Sans-Serif;
+        font-size: 14px;
+        margin-bottom: 45px;
+        width: 1000px;
+        text-align: left;
+        border-collapse: collapse;
+      }
+      table.top-summary-table
+      {
+        font-family: "Lucida Sans Unicode", "Lucida Grande", Sans-Serif;
+        font-size: 14px;
+        margin-bottom: 45px;
+        width: 600px;
+        text-align: left;
+        border-collapse: collapse;
+      }
+
+      table.inner-table
+      {
+        font-family: "Lucida Sans Unicode", "Lucida Grande", Sans-Serif;
+        font-size: 14px;
+        margin: 2px;
+        width: 1000px;
+        text-align: left;
+        border-collapse: collapse;
+      }
+      table.summary-table th
+      {
+        font-size: 15px;
+        font-weight: normal;
+        padding: 8px;
+        width: 200px;
+        background: #b9c9fe;
+        border-top: 4px solid #aabcfe;
+        border-bottom: 1px solid #fff;
+        color: #039;
+      }
+      table.summary-table td
+      {
+        padding: 8px;
+        background: #e8edff; 
+        border-bottom: 1px solid #fff;
+        width: 200px;
+        vertical-align: middle;
+        border-top: 1px solid transparent;
+        color: #669;
+      }
+      table.top-summary-table th
+      {
+        font-size: 15px;
+        font-weight: normal;
+        padding: 8px;
+        width: 10px;
+        background: #b9c9fe;
+        border-top: 4px solid #aabcfe;
+        border-bottom: 1px solid #fff;
+        color: #039;
+      }
+      table.top-summary-table td
+      {
+        padding: 8px;
+        background: #e8edff; 
+        border-bottom: 1px solid #fff;
+        width: 10px;
+        vertical-align: middle;
+        border-top: 1px solid transparent;
+        color: #669;
+      }
+      table.overview-table td:nth-child(2)
+      {
+           background-color:#CCF2CC
+      }
+      table.overview-table td:nth-child(3)
+      {
+           background-color:#FFFFC9
+      }
+      table.overview-table td:nth-child(4)
+      {
+           background-color:#FFCD9B
+      }
+      table.overview-table td:nth-child(5)
+      {
+           background-color:#FFBABA
+      }
+      table.overview-table td:nth-child(8)
+      {
+           background-color:#D1D1E0
+      }
+      tr.hover-row:hover
+      {
+        border-style: solid;
+        border: 2px solid black;
+      }
+      tr.border-top
+      {
+        border-style: solid;
+        border: 2px solid black;
+      }
+
+      .ui-button .ui-button-text
+      {
+       line-height: 0.3 !important;
+      }
+
+
+      .cogs-background 
+      {
+        background-color:white;
+        background-image:url('img/gear000_02db.gif');
+        background-size: 220px 180px;
+        background-position:right top;
+        background-attachment:fixed;
+        background-repeat:no-repeat;
+      } 
+      .no-background {
+        background-color:white;
+        background-image: none !important;
+        background-repeat:no-repeat;
+      }
+
+      .styled-select {
+         background: transparent;
+         width: 268px;
+         padding: 5px;
+         font-size: 16px;
+         border: 1px solid #ccc;
+         height: 34px;
+      }
+
+      .bubble-button {
+        display:table;
+        width:170px;
+        height:170px;
+        padding:1em;
+        border:3px solid #999;
+        border-radius:8px;
+      }
+      .bubble-link:link {
+        text-decoration:none;
+        color:#000000;
+      }
+      .bubble-link:visited {
+        text-decoration:none;
+        color:#000000;
+      }
+
+      .bubble-button p {
+        display: table-cell; 
+        vertical-align: middle; 
+        text-align: center; 
+        font-size:150%;
+      }
+
+      .quietlink:link {color:#000000; text-decoration:none}      
+      .quietlink:visited {color:#000000; text-decoration:none} 
+
+      .url-row td:first-child {
+        text-indent:15px;
+      }
+      .inline-button-div {
+        display: inline-block;
+        width:210px;
+      }
+      .ui-dialog-titlebar { display:none; }
+      .ui-dialog-content {
+        text-align: center;}
+    </style>
+    <link rel="stylesheet" type="text/css" href="css/external/jquery-ui.css" />
+    <script src='https://code.jquery.com/jquery-2.1.4.min.js'></script>
+    <script src='https://code.jquery.com/ui/1.11.4/jquery-ui.min.js'></script>
+  </head>
+  
+  <body id="index" class="home">
+    <div style="align:center;">
+      <h1 style="text-align:center;"><a id="pagetitle" class="quietlink" href="/overview"><img src="http://cortex.mathweb.org/img/logo.jpg" style="vertical-align:middle"> Framework</a></h1>
+    </div>
+    <div id="wrap">
+      <div id="main">

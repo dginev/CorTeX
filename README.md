@@ -2,9 +2,9 @@
 A Rust implementation of the CorTeX build system
 
 System-level prerequisites:
- * A MySQL installation
+ * A Postgres installation
  ```
-   sudo apt-get install mysql-server
+   sudo apt-get install postgresql
  ```
  * A ZeroMQ installation and bindings
  ```
