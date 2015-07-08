@@ -6,7 +6,9 @@ extern crate mysql;
 extern crate zmq;
 extern crate libc;
 extern crate regex;
+extern crate sys_info;
 
 pub mod backend;
 pub mod import;
 pub mod data;
+pub mod sysinfo;

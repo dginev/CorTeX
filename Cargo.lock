@@ -11,6 +11,7 @@ dependencies = [
  "regex 0.1.39 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustc-serialize 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustlibxml 0.0.1 (git+https://github.com/jfschaefer/rust-libxml.git)",
+ "sys-info 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "zmq 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -374,6 +375,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "hpack 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "sys-info"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "gcc 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
