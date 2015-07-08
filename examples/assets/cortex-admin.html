@@ -1,0 +1,198 @@
+{{> layout-cortex-pre }}
+<script>
+$(document).ready(function() {
+  $("#accordion").accordion();
+
+  // Gearman Servers
+  $("#add-workers-input-field").click(function() {
+    var newid = $('#workers-table tr').length;
+    $("#workers-table-submit-tr").before("<tr><td>Gearman URL "+newid+"</td><td class=\"input\"><input name=\"gearman-urls\" size=\"50\" value=\"\"></td></tr>");
+    $("#accordion").accordion("refresh");
+  });
+
+  // Form submission to CorTeX
+  var dialog_timer;
+  $("form").each(function(c, obj) {
+    $(obj).attr("action", '');
+    $(obj).submit(function(event) {
+      event.preventDefault;
+      $.ajax ({
+        url: "/ajax",
+        type: "POST",
+        dataType: "json",
+        data: $(this).serialize(),
+        beforeSend: function(){
+          dialog_handle = $("#loading").dialog({
+            modal: true,
+            width: 400,
+            resizable: false,
+            draggable: false,
+            title: "",
+            position: "center",
+            show:"",
+            hide:"",
+            autoOpen: false,
+            open: function() {
+              var content = $(".ui-dialog-content");
+              dialog_timer = setInterval(function() {
+                content.html(content.html()+". ");
+              }, 2000);
+            },
+            close: function() {
+              clearInterval(dialog_timer);
+            }
+          });
+
+          var action = $(obj).find("input[name='action']").val();
+          var loading_message;
+          if (action == "add-corpus") {
+            var name = $(obj).find("input[name='path']").val();
+            loading_message = "Please be patient, this may take a while.\n<br></br>Adding Corpus from "+name;
+          } else {
+            loading_message = "Configuring, please wait"; }
+          dialog_handle.dialog('open').html(loading_message+"\n<br></br>");
+        },
+        success: function(response) {
+          //alert("SUCCESS");
+          $("#loading").dialog('close'); 
+          $("#loading").dialog('destroy');
+          $("#message").html("<p><br></br><b>"+response.message+"</b><br></br></p>");
+        }
+      });
+      return false;
+    });
+  });
+
+  // Show/hide fields depending on DB choice:
+  $(".selectdb").change(function (){
+    var select = $(this).find("select");
+    var type = select.val();
+    var tr = $(this).closest("tr");
+    // remove any extra row
+    var ntr = tr.next();
+    if (ntr.hasClass("url-row")) {
+      ntr.remove();
+    }
+    if ((type != "SQLite") && (type != "mysql") && (type != "File System")) {
+      var label = type+" URL";
+      var name = type.toLowerCase()+'-url';
+      // add the url row
+      value = $("#current-"+name).text();
+      var newtr = $("<tr class=\"url-row\"><td>"+label+"</td><td class=\"input\"><input name=\""+name+"\" size=\"50\" value=\""+value+"\" type=\"text\"></td></tr>");
+      tr.after(newtr);
+    }
+  });
+
+  // Server Report
+  $("#server-tab").click(function () {
+    $("#server-report").text("Loading...");
+    $('body').css('cursor', 'progress');
+    // Asking server for report:
+    $.ajax ({
+      url: "/ajax",
+      type: "POST",
+      dataType: "json",
+      data: {action: "server-report"},
+      cache: false,
+      success: function(response) {
+        if (!response.report) {
+          response.report = response.message; }
+        $("#server-report").html(response.report);
+        $("#accordion").accordion("refresh");
+        $('body').css('cursor', 'auto'); }
+    });
+  });
+
+});
+</script>
+<div style="text-align:center;" id="message"></div>
+<h1>Admin Interface</h1>
+<div class="ui-accordion ui-widget ui-helper-reset" id="accordion">
+  <h3><a href="#">Configure Databases</a></h3>
+  <div class="itemcontent">
+    <table class="form-table">
+      <tr><td>Corpora DB</td><td class="input selectdb">
+        <span id="current-exist-url" style="display:none"><%= $current_exist_url; %></span>
+        <!-- <%= select_field 'docdb-type' => [uniq($current_docdb_type,"eXist","File System")] %> -->
+        <tr class="url-row"><td>eXist URL</td><td class="input">
+        <!-- <%= text_field 'exist-url' => (value=>$current_exist_url, size=>50) %> -->
+        </td></tr>
+<!--       <% } else { %> -->
+<!--         <%= select_field 'docdb-type' => ["File System","eXist"] %> -->
+      <!-- <% } %> -->
+      </td></tr>
+      <tr><td>Meta DB</td><td class="input selectdb">
+        <% if ($current_sesame_url) { %>
+          <span id="current-sesame-url" style="display:none"><%= $current_sesame_url; %></span>
+          <!-- <%= select_field 'metadb-type' => ["Sesame","SQLite","mysql"] %> -->
+          <tr class="url-row"><td>Sesame URL</td><td class="input"><%= text_field 'sesame-url' => (value=>$current_sesame_url, size=>50) %></td></tr>
+        <!-- <% } else { %> -->
+          <!-- <%= select_field 'metadb-type' => [uniq($current_metadb_type,"SQLite","mysql","Sesame")] %> -->
+        <!-- <% } %> -->
+      </td></tr>
+      <tr><td>Job DB</td><td class="input selectdb">
+        <!-- <%= select_field 'taskdb-type' => [uniq($current_taskdb_type,"SQLite","mysql")] %> -->
+      </td></tr>
+      <tr><td></td><td>
+        <!-- <%= submit_button 'Configure Databases' %> -->
+      </td></tr>
+    </table>
+    <!-- <%= hidden_field action => 'register-databases' %> -->
+   <!-- <% end %> -->
+   </div>
+
+<h3><a href="#">Configure Workers</a></h3>
+<div class="itemcontent"><!-- <%= form_for '' => begin %> -->
+  <table id="workers-table" class="form-table">
+    <!-- <% my $i=1; foreach my $gearman_url (@$current_gearman_urls) { %> -->
+    <!-- <tr><td>Gearman Server (<%= $i; %>)</td><td class="input"><%= text_field "gearman-urls" => (value=>$gearman_url, size=>50) %></td></tr>
+    <% $i++; } %>
+     --><tr id="workers-table-submit-tr"><td> <a id="add-workers-input-field" href="#">Add more</a></td><td><%= submit_button 'Configure workers' %></td></tr>
+</table>
+<!-- <%= hidden_field action => 'register-workers' %> -->
+<!-- <% end %> -->
+</div>
+<h3><a href="#">Configure HTTP Proxy</a></h3>
+  <div class="itemcontent"><!-- <%= form_for '' => begin %> -->
+    <table class="form-table">
+<!--       <tr><td>HTTP Proxy</td><td class="input"><%= text_field "http-proxy" => (value=>$current_proxy_url,size=>50) %></td></tr>
+      <tr><td></td><td><%= submit_button 'Configure Proxy' %></td></tr>
+ -->    </table>
+<!--     <%= hidden_field action => 'register-proxy' %> -->
+   <!-- <% end %> -->
+   </div>
+
+
+<h3><a href="#">Add Corpus</a></h3>
+<div class="itemcontent">
+<!--   <%= form_for '' => begin %> -->
+  <table class="form-table">
+    <tr><td>Path</td><td class="input">
+    <!-- <%= text_field 'path' => (value=>'/path/to/corpus',size=>50) %> -->
+    </td></tr>
+    <tr><td>Size Limit</td><td class="input">
+    <!-- <%= text_field 'upper-bound' => (value=>'0',size=>50) %> -->
+    </td></tr>
+    <tr><td>Organization</td><td class="input">
+      <!-- <%= select_field 'organization' => ['Canonical','arXiv.org'] %> -->
+    </td></tr>             
+    <tr><td>Overwrite</td><td class="input">
+      <!-- <%= check_box 'overwrite' => (value=>'1') %> -->
+    </td></tr>
+    
+    <tr><td></td><td>
+      <!-- <%= submit_button 'Add Corpus' %> -->
+    </td></tr>
+  </table>
+  <!-- <%= hidden_field action => 'add-corpus' %> -->
+  <!-- <% end %> -->
+</div>
+
+<h3><a id="server-tab" href="#">Server Report</a></h3>
+<div class="itemcontent">
+  <!-- <%= form_for '' => begin %> -->
+    <div id="server-report"></div>
+    <!-- <%= hidden_field action => 'update-workers' %> -->
+  <!-- <% end %> -->
+</div>
+{{> layout-cortex-post}}
