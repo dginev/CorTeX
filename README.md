@@ -15,3 +15,8 @@ System-level prerequisites:
  ```
   sudo apt-get install libgd2-noxpm-dev libcairo2-dev gnuplot
  ```
+
+* libarchive for dealing with complex directory jobs
+```
+ sudo apt-get install libarchive
+```

@@ -13,13 +13,18 @@ git = "https://github.com/jfschaefer/rust-libxml.git"
 [dependencies.gnuplot]
 git = "https://github.com/SiegeLord/RustGnuplot.git"
 
+[dependencies.libarchive-sys]
+git = "https://github.com/dginev/libarchive-sys.git"
+
+[dependencies.nickel]
+git = "https://github.com/dginev/nickel.rs.git"
+
 [dependencies]
 libc = "~0.1"
 regex = "0.1.8"
-mysql = "~0.14"
 zmq = "~0.7"
 rustc-serialize = "0.3"
 postgres = "0.9"
-nickel = "*"
-hyper = "*"
 sys-info = "*"
+hyper = "*"
+glob = "*"
