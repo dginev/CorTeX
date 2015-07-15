@@ -2,13 +2,16 @@ extern crate gnuplot;
 extern crate rustc_serialize;
 
 use std::collections::HashMap;
-use rustc_serialize::json;
+use std::hash::Hash;
+use rustc_serialize::*;
+
 use std::env;
 
 use std::path::Path;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
+use std::io::Result;
 
 use std::fs::DirEntry;
 use std::u64;
@@ -55,6 +58,12 @@ fn get_path_subfiles(path : &Path) -> Vec<DirEntry> {
   children_entries.into_iter().filter(|c| !is_dir(c)).collect::<Vec<_>>()  
 }
 
+fn write_stats<K: Hash + Eq + Encodable, V: Encodable>(name : &'static str, counts : &HashMap<K,V>) -> std::io::Result<()> {
+  let mut f = try!(File::create(name));
+  try!(f.write_all(json::encode(&counts).unwrap().as_bytes()));
+  Ok(())
+}
+
 fn main() {
   let args: Vec<_> = env::args().collect();
   let mut min_size = u64::MAX;
@@ -90,16 +99,20 @@ fn main() {
   }
 
   // Print the recorded stats
-  
-  let mut f = File::create("arxiv_submission_counts.json").unwrap();
-  f.write_all(json::encode(&arxiv_counts).unwrap().as_bytes());
+  match write_stats("arxiv_submission_counts.json", &arxiv_counts) {
+    Ok(_) => {},
+    Err(e) => println!("{:?}", e)
+  };
 
-  let mut f2 = File::create("arxiv_monthly_sizes.json").unwrap();
-  f2.write_all(json::encode(&arxiv_monthly_sizes).unwrap().as_bytes());
+  match write_stats("arxiv_monthly_sizes.json", &arxiv_monthly_sizes) {
+    Ok(_) => {},
+    Err(e) => println!("{:?}", e)
+  };
 
-  let mut f3 = File::create("arxiv_size_frequencies.json").unwrap();
-  f3.write_all(json::encode(&arxiv_size_frequencies).unwrap().as_bytes());
-
+  match write_stats("arxiv_size_frequencies.json", &arxiv_size_frequencies) {
+    Ok(_) => {},
+    Err(e) => println!("{:?}", e)
+  };
 
   // arXiv months in order
   // TODO: Only current as of 1505, you'll have to extend manually next time this is run
