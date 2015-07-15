@@ -5,8 +5,8 @@ extern crate zmq;
 // A dispatcher executable for CorTeX distributed processing with ZMQ
 // Binds REP socket to tcp://*:5555
 
-use std::collections::HashMap;
-use std::thread;
+// use std::collections::HashMap;
+// use std::thread;
 
 fn main() {
     let mut context = zmq::Context::new();
