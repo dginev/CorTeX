@@ -54,24 +54,61 @@ impl <'a> Importer <'a> {
               Ok(e) => {
                 let full_extract_path = path_str.to_string() + &e.pathname();
                 match fs::metadata(full_extract_path.clone()) {
-                  Ok(m) => println!("File {:?} exists, won't unpack.", e.pathname()),
+                  Ok(_) => println!("File {:?} exists, won't unpack.", e.pathname()),
                   Err(_) => {
                     println!("To unpack: {:?}", full_extract_path); 
-                    e.extract_to(&full_extract_path);
+                    let res_code = e.extract_to(&full_extract_path);
                   }
                 }
               },
               Err(_) => { break }
             }
           }
-        } ,
-        Err(e) => println!("Failed: {:?}", e),
+        },
+        Err(e) => println!("Failed tar glob: {:?}", e),
       }
     }
     Ok(())
   }
   pub fn unpack_arxiv_months(&self) -> Result<(),()> {
     println!("Greetings from unpack_arxiv_months");
+    let path_str = self.path;
+    let gzs_path = path_str.to_string() + "/*/*.gz";
+    for entry in glob(&gzs_path).unwrap() {
+      match entry {
+        Ok(path) => {
+          let entry_path = path.to_str().unwrap();
+          // Careful here, some of arXiv's .gz files are really plain-text TeX files (surprise!!!)
+          let archive_reader_new = Reader::new().unwrap()
+            .support_filter_all()
+            .support_format_all()
+            .open_filename(entry_path, 10240);
+          match archive_reader_new {
+            Err(_) => {
+              println!("Simple TeX file: {:?}", entry_path);
+            },
+            Ok(archive_reader) => {
+              loop {
+                match archive_reader.next_header() {
+                  Ok(e) => {
+                    let full_extract_path = path_str.to_string() + &e.pathname();
+                    match fs::metadata(full_extract_path.clone()) {
+                      Ok(m) => println!("File {:?} exists, won't unpack.", e.pathname()),
+                      Err(_) => {
+                        println!("To unpack: {:?}", full_extract_path); 
+                        // let res_code = e.extract_to(&full_extract_path);
+                      }
+                    }
+                  },
+                  Err(_) => { break }
+                }
+              }
+            }
+          }
+        },
+        Err(e) => println!("Failed gz glob: {:?}", e)
+      }
+    }
     Ok(())
   }
 
