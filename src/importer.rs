@@ -93,7 +93,7 @@ impl <'a> Importer <'a> {
           // We'll write out a ZIP file for each entry
           let full_extract_path = entry_cp_dir.to_string() + "/" + base_name + ".zip";
           let mut archive_writer_new = Writer::new().unwrap()
-            .add_filter(ArchiveFilter::Lzip)
+            //.add_filter(ArchiveFilter::Lzip)
             .set_format(ArchiveFormat::Zip);
           archive_writer_new.open_filename(&full_extract_path.clone()).unwrap();
 
@@ -107,8 +107,15 @@ impl <'a> Importer <'a> {
                 Ok(raw_reader) => {
                   println!("Simple TeX file: {:?}", entry_path);
                   match raw_reader.next_header() {
-                    Ok(e) => {
-                      archive_writer_new.write_header(e).unwrap();
+                    Ok(_) => {
+                      let tex_target = base_name.to_string() + ".tex";
+                      match archive_writer_new.write_header_new(&tex_target) {
+                        Ok(_) => {},
+                        Err(e) => {
+                          println!("{:?}", e);
+                          break;
+                        }
+                      }
                       loop {
                         let entry_data = raw_reader.read_data(10240);
                         match entry_data {
@@ -128,24 +135,16 @@ impl <'a> Importer <'a> {
               loop {
                 match archive_reader.next_header() {
                   Ok(e) => {
-                    match fs::metadata(full_extract_path.clone()) {
-                      Ok(_) => println!("File {:?} exists, won't unpack.", e.pathname()),
-                      Err(_) => {
-                        println!("To unpack: {:?}", full_extract_path); 
-                        archive_writer_new.write_header(e).unwrap();
-                        loop {
-                          let entry_data = archive_reader.read_data(10240);
-                          match entry_data {
-                            Ok(chunk) => {
-                              println!("Got raw data (complex)! {:?}", chunk);
-                              archive_writer_new.write_data(chunk).unwrap();},
-                            Err(_) => { break }
-                          };
-                        }
-                      },
+                    archive_writer_new.write_header(e).unwrap();
+                    loop {
+                      let entry_data = archive_reader.read_data(10240);
+                      match entry_data {
+                        Ok(chunk) => { archive_writer_new.write_data(chunk).unwrap(); },
+                        Err(_) => { break; }
+                      };
                     }
                   },
-                  Err(_) => { break }
+                  Err(_) => { break; }
                 }
               }
             }
