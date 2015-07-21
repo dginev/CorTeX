@@ -2,11 +2,11 @@ extern crate glob;
 extern crate Archive;
 
 use glob::glob;
-use regex::Regex;
+// use regex::Regex;
 use Archive::*;
-use std::path::Path;
+// use std::path::Path;
 use std::fs;
-use std::fs::File;
+// use std::fs::File;
 
 // Only initialize auxiliary resources once and keep them in a Importer struct
 pub struct Importer <'a> {
@@ -35,7 +35,7 @@ impl <'a> Importer <'a> {
     for entry in glob(&tars_path).unwrap() {
       match entry {
         Ok(path) => {
-          let base_name = path.file_stem().unwrap().to_str().unwrap();
+          // let base_name = path.file_stem().unwrap().to_str().unwrap();
           // If we wanted fine-grained control, we could infer the dir name:          
           // let arxiv_name_re = Regex::new(r"arXiv_src_(\d+)_").unwrap();
           // let captures = arxiv_name_re.captures(base_name).unwrap();            
@@ -58,7 +58,7 @@ impl <'a> Importer <'a> {
                   Ok(_) => println!("File {:?} exists, won't unpack.", e.pathname()),
                   Err(_) => {
                     println!("To unpack: {:?}", full_extract_path); 
-                    let res_code = e.extract_to(&full_extract_path);
+                    e.extract_to(&full_extract_path, Vec::new()).unwrap();
                   }
                 }
               },
@@ -66,7 +66,7 @@ impl <'a> Importer <'a> {
             }
           }
         },
-        Err(e) => println!("Failed tar glob: {:?}", e),
+        Err(e) => {println!("Failed tar glob: {:?}", e)}
       }
     }
     Ok(())
@@ -91,9 +91,14 @@ impl <'a> Importer <'a> {
             .support_format_all()
             .open_filename(entry_path, 10240);
           // We'll write out a ZIP file for each entry
-          let archive_writer_new = Writer::new().unwrap();
+          let full_extract_path = entry_cp_dir.to_string() + "/" + base_name + ".zip";
+          let mut archive_writer_new = Writer::new().unwrap()
+            .add_filter(ArchiveFilter::Lzip)
+            .set_format(ArchiveFormat::Zip);
+          archive_writer_new.open_filename(&full_extract_path.clone()).unwrap();
+
           match archive_reader_new {
-            Err(e) => {
+            Err(_) => {
               let raw_reader_new = Reader::new().unwrap()
                 .support_filter_all()
                 .support_format_raw()
@@ -103,8 +108,15 @@ impl <'a> Importer <'a> {
                   println!("Simple TeX file: {:?}", entry_path);
                   match raw_reader.next_header() {
                     Ok(e) => {
-                      let full_extract_path = entry_cp_dir.to_string() + "/" + base_name + ".tex";
-                      e.extract_to(&full_extract_path);
+                      archive_writer_new.write_header(e).unwrap();
+                      loop {
+                        let entry_data = raw_reader.read_data(10240);
+                        match entry_data {
+                          Ok(chunk) => {
+                            archive_writer_new.write_data(chunk).unwrap();},
+                          Err(_) => {break}
+                        };
+                      }
                     },
                     Err(_) => println!("No content in archive: {:?}", entry_path)
                   }
@@ -116,13 +128,21 @@ impl <'a> Importer <'a> {
               loop {
                 match archive_reader.next_header() {
                   Ok(e) => {
-                    let full_extract_path = entry_cp_dir.to_string() + "/" + &e.pathname();
                     match fs::metadata(full_extract_path.clone()) {
-                      Ok(m) => println!("File {:?} exists, won't unpack.", e.pathname()),
+                      Ok(_) => println!("File {:?} exists, won't unpack.", e.pathname()),
                       Err(_) => {
                         println!("To unpack: {:?}", full_extract_path); 
-                        let res_code = e.extract_to(&full_extract_path);
-                      }
+                        archive_writer_new.write_header(e).unwrap();
+                        loop {
+                          let entry_data = archive_reader.read_data(10240);
+                          match entry_data {
+                            Ok(chunk) => {
+                              println!("Got raw data (complex)! {:?}", chunk);
+                              archive_writer_new.write_data(chunk).unwrap();},
+                            Err(_) => { break }
+                          };
+                        }
+                      },
                     }
                   },
                   Err(_) => { break }
@@ -131,7 +151,10 @@ impl <'a> Importer <'a> {
             }
           }
           // Done with this .gz , remove it:
-          fs::remove_file(path.clone());
+          match fs::remove_file(path.clone()) {
+            Ok(_) => {},
+            Err(e) => println!("Can't remove source .gz: {:?}", e)
+          };
         },
         Err(e) => println!("Failed gz glob: {:?}", e)
       }
@@ -142,7 +165,7 @@ impl <'a> Importer <'a> {
   pub fn process(&self) -> Result<(),()> {
     println!("Greetings from the import processor");
     if self.complex {
-      let unpacked_status = self.unpack();
+      self.unpack().unwrap();
     }
     Ok(())
   }
