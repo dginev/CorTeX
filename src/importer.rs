@@ -94,6 +94,7 @@ impl <'a> Importer <'a> {
           let full_extract_path = entry_cp_dir.to_string() + "/" + base_name + ".zip";
           let mut archive_writer_new = Writer::new().unwrap()
             //.add_filter(ArchiveFilter::Lzip)
+            .set_compression(ArchiveFilter::None)
             .set_format(ArchiveFormat::Zip);
           archive_writer_new.open_filename(&full_extract_path.clone()).unwrap();
 
@@ -106,24 +107,28 @@ impl <'a> Importer <'a> {
               match raw_reader_new {
                 Ok(raw_reader) => {
                   println!("Simple TeX file: {:?}", entry_path);
+
                   match raw_reader.next_header() {
                     Ok(_) => {
                       let tex_target = base_name.to_string() + ".tex";
-                      match archive_writer_new.write_header_new(&tex_target) {
-                        Ok(_) => {},
-                        Err(e) => {
-                          println!("{:?}", e);
-                          break;
-                        }
-                      }
+                      // In a "raw" read, we don't know the data size in advance. So we bite the bullet and
+                      // read the usually tiny tex file in memory, obtaining a size estimate
+                      let mut raw_data = Vec::new();
                       loop {
-                        let entry_data = raw_reader.read_data(10240);
-                        match entry_data {
-                          Ok(chunk) => {
-                            archive_writer_new.write_data(chunk).unwrap();},
+                        let chunk_data = raw_reader.read_data(10240);
+                        match chunk_data {
+                          Ok(chunk) => raw_data.extend(chunk.into_iter()),
                           Err(_) => {break}
                         };
                       }
+                      match archive_writer_new.write_header_new(&tex_target,raw_data.len() as i64) {
+                        Ok(_) => {},
+                        Err(e) => {
+                          println!("Couldn't write header: {:?}", e);
+                          break;
+                        }
+                      }
+                      archive_writer_new.write_data(raw_data).unwrap();
                     },
                     Err(_) => println!("No content in archive: {:?}", entry_path)
                   }
@@ -132,6 +137,7 @@ impl <'a> Importer <'a> {
               }
             },
             Ok(archive_reader) => {
+              println!("Paper directirory: {:?}", entry_path);
               loop {
                 match archive_reader.next_header() {
                   Ok(e) => {

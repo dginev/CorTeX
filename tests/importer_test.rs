@@ -10,7 +10,7 @@ fn assert_files(files:Vec<&str>) -> Result<(),std::io::Error> {
     assert!(meta.is_ok());
     assert!(meta.unwrap().is_file());
     // They're also temporary, so delete them
-    // try!(fs::remove_file(file.clone())); 
+    try!(fs::remove_file(file.clone())); 
   }
   Ok(()) }
 
@@ -20,7 +20,7 @@ fn assert_dirs(dirs : Vec<&str>) -> Result<(),std::io::Error> {
     assert!(meta.is_ok());
     assert!(meta.unwrap().is_dir());
     // They're also temporary, so delete them
-    // try!(fs::remove_dir(dir.clone())); 
+    try!(fs::remove_dir(dir.clone())); 
   }
   Ok(()) }
 
