@@ -4,6 +4,7 @@ sudo: false
 addons:
   apt:
     packages:
+      - libarchive13
       - libarchive-dev
       - libzmq3-dev
 before_script:
