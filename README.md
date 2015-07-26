@@ -3,6 +3,8 @@
 
 A general purpose processing framework for **Cor**-pora of **TeX** documents
 
+<!-- [![Build Status](https://secure.travis-ci.org/dginev/rust-cortex.png?branch=master)](http://travis-ci.org/dginev/rust-cortex) -->
+
 **Features**:
  * Lightning fast Rust implementation
  * Distributed processing and streaming data transfers via **ZeroMQ**
@@ -21,8 +23,4 @@ A general purpose processing framework for **Cor**-pora of **TeX** documents
    project at Jacobs University.
  * The messaging conventions are motivated by work on standardizing [LaTeXML](http://dlmf.nist.gov/LaTeXML)'s log reports with Bruce Miller.
 
-[![Build Status](https://secure.travis-ci.org/dginev/rust-cortex.png?branch=master)](http://travis-ci.org/dginev/rust-cortex)
-
 For more details, consult the [Installation](INSTALL.md) instructions and the [Manual](MANUAL.md).
-
-========
