@@ -131,7 +131,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "libarchive-sys"
 version = "0.0.1"
-source = "git+https://github.com/dginev/libarchive-sys.git#5ee6d7f479980a133f850839806d0f1bef63bca9"
+source = "git+https://github.com/dginev/libarchive-sys.git#51543cc362903ea89c8226ffb5e098e042e6641e"
 dependencies = [
  "pkg-config 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.1.30 (registry+https://github.com/rust-lang/crates.io-index)",
