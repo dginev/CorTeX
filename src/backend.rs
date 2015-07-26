@@ -13,7 +13,7 @@ pub struct Task {
 impl Default for Backend {
   fn default() -> Backend {
     Backend {
-      connection: Connection::connect("postgres://cortex:cortex@localhost:5433/cortex", &SslMode::None).unwrap()
+      connection: Connection::connect("postgres://cortex:cortex@localhost/cortex", &SslMode::None).unwrap()
     }
   }
 }
@@ -82,6 +82,7 @@ impl Backend {
       category char(50),
       what char(50)
     );", &[]).unwrap();
+    trans.execute("DROP TABLE if EXISTS logdetails", &[]).unwrap();
     trans.execute("CREATE TABLE logdetails (
       messageid BIGSERIAL PRIMARY KEY,
       details varchar(2000)
