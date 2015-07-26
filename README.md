@@ -4,12 +4,7 @@
 A general purpose processing framework for **Cor**-pora of **TeX** documents
 
 <!-- [![Build Status](https://secure.travis-ci.org/dginev/rust-cortex.png?branch=master)](http://travis-ci.org/dginev/rust-cortex) -->
-
-=======
-
-** Warning: This repository is currently undergoing an active port of core functionality and is not ready for third-party use! **
-
-=======
+### Warning: This repository is currently undergoing an active port of core functionality and is not ready for third-party use!
 
 **Features**:
  * Lightning fast Rust implementation
