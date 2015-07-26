@@ -1,8 +1,12 @@
 language: rust
 rust: nightly
-
+sudo: false
+addons:
+  apt:
+    packages:
+      - libarchive-dev
+      - libzmq3-dev
 before_script:
-  - sudo apt-get install libarchive-dev libzmq3-dev
   - psql -c 'create database cortex_tester;' -U postgres
   - psql -c "create user cortex_tester with password 'cortex_tester';" -U postgres
   - psql -c 'GRANT ALL PRIVILEGES ON DATABASE cortex_tester TO cortex_tester;' -U postgres
