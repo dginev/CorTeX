@@ -1,9 +1,9 @@
+:exclamation::exclamation: Warning: This repository is undergoing an active rewrite and is not ready for third-party use! :exclamation::exclamation: 
+
 ![CorTeX Framework](./public/img/logo.jpg) Framework
 ======
 
 A general purpose processing framework for **Cor**-pora of **TeX** documents
-
-### Warning: This repository is currently undergoing an active port of core functionality and is not ready for third-party use!
 
 [![Build Status](https://secure.travis-ci.org/dginev/rust-cortex.png?branch=master)](http://travis-ci.org/dginev/rust-cortex)
 
