@@ -8,7 +8,7 @@ A general purpose processing framework for **Cor**-pora of **TeX** documents
 [![Build Status](https://secure.travis-ci.org/dginev/rust-cortex.png?branch=master)](http://travis-ci.org/dginev/rust-cortex) [![license](http://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/dginev/rust-cortex/master/LICENSE)
 
 **Features**:
- * Lightning fast Rust implementation
+ * Safe and speedy Rust implementation
  * Distributed processing and streaming data transfers via **ZeroMQ**
  * A flexible array of backends for Document, Annotation and Task provenance.
  * Open set of supported representations
