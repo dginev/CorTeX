@@ -1,11 +1,11 @@
-:exclamation::exclamation: Warning: This repository is undergoing an active rewrite and is not ready for third-party use! :exclamation::exclamation: 
+:exclamation:Warning::exclamation: This repository is undergoing an active rewrite and is not ready for third-party use!
 
 ![CorTeX Framework](./public/img/logo.jpg) Framework
 ======
 
 A general purpose processing framework for **Cor**-pora of **TeX** documents
 
-[![Build Status](https://secure.travis-ci.org/dginev/rust-cortex.png?branch=master)](http://travis-ci.org/dginev/rust-cortex)
+[![Build Status](https://secure.travis-ci.org/dginev/rust-cortex.png?branch=master)](http://travis-ci.org/dginev/rust-cortex)[![license](http://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/dginev/rust-cortex/master/LICENSE)
 
 **Features**:
  * Lightning fast Rust implementation
