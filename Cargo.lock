@@ -7,7 +7,7 @@ dependencies = [
  "hyper 0.6.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "libarchive-sys 0.0.1 (git+https://github.com/dginev/libarchive-sys.git)",
  "libc 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "nickel 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nickel 0.6.0 (git+https://github.com/nickel-org/nickel.rs.git)",
  "postgres 0.9.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 0.1.39 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustc-serialize 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -196,7 +196,7 @@ dependencies = [
 [[package]]
 name = "nickel"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+source = "git+https://github.com/nickel-org/nickel.rs.git#b6e1ff96a3b6ff2408fab4c23c9acfd5ea7aca58"
 dependencies = [
  "groupable 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "hyper 0.6.4 (registry+https://github.com/rust-lang/crates.io-index)",

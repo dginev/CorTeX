@@ -16,6 +16,9 @@ git = "https://github.com/SiegeLord/RustGnuplot.git"
 [dependencies.libarchive-sys]
 git = "https://github.com/dginev/libarchive-sys.git"
 
+[dependencies.nickel]
+git = "https://github.com/nickel-org/nickel.rs.git"
+
 [dependencies]
 libc = "~0.1"
 regex = "0.1.8"
@@ -25,4 +28,3 @@ postgres = "0.9"
 sys-info = "*"
 hyper = "*"
 glob = "*"
-nickel = "~0.6"
