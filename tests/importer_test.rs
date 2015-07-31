@@ -42,10 +42,15 @@ fn can_import_complex() {
   
   println!("-- Testing complex import");
   assert_eq!( importer.process(), Ok(()) );
+
+  let repeat_importer = Importer {
+    complex: true,
+    path: "tests/data/"};
+  
+  println!("-- Testing repeated complex import (successful and no-op)");
+  assert_eq!( repeat_importer.process(), Ok(()) );
+
   let files_removed_ok = assert_files(vec![
-    // "tests/data/9107/hep-lat9107001/9107001.tex",
-    // "tests/data/9107/hep-lat9107001/fig1.eps",
-    // "tests/data/9107/hep-lat9107002/hep-lat9107002.tex"
     "tests/data/9107/hep-lat9107001/hep-lat9107001.zip",
     "tests/data/9107/hep-lat9107002/hep-lat9107002.zip",
     ]);
