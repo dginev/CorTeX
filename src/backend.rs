@@ -1,13 +1,59 @@
 extern crate postgres;
+extern crate rustc_serialize;
 
 use postgres::{Connection, SslMode};
+use rustc_serialize::json::{Json, ToJson};
+use std::collections::BTreeMap;
+// Some useful data structures:
+
+// Tasks
+use std::fmt;
+use std::f64;
+
+pub struct Task {
+  pub entry: String,
+  pub serviceid: usize,
+  pub corpusid: usize,
+  pub status: i64
+}
+impl fmt::Display for Task {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // The `f` value implements the `Write` trait, which is what the
+        // write! macro is expecting. Note that this formatting ignores the
+        // various flags provided to format strings.
+        write!(f, "(entry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n", self.entry, self.serviceid, self.corpusid, self.status)
+    }
+}
+impl fmt::Debug for Task {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // The `f` value implements the `Write` trait, which is what the
+        // write! macro is expecting. Note that this formatting ignores the
+        // various flags provided to format strings.
+        write!(f, "(entry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n", self.entry, self.serviceid, self.corpusid, self.status)
+    }
+}
+// Corpora
+#[derive(RustcDecodable, RustcEncodable)]
+pub struct Corpus {
+  pub id : usize,
+  pub name : String,
+  pub path : String,
+  pub complex : bool
+}
+impl ToJson for Corpus {
+    fn to_json(&self) -> Json {
+        let mut map = BTreeMap::new();
+        map.insert("id".to_string(), self.id.to_json());
+        map.insert("path".to_string(), self.path.to_json());
+        map.insert("name".to_string(), self.name.to_json());
+        map.insert("complex".to_string(), self.complex.to_json());
+        Json::Object(map)
+    }
+}
 
 // Only initialize auxiliary resources once and keep them in a Backend struct
 pub struct Backend {
   pub connection : Connection
-}
-pub struct Task {
-  pub id: usize
 }
 
 impl Default for Backend {
@@ -37,6 +83,7 @@ impl Backend {
     trans.execute("DROP TABLE IF EXISTS corpora;", &[]).unwrap();
     trans.execute("CREATE TABLE corpora (
       corpusid BIGSERIAL PRIMARY KEY,
+      path varchar(200),
       name varchar(200)
     );", &[]).unwrap();
     trans.execute("create index corpusnameidx on corpora(name);", &[]).unwrap();
@@ -94,8 +141,21 @@ impl Backend {
     Ok(())
   }
 
-  pub fn mark_done(&self, t: Task) {
+  pub fn mark_imported(&self, tasks: Vec<Task>) {
+        
+  }
+
+  pub fn mark_done(&self, tasks: Vec<Task>) {
     // self.connection.execute("UPDATE tasks (name, data) VALUES ($1, $2)",
     //   &[&me.name, &me.data]).unwrap();
+  }
+
+  pub fn add_corpus(&self, path: String, complex: bool) -> Corpus {
+    Corpus {
+      id: 0,
+      path : path.clone(),
+      name : path,
+      complex : complex
+    }
   }
 }

@@ -4,33 +4,37 @@ extern crate Archive;
 use glob::glob;
 // use regex::Regex;
 use Archive::*;
-// use std::path::Path;
+use std::path::Path;
+use std::path::PathBuf;
 use std::fs;
+use std::io::Error;
 // use std::fs::File;
+use backend::{Task, Corpus, Backend};
 
 // Only initialize auxiliary resources once and keep them in a Importer struct
-pub struct Importer <'a> {
-  pub path : &'a str,
-  pub complex : bool
+pub struct Importer {
+  pub corpus : Corpus,
+  pub backend : Backend
 }
-impl <'a> Default for Importer <'a> {
-  fn default() -> Importer <'a> {
+impl Default for Importer {
+  fn default() -> Importer {
+    let default_backend = Backend::default();
     Importer {
-      path : ".",
-      complex : false
+      corpus : default_backend.add_corpus(".".to_string(), false),
+      backend : default_backend
     }
   }
 }
 
-impl <'a> Importer <'a> {
+impl Importer {
   pub fn unpack(&self) -> Result<(),()> {
     try!(self.unpack_arxiv_top());
     try!(self.unpack_arxiv_months());
     Ok(())
   }
   pub fn unpack_arxiv_top(&self) -> Result<(),()> {
-    println!("Greetings from unpack_arxiv_top");
-    let path_str = self.path;
+    // println!("Greetings from unpack_arxiv_top");
+    let path_str = self.corpus.path.clone();
     let tars_path = path_str.to_string() + "/*.tar";
     for entry in glob(&tars_path).unwrap() {
       match entry {
@@ -72,8 +76,8 @@ impl <'a> Importer <'a> {
     Ok(())
   }
   pub fn unpack_arxiv_months(&self) -> Result<(),()> {
-    println!("Greetings from unpack_arxiv_months");
-    let path_str = self.path;
+    // println!("Greetings from unpack_arxiv_months");
+    let path_str = self.corpus.path.clone();
     let gzs_path = path_str.to_string() + "/*/*.gz";
     for entry in glob(&gzs_path).unwrap() {
       match entry {
@@ -167,11 +171,59 @@ impl <'a> Importer <'a> {
     Ok(())
   }
 
-  pub fn process(&self) -> Result<(),()> {
-    println!("Greetings from the import processor");
-    if self.complex {
-      self.unpack().unwrap();
+  pub fn walk_import<'walk>(&self) -> Result<(),Error> {
+    let import_extension = if self.corpus.complex { "zip" } else { "tex" };
+    let mut walk_q : Vec<PathBuf> = vec![Path::new(&self.corpus.path).to_owned()];
+    let mut import_q : Vec<Task> = Vec::new();
+    let mut import_counter = 0;
+    while walk_q.len() > 0 { 
+      let current_path = walk_q.pop().unwrap();
+      let current_metadata = try!(fs::metadata(current_path.clone()));
+      if current_metadata.is_dir() { // Ignore files
+        // First, test if we just found an entry:
+        let current_local_dir = current_path.file_name().unwrap();
+        let current_entry = current_local_dir.to_str().unwrap().to_string() + "." + import_extension;
+        let current_entry_path = current_path.to_str().unwrap().to_string() + "/" + &current_entry;
+        match fs::metadata(current_entry_path.clone()) {
+          Ok(_) => {
+            // Found the expected file, import this entry:
+            println!("Found entry: {:?}", current_entry_path);
+            import_counter += 1;
+            import_q.push(self.new_task(current_entry_path));
+            if (import_q.len() >= 1000) {
+              // Flush the import queue to backend:
+              println!("IMPORT Q: {:?}", import_q);
+              import_q.clear();
+            }
+          },
+          Err(_) => {
+            //  No such entry found, traversing into the directory:
+            for subentry in try!(fs::read_dir(current_path.clone())) {
+              let subentry = try!(subentry);
+              walk_q.push(subentry.path());
+            }
+          }
+        }
+      }
     }
+    if !import_q.is_empty() {
+      println!("wrap-up IMPORT Q: {:?}", import_q);
+    }
+    println!("--- Imported {:?} entries.", import_counter);
+    Ok(())
+  }
+
+  pub fn new_task(&self, entry : String) -> Task {
+    Task {entry : entry, status : -5, corpusid : self.corpus.id, serviceid: 1}
+  }
+
+  pub fn process(&self) -> Result<(),()> {
+    // println!("Greetings from the import processor");
+    if self.corpus.complex { // Complex setup has an unpack step:
+      self.unpack().unwrap(); }
+    // Walk the directory tree and import the files in the TaskDB:
+    self.walk_import().unwrap();
+
     Ok(())
   }
 }

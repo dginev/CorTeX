@@ -1,5 +1,6 @@
 extern crate cortex;
 use cortex::importer::*;
+use cortex::backend::Backend;
 use std::vec::Vec;
 use std::fs;
 use std::io::{Error};
@@ -26,9 +27,10 @@ fn assert_dirs(dirs : Vec<&str>) -> Result<(),std::io::Error> {
 
 #[test]
 fn can_import_simple() {
+  let default_backend = Backend::default();
   let importer = Importer {
-    complex: false,
-    path: "tests/data/"};
+    corpus: default_backend.add_corpus("tests/data/".to_string(), false),
+    backend: default_backend };
   
   println!("-- Testing simple import");
   assert_eq!( importer.process(), Ok(()) );
@@ -36,16 +38,19 @@ fn can_import_simple() {
 
 #[test]
 fn can_import_complex() {
+  let default_backend = Backend::default();
   let importer = Importer {
-    complex: true,
-    path: "tests/data/"};
+    corpus: default_backend.add_corpus("tests/data/".to_string(), true),
+    backend: Backend::default() };
+
   
   println!("-- Testing complex import");
   assert_eq!( importer.process(), Ok(()) );
 
   let repeat_importer = Importer {
-    complex: true,
-    path: "tests/data/"};
+    corpus: default_backend.add_corpus("tests/data/".to_string(), false),
+    backend: Backend::default() };
+
   
   println!("-- Testing repeated complex import (successful and no-op)");
   assert_eq!( repeat_importer.process(), Ok(()) );
