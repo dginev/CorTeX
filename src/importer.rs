@@ -20,7 +20,12 @@ impl Default for Importer {
   fn default() -> Importer {
     let default_backend = Backend::default();
     Importer {
-      corpus : default_backend.add_corpus(".".to_string(), false),
+      corpus : default_backend.add_corpus(
+        Corpus {
+          id: None,
+          path : ".".to_string(),
+          name : "default".to_string(),
+          complex : false }),
       backend : default_backend
     }
   }
@@ -214,7 +219,7 @@ impl Importer {
   }
 
   pub fn new_task(&self, entry : String) -> Task {
-    Task {entry : entry, status : -5, corpusid : self.corpus.id, serviceid: 1}
+    Task {id: None, entry : entry, status : -5, corpusid : self.corpus.id.unwrap(), serviceid: 1}
   }
 
   pub fn process(&self) -> Result<(),()> {

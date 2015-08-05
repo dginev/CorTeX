@@ -1,6 +1,6 @@
 extern crate cortex;
 use cortex::importer::*;
-use cortex::backend::Backend;
+use cortex::backend::{Corpus,Backend};
 use std::vec::Vec;
 use std::fs;
 use std::io::{Error};
@@ -29,7 +29,12 @@ fn assert_dirs(dirs : Vec<&str>) -> Result<(),std::io::Error> {
 fn can_import_simple() {
   let default_backend = Backend::default();
   let importer = Importer {
-    corpus: default_backend.add_corpus("tests/data/".to_string(), false),
+    corpus: default_backend.add_corpus(
+        Corpus {
+          id: None,
+          path : "tests/data/".to_string(),
+          name : "simple import test".to_string(),
+          complex : false }),
     backend: default_backend };
   
   println!("-- Testing simple import");
@@ -40,7 +45,12 @@ fn can_import_simple() {
 fn can_import_complex() {
   let default_backend = Backend::default();
   let importer = Importer {
-    corpus: default_backend.add_corpus("tests/data/".to_string(), true),
+    corpus: default_backend.add_corpus(
+      Corpus {
+        id: None,
+        path : "tests/data/".to_string(),
+        name : "complex import test".to_string(),
+        complex : true }),
     backend: Backend::default() };
 
   
@@ -48,7 +58,12 @@ fn can_import_complex() {
   assert_eq!( importer.process(), Ok(()) );
 
   let repeat_importer = Importer {
-    corpus: default_backend.add_corpus("tests/data/".to_string(), false),
+    corpus: default_backend.add_corpus(
+      Corpus {
+        id: None,
+        path : "tests/data/".to_string(),
+        name : "complex import test".to_string(),
+        complex : true }),
     backend: Backend::default() };
 
   

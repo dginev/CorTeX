@@ -11,6 +11,7 @@ use std::fmt;
 use std::f64;
 
 pub struct Task {
+  pub id : Option<usize>,
   pub entry: String,
   pub serviceid: usize,
   pub corpusid: usize,
@@ -35,7 +36,7 @@ impl fmt::Debug for Task {
 // Corpora
 #[derive(RustcDecodable, RustcEncodable)]
 pub struct Corpus {
-  pub id : usize,
+  pub id : Option<usize>,
   pub name : String,
   pub path : String,
   pub complex : bool
@@ -150,12 +151,12 @@ impl Backend {
     //   &[&me.name, &me.data]).unwrap();
   }
 
-  pub fn add_corpus(&self, path: String, complex: bool) -> Corpus {
+  pub fn add_corpus(&self, c: Corpus) -> Corpus {
     Corpus {
-      id: 0,
-      path : path.clone(),
-      name : path,
-      complex : complex
+      id : Some(1),
+      name : c.name,
+      path : c.path,
+      complex : c.complex
     }
   }
 }
