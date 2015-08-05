@@ -5,7 +5,7 @@
 
 A general purpose processing framework for **Cor**-pora of **TeX** documents
 
-[![Build Status](https://secure.travis-ci.org/dginev/rust-cortex.png?branch=master)](http://travis-ci.org/dginev/rust-cortex) [![license](http://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/dginev/rust-cortex/master/LICENSE) [![Coverage Status](https://coveralls.io/repos/dginev/rust-cortex/badge.svg?branch=master&service=github)](https://coveralls.io/github/dginev/rust-cortex?branch=master)
+[![Build Status](https://secure.travis-ci.org/dginev/rust-cortex.png?branch=master)](http://travis-ci.org/dginev/rust-cortex) [![Requirements Status](https://requires.io/github/dginev/rust-cortex/requirements.svg?branch=master)](https://requires.io/github/dginev/rust-cortex/requirements/?branch=master) [![license](http://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/dginev/rust-cortex/master/LICENSE) [![Coverage Status](https://coveralls.io/repos/dginev/rust-cortex/badge.svg?branch=master&service=github)](https://coveralls.io/github/dginev/rust-cortex?branch=master)
 
 **Features**:
  * Safe and speedy Rust implementation
