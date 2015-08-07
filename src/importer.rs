@@ -25,7 +25,7 @@ impl Default for Importer {
           id: None,
           path : ".".to_string(),
           name : "default".to_string(),
-          complex : false }),
+          complex : false }).unwrap(),
       backend : default_backend
     }
   }
@@ -195,9 +195,9 @@ impl Importer {
             println!("Found entry: {:?}", current_entry_path);
             import_counter += 1;
             import_q.push(self.new_task(current_entry_path));
-            if (import_q.len() >= 1000) {
+            if import_q.len() >= 1000 {
               // Flush the import queue to backend:
-              println!("IMPORT Q: {:?}", import_q);
+              self.backend.mark_imported(&import_q);
               import_q.clear();
             }
           },
@@ -212,8 +212,7 @@ impl Importer {
       }
     }
     if !import_q.is_empty() {
-      println!("wrap-up IMPORT Q: {:?}", import_q);
-    }
+      self.backend.mark_imported(&import_q); }
     println!("--- Imported {:?} entries.", import_counter);
     Ok(())
   }

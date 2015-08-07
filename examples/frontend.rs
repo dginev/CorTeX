@@ -4,20 +4,18 @@ extern crate cortex;
 extern crate rustc_serialize;
 
 use std::collections::HashMap;
-use std::path::Path;
-use std::fs;
+// use std::path::Path;
 // use std::io::Read;
 use std::io::Error;
 use nickel::{Nickel, HttpRouter}; //, MediaType, JsonBody
 use hyper::header::Location;
 use nickel::status::StatusCode;
 use nickel::QueryString;
-use rustc_serialize::json::{Json, ToJson};
 // use nickel::status::StatusCode;
 // use hyper::header::Location;
 
 use cortex::sysinfo;
-use cortex::backend::{Corpus, Backend};
+// use cortex::backend::{Corpus, Backend};
 
 #[derive(RustcDecodable, RustcEncodable)]
 struct Person {
@@ -34,7 +32,7 @@ struct Person {
 
 fn main() {
     let mut server = Nickel::new();
-    let backend = Backend::default();
+    // let backend = Backend::default();
     //middleware function logs each request to console
     server.utilize(middleware! { |request|
         println!("logging request: {:?}", request.origin.uri);

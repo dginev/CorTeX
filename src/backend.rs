@@ -2,20 +2,19 @@ extern crate postgres;
 extern crate rustc_serialize;
 
 use postgres::{Connection, SslMode};
+use postgres::error::Error;
 use rustc_serialize::json::{Json, ToJson};
 use std::collections::BTreeMap;
 // Some useful data structures:
 
 // Tasks
 use std::fmt;
-use std::f64;
-
 pub struct Task {
-  pub id : Option<usize>,
+  pub id : Option<i64>,
   pub entry: String,
-  pub serviceid: usize,
-  pub corpusid: usize,
-  pub status: i64
+  pub serviceid: i32,
+  pub corpusid: i32,
+  pub status: i32
 }
 impl fmt::Display for Task {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -33,10 +32,11 @@ impl fmt::Debug for Task {
         write!(f, "(entry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n", self.entry, self.serviceid, self.corpusid, self.status)
     }
 }
+
 // Corpora
 #[derive(RustcDecodable, RustcEncodable)]
 pub struct Corpus {
-  pub id : Option<usize>,
+  pub id : Option<i32>,
   pub name : String,
   pub path : String,
   pub complex : bool
@@ -66,6 +66,13 @@ impl Default for Backend {
 }
 
 impl Backend {
+  // Globals
+  pub fn testdb() -> Backend {
+   Backend {
+      connection: Connection::connect("postgres://cortex_tester:cortex_tester@localhost/cortex_tester", &SslMode::None).unwrap()
+    }
+  }
+  // Instance methods
   pub fn setup_task_tables(&self) -> postgres::Result<()> {
     let trans = try!(self.connection.transaction());
     // Tasks
@@ -83,9 +90,10 @@ impl Backend {
     // Corpora
     trans.execute("DROP TABLE IF EXISTS corpora;", &[]).unwrap();
     trans.execute("CREATE TABLE corpora (
-      corpusid BIGSERIAL PRIMARY KEY,
+      corpusid SERIAL PRIMARY KEY,
       path varchar(200),
-      name varchar(200)
+      name varchar(200),
+      complex boolean
     );", &[]).unwrap();
     trans.execute("create index corpusnameidx on corpora(name);", &[]).unwrap();
     // Services
@@ -142,21 +150,70 @@ impl Backend {
     Ok(())
   }
 
-  pub fn mark_imported(&self, tasks: Vec<Task>) {
-        
+  pub fn mark_imported(&self, tasks: &Vec<Task>) -> Result<(),Error> {
+    let trans = try!(self.connection.transaction());
+    for task in tasks {
+      trans.execute("INSERT INTO tasks (entry,serviceid,corpusid,status) VALUES ($1,$2,$3,$4)",
+        &[&task.entry, &task.serviceid, &task.corpusid, &task.status]).unwrap();
+    }
+    trans.set_commit();
+    try!(trans.finish());
+    Ok(())
   }
 
-  pub fn mark_done(&self, tasks: Vec<Task>) {
+  pub fn mark_done(&self, tasks: &Vec<Task>) -> Result<(),Error> {
     // self.connection.execute("UPDATE tasks (name, data) VALUES ($1, $2)",
     //   &[&me.name, &me.data]).unwrap();
+    let trans = try!(self.connection.transaction());
+    trans.set_commit();
+    try!(trans.finish());
+    Ok(())
   }
 
-  pub fn add_corpus(&self, c: Corpus) -> Corpus {
-    Corpus {
+  pub fn sync_corpus(&self, c: &Corpus) -> Result<Corpus, Error> {
+    match c.id {
+      Some(id) => {
+        let row = try!(self.connection.execute("SELECT * FROM corpora WHERE corpusid = $1", &[&id]));
+        println!("ROW: {:?}", row);
+      },
+      None => {
+        let row = try!(self.connection.execute("SELECT * FROM corpora WHERE name = $1", &[&c.name]));
+        println!("NAMED ROW: {:?}", row);
+      }
+    };
+    Ok(Corpus {
       id : Some(1),
-      name : c.name,
-      path : c.path,
-      complex : c.complex
+      name : c.name.clone(),
+      path : c.path.clone(),
+      complex : c.complex.clone()
+    })
+    
+  }
+
+  pub fn delete_corpus(&self, c: &Corpus) -> Result<(),Error> {
+    let c_checked = try!(self.sync_corpus(&c));
+    match c_checked.id {
+      Some(id) => {
+        try!(self.connection.execute("DELETE FROM corpora WHERE corpusid = $1", &[&id])); 
+        try!(self.connection.execute("DELETE FROM tasks WHERE corpusid = $1", &[&id])); 
+      },
+      None => {}
     }
+    Ok(())
+  }
+
+  pub fn add_corpus(&self, c: Corpus) -> Result<Corpus, Error> {
+    let c_checked = try!(self.sync_corpus(&c));
+    match c_checked.id {
+      Some(_) => {
+        // If this corpus existed - delete any remnants of it
+        try!(self.delete_corpus(&c_checked));
+      },
+      None => {} // New, we can add it safely
+    }
+    // Add Corpus to the DB:
+    try!(self.connection.execute("INSERT INTO corpora (name, path, complex) values($1, $2, $3)", &[&c_checked.name, &c_checked.path, &c_checked.complex]));
+    let c_final = try!(self.sync_corpus(&c_checked));
+    Ok(c_final)
   }
 }

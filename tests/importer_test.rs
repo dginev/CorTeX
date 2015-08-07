@@ -27,14 +27,14 @@ fn assert_dirs(dirs : Vec<&str>) -> Result<(),std::io::Error> {
 
 #[test]
 fn can_import_simple() {
-  let default_backend = Backend::default();
+  let default_backend = Backend::testdb();
   let importer = Importer {
     corpus: default_backend.add_corpus(
         Corpus {
           id: None,
           path : "tests/data/".to_string(),
           name : "simple import test".to_string(),
-          complex : false }),
+          complex : false }).unwrap(),
     backend: default_backend };
   
   println!("-- Testing simple import");
@@ -43,15 +43,15 @@ fn can_import_simple() {
 
 #[test]
 fn can_import_complex() {
-  let default_backend = Backend::default();
+  let default_backend = Backend::testdb();
   let importer = Importer {
     corpus: default_backend.add_corpus(
       Corpus {
         id: None,
         path : "tests/data/".to_string(),
         name : "complex import test".to_string(),
-        complex : true }),
-    backend: Backend::default() };
+        complex : true }).unwrap(),
+    backend: Backend::testdb() };
 
   
   println!("-- Testing complex import");
@@ -63,8 +63,8 @@ fn can_import_complex() {
         id: None,
         path : "tests/data/".to_string(),
         name : "complex import test".to_string(),
-        complex : true }),
-    backend: Backend::default() };
+        complex : true }).unwrap(),
+    backend: Backend::testdb() };
 
   
   println!("-- Testing repeated complex import (successful and no-op)");
