@@ -173,29 +173,54 @@ impl Backend {
   pub fn sync_corpus(&self, c: &Corpus) -> Result<Corpus, Error> {
     match c.id {
       Some(id) => {
-        let row = try!(self.connection.execute("SELECT * FROM corpora WHERE corpusid = $1", &[&id]));
-        println!("ROW: {:?}", row);
+        let stmt = try!(self.connection.prepare("SELECT corpusid,name,path,complex FROM corpora WHERE corpusid = $1"));
+        let rows = stmt.query(&[&id]).unwrap();
+        if rows.len() > 0 {
+          let row = rows.get(0);
+          return Ok(Corpus {
+            id : Some(row.get(0)),
+            name : row.get(1),
+            path : row.get(2),
+            complex : row.get(3)
+          });
+        } else {
+          return Ok(Corpus {
+            id : c.id.clone(),
+            name : c.name.clone(),
+            path : c.path.clone(),
+            complex : c.complex.clone()
+          });
+        }
       },
       None => {
-        let row = try!(self.connection.execute("SELECT * FROM corpora WHERE name = $1", &[&c.name]));
-        println!("NAMED ROW: {:?}", row);
+        let stmt = try!(self.connection.prepare("SELECT corpusid,name,path,complex FROM corpora WHERE name = $1"));
+        let rows = stmt.query(&[&c.name]).unwrap();
+        if rows.len() > 0 {
+          let row = rows.get(0);
+          return Ok(Corpus {
+            id : Some(row.get(0)),
+            name : row.get(1),
+            path : row.get(2),
+            complex : row.get(3)
+          });
+        } else {
+          return Ok(Corpus {
+            id : c.id.clone(),
+            name : c.name.clone(),
+            path : c.path.clone(),
+            complex : c.complex.clone()
+          });
+        }
       }
     };
-    Ok(Corpus {
-      id : Some(1),
-      name : c.name.clone(),
-      path : c.path.clone(),
-      complex : c.complex.clone()
-    })
-    
   }
 
   pub fn delete_corpus(&self, c: &Corpus) -> Result<(),Error> {
     let c_checked = try!(self.sync_corpus(&c));
     match c_checked.id {
       Some(id) => {
-        try!(self.connection.execute("DELETE FROM corpora WHERE corpusid = $1", &[&id])); 
         try!(self.connection.execute("DELETE FROM tasks WHERE corpusid = $1", &[&id])); 
+        try!(self.connection.execute("DELETE FROM corpora WHERE corpusid = $1", &[&id])); 
       },
       None => {}
     }
@@ -213,7 +238,7 @@ impl Backend {
     }
     // Add Corpus to the DB:
     try!(self.connection.execute("INSERT INTO corpora (name, path, complex) values($1, $2, $3)", &[&c_checked.name, &c_checked.path, &c_checked.complex]));
-    let c_final = try!(self.sync_corpus(&c_checked));
+    let c_final = try!(self.sync_corpus(&c));
     Ok(c_final)
   }
 }

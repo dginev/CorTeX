@@ -197,7 +197,7 @@ impl Importer {
             import_q.push(self.new_task(current_entry_path));
             if import_q.len() >= 1000 {
               // Flush the import queue to backend:
-              self.backend.mark_imported(&import_q);
+              self.backend.mark_imported(&import_q).unwrap(); // TODO: Proper Error-handling 
               import_q.clear();
             }
           },
@@ -212,7 +212,7 @@ impl Importer {
       }
     }
     if !import_q.is_empty() {
-      self.backend.mark_imported(&import_q); }
+      self.backend.mark_imported(&import_q).unwrap();} // TODO: Proper Error-handling
     println!("--- Imported {:?} entries.", import_counter);
     Ok(())
   }
