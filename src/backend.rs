@@ -5,6 +5,7 @@ use postgres::{Connection, SslMode};
 use postgres::error::Error;
 use rustc_serialize::json::{Json, ToJson};
 use std::collections::BTreeMap;
+use std::clone::Clone;
 // Some useful data structures:
 
 // Tasks
@@ -50,6 +51,16 @@ impl ToJson for Corpus {
         map.insert("complex".to_string(), self.complex.to_json());
         Json::Object(map)
     }
+}
+impl Clone for Corpus {
+  fn clone(&self) -> Self {
+    Corpus {
+      id : self.id.clone(),
+      name : self.name.clone(),
+      path : self.path.clone(),
+      complex : self.complex.clone()
+    }
+  }
 }
 
 // Only initialize auxiliary resources once and keep them in a Backend struct
@@ -171,7 +182,7 @@ impl Backend {
   }
 
   pub fn sync_corpus(&self, c: &Corpus) -> Result<Corpus, Error> {
-    match c.id {
+    return match c.id {
       Some(id) => {
         let stmt = try!(self.connection.prepare("SELECT corpusid,name,path,complex FROM corpora WHERE corpusid = $1"));
         let rows = stmt.query(&[&id]).unwrap();
@@ -182,14 +193,9 @@ impl Backend {
             name : row.get(1),
             path : row.get(2),
             complex : row.get(3)
-          });
+          })
         } else {
-          return Ok(Corpus {
-            id : c.id.clone(),
-            name : c.name.clone(),
-            path : c.path.clone(),
-            complex : c.complex.clone()
-          });
+          Ok(c.clone())
         }
       },
       None => {
@@ -197,19 +203,14 @@ impl Backend {
         let rows = stmt.query(&[&c.name]).unwrap();
         if rows.len() > 0 {
           let row = rows.get(0);
-          return Ok(Corpus {
+          Ok(Corpus {
             id : Some(row.get(0)),
             name : row.get(1),
             path : row.get(2),
             complex : row.get(3)
-          });
+          })
         } else {
-          return Ok(Corpus {
-            id : c.id.clone(),
-            name : c.name.clone(),
-            path : c.path.clone(),
-            complex : c.complex.clone()
-          });
+          Ok(c.clone())
         }
       }
     };
