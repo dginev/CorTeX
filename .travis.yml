@@ -23,10 +23,15 @@ script:
   - travis-cargo build
   - travis-cargo test
   - travis-cargo bench
+  - travis-cargo doc
 after_success:
+  # upload the documentation (automatically only actually runs on the master branch, not individual PRs)
+  - travis-cargo doc-upload
   - travis-cargo coveralls --no-sudo
 
 env:
   global:
-    # override the default `--features unstable` used for the nightly branch (optional)
+    # override the default `--features unstable` used for the nightly branch
     - TRAVIS_CARGO_NIGHTLY_FEATURE=""
+    # encrypted github token for doc upload
+    - secure: "d590fe4d021995e2be3af9d8eb4d0469cc43aebb"

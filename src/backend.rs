@@ -1,3 +1,9 @@
+// Copyright 2015 Deyan Ginev. See the LICENSE
+// file at the top-level directory of this distribution.
+//
+// Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
+// This file may not be copied, modified, or distributed
+// except according to those terms.
 extern crate postgres;
 extern crate rustc_serialize;
 
@@ -33,7 +39,48 @@ impl fmt::Debug for Task {
         write!(f, "(entry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n", self.entry, self.serviceid, self.corpusid, self.status)
     }
 }
-
+// Task Reports (completed tasks)
+pub struct TaskReport {
+  task : Task,
+  status : TaskStatus,
+  messages : Vec<TaskMessage>
+}
+pub struct TaskMessage {
+    text : String
+}
+pub enum TaskStatus {
+  NoProblem,
+  Warning,
+  Error,
+  Fatal,
+  TODO,
+  Blocked(i32),
+  Queued(i32)
+}
+impl TaskStatus {
+  pub fn raw(&self) -> i32 {
+    match self {
+      &TaskStatus::NoProblem => -1,
+      &TaskStatus::Warning => -2,
+      &TaskStatus::Error => -3,
+      &TaskStatus::Fatal => -4,
+      &TaskStatus::TODO => -5,
+      &TaskStatus::Blocked(x) => x,
+      &TaskStatus::Queued(x) => x
+    }
+  }
+  pub fn from_raw(num : i32) -> Self {
+    match num {
+      -1 => TaskStatus::NoProblem,
+      -2 => TaskStatus::Warning, 
+      -3 => TaskStatus::Error,
+      -4 => TaskStatus::Fatal,
+      -5 => TaskStatus::TODO,
+      num if num < -5 => TaskStatus::Blocked(num.clone()),
+      _ => TaskStatus::Queued(num.clone())
+    }
+  }
+}
 // Corpora
 #[derive(RustcDecodable, RustcEncodable)]
 pub struct Corpus {
@@ -61,6 +108,21 @@ impl Clone for Corpus {
       complex : self.complex.clone()
     }
   }
+}
+// Services
+pub struct Service {
+  pub id : Option<i32>,
+  pub name : String,
+  pub version : f32,
+  // pub url : String,
+  pub inputformat : String,
+  pub outputformat : String,
+  // pub xpath : String,
+  pub resource : String,
+  pub inputconverter : String,
+  pub complex : bool, 
+  // pub type : i32,
+  pub entrysetup : i32,
 }
 
 // Only initialize auxiliary resources once and keep them in a Backend struct
@@ -172,23 +234,28 @@ impl Backend {
     Ok(())
   }
 
-  pub fn mark_done(&self, tasks: &Vec<Task>) -> Result<(),Error> {
-    // self.connection.execute("UPDATE tasks (name, data) VALUES ($1, $2)",
-    //   &[&me.name, &me.data]).unwrap();
+  pub fn mark_done(&self, reports: &Vec<TaskReport>) -> Result<(),Error> {
     let trans = try!(self.connection.transaction());
+    for report in reports {
+      trans.execute("UPDATE tasks SET status=$1 WHERE taskid=$2",
+        &[&report.task.id, &report.status.raw()]).unwrap();
+      for message in &report.messages {
+        println!("{:?}", message.text);
+      }
+    }
     trans.set_commit();
     try!(trans.finish());
     Ok(())
   }
 
   pub fn sync_corpus(&self, c: &Corpus) -> Result<Corpus, Error> {
-    return match c.id {
+    match c.id {
       Some(id) => {
         let stmt = try!(self.connection.prepare("SELECT corpusid,name,path,complex FROM corpora WHERE corpusid = $1"));
         let rows = stmt.query(&[&id]).unwrap();
         if rows.len() > 0 {
           let row = rows.get(0);
-          return Ok(Corpus {
+          Ok(Corpus {
             id : Some(row.get(0)),
             name : row.get(1),
             path : row.get(2),
@@ -213,7 +280,7 @@ impl Backend {
           Ok(c.clone())
         }
       }
-    };
+    }
   }
 
   pub fn delete_corpus(&self, c: &Corpus) -> Result<(),Error> {

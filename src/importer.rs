@@ -1,3 +1,9 @@
+// Copyright 2015 Deyan Ginev. See the LICENSE
+// file at the top-level directory of this distribution.
+//
+// Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
+// This file may not be copied, modified, or distributed
+// except according to those terms.
 extern crate glob;
 extern crate Archive;
 
@@ -115,8 +121,6 @@ impl Importer {
                 .open_filename(entry_path, 10240);
               match raw_reader_new {
                 Ok(raw_reader) => {
-                  println!("Simple TeX file: {:?}", entry_path);
-
                   match raw_reader.next_header() {
                     Ok(_) => {
                       let tex_target = base_name.to_string() + ".tex";
@@ -146,7 +150,6 @@ impl Importer {
               }
             },
             Ok(archive_reader) => {
-              println!("Paper directirory: {:?}", entry_path);
               loop {
                 match archive_reader.next_header() {
                   Ok(e) => {
@@ -192,7 +195,7 @@ impl Importer {
         match fs::metadata(current_entry_path.clone()) {
           Ok(_) => {
             // Found the expected file, import this entry:
-            println!("Found entry: {:?}", current_entry_path);
+            // println!("Found entry: {:?}", current_entry_path);
             import_counter += 1;
             import_q.push(self.new_task(current_entry_path));
             if import_q.len() >= 1000 {

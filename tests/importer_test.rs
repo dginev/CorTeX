@@ -1,3 +1,9 @@
+// Copyright 2015 Deyan Ginev. See the LICENSE
+// file at the top-level directory of this distribution.
+//
+// Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
+// This file may not be copied, modified, or distributed
+// except according to those terms.
 extern crate cortex;
 use cortex::importer::*;
 use cortex::backend::{Corpus,Backend};
@@ -27,15 +33,15 @@ fn assert_dirs(dirs : Vec<&str>) -> Result<(),std::io::Error> {
 
 #[test]
 fn can_import_simple() {
-  let default_backend = Backend::testdb();
+  let test_backend = Backend::testdb();
   let importer = Importer {
-    corpus: default_backend.add_corpus(
+    corpus: test_backend.add_corpus(
         Corpus {
           id: None,
           path : "tests/data/".to_string(),
           name : "simple import test".to_string(),
           complex : false }).unwrap(),
-    backend: default_backend };
+    backend: test_backend };
   
   println!("-- Testing simple import");
   assert_eq!( importer.process(), Ok(()) );
@@ -43,9 +49,9 @@ fn can_import_simple() {
 
 #[test]
 fn can_import_complex() {
-  let default_backend = Backend::testdb();
+  let test_backend = Backend::testdb();
   let importer = Importer {
-    corpus: default_backend.add_corpus(
+    corpus: test_backend.add_corpus(
       Corpus {
         id: None,
         path : "tests/data/".to_string(),
@@ -58,7 +64,7 @@ fn can_import_complex() {
   assert_eq!( importer.process(), Ok(()) );
 
   let repeat_importer = Importer {
-    corpus: default_backend.add_corpus(
+    corpus: test_backend.add_corpus(
       Corpus {
         id: None,
         path : "tests/data/".to_string(),
