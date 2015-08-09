@@ -15,9 +15,12 @@ use std::path::PathBuf;
 use std::fs;
 use std::io::Error;
 // use std::fs::File;
-use backend::{Task, Corpus, Backend};
+use backend::{Task, TaskStatus, Corpus, Backend};
 
 // Only initialize auxiliary resources once and keep them in a Importer struct
+
+/// Given a corpus specification, the Importer traverses the filesystem and records each found entry
+/// in the Task store, as a NoProblem Task for the "import" service
 pub struct Importer {
   pub corpus : Corpus,
   pub backend : Backend
@@ -220,8 +223,9 @@ impl Importer {
     Ok(())
   }
 
+  /// Create a new NoProblem task for the "import" service and the Importer-specified corpus
   pub fn new_task(&self, entry : String) -> Task {
-    Task {id: None, entry : entry, status : -5, corpusid : self.corpus.id.unwrap(), serviceid: 1}
+    Task {id: None, entry : entry, status : TaskStatus::NoProblem.raw(), corpusid : self.corpus.id.unwrap(), serviceid: 1}
   }
 
   pub fn process(&self) -> Result<(),()> {

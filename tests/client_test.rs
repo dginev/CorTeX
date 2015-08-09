@@ -12,7 +12,7 @@ fn mock_round_trip() {
   // Initialize a corpus, import a single task, and enable a service on it
   let test_backend = Backend::testdb();
   assert!(test_backend.setup_task_tables().is_ok());
-
+  
   // Start up a client
 
   // Start up an echo worker
