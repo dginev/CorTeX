@@ -9,121 +9,8 @@ extern crate rustc_serialize;
 
 use postgres::{Connection, SslMode};
 use postgres::error::Error;
-use rustc_serialize::json::{Json, ToJson};
-use std::collections::BTreeMap;
 use std::clone::Clone;
-// Some useful data structures:
-
-// Tasks
-use std::fmt;
-pub struct Task {
-  pub id : Option<i64>,
-  pub entry: String,
-  pub serviceid: i32,
-  pub corpusid: i32,
-  pub status: i32
-}
-impl fmt::Display for Task {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // The `f` value implements the `Write` trait, which is what the
-        // write! macro is expecting. Note that this formatting ignores the
-        // various flags provided to format strings.
-        write!(f, "(entry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n", self.entry, self.serviceid, self.corpusid, self.status)
-    }
-}
-impl fmt::Debug for Task {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // The `f` value implements the `Write` trait, which is what the
-        // write! macro is expecting. Note that this formatting ignores the
-        // various flags provided to format strings.
-        write!(f, "(entry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n", self.entry, self.serviceid, self.corpusid, self.status)
-    }
-}
-// Task Reports (completed tasks)
-pub struct TaskReport {
-  task : Task,
-  status : TaskStatus,
-  messages : Vec<TaskMessage>
-}
-pub struct TaskMessage {
-    text : String
-}
-pub enum TaskStatus {
-  NoProblem,
-  Warning,
-  Error,
-  Fatal,
-  TODO,
-  Blocked(i32),
-  Queued(i32)
-}
-impl TaskStatus {
-  pub fn raw(&self) -> i32 {
-    match self {
-      &TaskStatus::NoProblem => -1,
-      &TaskStatus::Warning => -2,
-      &TaskStatus::Error => -3,
-      &TaskStatus::Fatal => -4,
-      &TaskStatus::TODO => -5,
-      &TaskStatus::Blocked(x) => x,
-      &TaskStatus::Queued(x) => x
-    }
-  }
-  pub fn from_raw(num : i32) -> Self {
-    match num {
-      -1 => TaskStatus::NoProblem,
-      -2 => TaskStatus::Warning, 
-      -3 => TaskStatus::Error,
-      -4 => TaskStatus::Fatal,
-      -5 => TaskStatus::TODO,
-      num if num < -5 => TaskStatus::Blocked(num.clone()),
-      _ => TaskStatus::Queued(num.clone())
-    }
-  }
-}
-// Corpora
-#[derive(RustcDecodable, RustcEncodable)]
-pub struct Corpus {
-  pub id : Option<i32>,
-  pub name : String,
-  pub path : String,
-  pub complex : bool
-}
-impl ToJson for Corpus {
-    fn to_json(&self) -> Json {
-        let mut map = BTreeMap::new();
-        map.insert("id".to_string(), self.id.to_json());
-        map.insert("path".to_string(), self.path.to_json());
-        map.insert("name".to_string(), self.name.to_json());
-        map.insert("complex".to_string(), self.complex.to_json());
-        Json::Object(map)
-    }
-}
-impl Clone for Corpus {
-  fn clone(&self) -> Self {
-    Corpus {
-      id : self.id.clone(),
-      name : self.name.clone(),
-      path : self.path.clone(),
-      complex : self.complex.clone()
-    }
-  }
-}
-// Services
-pub struct Service {
-  pub id : Option<i32>,
-  pub name : String,
-  pub version : f32,
-  // pub url : String,
-  pub inputformat : String,
-  pub outputformat : String,
-  // pub xpath : String,
-  pub resource : String,
-  pub inputconverter : String,
-  pub complex : bool, 
-  // pub type : i32,
-  pub entrysetup : i32,
-}
+use data::*;
 
 // Only initialize auxiliary resources once and keep them in a Backend struct
 pub struct Backend {
@@ -164,34 +51,29 @@ impl Backend {
     trans.execute("DROP TABLE IF EXISTS corpora;", &[]).unwrap();
     trans.execute("CREATE TABLE corpora (
       corpusid SERIAL PRIMARY KEY,
-      path varchar(200),
-      name varchar(200),
-      complex boolean
+      path varchar(200) NOT NULL,
+      name varchar(200) NOT NULL,
+      complex boolean NOT NULL
     );", &[]).unwrap();
     trans.execute("create index corpusnameidx on corpora(name);", &[]).unwrap();
     // Services
     trans.execute("DROP TABLE IF EXISTS services;", &[]).unwrap();
     trans.execute("CREATE TABLE services (
-      serviceid BIGSERIAL PRIMARY KEY,
-      name varchar(200),
-      version varchar(50) NOT NULL,
-      iid varchar(250) NOT NULL,
-      url varchar(2000),
+      serviceid SERIAL PRIMARY KEY,
+      name varchar(200) NOT NULL,
+      version real NOT NULL,
       inputformat varchar(20) NOT NULL,
       outputformat varchar(20) NOT NULL,
-      xpath varchar(2000),
-      resource varchar(50),
       inputconverter varchar(200),
-      type integer NOT NULL,
-      entrysetup integer NOT NULL,
-      UNIQUE(iid,name)
+      complex boolean NOT NULL,
+      UNIQUE(name,version)
     );", &[]).unwrap();
     trans.execute("create index servicenameidx on services(name);", &[]).unwrap();
-    trans.execute("create index serviceiididx on services(iid);", &[]).unwrap();
-    trans.execute("INSERT INTO services (name,version,iid,type,inputformat,outputformat,entrysetup)
-               values('import',0.1,'import_v0_1',2,'tex','tex',1);", &[]).unwrap();
-    trans.execute("INSERT INTO services (name,version,iid,type,inputformat,outputformat,entrysetup)
-           values('init',0.1,'init_v0_1',2,'tex','tex',1);", &[]).unwrap();
+    // trans.execute("create index serviceiididx on services(iid);", &[]).unwrap();
+    trans.execute("INSERT INTO services (name, version, inputformat,outputformat,complex)
+               values('import',0.1, 'tex','tex', true);", &[]).unwrap();
+    trans.execute("INSERT INTO services (name, version, inputformat,outputformat,complex)
+           values('init',0.1, 'tex','tex', true);", &[]).unwrap();
 
     // Dependency Tables
     trans.execute("DROP TABLE IF EXISTS dependencies;", &[]).unwrap();
@@ -283,6 +165,21 @@ impl Backend {
     }
   }
 
+  pub fn sync<D: CortexORM + Clone>(&self, d: &D) -> Result<D, Error> {
+    let synced = match d.get_id() {
+      Some(_) => {
+        try!(d.select_by_id(&self.connection))
+      },
+      None => {
+        try!(d.select_by_key(&self.connection))
+      }
+    };
+    match synced {
+      Some(synced_d) => Ok(synced_d),
+      None => Ok(d.clone())
+    }
+  }
+
   pub fn delete_corpus(&self, c: &Corpus) -> Result<(),Error> {
     let c_checked = try!(self.sync_corpus(&c));
     match c_checked.id {
@@ -303,10 +200,42 @@ impl Backend {
         try!(self.delete_corpus(&c_checked));
       },
       None => {} // New, we can add it safely
-    }
+    };
     // Add Corpus to the DB:
     try!(self.connection.execute("INSERT INTO corpora (name, path, complex) values($1, $2, $3)", &[&c_checked.name, &c_checked.path, &c_checked.complex]));
     let c_final = try!(self.sync_corpus(&c));
     Ok(c_final)
+  }
+
+  pub fn add_service(&self, s: Service) -> Result<Service, Error> {
+    let s_checked = try!(self.sync(&s));
+    match s_checked.id {
+      Some(_) => {
+        // If this service existed - delete any remnants of it
+        // try!(self.delete_service(&s_checked));
+      },
+      None => {} // New, we can add it safely
+    };
+    // Add Service to the DB:
+    try!(self.connection.execute("INSERT INTO services (name, version, inputformat, outputformat, inputconverter, complex) values($1, $2, $3, $4, $5, $6)",
+         &[&s_checked.name, &s_checked.version, &s_checked.inputformat, &s_checked.outputformat, &s_checked.inputconverter, &s_checked.complex]));
+    let s_final = try!(self.sync(&s));
+    Ok(s_final)
+  }
+
+  pub fn add_task(&self, t: Task) -> Result<Task, Error> {
+    let t_checked = try!(self.sync(&t));
+    match t_checked.id {
+      Some(_) => {
+        // If this service existed - delete any remnants of it
+        // try!(self.delete_service(&t_checked));
+      },
+      None => {} // New, we can add it safely
+    }
+    // Add Service to the DB:
+    try!(self.connection.execute("INSERT INTO tasks (entry, serviceid, corpusid, status) values($1, $2, $3, $4)",
+         &[&t_checked.entry, &t_checked.serviceid, &t_checked.corpusid, &t_checked.status]));
+    let t_final = try!(self.sync(&t));
+    Ok(t_final)
   }
 }

@@ -15,7 +15,8 @@ use std::path::PathBuf;
 use std::fs;
 use std::io::Error;
 // use std::fs::File;
-use backend::{Task, TaskStatus, Corpus, Backend};
+use backend::Backend;
+use data::{Task, TaskStatus, Corpus};
 
 // Only initialize auxiliary resources once and keep them in a Importer struct
 

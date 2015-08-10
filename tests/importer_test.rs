@@ -6,7 +6,9 @@
 // except according to those terms.
 extern crate cortex;
 use cortex::importer::*;
-use cortex::backend::{Corpus,Backend};
+use cortex::backend::Backend;
+use cortex::data::Corpus;
+
 use std::vec::Vec;
 use std::fs;
 use std::io::{Error};
