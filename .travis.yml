@@ -25,9 +25,12 @@ script:
   - travis-cargo bench
   - travis-cargo doc
 after_success:
-  # upload the documentation (automatically only actually runs on the master branch, not individual PRs)
-  - travis-cargo doc-upload
   - travis-cargo coveralls --no-sudo
+  # upload the documentation (automatically only actually runs on the master branch, not individual PRs)
+  - | 
+      export TRAVIS_BRANCH=master &&
+      export TRAVIS_PULL_REQUEST=false &&
+      travis-cargo doc-upload
 
 env:
   global:

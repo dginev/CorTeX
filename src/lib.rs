@@ -8,6 +8,10 @@
 //! # The CorTeX library in Rust
 //! The original library can be found at https://github.com/dginev/CorTeX
 
+
+#![doc(html_root_url = "https://dginev.github.io/rust-cortex/")]
+#![doc(html_logo_url = "https://raw.githubusercontent.com/dginev/rust-cortex/master/public/img/logo.jpg")]
+
 extern crate glob;
 extern crate rustlibxml;
 extern crate zmq;
