@@ -15,6 +15,8 @@ use postgres::error::Error;
 pub trait CortexORM {
   fn select_by_id<'a>(&'a self, connection: &'a Connection) -> Result<Option<Self>, Error>;
   fn select_by_key<'a>(&'a self, connection : &'a Connection) -> Result<Option<Self>,Error>;
+  fn insert(&self, connection: &Connection) -> Result<(),Error>;
+  fn delete(&self, connection: &Connection) -> Result<(),Error>;
   fn from_row(row : Row) -> Self;
   fn get_id(&self) -> Option<i32>;
 }
@@ -72,6 +74,13 @@ impl CortexORM for Task {
     } else {
       Ok(None)
     }
+  }
+  fn insert(&self, connection : &Connection) -> Result<(), Error> {
+    try!(connection.execute("INSERT INTO tasks (entry, serviceid, corpusid, status) values($1, $2, $3, $4)", &[&self.entry, &self.serviceid, &self.corpusid, &self.status]));
+    Ok(()) }
+  fn delete(&self, connection: &Connection) -> Result<(),Error> {
+    try!(connection.execute("DELETE FROM tasks WHERE taskid = $1", &[&self.id])); 
+    Ok(()) 
   }
   fn from_row(row : Row) -> Self {
     Task {
@@ -187,6 +196,14 @@ impl CortexORM for Corpus {
       Ok(None)
     }
   }
+  fn insert(&self, connection : &Connection) -> Result<(), Error> {
+    try!(connection.execute("INSERT INTO corpora (name, path, complex) values($1, $2, $3)", &[&self.name, &self.path, &self.complex]));
+    Ok(()) }
+  fn delete(&self, connection: &Connection) -> Result<(),Error> {
+    try!(connection.execute("DELETE FROM tasks WHERE corpusid = $1", &[&self.id])); 
+    try!(connection.execute("DELETE FROM corpora WHERE corpusid = $1", &[&self.id])); 
+    Ok(()) 
+  }
   fn from_row(row : Row) -> Self {
     Corpus {
       id : Some(row.get(0)),
@@ -243,6 +260,15 @@ impl CortexORM for Service {
     } else {
       Ok(None)
     }
+  }
+  fn insert(&self, connection : &Connection) -> Result<(), Error> {
+    try!(connection.execute("INSERT INTO services (name, version, inputformat, outputformat, inputconverter, complex) values($1, $2, $3, $4, $5, $6)",
+       &[&self.name, &self.version, &self.inputformat, &self.outputformat, &self.inputconverter, &self.complex]));
+    Ok(()) }
+  fn delete(&self, connection: &Connection) -> Result<(),Error> {
+    try!(connection.execute("DELETE FROM tasks WHERE serviceid = $1", &[&self.id])); 
+    try!(connection.execute("DELETE FROM services WHERE serviceid = $1", &[&self.id])); 
+    Ok(()) 
   }
   fn from_row(row : Row) -> Self {
     Service {

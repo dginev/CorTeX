@@ -180,6 +180,28 @@ impl Backend {
     }
   }
 
+  pub fn delete<D: CortexORM + Clone>(&self, d: &D) -> Result<(), Error> {
+    let d_checked = try!(self.sync(d));
+    match d_checked.get_id() {
+      Some(_) => d.delete(&self.connection),
+      None => Ok(()) // No ID means we don't really know what to delete.
+    }
+  }
+  pub fn add<D: CortexORM + Clone>(&self, d: &D) -> Result<D, Error> {
+    let d_checked = try!(self.sync(d));
+    match d_checked.get_id() {
+      Some(_) => {
+        // If this data item existed - delete any remnants of it
+        try!(self.delete(&d_checked));
+      },
+      None => {} // New, we can add it safely
+    };
+    // Add data item to the DB:
+    try!(d.insert(&self.connection));
+    let d_final = try!(self.sync(d));
+    Ok(d_final)
+  }
+
   pub fn delete_corpus(&self, c: &Corpus) -> Result<(),Error> {
     let c_checked = try!(self.sync_corpus(&c));
     match c_checked.id {
