@@ -37,7 +37,7 @@ fn assert_dirs(dirs : Vec<&str>) -> Result<(),std::io::Error> {
 fn can_import_simple() {
   let test_backend = Backend::testdb();
   let importer = Importer {
-    corpus: test_backend.add_corpus(
+    corpus: test_backend.add(
         Corpus {
           id: None,
           path : "tests/data/".to_string(),
@@ -53,7 +53,7 @@ fn can_import_simple() {
 fn can_import_complex() {
   let test_backend = Backend::testdb();
   let importer = Importer {
-    corpus: test_backend.add_corpus(
+    corpus: test_backend.add(
       Corpus {
         id: None,
         path : "tests/data/".to_string(),
@@ -66,7 +66,7 @@ fn can_import_complex() {
   assert_eq!( importer.process(), Ok(()) );
 
   let repeat_importer = Importer {
-    corpus: test_backend.add_corpus(
+    corpus: test_backend.add(
       Corpus {
         id: None,
         path : "tests/data/".to_string(),

@@ -14,14 +14,14 @@ fn mock_round_trip() {
   let test_backend = Backend::testdb();
   assert!(test_backend.setup_task_tables().is_ok());
   
-  let mock_corpus = test_backend.add_corpus(
+  let mock_corpus = test_backend.add(
     Corpus {
       id : None,
       name : "mock round-trip corpus".to_string(),
       path : "tests/data/".to_string(),
       complex : true,
     }).unwrap();
-  let echo_service = test_backend.add_service(
+  let echo_service = test_backend.add(
     Service { 
       id : None,
       name : "echo service".to_string(),
@@ -31,7 +31,7 @@ fn mock_round_trip() {
       inputconverter : Some("import".to_string()),
       complex : true
     }).unwrap();
-  let import_task = test_backend.add_task(
+  let import_task = test_backend.add(
     Task {
       id : None,
       entry : "tests/data/1508.01222/1508.01222.zip".to_string(),
@@ -39,7 +39,7 @@ fn mock_round_trip() {
       corpusid : mock_corpus.id.unwrap().clone(),
       status : TaskStatus::NoProblem.raw()
     }).unwrap();
-  let echo_task = test_backend.add_task(
+  let echo_task = test_backend.add(
     Task {
       id : None,
       entry : "tests/data/1508.01222/1508.01222.zip".to_string(),
@@ -48,8 +48,7 @@ fn mock_round_trip() {
       status : TaskStatus::TODO.raw()
     }).unwrap();
   // Start up a client
-
-
+  
   // Start up an echo worker
 
   // Check round-trip success

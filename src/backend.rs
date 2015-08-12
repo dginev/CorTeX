@@ -130,41 +130,6 @@ impl Backend {
     Ok(())
   }
 
-  pub fn sync_corpus(&self, c: &Corpus) -> Result<Corpus, Error> {
-    match c.id {
-      Some(id) => {
-        let stmt = try!(self.connection.prepare("SELECT corpusid,name,path,complex FROM corpora WHERE corpusid = $1"));
-        let rows = stmt.query(&[&id]).unwrap();
-        if rows.len() > 0 {
-          let row = rows.get(0);
-          Ok(Corpus {
-            id : Some(row.get(0)),
-            name : row.get(1),
-            path : row.get(2),
-            complex : row.get(3)
-          })
-        } else {
-          Ok(c.clone())
-        }
-      },
-      None => {
-        let stmt = try!(self.connection.prepare("SELECT corpusid,name,path,complex FROM corpora WHERE name = $1"));
-        let rows = stmt.query(&[&c.name]).unwrap();
-        if rows.len() > 0 {
-          let row = rows.get(0);
-          Ok(Corpus {
-            id : Some(row.get(0)),
-            name : row.get(1),
-            path : row.get(2),
-            complex : row.get(3)
-          })
-        } else {
-          Ok(c.clone())
-        }
-      }
-    }
-  }
-
   pub fn sync<D: CortexORM + Clone>(&self, d: &D) -> Result<D, Error> {
     let synced = match d.get_id() {
       Some(_) => {
@@ -187,8 +152,8 @@ impl Backend {
       None => Ok(()) // No ID means we don't really know what to delete.
     }
   }
-  pub fn add<D: CortexORM + Clone>(&self, d: &D) -> Result<D, Error> {
-    let d_checked = try!(self.sync(d));
+  pub fn add<D: CortexORM + Clone>(&self, d: D) -> Result<D, Error> {
+    let d_checked = try!(self.sync(&d));
     match d_checked.get_id() {
       Some(_) => {
         // If this data item existed - delete any remnants of it
@@ -198,66 +163,7 @@ impl Backend {
     };
     // Add data item to the DB:
     try!(d.insert(&self.connection));
-    let d_final = try!(self.sync(d));
+    let d_final = try!(self.sync(&d));
     Ok(d_final)
-  }
-
-  pub fn delete_corpus(&self, c: &Corpus) -> Result<(),Error> {
-    let c_checked = try!(self.sync_corpus(&c));
-    match c_checked.id {
-      Some(id) => {
-        try!(self.connection.execute("DELETE FROM tasks WHERE corpusid = $1", &[&id])); 
-        try!(self.connection.execute("DELETE FROM corpora WHERE corpusid = $1", &[&id])); 
-      },
-      None => {}
-    }
-    Ok(())
-  }
-
-  pub fn add_corpus(&self, c: Corpus) -> Result<Corpus, Error> {
-    let c_checked = try!(self.sync_corpus(&c));
-    match c_checked.id {
-      Some(_) => {
-        // If this corpus existed - delete any remnants of it
-        try!(self.delete_corpus(&c_checked));
-      },
-      None => {} // New, we can add it safely
-    };
-    // Add Corpus to the DB:
-    try!(self.connection.execute("INSERT INTO corpora (name, path, complex) values($1, $2, $3)", &[&c_checked.name, &c_checked.path, &c_checked.complex]));
-    let c_final = try!(self.sync_corpus(&c));
-    Ok(c_final)
-  }
-
-  pub fn add_service(&self, s: Service) -> Result<Service, Error> {
-    let s_checked = try!(self.sync(&s));
-    match s_checked.id {
-      Some(_) => {
-        // If this service existed - delete any remnants of it
-        // try!(self.delete_service(&s_checked));
-      },
-      None => {} // New, we can add it safely
-    };
-    // Add Service to the DB:
-    try!(self.connection.execute("INSERT INTO services (name, version, inputformat, outputformat, inputconverter, complex) values($1, $2, $3, $4, $5, $6)",
-         &[&s_checked.name, &s_checked.version, &s_checked.inputformat, &s_checked.outputformat, &s_checked.inputconverter, &s_checked.complex]));
-    let s_final = try!(self.sync(&s));
-    Ok(s_final)
-  }
-
-  pub fn add_task(&self, t: Task) -> Result<Task, Error> {
-    let t_checked = try!(self.sync(&t));
-    match t_checked.id {
-      Some(_) => {
-        // If this service existed - delete any remnants of it
-        // try!(self.delete_service(&t_checked));
-      },
-      None => {} // New, we can add it safely
-    }
-    // Add Service to the DB:
-    try!(self.connection.execute("INSERT INTO tasks (entry, serviceid, corpusid, status) values($1, $2, $3, $4)",
-         &[&t_checked.entry, &t_checked.serviceid, &t_checked.corpusid, &t_checked.status]));
-    let t_final = try!(self.sync(&t));
-    Ok(t_final)
   }
 }

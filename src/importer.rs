@@ -30,7 +30,7 @@ impl Default for Importer {
   fn default() -> Importer {
     let default_backend = Backend::default();
     Importer {
-      corpus : default_backend.add_corpus(
+      corpus : default_backend.add(
         Corpus {
           id: None,
           path : ".".to_string(),

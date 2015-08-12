@@ -11,7 +11,8 @@ use postgres::rows::{Row};
 use postgres::error::Error;
 
 // The CorTeX data structures and traits:
-// Traits
+
+/// A minimalistic ORM trait for CorTeX data items
 pub trait CortexORM {
   fn select_by_id<'a>(&'a self, connection: &'a Connection) -> Result<Option<Self>, Error>;
   fn select_by_key<'a>(&'a self, connection : &'a Connection) -> Result<Option<Self>,Error>;
@@ -66,8 +67,8 @@ impl CortexORM for Task {
     }
   }
   fn select_by_key<'a>(&'a self, connection : &'a Connection) -> Result<Option<Task>,Error> {
-    let stmt = try!(connection.prepare("SELECT taskid,entry,serviceid,corpusid,status FROM tasks WHERE entry = $1"));
-    let rows = try!(stmt.query(&[&self.entry]));
+    let stmt = try!(connection.prepare("SELECT taskid,entry,serviceid,corpusid,status FROM tasks WHERE entry = $1 and serviceid = $2 and corpusid = $3"));
+    let rows = try!(stmt.query(&[&self.entry, &self.serviceid, &self.corpusid]));
     if rows.len() > 0 {
       let row = rows.get(0);
       Ok(Some(Task::from_row(row)))
@@ -145,7 +146,7 @@ impl TaskStatus {
     }
   }
 }
-// Corpora
+/// A CorTeX "Corpus" is a minimal description of a document collection. It is defined by a name, path and simple/complex file system setup.
 #[derive(RustcDecodable, RustcEncodable)]
 pub struct Corpus {
   pub id : Option<i32>,
