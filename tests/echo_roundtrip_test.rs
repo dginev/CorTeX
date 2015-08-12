@@ -7,7 +7,9 @@
 extern crate cortex;
 use cortex::backend::Backend;
 use cortex::data::{Corpus,Service, Task, TaskStatus};
-
+use cortex::dispatcher::{Dispatcher};
+use cortex::receiver::{Receiver};
+use std::thread;
 #[test]
 fn mock_round_trip() {
   // Initialize a corpus, import a single task, and enable a service on it
@@ -47,9 +49,22 @@ fn mock_round_trip() {
       corpusid : mock_corpus.id.unwrap().clone(),
       status : TaskStatus::TODO.raw()
     }).unwrap();
-  // Start up a client
-  
-  // Start up an echo worker
+  // Start up a client/receiver pair
+
+  let client_thread = thread::spawn(move || {
+    // some work here
+    let dispatcher = Dispatcher::default();
+    dispatcher.start();
+  });
+  let receiver_thread = thread::spawn(move || {
+    let receiver = Receiver::default();
+    receiver.start();  
+  });
+  // // Start up an echo worker
+  // let worker = EchoWorker::new();
+  // // Perform echo task:
+  // worker.run();
 
   // Check round-trip success
+  
 }
