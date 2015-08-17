@@ -42,7 +42,9 @@ impl Ventilator {
   pub fn start(&self) -> Result <(),Error>{
     // We'll use some local memoization:
     let mut services: HashMap<String, Option<Service>> = HashMap::new();
-
+    let mut queues : HashMap<String, Vec<Task>> = HashMap::new();
+    // Assuming this is the only And tidy up the postgres tasks:
+    self.backend.clear_limbo_tasks().unwrap();
     // Ok, let's bind to a port and start broadcasting
     let mut context = zmq::Context::new();
     let mut source = context.socket(zmq::REP).unwrap();
@@ -51,23 +53,29 @@ impl Ventilator {
     assert!(source.bind(&address).is_ok());
 
     let mut msg = zmq::Message::new().unwrap();
-    let mut request_id = 0;
     loop {
       source.recv(&mut msg, 0).unwrap();
       let service_name = msg.as_str().unwrap().to_string();
-      println!("Task requested for service: {}", service_name);
+      println!("Task requested for service: {}", service_name.clone());
       
       let service_record = services.entry(service_name.clone()).or_insert(
-        Service::from_name(&self.backend.connection, service_name).unwrap()).clone();
+        Service::from_name(&self.backend.connection, service_name.clone()).unwrap()).clone();
 
       match service_record {
         None => {},
         Some(service) => {
-          let task_queue : Vec<Task> = self.backend.fetch_tasks(service, self.queue_size).unwrap();
-          request_id += 1;
-          source.send_str(&request_id.to_string(), 0).unwrap();
+          if !queues.contains_key(&service_name) {
+            queues.insert(service_name.clone(), Vec::new()); 
+          }
+          let mut task_queue : &mut Vec<Task> = queues.get_mut(&service_name).unwrap();
+          if task_queue.is_empty() {
+            task_queue.extend(self.backend.fetch_tasks(service, self.queue_size).unwrap()); }
+          match task_queue.pop() {
+            Some(current_task) => source.send_str(&current_task.id.unwrap().to_string(), 0).unwrap(),
+            None => source.send_str("empty", 0).unwrap()
+          };
         }
-      }
+      };
     }
   }
 }
@@ -85,8 +93,6 @@ impl Sink {
     let mut msg = zmq::Message::new().unwrap();
     // Wait for start of batch
     println!("receiver ready to receive.");
-    receiver.recv(&mut msg, 0).unwrap();
-    println!("receiver init: {}", msg.as_str().unwrap());
     // We got contacted, let's receive for real:
     loop {
       receiver.recv(&mut msg, 0).unwrap();

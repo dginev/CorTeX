@@ -33,7 +33,7 @@ fn mock_round_trip() {
       inputconverter : Some("import".to_string()),
       complex : true
     }).unwrap();
-  let import_task = test_backend.add(
+  test_backend.add(
     Task {
       id : None,
       entry : "tests/data/1508.01222/1508.01222.zip".to_string(),
@@ -41,7 +41,7 @@ fn mock_round_trip() {
       corpusid : mock_corpus.id.unwrap().clone(),
       status : TaskStatus::NoProblem.raw()
     }).unwrap();
-  let echo_task = test_backend.add(
+  test_backend.add(
     Task {
       id : None,
       entry : "tests/data/1508.01222/1508.01222.zip".to_string(),
@@ -51,22 +51,22 @@ fn mock_round_trip() {
     }).unwrap();
   
   // Start up a ventilator/sink pair
-  let ventilator_thread = thread::spawn(move || {
+  thread::spawn(move || {
     // some work here
     let ventilator = Ventilator {
       port : 5555,
       queue_size : 100,
       backend : Backend::testdb()
     };
-    ventilator.start();
+    assert!(ventilator.start().is_ok());
   });
-  let sink_thread = thread::spawn(move || {
+  thread::spawn(move || {
     let sink = Sink {
       port : 5556,
       queue_size : 100,
       backend : Backend::testdb()
     };
-    sink.start();  
+    assert!(sink.start().is_ok());  
   });
   // Start up an echo worker
   let worker = EchoWorker::default();

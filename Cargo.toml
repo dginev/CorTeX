@@ -19,10 +19,12 @@ git = "https://github.com/dginev/libarchive-sys.git"
 [dependencies.nickel]
 git = "https://github.com/nickel-org/nickel.rs.git"
 
+[dependencies.zmq]
+git = "https://github.com/dginev/rust-zmq.git"
+
 [dependencies]
 libc = "~0.1"
 regex = "0.1.8"
-zmq = "~0.7"
 rustc-serialize = "0.3"
 postgres = "0.9"
 sys-info = "*"

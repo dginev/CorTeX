@@ -171,21 +171,28 @@ impl Backend {
   }
 
   pub fn fetch_tasks(&self, service: Service, limit : usize) -> Result<Vec<Task>, Error> {
+    match service.id { 
+      Some(_) => {}
+      None => {return Ok(Vec::new())}
+    };
     let mut rng = thread_rng();
-    let mark: u32 = rng.gen();
-    let mut tasks = Vec::new();
+    let mark: u16 = rng.gen();
 
-    self.connection.execute("UPDATE tasks SET status=$1 WHERE status=-5 AND serviceid=$2 LIMIT $3",&[&(mark as i32), &service.id, &(limit as u32)]);
-    let stmt = try!(self.connection.prepare("SELECT taskid,serviceid,entry from tasks where status=$1"));
-    let rows = try!(stmt.query(&[&(mark as i32)]));
-    for row in rows {
-      tasks.push(Task::from_row(row))
-    }
-    Ok(tasks)
+    let stmt = try!(self.connection.prepare(
+      "UPDATE tasks t SET status = $1 FROM (
+          SELECT * FROM tasks WHERE serviceid = $2 and status = $3
+            and pg_try_advisory_xact_lock(taskid)
+          LIMIT $4
+          FOR UPDATE
+        ) subt
+        WHERE t.taskid = subt.taskid
+        RETURNING t.taskid,t.entry,t.serviceid,t.corpusid,t.status;"));
+    let rows = try!(stmt.query(&[&(mark as i32), &service.id.unwrap(), &TaskStatus::TODO.raw(), &(limit as i64)]));
+    Ok(rows.iter().map(|row| Task::from_row(row)).collect::<Vec<_>>())
   }
 
   pub fn clear_limbo_tasks(&self) -> Result<(), Error> {
-    try!(self.connection.execute("UPDATE tasks SET status=-5 WHERE status>0", &[]));
+    try!(self.connection.execute("UPDATE tasks SET status=$1 WHERE status > $2", &[&TaskStatus::TODO.raw(), &TaskStatus::NoProblem.raw(),]));
     Ok(())
   }
 }
