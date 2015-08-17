@@ -5,7 +5,6 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 use sys_info::*;
-use std::io::Error;
 use std::collections::HashMap;
 
 

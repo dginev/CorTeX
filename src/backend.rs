@@ -166,4 +166,13 @@ impl Backend {
     let d_final = try!(self.sync(&d));
     Ok(d_final)
   }
+
+  pub fn fetch_tasks(&self, service: String, limit : usize) -> Result<Vec<Task>, Error> {
+    Ok(Vec::new())
+  }
+
+  pub fn clear_limbo_tasks(&self) -> Result<(), Error> {
+    try!(self.connection.execute("UPDATE tasks SET status=-5 WHERE status>0", &[]));
+    Ok(())
+  }
 }

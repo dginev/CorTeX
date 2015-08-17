@@ -5,15 +5,20 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 extern crate zmq;
+
 use zmq::Error;
+use backend::{Backend};
+use data::Task;
 
 pub struct Ventilator {
   pub port : usize,
   pub queue_size : usize,
+  pub backend : Backend
 }
 pub struct Sink {
   pub port : usize,
   pub queue_size : usize,
+  pub backend : Backend
 }
 
 impl Default for Ventilator {
@@ -21,12 +26,14 @@ impl Default for Ventilator {
     Ventilator {
       port : 5555,
       queue_size : 100,
+      backend : Backend::default()
     } } }
 impl Default for Sink {
   fn default() -> Sink {
     Sink {
       port : 5556,
       queue_size : 100,
+      backend : Backend::default()
     } } }
 
 impl Ventilator {
@@ -42,7 +49,9 @@ impl Ventilator {
     let mut request_id = 0;
     loop {
         source.recv(&mut msg, 0).unwrap();
-        println!("Task requested: {}", msg.as_str().unwrap());
+        let service = msg.as_str().unwrap();
+        println!("Task requested for service: {}", service);
+        let task_queue : Vec<Task> = self.backend.fetch_tasks(service.to_string(), self.queue_size).unwrap();
         request_id += 1;
         source.send_str(&request_id.to_string(), 0).unwrap();
     }

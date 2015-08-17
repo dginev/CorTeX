@@ -26,7 +26,7 @@ fn mock_round_trip() {
   let echo_service = test_backend.add(
     Service { 
       id : None,
-      name : "echo service".to_string(),
+      name : "echo_service".to_string(),
       version : 0.1,
       inputformat : "tex".to_string(),
       outputformat : "tex".to_string(),
@@ -53,11 +53,19 @@ fn mock_round_trip() {
   // Start up a ventilator/sink pair
   let ventilator_thread = thread::spawn(move || {
     // some work here
-    let ventilator = Ventilator::default();
+    let ventilator = Ventilator {
+      port : 5555,
+      queue_size : 100,
+      backend : Backend::testdb()
+    };
     ventilator.start();
   });
   let sink_thread = thread::spawn(move || {
-    let sink = Sink::default();
+    let sink = Sink {
+      port : 5556,
+      queue_size : 100,
+      backend : Backend::testdb()
+    };
     sink.start();  
   });
   // Start up an echo worker

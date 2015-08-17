@@ -9,7 +9,7 @@ use zmq::{Error, Message, Context};
 
 pub trait Worker {
   fn work(&self, &Message) -> Message;
-  fn name(&self) -> String;
+  fn service(&self) -> String;
   fn source(&self) -> String;
   fn sink(&self) -> String;
 
@@ -26,7 +26,7 @@ pub trait Worker {
     // Work in perpetuity
     let mut recv_msg = Message::new().unwrap();
     loop {
-      source.send_str(&self.name(), 0).unwrap();
+      source.send_str(&self.service(), 0).unwrap();
       source.recv(&mut recv_msg, 0).unwrap();
       let payload = self.work(&recv_msg);
       sink.send_msg(payload, 0).unwrap();
@@ -45,7 +45,7 @@ pub trait Worker {
   }
 }
 pub struct EchoWorker {
-  pub name : String,
+  pub service : String,
   pub version : f32,
   pub source : String,
   pub sink : String
@@ -53,7 +53,7 @@ pub struct EchoWorker {
 impl Default for EchoWorker {
   fn default() -> EchoWorker {
     EchoWorker {
-      name: "echo_worker".to_string(),
+      service: "echo_service".to_string(),
       version: 0.1,
       source: "tcp://localhost:5555".to_string(),
       sink: "tcp://localhost:5556".to_string()      
@@ -61,7 +61,7 @@ impl Default for EchoWorker {
   }
 }
 impl Worker for EchoWorker {
-  fn name(&self) -> String {self.name.clone()}
+  fn service(&self) -> String {self.service.clone()}
   fn source(&self) -> String {self.source.clone()}
   fn sink(&self) -> String {self.sink.clone()}
 
