@@ -7,8 +7,8 @@
 extern crate cortex;
 use cortex::backend::Backend;
 use cortex::data::{Corpus,Service, Task, TaskStatus};
-use cortex::dispatcher::{Dispatcher};
-use cortex::receiver::{Receiver};
+use cortex::client::{Ventilator,Sink};
+use cortex::worker::{EchoWorker, Worker};
 use std::thread;
 #[test]
 fn mock_round_trip() {
@@ -49,21 +49,21 @@ fn mock_round_trip() {
       corpusid : mock_corpus.id.unwrap().clone(),
       status : TaskStatus::TODO.raw()
     }).unwrap();
-  // Start up a client/receiver pair
-
-  let client_thread = thread::spawn(move || {
+  
+  // Start up a ventilator/sink pair
+  let ventilator_thread = thread::spawn(move || {
     // some work here
-    let dispatcher = Dispatcher::default();
-    dispatcher.start();
+    let ventilator = Ventilator::default();
+    ventilator.start();
   });
-  let receiver_thread = thread::spawn(move || {
-    let receiver = Receiver::default();
-    receiver.start();  
+  let sink_thread = thread::spawn(move || {
+    let sink = Sink::default();
+    sink.start();  
   });
-  // // Start up an echo worker
-  // let worker = EchoWorker::new();
-  // // Perform echo task:
-  // worker.run();
+  // Start up an echo worker
+  let worker = EchoWorker::default();
+  // Perform echo task 100 times:
+  assert!(worker.start(Some(100)).is_ok());
 
   // Check round-trip success
   

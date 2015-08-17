@@ -8,6 +8,8 @@ extern crate cortex;
 extern crate rustlibxml;
 extern crate zmq;
 
+use cortex::backend;
+
 // A dispatcher executable for CorTeX distributed processing with ZMQ
 // Binds REP socket to tcp://*:5555
 
