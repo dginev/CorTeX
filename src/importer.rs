@@ -13,6 +13,7 @@ use Archive::*;
 use std::path::Path;
 use std::path::PathBuf;
 use std::fs;
+use std::env;
 use std::io::Error;
 // use std::fs::File;
 use backend::Backend;
@@ -24,7 +25,8 @@ use data::{Task, TaskStatus, Corpus};
 /// in the Task store, as a NoProblem Task for the "import" service
 pub struct Importer {
   pub corpus : Corpus,
-  pub backend : Backend
+  pub backend : Backend,
+  pub cwd : PathBuf
 }
 impl Default for Importer {
   fn default() -> Importer {
@@ -36,12 +38,16 @@ impl Default for Importer {
           path : ".".to_string(),
           name : "default".to_string(),
           complex : false }).unwrap(),
-      backend : default_backend
+      backend : default_backend,
+      cwd : Importer::cwd()
     }
   }
 }
 
 impl Importer {
+  pub fn cwd() -> PathBuf {
+    env::current_dir().unwrap()
+  }
   pub fn unpack(&self) -> Result<(),()> {
     try!(self.unpack_arxiv_top());
     try!(self.unpack_arxiv_months());
@@ -226,7 +232,14 @@ impl Importer {
 
   /// Create a new NoProblem task for the "import" service and the Importer-specified corpus
   pub fn new_task(&self, entry : String) -> Task {
-    Task {id: None, entry : entry, status : TaskStatus::NoProblem.raw(), corpusid : self.corpus.id.unwrap(), serviceid: 1}
+    let abs_entry : String = if Path::new(&entry).is_relative() {
+      let mut new_abs = self.cwd.clone();
+      new_abs.push(&entry);
+      new_abs.to_str().unwrap().to_string()
+    } else {
+      entry.clone()
+    };
+    Task {id: None, entry : abs_entry, status : TaskStatus::NoProblem.raw(), corpusid : self.corpus.id.unwrap(), serviceid: 1}
   }
 
   pub fn process(&self) -> Result<(),()> {

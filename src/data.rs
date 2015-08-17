@@ -6,6 +6,9 @@
 // except according to those terms.
 use rustc_serialize::json::{Json, ToJson};
 use std::collections::BTreeMap;
+use std::fs::File;
+use std::io::Read;
+use std::path::Path;
 use postgres::Connection;
 use postgres::rows::{Row};
 use postgres::error::Error;
@@ -77,16 +80,17 @@ impl CortexORM for Task {
     }
   }
   fn insert(&self, connection : &Connection) -> Result<(), Error> {
-    try!(connection.execute("INSERT INTO tasks (entry, serviceid, corpusid, status) values($1, $2, $3, $4)", &[&self.entry, &self.serviceid, &self.corpusid, &self.status]));
+    try!(connection.execute("INSERT INTO tasks (serviceid, corpusid, status, entry) values($1, $2, $3, $4)", &[&self.serviceid, &self.corpusid, &self.status, &self.entry]));
     Ok(()) }
   fn delete(&self, connection: &Connection) -> Result<(),Error> {
     try!(connection.execute("DELETE FROM tasks WHERE taskid = $1", &[&self.id])); 
     Ok(()) 
   }
-  fn from_row(row : Row) -> Self {
+  fn from_row<'a>(row : Row) -> Self {
+    let fix_width_entry : String = row.get(1);
     Task {
       id : Some(row.get(0)),
-      entry : row.get(1),
+      entry : fix_width_entry.trim_right().to_string(),
       serviceid : row.get(2),
       corpusid : row.get(3),
       status : row.get(4)
@@ -293,5 +297,13 @@ impl Service {
     } else {
       Ok(None)
     }
+  }
+  pub fn prepare_input(&self, task: Task) -> Result<Vec<u8>, Error> {
+    let entry_path = Path::new(&task.entry);
+    let mut file = try!(File::open(entry_path));
+    let mut contents: Vec<u8> = Vec::new();
+    // Returns amount of bytes read and append the result to the buffer
+    try!(file.read_to_end(&mut contents));
+    Ok(contents)
   }
 }

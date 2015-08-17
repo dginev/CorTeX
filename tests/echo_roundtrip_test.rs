@@ -9,6 +9,7 @@ use cortex::backend::Backend;
 use cortex::data::{Corpus,Service, Task, TaskStatus};
 use cortex::client::{Ventilator,Sink};
 use cortex::worker::{EchoWorker, Worker};
+use cortex::importer::Importer;
 use std::thread;
 #[test]
 fn mock_round_trip() {
@@ -33,10 +34,13 @@ fn mock_round_trip() {
       inputconverter : Some("import".to_string()),
       complex : true
     }).unwrap();
+  let mut abs_path = Importer::cwd();
+  abs_path.push("tests/data/1508.01222/1508.01222.zip");
+  let abs_entry = abs_path.to_str().unwrap().to_string();
   test_backend.add(
     Task {
       id : None,
-      entry : "tests/data/1508.01222/1508.01222.zip".to_string(),
+      entry : abs_entry.clone(),
       serviceid : 1, // Import service always has id 1
       corpusid : mock_corpus.id.unwrap().clone(),
       status : TaskStatus::NoProblem.raw()
@@ -44,7 +48,7 @@ fn mock_round_trip() {
   test_backend.add(
     Task {
       id : None,
-      entry : "tests/data/1508.01222/1508.01222.zip".to_string(),
+      entry : abs_entry.clone(),
       serviceid : echo_service.id.unwrap().clone(),
       corpusid : mock_corpus.id.unwrap().clone(),
       status : TaskStatus::TODO.raw()
@@ -72,7 +76,6 @@ fn mock_round_trip() {
   let worker = EchoWorker::default();
   // Perform a single echo task 
   assert!(worker.start(Some(1)).is_ok());
-
   // Check round-trip success
   
 }

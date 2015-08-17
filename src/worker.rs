@@ -6,6 +6,7 @@
 // except according to those terms.
 extern crate zmq;
 use zmq::{Error, Message, Context};
+use std::ops::Deref;
 use std::thread;
 
 pub trait Worker {
@@ -30,8 +31,11 @@ pub trait Worker {
       source.send_str(&self.service(), 0).unwrap();
       source.recv(&mut recv_msg, 0).unwrap();
       match self.work(&recv_msg) {
-        Some(payload) => sink.send_msg(payload, 0).unwrap(),
+        Some(payload) => {
+          sink.send_msg(payload, 0).unwrap();
+        },
         None => {
+          // If there was nothing to do, retry a minute later
           thread::sleep_ms(60000);
           continue 
         }
@@ -41,6 +45,8 @@ pub trait Worker {
       match limit {
         Some(upper_bound) => {
           if work_counter >= upper_bound {
+            // Give enough time to complete last job.
+            thread::sleep_ms(500);
             break;
           }
         },
@@ -72,12 +78,11 @@ impl Worker for EchoWorker {
   fn sink(&self) -> String {self.sink.clone()}
 
   fn work(&self, message : &Message) -> Option<Message> {
-    let payload = message.as_str().unwrap();
+    let payload = message.deref();
     if payload.is_empty() {
       None }
     else {
-      println!("Worker Received: {}", payload);
-      Some(Message::from_slice(payload.as_bytes()).unwrap())
+      Some(Message::from_slice(payload).unwrap())
     }
   }
 }

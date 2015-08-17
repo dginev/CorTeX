@@ -170,7 +170,7 @@ impl Backend {
     Ok(d_final)
   }
 
-  pub fn fetch_tasks(&self, service: Service, limit : usize) -> Result<Vec<Task>, Error> {
+  pub fn fetch_tasks(&self, service: &Service, limit : usize) -> Result<Vec<Task>, Error> {
     match service.id { 
       Some(_) => {}
       None => {return Ok(Vec::new())}

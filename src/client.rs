@@ -10,7 +10,10 @@ use zmq::Error;
 use backend::{Backend};
 use data::{Task, Service};
 
+use std::ops::Deref;
 use std::collections::HashMap;
+// use std::fs::File;
+// use std::io::prelude::*;
 
 pub struct Ventilator {
   pub port : usize,
@@ -69,9 +72,15 @@ impl Ventilator {
           }
           let mut task_queue : &mut Vec<Task> = queues.get_mut(&service_name).unwrap();
           if task_queue.is_empty() {
-            task_queue.extend(self.backend.fetch_tasks(service, self.queue_size).unwrap()); }
+            task_queue.extend(self.backend.fetch_tasks(&service, self.queue_size).unwrap()); }
           match task_queue.pop() {
-            Some(current_task) => source.send_str(&current_task.id.unwrap().to_string(), 0).unwrap(),
+            Some(current_task) => {
+              println!("Preparing input for taskid : {:?}", current_task.id.unwrap());
+              match service.prepare_input(current_task) {
+                Ok(payload) => source.send(&payload, 0).unwrap(),
+                Err(_) => source.send_str("", 0).unwrap() // TODO: smart handling of failures
+              }
+            },
             None => source.send_str("", 0).unwrap()
           };
         }
@@ -93,10 +102,17 @@ impl Sink {
     let mut msg = zmq::Message::new().unwrap();
     // Wait for start of batch
     println!("receiver ready to receive.");
+    let mut sink_count = 0;
     // We got contacted, let's receive for real:
     loop {
       receiver.recv(&mut msg, 0).unwrap();
-      println!("Sink contacted: {}", msg.as_str().unwrap());
+      let payload = msg.deref();
+      if payload.is_empty() {continue}
+      sink_count += 1;
+      println!("Sink job {}, message size: {}", sink_count, payload.len());
+
+      // let mut file = File::create("/tmp/cortex_sink_".to_string() + &sink_count.to_string()).unwrap();
+      // file.write_all(&payload).unwrap();
     }
   }
 }

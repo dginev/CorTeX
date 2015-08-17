@@ -43,7 +43,8 @@ fn can_import_simple() {
           path : "tests/data/".to_string(),
           name : "simple import test".to_string(),
           complex : false }).unwrap(),
-    backend: test_backend };
+    backend: test_backend,
+    cwd : Importer::cwd() };
   
   println!("-- Testing simple import");
   assert_eq!( importer.process(), Ok(()) );
@@ -59,7 +60,8 @@ fn can_import_complex() {
         path : "tests/data/".to_string(),
         name : "complex import test".to_string(),
         complex : true }).unwrap(),
-    backend: Backend::testdb() };
+    backend: Backend::testdb(),
+    cwd : Importer::cwd() };
 
   
   println!("-- Testing complex import");
@@ -72,7 +74,8 @@ fn can_import_complex() {
         path : "tests/data/".to_string(),
         name : "complex import test".to_string(),
         complex : true }).unwrap(),
-    backend: Backend::testdb() };
+    backend: Backend::testdb(),
+    cwd : Importer::cwd() };
 
   
   println!("-- Testing repeated complex import (successful and no-op)");
