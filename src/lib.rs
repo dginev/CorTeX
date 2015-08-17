@@ -21,6 +21,7 @@ extern crate postgres;
 extern crate sys_info;
 extern crate Archive;
 extern crate rustc_serialize;
+extern crate rand;
 
 pub mod backend;
 pub mod importer;

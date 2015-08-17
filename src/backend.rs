@@ -6,11 +6,14 @@
 // except according to those terms.
 extern crate postgres;
 extern crate rustc_serialize;
+extern crate rand;
 
 use postgres::{Connection, SslMode};
 use postgres::error::Error;
 use std::clone::Clone;
 use data::*;
+
+use rand::{thread_rng, Rng};
 
 // Only initialize auxiliary resources once and keep them in a Backend struct
 pub struct Backend {
@@ -167,8 +170,18 @@ impl Backend {
     Ok(d_final)
   }
 
-  pub fn fetch_tasks(&self, service: String, limit : usize) -> Result<Vec<Task>, Error> {
-    Ok(Vec::new())
+  pub fn fetch_tasks(&self, service: Service, limit : usize) -> Result<Vec<Task>, Error> {
+    let mut rng = thread_rng();
+    let mark: u32 = rng.gen();
+    let mut tasks = Vec::new();
+
+    self.connection.execute("UPDATE tasks SET status=$1 WHERE status=-5 AND serviceid=$2 LIMIT $3",&[&(mark as i32), &service.id, &(limit as u32)]);
+    let stmt = try!(self.connection.prepare("SELECT taskid,serviceid,entry from tasks where status=$1"));
+    let rows = try!(stmt.query(&[&(mark as i32)]));
+    for row in rows {
+      tasks.push(Task::from_row(row))
+    }
+    Ok(tasks)
   }
 
   pub fn clear_limbo_tasks(&self) -> Result<(), Error> {

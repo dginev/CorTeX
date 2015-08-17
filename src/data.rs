@@ -283,3 +283,15 @@ impl CortexORM for Service {
     }
   }
 }
+impl Service { 
+  pub fn from_name(connection : &Connection, name : String) -> Result<Option<Self>, Error> { 
+    let stmt =  try!(connection.prepare("SELECT serviceid,name,version,inputformat,outputformat,inputconverter,complex FROM services WHERE name = $1"));
+    let rows = try!(stmt.query(&[&name]));
+    if rows.len() == 1 {
+      let row = rows.get(0);
+      Ok(Some(Service::from_row(row)))
+    } else {
+      Ok(None)
+    }
+  }
+}
