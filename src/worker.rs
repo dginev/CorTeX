@@ -6,9 +6,10 @@
 // except according to those terms.
 extern crate zmq;
 use zmq::{Error, Message, Context};
+use std::thread;
 
 pub trait Worker {
-  fn work(&self, &Message) -> Message;
+  fn work(&self, &Message) -> Option<Message>;
   fn service(&self) -> String;
   fn source(&self) -> String;
   fn sink(&self) -> String;
@@ -28,8 +29,13 @@ pub trait Worker {
     loop {
       source.send_str(&self.service(), 0).unwrap();
       source.recv(&mut recv_msg, 0).unwrap();
-      let payload = self.work(&recv_msg);
-      sink.send_msg(payload, 0).unwrap();
+      match self.work(&recv_msg) {
+        Some(payload) => sink.send_msg(payload, 0).unwrap(),
+        None => {
+          thread::sleep_ms(60000);
+          continue 
+        }
+      };
 
       work_counter += 1;
       match limit {
@@ -65,9 +71,13 @@ impl Worker for EchoWorker {
   fn source(&self) -> String {self.source.clone()}
   fn sink(&self) -> String {self.sink.clone()}
 
-  fn work(&self, message : &Message) -> Message {
+  fn work(&self, message : &Message) -> Option<Message> {
     let payload = message.as_str().unwrap();
-    println!("Worker Received: {}", payload);
-    Message::from_slice(payload.as_bytes()).unwrap()
+    if payload.is_empty() {
+      None }
+    else {
+      println!("Worker Received: {}", payload);
+      Some(Message::from_slice(payload.as_bytes()).unwrap())
+    }
   }
 }

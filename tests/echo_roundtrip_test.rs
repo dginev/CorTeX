@@ -70,8 +70,8 @@ fn mock_round_trip() {
   });
   // Start up an echo worker
   let worker = EchoWorker::default();
-  // Perform echo task 100 times:
-  assert!(worker.start(Some(100)).is_ok());
+  // Perform a single echo task 
+  assert!(worker.start(Some(1)).is_ok());
 
   // Check round-trip success
   

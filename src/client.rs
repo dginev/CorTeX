@@ -72,7 +72,7 @@ impl Ventilator {
             task_queue.extend(self.backend.fetch_tasks(service, self.queue_size).unwrap()); }
           match task_queue.pop() {
             Some(current_task) => source.send_str(&current_task.id.unwrap().to_string(), 0).unwrap(),
-            None => source.send_str("empty", 0).unwrap()
+            None => source.send_str("", 0).unwrap()
           };
         }
       };
