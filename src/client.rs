@@ -6,7 +6,7 @@
 // except according to those terms.
 extern crate zmq;
 
-use zmq::Error;
+use zmq::{Error, SNDMORE};
 use backend::{Backend};
 use data::{Task, Service};
 
@@ -50,13 +50,16 @@ impl Ventilator {
     self.backend.clear_limbo_tasks().unwrap();
     // Ok, let's bind to a port and start broadcasting
     let mut context = zmq::Context::new();
-    let mut source = context.socket(zmq::REP).unwrap();
+    let mut source = context.socket(zmq::ROUTER).unwrap();
     let port_str = self.port.to_string();
     let address = "tcp://*:".to_string() + &port_str;
     assert!(source.bind(&address).is_ok());
 
-    let mut msg = zmq::Message::new().unwrap();
+    
     loop {
+      let mut msg = zmq::Message::new().unwrap();
+      let mut identity = zmq::Message::new().unwrap();
+      source.recv(&mut identity, 0).unwrap();
       source.recv(&mut msg, 0).unwrap();
       let service_name = msg.as_str().unwrap().to_string();
       println!("Task requested for service: {}", service_name.clone());
@@ -75,13 +78,18 @@ impl Ventilator {
             task_queue.extend(self.backend.fetch_tasks(&service, self.queue_size).unwrap()); }
           match task_queue.pop() {
             Some(current_task) => {
-              println!("Preparing input for taskid : {:?}", current_task.id.unwrap());
+              let taskid = current_task.id.unwrap();
+
               match service.prepare_input(current_task) {
-                Ok(payload) => source.send(&payload, 0).unwrap(),
-                Err(_) => source.send_str("", 0).unwrap() // TODO: smart handling of failures
+                Ok(payload) => {
+                  source.send_msg(identity, SNDMORE).unwrap();
+                  source.send_str(&taskid.to_string(), SNDMORE).unwrap();
+                  source.send(&payload, 0).unwrap();
+                },
+                Err(_) => {} // TODO: smart handling of failures
               }
             },
-            None => source.send_str("", 0).unwrap()
+            None => {}
           };
         }
       };
@@ -99,12 +107,16 @@ impl Sink {
     let address = "tcp://*:".to_string() + &port_str;
     assert!(receiver.bind(&address).is_ok());
 
-    let mut msg = zmq::Message::new().unwrap();
+    
     // Wait for start of batch
-    println!("receiver ready to receive.");
     let mut sink_count = 0;
     // We got contacted, let's receive for real:
     loop {
+      let mut msg = zmq::Message::new().unwrap();
+      let mut taskid_msg = zmq::Message::new().unwrap();
+      receiver.recv(&mut taskid_msg, 0).unwrap();
+      let taskid = taskid_msg.as_str().unwrap();
+
       receiver.recv(&mut msg, 0).unwrap();
       let payload = msg.deref();
       if payload.is_empty() {continue}

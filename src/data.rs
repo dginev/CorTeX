@@ -17,8 +17,8 @@ use postgres::error::Error;
 
 /// A minimalistic ORM trait for CorTeX data items
 pub trait CortexORM {
-  fn select_by_id<'a>(&'a self, connection: &'a Connection) -> Result<Option<Self>, Error>;
-  fn select_by_key<'a>(&'a self, connection : &'a Connection) -> Result<Option<Self>,Error>;
+  fn select_by_id<'a>(&'a self, connection: &'a Connection) -> Result<Option<Self>, Error> where Self: Sized;
+  fn select_by_key<'a>(&'a self, connection : &'a Connection) -> Result<Option<Self>,Error> where Self: Sized;
   fn insert(&self, connection: &Connection) -> Result<(),Error>;
   fn delete(&self, connection: &Connection) -> Result<(),Error>;
   fn from_row(row : Row) -> Self;

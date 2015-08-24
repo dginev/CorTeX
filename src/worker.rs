@@ -5,9 +5,12 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 extern crate zmq;
-use zmq::{Error, Message, Context};
+extern crate rand;
+
+use zmq::{Error, Message, Context, SNDMORE};
 use std::ops::Deref;
 use std::thread;
+use rand::{random};
 
 pub trait Worker {
   fn work(&self, &Message) -> Option<Message>;
@@ -19,19 +22,28 @@ pub trait Worker {
     let mut work_counter = 0;
     // Connect to a task ventilator
     let mut context_source = Context::new();
-    let mut source = context_source.socket(zmq::REQ).unwrap();
+    let mut source = context_source.socket(zmq::DEALER).unwrap();
+    let identity : String = (0..10).map(|_| rand::random::<u8>() as char).collect();
+    source.set_identity(identity.as_bytes()).unwrap();
+
     assert!(source.connect(&self.source()).is_ok());
     // Connect to a task sink
     let mut context_sink = Context::new();
     let mut sink = context_sink.socket(zmq::PUSH).unwrap();
     assert!(sink.connect(&self.sink()).is_ok());
     // Work in perpetuity
-    let mut recv_msg = Message::new().unwrap();
     loop {
+      let mut taskid_msg = Message::new().unwrap();
+      let mut recv_msg = Message::new().unwrap();
+
       source.send_str(&self.service(), 0).unwrap();
+      source.recv(&mut taskid_msg, 0).unwrap();
+      let taskid = taskid_msg.as_str().unwrap();
+      
       source.recv(&mut recv_msg, 0).unwrap();
       match self.work(&recv_msg) {
         Some(payload) => {
+          sink.send_str(taskid, SNDMORE).unwrap();
           sink.send_msg(payload, 0).unwrap();
         },
         None => {
