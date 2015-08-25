@@ -1,4 +1,4 @@
-:exclamation:Warning::exclamation: This repository is undergoing an active rewrite and is not ready for third-party use!
+:exclamation: :exclamation: Warning This repository is undergoing an active rewrite and is not ready for third-party use!
 
 ![CorTeX Framework](./public/img/logo.jpg) Framework
 ======
