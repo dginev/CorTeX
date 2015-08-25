@@ -5,9 +5,9 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 extern crate cortex;
-use cortex::backend::Backend;
+use cortex::backend::{Backend, TEST_DB_ADDRESS};
 use cortex::data::{Corpus,Service, Task, TaskStatus};
-use cortex::client::{Ventilator,Sink};
+use cortex::manager::{TaskManager};
 use cortex::worker::{EchoWorker, Worker};
 use cortex::importer::Importer;
 use std::thread;
@@ -56,26 +56,18 @@ fn mock_round_trip() {
   
   // Start up a ventilator/sink pair
   thread::spawn(move || {
-    // some work here
-    let ventilator = Ventilator {
-      port : 5555,
+    let manager = TaskManager {
+      source_port : 5555,
+      result_port : 5556,
       queue_size : 100,
-      backend : Backend::testdb()
+      backend_address : TEST_DB_ADDRESS.clone().to_string()
     };
-    assert!(ventilator.start().is_ok());
-  });
-  thread::spawn(move || {
-    let sink = Sink {
-      port : 5556,
-      queue_size : 100,
-      backend : Backend::testdb()
-    };
-    assert!(sink.start().is_ok());  
+    assert!(manager.start().is_ok());
   });
   // Start up an echo worker
   let worker = EchoWorker::default();
   // Perform a single echo task 
   assert!(worker.start(Some(1)).is_ok());
   // Check round-trip success
-  
+
 }

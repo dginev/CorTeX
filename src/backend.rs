@@ -20,19 +20,26 @@ pub struct Backend {
   pub connection : Connection
 }
 
+pub static DEFAULT_DB_ADDRESS : &'static str = "postgres://cortex:cortex@localhost/cortex";
+pub static TEST_DB_ADDRESS : &'static str = "postgres://cortex_tester:cortex_tester@localhost/cortex_tester";
 impl Default for Backend {
   fn default() -> Backend {
     Backend {
-      connection: Connection::connect("postgres://cortex:cortex@localhost/cortex", &SslMode::None).unwrap()
+      connection: Connection::connect(DEFAULT_DB_ADDRESS.clone(), &SslMode::None).unwrap()
     }
   }
 }
 
 impl Backend {
   // Globals
+  pub fn from_address(address : &str) -> Backend {
+   Backend {
+      connection: Connection::connect(address, &SslMode::None).unwrap()
+    } 
+  }
   pub fn testdb() -> Backend {
    Backend {
-      connection: Connection::connect("postgres://cortex_tester:cortex_tester@localhost/cortex_tester", &SslMode::None).unwrap()
+      connection: Connection::connect(TEST_DB_ADDRESS.clone(), &SslMode::None).unwrap()
     }
   }
   // Instance methods

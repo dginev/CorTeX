@@ -43,6 +43,7 @@ pub trait Worker {
       source.recv(&mut recv_msg, 0).unwrap();
       match self.work(&recv_msg) {
         Some(payload) => {
+          sink.send_str(&self.service(), SNDMORE).unwrap();
           sink.send_str(taskid, SNDMORE).unwrap();
           sink.send_msg(payload, 0).unwrap();
         },

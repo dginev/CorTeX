@@ -40,7 +40,11 @@ impl fmt::Display for Task {
         // The `f` value implements the `Write` trait, which is what the
         // write! macro is expecting. Note that this formatting ignores the
         // various flags provided to format strings.
-        write!(f, "(entry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n", self.entry, self.serviceid, self.corpusid, self.status)
+        let taskid = match self.id {
+          Some(taskid) => taskid.to_string(),
+          None => "None".to_string()
+        };
+        write!(f, "(taskid: {}, entry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n", taskid, self.entry, self.serviceid, self.corpusid, self.status)
     }
 }
 impl fmt::Debug for Task {
@@ -48,7 +52,11 @@ impl fmt::Debug for Task {
         // The `f` value implements the `Write` trait, which is what the
         // write! macro is expecting. Note that this formatting ignores the
         // various flags provided to format strings.
-        write!(f, "(entry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n", self.entry, self.serviceid, self.corpusid, self.status)
+        let taskid = match self.id {
+          Some(taskid) => taskid.to_string(),
+          None => "None".to_string()
+        };
+        write!(f, "(taskid: {},\n\tentry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n", taskid, self.entry, self.serviceid, self.corpusid, self.status)
     }
 }
 impl CortexORM for Task {
@@ -230,6 +238,23 @@ pub struct Service {
   // pub resource : String,
   pub inputconverter : Option<String>,
   pub complex : bool, 
+}
+impl fmt::Debug for Service {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // The `f` value implements the `Write` trait, which is what the
+        // write! macro is expecting. Note that this formatting ignores the
+        // various flags provided to format strings.
+        let serviceid = match self.id {
+          Some(serviceid) => serviceid.to_string(),
+          None => "None".to_string()
+        };
+        let mut ic = "None".to_string();
+        if self.inputconverter.is_some() {
+          ic = self.inputconverter.clone().unwrap();
+        };
+        write!(f, "(serviceid: {},\n\tname: {},\n\tversion: {},\n\tinputformat: {},\n\toutputformat: {},\n\tinputconverter: {},\n\tcomplex: {})\n",
+                    serviceid, self.name, self.version, self.inputformat, self.outputformat, ic, self.complex)
+    }
 }
 impl Clone for Service {
   fn clone(&self) -> Self {
