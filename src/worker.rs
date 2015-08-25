@@ -6,14 +6,20 @@
 // except according to those terms.
 extern crate zmq;
 extern crate rand;
+extern crate tempfile;
 
 use zmq::{Error, Message, Context, SNDMORE};
 use std::ops::Deref;
 use std::thread;
 use rand::{random};
+// use std::fs::File;
+use std::io::{Read,Write, Seek, SeekFrom};
+use tempfile::TempFile; 
 
 pub trait Worker {
-  fn work(&self, &Message) -> Option<Message>;
+  // fn work(&self, &Message) -> Option<Message>;
+  fn convert(&self, TempFile) -> Option<TempFile>;
+  fn message_size(&self) -> usize;
   fn service(&self) -> String;
   fn source(&self) -> String;
   fn sink(&self) -> String;
@@ -40,19 +46,45 @@ pub trait Worker {
       source.recv(&mut taskid_msg, 0).unwrap();
       let taskid = taskid_msg.as_str().unwrap();
       
-      source.recv(&mut recv_msg, 0).unwrap();
-      match self.work(&recv_msg) {
-        Some(payload) => {
-          sink.send_str(&self.service(), SNDMORE).unwrap();
-          sink.send_str(taskid, SNDMORE).unwrap();
-          sink.send_msg(payload, 0).unwrap();
-        },
-        None => {
-          // If there was nothing to do, retry a minute later
-          thread::sleep_ms(60000);
-          continue 
+      // Prepare a TempFile for the input
+      let mut file = TempFile::new().unwrap(); 
+      loop {
+        source.recv(&mut recv_msg, 0).unwrap();
+
+        file.write(recv_msg.deref()).unwrap();
+        if !source.get_rcvmore().unwrap() {
+          break;
         }
-      };
+      }
+      
+      file.seek(SeekFrom::Start(0)).unwrap();
+      let file_opt = self.convert(file);
+      if file_opt.is_some() {
+        let mut converted_file = file_opt.unwrap();
+        sink.send_str(&self.service(), SNDMORE).unwrap();
+        sink.send_str(taskid, SNDMORE).unwrap();
+        loop {
+          // Stream converted data via zmq
+          let message_size = self.message_size();
+          let mut data = vec![0; message_size];
+          let size = converted_file.read(&mut data).unwrap();
+          data.truncate(size);
+          if size < message_size {
+            // If exhausted, send the last frame
+            sink.send(&data,0).unwrap(); 
+            // And terminate
+            break;
+          } else {
+            // If more to go, send the frame and indicate there's more to come
+            sink.send(&data,SNDMORE).unwrap();
+          }
+        }
+      }
+      else {
+        // If there was nothing to do, retry a minute later
+        thread::sleep_ms(60000);
+        continue 
+      }
 
       work_counter += 1;
       match limit {
@@ -72,6 +104,7 @@ pub trait Worker {
 pub struct EchoWorker {
   pub service : String,
   pub version : f32,
+  pub message_size : usize,
   pub source : String,
   pub sink : String
 }
@@ -80,6 +113,7 @@ impl Default for EchoWorker {
     EchoWorker {
       service: "echo_service".to_string(),
       version: 0.1,
+      message_size: 100000,
       source: "tcp://localhost:5555".to_string(),
       sink: "tcp://localhost:5556".to_string()      
     }
@@ -89,13 +123,9 @@ impl Worker for EchoWorker {
   fn service(&self) -> String {self.service.clone()}
   fn source(&self) -> String {self.source.clone()}
   fn sink(&self) -> String {self.sink.clone()}
+  fn message_size(&self) -> usize {self.message_size.clone()}
 
-  fn work(&self, message : &Message) -> Option<Message> {
-    let payload = message.deref();
-    if payload.is_empty() {
-      None }
-    else {
-      Some(Message::from_slice(payload).unwrap())
-    }
+  fn convert(&self, file : TempFile) -> Option<TempFile> {
+    Some(file)
   }
 }

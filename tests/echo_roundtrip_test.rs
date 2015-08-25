@@ -60,6 +60,7 @@ fn mock_round_trip() {
       source_port : 5555,
       result_port : 5556,
       queue_size : 100,
+      message_size : 100,
       backend_address : TEST_DB_ADDRESS.clone().to_string()
     };
     assert!(manager.start().is_ok());

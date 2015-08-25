@@ -5,6 +5,7 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 extern crate zmq;
+extern crate tempfile;
 
 use zmq::{Error, SNDMORE};
 use backend::{Backend, DEFAULT_DB_ADDRESS};
@@ -17,17 +18,22 @@ use std::sync::Mutex;
 use std::ops::Deref;
 use std::collections::HashMap;
 // use std::fs::File;
+use tempfile::TempFile;
+use std::io::{Write};
+use std::io::Read;
 // use std::io::prelude::*;
 
 pub struct TaskManager {
   pub source_port : usize,
   pub result_port : usize,
   pub queue_size : usize,
+  pub message_size : usize,
   pub backend_address : String
 }
 pub struct Server {
   pub port : usize,
   pub queue_size : usize,
+  pub message_size : usize,
   pub backend : Backend
 }
 
@@ -37,6 +43,7 @@ impl Default for TaskManager {
         source_port : 5555,
         result_port : 5555,
         queue_size : 100,
+        message_size : 100000,
         backend_address : DEFAULT_DB_ADDRESS.clone().to_string() 
     } } }
 
@@ -51,6 +58,7 @@ impl TaskManager {
     // First prepare the source ventilator
     let source_port = self.source_port.clone();
     let source_queue_size = self.queue_size.clone();
+    let source_message_size = self.message_size.clone();
     let source_backend_address = self.backend_address.clone();
 
     let vent_services_arc = services_arc.clone();
@@ -59,6 +67,7 @@ impl TaskManager {
       let sources = Server {
         port : source_port,
         queue_size : source_queue_size,
+        message_size : source_message_size,
         backend : Backend::from_address(&source_backend_address)
       };
       sources.start_ventilator(vent_services_arc, vent_progress_queue_arc).unwrap();
@@ -67,6 +76,7 @@ impl TaskManager {
     // Now prepare the results sink
     let result_port = self.result_port.clone();
     let result_queue_size = self.queue_size.clone();
+    let result_message_size = self.message_size.clone();
     let result_backend_address = self.backend_address.clone();
 
     let sink_services_arc = services_arc.clone();
@@ -75,6 +85,7 @@ impl TaskManager {
       let results = Server {
         port : result_port,
         queue_size : result_queue_size,
+        message_size : result_message_size,
         backend : Backend::from_address(&result_backend_address)
       };
       results.start_sink(sink_services_arc, sink_progress_queue_arc).unwrap();
@@ -97,19 +108,20 @@ impl Server {
     self.backend.clear_limbo_tasks().unwrap();
     // Ok, let's bind to a port and start broadcasting
     let mut context = zmq::Context::new();
-    let mut source = context.socket(zmq::ROUTER).unwrap();
+    let mut ventilator = context.socket(zmq::ROUTER).unwrap();
     let port_str = self.port.to_string();
     let address = "tcp://*:".to_string() + &port_str;
-    assert!(source.bind(&address).is_ok());
+    assert!(ventilator.bind(&address).is_ok());
+    let mut source_job_count = 0;
 
     loop {
       let mut msg = zmq::Message::new().unwrap();
       let mut identity = zmq::Message::new().unwrap();
-      source.recv(&mut identity, 0).unwrap();
-      source.recv(&mut msg, 0).unwrap();
+      ventilator.recv(&mut identity, 0).unwrap();
+      ventilator.recv(&mut msg, 0).unwrap();
       let service_name = msg.as_str().unwrap().to_string();
       println!("Task requested for service: {}", service_name.clone());
-      
+      source_job_count += 1;
 
       let mut dispatched_task : Option<Task> = None;
       match self.get_sync_service_record(&services_arc, service_name.clone()) {
@@ -124,16 +136,35 @@ impl Server {
           match task_queue.pop() {
             Some(current_task) => {
               let taskid = current_task.id.unwrap();
+              let file_opt = service.prepare_input_stream(current_task.clone());
+              if file_opt.is_ok() {
+                let mut file = file_opt.unwrap();
+                dispatched_task = Some(current_task);
 
-              match service.prepare_input(current_task.clone()) {
-                Ok(payload) => {
-                  dispatched_task = Some(current_task);
-
-                  source.send_msg(identity, SNDMORE).unwrap();
-                  source.send_str(&taskid.to_string(), SNDMORE).unwrap();
-                  source.send(&payload, 0).unwrap();
-                },
-                Err(_) => {} // TODO: smart handling of failures
+                ventilator.send_msg(identity, SNDMORE).unwrap();
+                ventilator.send_str(&taskid.to_string(), SNDMORE).unwrap();
+                
+                let mut total_outgoing = 0;
+                loop {
+                  // Stream input data via zmq
+                  let mut data = vec![0; self.message_size];
+                  let size = file.read(&mut data).unwrap();
+                  total_outgoing += size;
+                  data.truncate(size);
+                  
+                  if size < self.message_size {
+                    // If exhausted, send the last frame
+                    ventilator.send(&data,0).unwrap(); 
+                    // And terminate
+                    break;
+                  } else {
+                    // If more to go, send the frame and indicate there's more to come
+                    ventilator.send(&data,SNDMORE).unwrap();
+                  }
+                }
+                println!("Source job {}, message size: {}", source_job_count, total_outgoing);
+              } else {
+                // TODO: smart handling of failures
               }
             },
             None => {}
@@ -151,32 +182,41 @@ impl Server {
       services_arc : Arc<Mutex<HashMap<String, Option<Service>>>>,
       progress_queue_arc : Arc<Mutex<HashMap<i64, Task>>>)
       -> Result <(),Error> {
-    println!("Starting up Sink");
+
     // Ok, let's bind to a port and start broadcasting
     let mut context = zmq::Context::new();
-    let mut receiver = context.socket(zmq::PULL).unwrap();
+    let mut sink = context.socket(zmq::PULL).unwrap();
     let port_str = self.port.to_string();
     let address = "tcp://*:".to_string() + &port_str;
-    assert!(receiver.bind(&address).is_ok());
+    assert!(sink.bind(&address).is_ok());
 
-    let mut sink_count = 0;
+    let mut sink_job_count = 0;
     loop {
-      let mut msg = zmq::Message::new().unwrap();
+      let mut recv_msg = zmq::Message::new().unwrap();
       let mut taskid_msg = zmq::Message::new().unwrap();
       let mut service_msg = zmq::Message::new().unwrap();
 
-      receiver.recv(&mut service_msg, 0).unwrap();
+      sink.recv(&mut service_msg, 0).unwrap();
       let service_name = service_msg.as_str().unwrap();
       
-      receiver.recv(&mut taskid_msg, 0).unwrap();
+      sink.recv(&mut taskid_msg, 0).unwrap();
       let taskid_str = taskid_msg.as_str().unwrap();
       let taskid = taskid_str.parse::<i64>().unwrap();
 
-      receiver.recv(&mut msg, 0).unwrap();
-      let payload = msg.deref();
-      if payload.is_empty() {continue}
-      sink_count += 1;
-      println!("Sink job {}, message size: {}", sink_count, payload.len());
+      // Prepare a TempFile for the input
+      let mut file = TempFile::new().unwrap(); 
+      let mut total_incoming = 0;
+      loop {
+        sink.recv(&mut recv_msg, 0).unwrap();
+
+        total_incoming += file.write(recv_msg.deref()).unwrap();
+        if !sink.get_rcvmore().unwrap() {
+          break;
+        }
+      }
+
+      sink_job_count += 1;
+      println!("Sink job {}, message size: {}", sink_job_count, total_incoming);
 
       match Server::pop_progress_task(&progress_queue_arc, taskid) {
         None => {} // TODO: No such task, what to do?
@@ -196,7 +236,7 @@ impl Server {
         }
       }
 
-      // let mut file = File::create("/tmp/cortex_sink_".to_string() + &sink_count.to_string()).unwrap();
+      // let mut file = File::create("/tmp/cortex_sink_".to_string() + &sink_job_count.to_string()).unwrap();
       // file.write_all(&payload).unwrap();
     }
   }

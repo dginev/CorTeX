@@ -323,12 +323,9 @@ impl Service {
       Ok(None)
     }
   }
-  pub fn prepare_input(&self, task: Task) -> Result<Vec<u8>, Error> {
+  pub fn prepare_input_stream(&self, task: Task) -> Result<File, Error> {
     let entry_path = Path::new(&task.entry);
-    let mut file = try!(File::open(entry_path));
-    let mut contents: Vec<u8> = Vec::new();
-    // Returns amount of bytes read and append the result to the buffer
-    try!(file.read_to_end(&mut contents));
-    Ok(contents)
+    let file = try!(File::open(entry_path));
+    Ok(file)
   }
 }

@@ -21,6 +21,7 @@ extern crate sys_info;
 extern crate Archive;
 extern crate rustc_serialize;
 extern crate rand;
+extern crate tempfile;
 
 pub mod backend;
 pub mod importer;
