@@ -17,11 +17,12 @@ use std::sync::Mutex;
 
 use std::ops::Deref;
 use std::collections::HashMap;
-// use std::fs::File;
-use tempfile::TempFile;
+
+use std::path::Path;
+use std::fs::File;
+// use tempfile::TempFile;
 use std::io::{Write};
 use std::io::Read;
-// use std::io::prelude::*;
 
 pub struct TaskManager {
   pub source_port : usize,
@@ -202,21 +203,9 @@ impl Server {
       sink.recv(&mut taskid_msg, 0).unwrap();
       let taskid_str = taskid_msg.as_str().unwrap();
       let taskid = taskid_str.parse::<i64>().unwrap();
-
-      // Prepare a TempFile for the input
-      let mut file = TempFile::new().unwrap(); 
-      let mut total_incoming = 0;
-      loop {
-        sink.recv(&mut recv_msg, 0).unwrap();
-
-        total_incoming += file.write(recv_msg.deref()).unwrap();
-        if !sink.get_rcvmore().unwrap() {
-          break;
-        }
-      }
-
+      // We have a job, count it
       sink_job_count += 1;
-      println!("Sink job {}, message size: {}", sink_job_count, total_incoming);
+      let mut total_incoming = 0;
 
       match Server::pop_progress_task(&progress_queue_arc, taskid) {
         None => {} // TODO: No such task, what to do?
@@ -230,11 +219,36 @@ impl Server {
               println!("Service: {:?}", service);
               if service.id.unwrap() == task.serviceid {
                 println!("Task and Service match up.");
-              }    
+                
+                // Receive the rest of the input in the correct file
+                let recv_dir = Path::new(&task.entry).parent().unwrap();
+                let recv_path = recv_dir.to_str().unwrap().to_string() + "/" + &service.name + "_" + &service.version.round().to_string() + ".zip";
+                println!("Will write to {:?}", recv_path);
+                let mut file = File::create(recv_path).unwrap();
+                loop {
+                  sink.recv(&mut recv_msg, 0).unwrap();
+
+                  total_incoming += file.write(recv_msg.deref()).unwrap();
+                  if !sink.get_rcvmore().unwrap() {
+                    break;
+                  }
+                }
+                // Then mark the task done.
+              }
+              else {
+                // Otherwise just discard the rest of the message
+                loop {
+                  sink.recv(&mut recv_msg, 0).unwrap();
+                  if !sink.get_rcvmore().unwrap() {
+                    break;
+                  }
+                }
+              }
             }
           };
         }
       }
+      println!("Sink job {}, message size: {}", sink_job_count, total_incoming);
 
       // let mut file = File::create("/tmp/cortex_sink_".to_string() + &sink_job_count.to_string()).unwrap();
       // file.write_all(&payload).unwrap();

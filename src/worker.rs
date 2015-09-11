@@ -11,14 +11,17 @@ extern crate tempfile;
 use zmq::{Error, Message, Context, SNDMORE};
 use std::ops::Deref;
 use std::thread;
-use rand::{random};
-// use std::fs::File;
+use std::env;
+use std::fs::File;
 use std::io::{Read,Write, Seek, SeekFrom};
-use tempfile::TempFile; 
+use std::path::Path;
+use std::str;
+use std::process::Command;
+use rand::{random};
 
 pub trait Worker {
   // fn work(&self, &Message) -> Option<Message>;
-  fn convert(&self, TempFile) -> Option<TempFile>;
+  fn convert(&self, &Path) -> Option<File>;
   fn message_size(&self) -> usize;
   fn service(&self) -> String;
   fn source(&self) -> String;
@@ -46,8 +49,9 @@ pub trait Worker {
       source.recv(&mut taskid_msg, 0).unwrap();
       let taskid = taskid_msg.as_str().unwrap();
       
-      // Prepare a TempFile for the input
-      let mut file = TempFile::new().unwrap(); 
+      // Prepare a File for the input
+      let input_filepath = env::temp_dir().to_str().unwrap().to_string() + "/" + taskid ;
+      let mut file = File::create(input_filepath.clone()).unwrap(); 
       loop {
         source.recv(&mut recv_msg, 0).unwrap();
 
@@ -58,7 +62,7 @@ pub trait Worker {
       }
       
       file.seek(SeekFrom::Start(0)).unwrap();
-      let file_opt = self.convert(file);
+      let file_opt = self.convert(Path::new(&input_filepath));
       if file_opt.is_some() {
         let mut converted_file = file_opt.unwrap();
         sink.send_str(&self.service(), SNDMORE).unwrap();
@@ -90,7 +94,7 @@ pub trait Worker {
       match limit {
         Some(upper_bound) => {
           if work_counter >= upper_bound {
-            // Give enough time to complete last job.
+            // Give enough time to complete the Final job.
             thread::sleep_ms(500);
             break;
           }
@@ -125,7 +129,66 @@ impl Worker for EchoWorker {
   fn sink(&self) -> String {self.sink.clone()}
   fn message_size(&self) -> usize {self.message_size.clone()}
 
-  fn convert(&self, file : TempFile) -> Option<TempFile> {
-    Some(file)
+  fn convert(&self, path : &Path) -> Option<File> {
+    Some(File::open(path).unwrap())
+  }
+}
+
+pub struct TexToHtmlWorker {
+  pub service : String,
+  pub version : f32,
+  pub message_size : usize,
+  pub source : String,
+  pub sink : String
+}
+impl Default for TexToHtmlWorker {
+  fn default() -> TexToHtmlWorker {
+    TexToHtmlWorker {
+      service: "tex_to_html".to_string(),
+      version: 0.1,
+      message_size: 100000,
+      source: "tcp://localhost:5555".to_string(),
+      sink: "tcp://localhost:5556".to_string()      
+    }
+  }
+}
+impl Worker for TexToHtmlWorker {
+  fn service(&self) -> String {self.service.clone()}
+  fn source(&self) -> String {self.source.clone()}
+  fn sink(&self) -> String {self.sink.clone()}
+  fn message_size(&self) -> usize {self.message_size.clone()}
+
+  fn convert(&self, path : &Path) -> Option<File> {
+    let name = path.file_stem().unwrap().to_str().unwrap();
+
+    let destination_path = env::temp_dir().to_str().unwrap().to_string() + "/" +name+ ".zip";
+
+    let output = Command::new("latexmlc")
+      .arg("--whatsin")
+      .arg("archive")
+      .arg("--whatsout")
+      .arg("archive")
+      .arg("--format")
+      .arg("html5")
+      .arg("--pmml")
+      .arg("--cmml")
+      .arg("--preload")
+      .arg("[ids]latexml.sty")
+      .arg("--css")
+      .arg("http://latexml.mathweb.org/css/external/LaTeXML.css")
+      .arg("--nodefaultresources")
+      .arg("--inputencoding")
+      .arg("iso-8859-1")
+      .arg("--timeout")
+      .arg("300")
+      .arg("--destination")
+      .arg(destination_path.clone())
+      .arg(path.clone())
+      .output()
+      .unwrap_or_else(|e| { panic!("failed to execute process: {}", e) });
+    
+    println!("Dest: {:?}", destination_path);
+    println!("Log: {:?}", str::from_utf8(&output.stderr));
+    Some(File::open(destination_path.clone()).unwrap())
   }
 }
