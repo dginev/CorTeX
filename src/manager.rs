@@ -9,7 +9,7 @@ extern crate tempfile;
 
 use zmq::{Error, SNDMORE};
 use backend::{Backend, DEFAULT_DB_ADDRESS};
-use data::{Task, Service};
+use data::{Task, TaskReport, Service};
 
 use std::thread;
 use std::sync::Arc;
@@ -53,9 +53,12 @@ impl TaskManager {
     // We'll use some local memoization shared between source and sink:
     let services: HashMap<String, Option<Service>> = HashMap::new();
     let progress_queue: HashMap<i64, Task> = HashMap::new();
+    let done_queue: Vec<TaskReport> = Vec::new();
 
     let services_arc = Arc::new(Mutex::new(services));
     let progress_queue_arc = Arc::new(Mutex::new(progress_queue));
+    let done_queue_arc = Arc::new(Mutex::new(done_queue));
+
     // First prepare the source ventilator
     let source_port = self.source_port.clone();
     let source_queue_size = self.queue_size.clone();
@@ -74,6 +77,18 @@ impl TaskManager {
       sources.start_ventilator(vent_services_arc, vent_progress_queue_arc).unwrap();
     });
 
+    // Next prepare the finalize thread which will persist finished jobs to the DB
+    let finalize_backend_address = self.backend_address.clone();
+    let finalize_done_queue_arc = done_queue_arc.clone();
+    let finalize_thread = thread::spawn(move || {
+      let finalize_backend = Backend::from_address(&finalize_backend_address);
+      // Persist every 1 second, if there is something to record
+      loop {
+        thread::sleep_ms(1000); 
+        Server::mark_done_arc(&finalize_backend, &finalize_done_queue_arc);
+      };
+    });
+
     // Now prepare the results sink
     let result_port = self.result_port.clone();
     let result_queue_size = self.queue_size.clone();
@@ -82,6 +97,8 @@ impl TaskManager {
 
     let sink_services_arc = services_arc.clone();
     let sink_progress_queue_arc = progress_queue_arc.clone();
+
+    let sink_done_queue_arc = done_queue_arc.clone();
     let sink_thread = thread::spawn(move || {
       let results = Server {
         port : result_port,
@@ -89,11 +106,12 @@ impl TaskManager {
         message_size : result_message_size,
         backend : Backend::from_address(&result_backend_address)
       };
-      results.start_sink(sink_services_arc, sink_progress_queue_arc).unwrap();
+      results.start_sink(sink_services_arc, sink_progress_queue_arc, sink_done_queue_arc).unwrap();
     });
 
     vent_thread.join().unwrap();
     sink_thread.join().unwrap();
+    finalize_thread.join().unwrap();
     Ok(())
   }
 }
@@ -181,7 +199,8 @@ impl Server {
 
   pub fn start_sink(&self,
       services_arc : Arc<Mutex<HashMap<String, Option<Service>>>>,
-      progress_queue_arc : Arc<Mutex<HashMap<i64, Task>>>)
+      progress_queue_arc : Arc<Mutex<HashMap<i64, Task>>>,
+      done_queue_arc : Arc<Mutex<Vec<TaskReport>>>)
       -> Result <(),Error> {
 
     // Ok, let's bind to a port and start broadcasting
@@ -192,7 +211,7 @@ impl Server {
     assert!(sink.bind(&address).is_ok());
 
     let mut sink_job_count = 0;
-    let mut done_queue = Vec::new();
+
     loop {
       let mut recv_msg = zmq::Message::new().unwrap();
       let mut taskid_msg = zmq::Message::new().unwrap();
@@ -237,11 +256,7 @@ impl Server {
                 }
                 // Then mark the task done. This can be in a new thread later on
                 let done_report = task.generate_report(recv_path);
-                done_queue.push(done_report);
-                if done_queue.len() >= 1 { // Persist every 100 reports.
-                  self.backend.mark_done(&done_queue).unwrap(); // TODO: error handling if DB fails
-                  done_queue.clear();
-                }
+                Server::push_done_queue(&done_queue_arc, done_report);
               }
               else {
                 // Otherwise just discard the rest of the message
@@ -277,6 +292,18 @@ impl Server {
       None => None, // TODO: Handle errors
       Some(service_option) => service_option.clone()
     }
+  }
+
+  pub fn mark_done_arc(backend : &Backend, reports_arc: &Arc<Mutex<Vec<TaskReport>>>) {
+    let mut reports = reports_arc.lock().unwrap();
+    if reports.len() > 0 {
+      backend.mark_done(&reports).unwrap(); // TODO: error handling if DB fails
+      reports.clear();
+    }
+  }
+  pub fn push_done_queue(reports_arc : &Arc<Mutex<Vec<TaskReport>>>, report : TaskReport) {
+    let mut reports = reports_arc.lock().unwrap();
+    reports.push(report)
   }
 
   fn pop_progress_task(progress_queue_arc : &Arc<Mutex<HashMap<i64, Task>>>, taskid: i64) -> Option<Task> {

@@ -82,6 +82,8 @@ fn mock_tex_to_html() {
   // Check round-trip success
   let finished_task = test_backend.sync(&conversion_task).unwrap();
   println!("Finished: {:?}", finished_task);
+  // Wait for the finisher to persist to DB 
+  thread::sleep_ms(2001); // TODO: Can this be deterministic? Join?
   // This particular test finishes with an Error with the current LaTeXML (needs cmp.sty).
   assert!(finished_task.status == TaskStatus::Error.raw())
 }
