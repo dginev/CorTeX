@@ -84,8 +84,14 @@ impl TaskManager {
       let finalize_backend = Backend::from_address(&finalize_backend_address);
       // Persist every 1 second, if there is something to record
       loop {
-        thread::sleep_ms(1000); 
-        Server::mark_done_arc(&finalize_backend, &finalize_done_queue_arc);
+        match Server::mark_done_arc(&finalize_backend, &finalize_done_queue_arc) {
+          true => {
+            true;
+          } // we did some work, on to the next iteration
+          false => { // If we have no reports to process, sleep for a second and recheck
+            thread::sleep_ms(1000);
+          }
+        }
       };
     });
 
@@ -294,11 +300,14 @@ impl Server {
     }
   }
 
-  pub fn mark_done_arc(backend : &Backend, reports_arc: &Arc<Mutex<Vec<TaskReport>>>) {
+  pub fn mark_done_arc(backend : &Backend, reports_arc: &Arc<Mutex<Vec<TaskReport>>>) -> bool {
     let mut reports = reports_arc.lock().unwrap();
     if reports.len() > 0 {
       backend.mark_done(&reports).unwrap(); // TODO: error handling if DB fails
       reports.clear();
+      true
+    } else {
+      false
     }
   }
   pub fn push_done_queue(reports_arc : &Arc<Mutex<Vec<TaskReport>>>, report : TaskReport) {
