@@ -212,20 +212,20 @@ impl Server {
         None => {} // TODO: No such task, what to do?
         Some(task) => {
 
-          println!("{:?}", task);
+          // println!("{:?}", task);
           let service_option = Server::get_service_record(&services_arc, service_name.to_string());
           match service_option.clone() {
             None => {}, // TODO: Handle errors
             Some(service) => {
-              println!("Service: {:?}", service);
+              // println!("Service: {:?}", service);
               if service.id.unwrap() == task.serviceid {
-                println!("Task and Service match up.");
+                // println!("Task and Service match up.");
                 
                 // Receive the rest of the input in the correct file
                 let recv_dir = Path::new(&task.entry).parent().unwrap();
                 let recv_pathname = recv_dir.to_str().unwrap().to_string() + "/" + &service.name + "_" + &service.version.round().to_string() + ".zip";
                 let recv_path = Path::new(&recv_pathname);
-                println!("Will write to {:?}", recv_path);
+                // println!("Will write to {:?}", recv_path);
                 let mut file = File::create(recv_path).unwrap();
                 loop {
                   sink.recv(&mut recv_msg, 0).unwrap();
@@ -238,7 +238,7 @@ impl Server {
                 // Then mark the task done. This can be in a new thread later on
                 let done_report = task.generate_report(recv_path);
                 done_queue.push(done_report);
-                if done_queue.len() >= 100 { // Persist every 100 reports.
+                if done_queue.len() >= 1 { // Persist every 100 reports.
                   self.backend.mark_done(&done_queue).unwrap(); // TODO: error handling if DB fails
                   done_queue.clear();
                 }

@@ -125,6 +125,8 @@ impl Task {
   pub fn generate_report(&self, result: &Path) -> TaskReport {
     println!("Preparing report for {:?}, result at {:?}",self.entry, result);
     let mut messages = Vec::new();
+    let mut status = TaskStatus::Fatal; // Fatal by default
+
     // Let's open the archive file and find the name.log file:
     let log_name = self.id.unwrap().to_string() + ".log";
     let archive_reader = Reader::new().unwrap()
@@ -149,6 +151,15 @@ impl Task {
             }
             let log_string = str::from_utf8(&raw_log_data).unwrap();
             messages = self.parse_log(log_string.to_string());
+            // Look for the special status message - Fatal otherwise!
+            for m in messages.iter() {
+              if (m.severity == "status") && (m.category == "conversion") && !m.what.is_empty(){
+                // Adapt status to the CorTeX scheme: cortex_status = -(latexml_status+1)
+                let latexml_scheme_status = m.what.parse::<i32>().unwrap();
+                let cortex_scheme_status = -(latexml_scheme_status+1);
+                status = TaskStatus::from_raw(cortex_scheme_status);
+              }
+            }
           }
         },
         Err(_) => { break }
@@ -157,7 +168,7 @@ impl Task {
 
     TaskReport {
       task : self.clone(),
-      status : TaskStatus::NoProblem,
+      status : status,
       messages : messages
     }
   }
@@ -177,7 +188,6 @@ impl Task {
       // If we have found a message header and we're collecting details:
       if in_details_mode {
         // If the line starts with tab, we are indeed reading in details
-        
         if start_tab_regex.is_match(line) {
           // Append details line to the last message
           let mut last_message = messages.pop().unwrap();
@@ -210,7 +220,6 @@ impl Task {
         }
       };
     }
-    println!("All messages: {:?}", messages);
     messages
   }
 }

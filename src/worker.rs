@@ -15,7 +15,7 @@ use std::env;
 use std::fs::File;
 use std::io::{Read,Write, Seek, SeekFrom};
 use std::path::Path;
-use std::str;
+// use std::str;
 use std::process::Command;
 use rand::{random};
 
@@ -162,7 +162,7 @@ impl Worker for TexToHtmlWorker {
     let name = path.file_stem().unwrap().to_str().unwrap();
     let destination_path = env::temp_dir().to_str().unwrap().to_string() + "/" +name+ ".zip";
 
-    let output = Command::new("latexmlc")
+    Command::new("latexmlc")
       .arg("--whatsin")
       .arg("archive")
       .arg("--whatsout")
@@ -188,8 +188,8 @@ impl Worker for TexToHtmlWorker {
       .output()
       .unwrap_or_else(|e| { panic!("failed to execute process: {}", e) });
     
-    println!("Dest: {:?}", destination_path);
-    println!("Log: {:?}", str::from_utf8(&output.stderr));
+    // println!("Dest: {:?}", destination_path);
+    // println!("Log: {:?}", str::from_utf8(&output.stderr));
     Some(File::open(destination_path.clone()).unwrap())
   }
 }

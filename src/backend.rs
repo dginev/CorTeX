@@ -128,12 +128,16 @@ impl Backend {
 
   pub fn mark_done(&self, reports: &Vec<TaskReport>) -> Result<(),Error> {
     let trans = try!(self.connection.transaction());
-    for report in reports {
+    for report in reports.iter() {
       trans.execute("UPDATE tasks SET status=$1 WHERE taskid=$2",
-        &[&report.task.id, &report.status.raw()]).unwrap();
+        &[&report.status.raw(), &report.task.id]).unwrap();
       for message in &report.messages {
         // TODO: Add messages!
-        println!("{:?}", message);
+        if (message.severity == "info") || (message.severity == "status") {
+          continue;
+        } else {
+          println!("Recording message: {:?}", message)
+        }
       }
     }
     trans.set_commit();

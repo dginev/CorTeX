@@ -82,5 +82,6 @@ fn mock_tex_to_html() {
   // Check round-trip success
   let finished_task = test_backend.sync(&conversion_task).unwrap();
   println!("Finished: {:?}", finished_task);
+  // This particular test finishes with an Error with the current LaTeXML (needs cmp.sty).
   assert!(finished_task.status == TaskStatus::Error.raw())
 }
