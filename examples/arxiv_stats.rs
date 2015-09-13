@@ -74,6 +74,9 @@ fn main() {
   let args: Vec<_> = env::args().collect();
   let mut min_size = u64::MAX;
   let mut max_size = 0;
+  let mut max_path : String = "".to_string();
+  let mut min_path : String = "".to_string();
+
   let arxiv_root = &Path::new(&args[1]);
   let mut arxiv_size_frequencies: HashMap<u64, u64> = HashMap::new();
   let mut arxiv_monthly_sizes: HashMap<String, u64> = HashMap::new();
@@ -92,9 +95,11 @@ fn main() {
       let paper_size = get_dir_size(paper_dir) / 1024; // In KB
       if paper_size > max_size {
         max_size = paper_size;
+	max_path = paper_dir.path().to_str().unwrap().to_string();
       }
       if paper_size < min_size {
         min_size = paper_size;
+        min_path = paper_dir.path().to_str().unwrap().to_string();
       }
       monthly_size += paper_size;
       
@@ -119,6 +124,16 @@ fn main() {
     Ok(_) => {},
     Err(e) => println!("{:?}", e)
   };
+
+  let mut f4 = File::create("arxiv_stats.txt").unwrap();
+  f4.write_all(b"Min size: \n");
+  f4.write_all(min_size.to_string().as_bytes());
+  f4.write_all(b"\nMin path: \n");
+  f4.write_all(min_path.as_bytes());
+  f4.write_all(b"\nMax size: \n");
+  f4.write_all(max_size.to_string().as_bytes());
+  f4.write_all(b"\nMax path: \n");
+  f4.write_all(max_path.as_bytes());
 
   // arXiv months in order
   // TODO: Only current as of 1505, you'll have to extend manually next time this is run
