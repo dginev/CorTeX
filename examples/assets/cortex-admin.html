@@ -1,4 +1,15 @@
 {{> layout-cortex-pre }}
+<h2>Add Corpus</h2>
+<form action="/add_corpus" method="get">
+<table class="add-corpus">
+<tr><td>Path: </td><td><input type="text" name="path"></td></tr>
+<tr><td>Setup:</td><td>
+
+<input type="radio" name="setup" value="canonical" checked>Canonical<br>
+<input type="radio" name="setup" value="complex">arXiv</td></tr>
+<tr><td colspan="2"><input type="submit" value="Queue Corpus Import"></td></tr></table>
+</form>
+
 <h2>System Report</h2>
 <h3>Frontend Server</h3>
 <table class="system-report">
@@ -22,16 +33,5 @@
 <tr><td>Hostname</td><td>{{sys_hostname}}</td></tr>
 
 </table>
-
-<h2>Add Corpus</h2>
-<form action="/add_corpus" method="get">
-<table class="add-corpus">
-<tr><td>Path: </td><td><input type="text" name="path"></td></tr>
-<tr><td>Setup:</td><td>
-
-<input type="radio" name="setup" value="canonical" checked>Canonical<br>
-<input type="radio" name="setup" value="complex">arXiv</td></tr>
-<tr><td colspan="2"><input type="submit" value="Queue Corpus Import"></td></tr></table>
-</form>
 
 {{> layout-cortex-post }}

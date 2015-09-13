@@ -10,7 +10,8 @@ extern crate cortex;
 extern crate rustc_serialize;
 
 use std::collections::HashMap;
-// use std::path::Path;
+use std::path::Path;
+use std::fs;
 // use std::io::Read;
 use std::io::Error;
 use nickel::{Nickel, HttpRouter}; //, MediaType, JsonBody
@@ -21,7 +22,8 @@ use nickel::QueryString;
 // use hyper::header::Location;
 
 use cortex::sysinfo;
-// use cortex::backend::{Corpus, Backend};
+use cortex::backend::{Backend};
+use cortex::data::{Corpus};
 
 #[derive(RustcDecodable, RustcEncodable)]
 struct Person {
@@ -38,7 +40,7 @@ struct Person {
 
 fn main() {
     let mut server = Nickel::new();
-    // let backend = Backend::default();
+    
     //middleware function logs each request to console
     server.utilize(middleware! { |request|
         println!("logging request: {:?}", request.origin.uri);
@@ -46,19 +48,19 @@ fn main() {
     // Root greeter
     server.get("/", middleware! { |_, response|
         let mut data = HashMap::new();
-        data.insert("title", "Framework Overview | CorTeX".to_string());
+        data.insert("title", "Framework Overview".to_string());
         return response.render("examples/assets/cortex-overview.html", &data);
     });
     server.get("/overview", middleware! { |_, response|
         let mut data = HashMap::new();
-        data.insert("title", "Framework Overview | CorTeX".to_string());
+        data.insert("title", "Framework Overview".to_string());
         return response.render("examples/assets/cortex-overview.html", &data);
     });
 
     // Admin interface
     server.get("/admin", middleware! { |_, response|
       let mut data = HashMap::new();
-      data.insert("title", "Admin Interface | CorTeX".to_string());
+      data.insert("title", "Admin Interface".to_string());
       match sysinfo::report(&mut data) {
         Ok(_) => {},
         Err(e) => println!("Sys report failed: {:?}", e)
@@ -67,51 +69,51 @@ fn main() {
     });
 
     server.get("/add_corpus", middleware! { |request, mut response| 
-      let test = request.query();
-      println!("{:?}", test);
-      // let corpus_path = match request.param("path") {
-      //   Some(p) => {
-      //     println!("Got path: {:?}", p);
-      //     p
-      //   },
-      //   None =>{
-      //     let message = "Error: Please provide a path!";
-      //     println!("{:?}", message);
-      //     println!("{:?}", request.param("setup"));
+      let backend = Backend::default();
+      let mut data = HashMap::new();
+      let mut message : String ;
+      let mut corpus_path;
+      let query = request.query();
+      if let Some(p) = query.get("path") {
+        corpus_path = p.to_string();
+      } else {
+        data.insert("message", "Error: Please provide a path!".to_string());
+        return response.render("examples/assets/cortex-admin.html", &data);
+      }
+      println!("Adding Path: {:?}", corpus_path);
+      let complex : bool = query.get("setup") != Some("canonical");
+      let path = Path::new(&corpus_path);
+      match fs::metadata(path) {
+        Ok(_) => {},
+        Err(_) => {
+          message = "Error: Path ".to_string() + &corpus_path + " does not exist, aborting!";
           
-      //     response.set(Location("/admin".into()));
-      //     response.set(StatusCode::TemporaryRedirect);
-      //     return response.send("")
-      //   }
-      // };
-      // println!("Adding Path: {:?}", corpus_path);
-      // let path = Path::new(corpus_path);
-      // match fs::metadata(path) {
-      //   Ok(_) => {},
-      //   Err(_) => {
-      //     let message = "Error: Path ".to_string() + corpus_path + " does not exist, aborting!";
-      //     println!("{:?}", message);
-          
-      //     response.set(Location("/admin".into()));
-      //     response.set(StatusCode::TemporaryRedirect);
-      //     return response.send("")
-      //   }
-      // };
-      // let corpus_name = path.file_stem().unwrap();
-      // (corpus=>$corpus_name,entry=>$path,service=>'init',status=>-5)
+          response.set(Location("/admin".into()));
+          response.set(StatusCode::TemporaryRedirect);
+          return response.send("")
+        }
+      };
+      let corpus_name = path.file_stem().unwrap().to_str().unwrap().to_string();
 
-      // let corpus_id = backend.corpus_id(corpus_name);
-      // if ($overwrite || (!$corpus_exists)) {
-      //   $backend->taskdb->delete_corpus($corpus_name);
-      //   $backend->taskdb->register_corpus($corpus_name);
-      //   $backend->docdb->delete_directory($path,$path); }
-      // # Queue the corpus for import using the task database:
-      // $backend->taskdb->queue(corpus=>$corpus_name,entry=>$path,service=>'init',status=>-5);
-      // let message="Successfully Queued ".to_string() + corpus_path+ " for Import.";
+      // Queue the corpus for import using the task database:
+      let input_corpus = Corpus {
+        id : None,
+        name : corpus_name,
+        path : corpus_path.clone(),
+        complex : complex,
+      };
+      message = match backend.add(input_corpus) {
+        Ok(_) => "Successfully Queued ".to_string() + &corpus_path+ " for Import.",
+        Err(_) => "Failed to add corpus, please retry!".to_string()
+      };
+      data.insert("message", message);
+      return response.render("examples/assets/cortex-admin.html", &data);
+    });
 
-      response.set(Location("/admin".into()));
-      response.set(StatusCode::TemporaryRedirect);
-      return response.send("")
+    server.get("/corpus-report", middleware! { |_, response|
+      let mut data = HashMap::new();
+      data.insert("title", "Corpus Report".to_string());
+      return response.render("examples/assets/cortex-report.html", &data);
     });
 
     server.listen("127.0.0.1:6767");
