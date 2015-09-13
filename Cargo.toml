@@ -25,6 +25,7 @@ git = "https://github.com/dginev/rust-zmq.git"
 [dependencies]
 libc = "~0.1"
 regex = "0.1.8"
+regex_macros = "0.1.8"
 rustc-serialize = "0.3"
 postgres = "0.9"
 sys-info = "*"

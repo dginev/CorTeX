@@ -10,6 +10,8 @@
 
 #![doc(html_root_url = "https://dginev.github.io/rust-cortex/")]
 #![doc(html_logo_url = "https://raw.githubusercontent.com/dginev/rust-cortex/master/public/img/logo.jpg")]
+#![feature(plugin)]
+#![plugin(regex_macros)]
 
 extern crate glob;
 extern crate rustlibxml;

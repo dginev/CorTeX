@@ -160,7 +160,6 @@ impl Worker for TexToHtmlWorker {
 
   fn convert(&self, path : &Path) -> Option<File> {
     let name = path.file_stem().unwrap().to_str().unwrap();
-
     let destination_path = env::temp_dir().to_str().unwrap().to_string() + "/" +name+ ".zip";
 
     let output = Command::new("latexmlc")
@@ -181,6 +180,8 @@ impl Worker for TexToHtmlWorker {
       .arg("iso-8859-1")
       .arg("--timeout")
       .arg("300")
+      .arg("--log")
+      .arg(name.to_string() + ".log")
       .arg("--destination")
       .arg(destination_path.clone())
       .arg(path.clone())

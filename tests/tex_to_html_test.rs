@@ -55,14 +55,14 @@ fn mock_tex_to_html() {
       corpusid : mock_corpus.id.unwrap().clone(),
       status : TaskStatus::NoProblem.raw()
     }).unwrap();
-  test_backend.add(
-    Task {
+  let conversion_task = Task {
       id : None,
       entry : abs_entry.clone(),
       serviceid : tex_to_html_service.id.unwrap().clone(),
       corpusid : mock_corpus.id.unwrap().clone(),
       status : TaskStatus::TODO.raw()
-    }).unwrap();
+    };
+  test_backend.add(conversion_task.clone()).unwrap();
   
   // Start up a ventilator/sink pair
   thread::spawn(move || {
@@ -80,4 +80,7 @@ fn mock_tex_to_html() {
   // Perform a single echo task 
   assert!(worker.start(Some(1)).is_ok());
   // Check round-trip success
+  let finished_task = test_backend.sync(&conversion_task).unwrap();
+  println!("Finished: {:?}", finished_task);
+  assert!(finished_task.status == TaskStatus::Error.raw())
 }

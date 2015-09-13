@@ -192,6 +192,7 @@ impl Server {
     assert!(sink.bind(&address).is_ok());
 
     let mut sink_job_count = 0;
+    let mut done_queue = Vec::new();
     loop {
       let mut recv_msg = zmq::Message::new().unwrap();
       let mut taskid_msg = zmq::Message::new().unwrap();
@@ -222,7 +223,8 @@ impl Server {
                 
                 // Receive the rest of the input in the correct file
                 let recv_dir = Path::new(&task.entry).parent().unwrap();
-                let recv_path = recv_dir.to_str().unwrap().to_string() + "/" + &service.name + "_" + &service.version.round().to_string() + ".zip";
+                let recv_pathname = recv_dir.to_str().unwrap().to_string() + "/" + &service.name + "_" + &service.version.round().to_string() + ".zip";
+                let recv_path = Path::new(&recv_pathname);
                 println!("Will write to {:?}", recv_path);
                 let mut file = File::create(recv_path).unwrap();
                 loop {
@@ -233,7 +235,13 @@ impl Server {
                     break;
                   }
                 }
-                // Then mark the task done.
+                // Then mark the task done. This can be in a new thread later on
+                let done_report = task.generate_report(recv_path);
+                done_queue.push(done_report);
+                if done_queue.len() >= 100 { // Persist every 100 reports.
+                  self.backend.mark_done(&done_queue).unwrap(); // TODO: error handling if DB fails
+                  done_queue.clear();
+                }
               }
               else {
                 // Otherwise just discard the rest of the message

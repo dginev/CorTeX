@@ -132,7 +132,8 @@ impl Backend {
       trans.execute("UPDATE tasks SET status=$1 WHERE taskid=$2",
         &[&report.task.id, &report.status.raw()]).unwrap();
       for message in &report.messages {
-        println!("{:?}", message.text);
+        // TODO: Add messages!
+        println!("{:?}", message);
       }
     }
     trans.set_commit();

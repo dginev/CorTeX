@@ -4,14 +4,19 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
+
 use rustc_serialize::json::{Json, ToJson};
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::Read;
+// use std::io::Read;
 use std::path::Path;
+use std::str;
+
 use postgres::Connection;
 use postgres::rows::{Row};
 use postgres::error::Error;
+
+use Archive::*;
 
 // The CorTeX data structures and traits:
 
@@ -116,6 +121,100 @@ impl Clone for Task {
     }
   }
 }
+impl Task {
+  pub fn generate_report(&self, result: &Path) -> TaskReport {
+    println!("Preparing report for {:?}, result at {:?}",self.entry, result);
+    let mut messages = Vec::new();
+    // Let's open the archive file and find the name.log file:
+    let log_name = self.id.unwrap().to_string() + ".log";
+    let archive_reader = Reader::new().unwrap()
+      .support_filter_all()
+      .support_format_all()
+      .open_filename(result.to_str().unwrap(), 10240).unwrap();
+    loop {
+      match archive_reader.next_header() {
+        Ok(e) => {
+          let current_name = e.pathname();
+          if current_name != log_name {
+            continue;
+          } else {
+            // In a "raw" read, we don't know the data size in advance. So we bite the bullet and
+            // read the usually manageable log file in memory
+            let mut raw_log_data = Vec::new();
+            loop {
+              match archive_reader.read_data(10240) {
+                Ok(chunk) => raw_log_data.extend(chunk.into_iter()),
+                Err(_) => {break}
+              };
+            }
+            let log_string = str::from_utf8(&raw_log_data).unwrap();
+            messages = self.parse_log(log_string.to_string());
+          }
+        },
+        Err(_) => { break }
+      }
+    }
+
+    TaskReport {
+      task : self.clone(),
+      status : TaskStatus::NoProblem,
+      messages : messages
+    }
+  }
+
+  /// Parses a log string which follows the LaTeXML convention
+  /// (described at http://dlmf.nist.gov/LaTeXML/manual/errorcodes/index.html)
+  pub fn parse_log(&self, log : String) -> Vec<TaskMessage> {
+    let mut messages : Vec<TaskMessage> = Vec::new();
+    let mut in_details_mode = false;
+    
+    // regexes:
+    let message_line_regex = regex!(r"^([^ :]+):([^ :]+):([^ ]+)(\s(.*))?$");
+    let start_tab_regex = regex!(r"^\t");
+    for line in log.lines() {
+      // Skip empty lines
+      if line.is_empty() {continue;}
+      // If we have found a message header and we're collecting details:
+      if in_details_mode {
+        // If the line starts with tab, we are indeed reading in details
+        
+        if start_tab_regex.is_match(line) {
+          // Append details line to the last message
+          let mut last_message = messages.pop().unwrap();
+          last_message.details = last_message.details + "\n" + line;
+          messages.push(last_message);
+          continue; // This line has been consumed, next
+        } else {
+          // Otherwise, no tab at the line beginning means last message has ended
+          in_details_mode = false;
+        }
+      }
+      // Since this isn't a details line, check if it's a message line:
+      match message_line_regex.captures(line) {
+        Some(cap) => {
+          // Indeed a message, so record it:
+          let message = TaskMessage {
+            severity : cap.at(1).unwrap_or("").to_string().to_lowercase(),
+            category : cap.at(2).unwrap_or("").to_string().to_lowercase(),
+            what     : cap.at(3).unwrap_or("").to_string().to_lowercase(),
+            details  : cap.at(5).unwrap_or("").to_string()
+          };
+          // Prepare to record follow-up lines with the message details:
+          in_details_mode = true;
+          // Add to the array of parsed messages
+          messages.push(message);
+        },
+        None => {
+          // Otherwise line is just noise, continue...
+          in_details_mode = false;
+        }
+      };
+    }
+    println!("All messages: {:?}", messages);
+    messages
+  }
+}
+
 // Task Reports (completed tasks)
 pub struct TaskReport {
   pub task : Task,
@@ -123,7 +222,10 @@ pub struct TaskReport {
   pub messages : Vec<TaskMessage>
 }
 pub struct TaskMessage {
-  pub text : String
+  pub category : String,
+  pub severity : String, 
+  pub what : String, 
+  pub details : String
 }
 pub enum TaskStatus {
   NoProblem,
@@ -133,6 +235,17 @@ pub enum TaskStatus {
   TODO,
   Blocked(i32),
   Queued(i32)
+}
+
+impl fmt::Display for TaskMessage {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "(severity: {}, category: {},\n\twhat: {},\n\tdetails: {})\n", self.severity, self.category, self.what, self.details)
+  }
+}
+impl fmt::Debug for TaskMessage {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "(severity: {}, category: {},\n\twhat: {},\n\tdetails: {})\n", self.severity, self.category, self.what, self.details)
+  }
 }
 impl TaskStatus {
   pub fn raw(&self) -> i32 {
