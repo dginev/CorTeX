@@ -99,15 +99,17 @@ impl Backend {
     trans.execute("DROP TABLE if EXISTS logs", &[]).unwrap();
     trans.execute("CREATE TABLE logs (
       messageid BIGSERIAL PRIMARY KEY,
-      taskid INTEGER NOT NULL,
+      taskid BIGINT NOT NULL,
+      severity char(50),
       category char(50),
-      what char(50)
-    );", &[]).unwrap();
-    trans.execute("DROP TABLE if EXISTS logdetails", &[]).unwrap();
-    trans.execute("CREATE TABLE logdetails (
-      messageid BIGSERIAL PRIMARY KEY,
+      what char(50),
       details varchar(2000)
     );", &[]).unwrap();
+    trans.execute("DROP TABLE if EXISTS logdetails", &[]).unwrap();
+    // trans.execute("CREATE TABLE logdetails (
+    //   messageid BIGSERIAL PRIMARY KEY,
+    //   details varchar(2000)
+    // );", &[]).unwrap();
     trans.execute("create index logtaskcatwhat on logs(taskid,category,what);", &[]).unwrap();
 
     trans.set_commit();
@@ -128,17 +130,22 @@ impl Backend {
 
   pub fn mark_done(&self, reports: &Vec<TaskReport>) -> Result<(),Error> {
     let trans = try!(self.connection.transaction());
+    let insert_log_message = trans.prepare("INSERT INTO logs (taskid, severity, category, what, details) values($1,$2,$3,$4,$5)").unwrap();
+    // let insert_log_message_details = trans.prepare("INSERT INTO logdetails (messageid, details) values(?,?)").unwrap();
     for report in reports.iter() {
+      let taskid = report.task.id.unwrap();
       trans.execute("UPDATE tasks SET status=$1 WHERE taskid=$2",
-        &[&report.status.raw(), &report.task.id]).unwrap();
+        &[&report.status.raw(), &taskid]).unwrap();
       for message in &report.messages {
-        // TODO: Add messages!
         if (message.severity == "info") || (message.severity == "status") {
-          continue;
+          continue; // Skip info and status information, keep the DB small
         } else {
-          println!("Recording message: {:?}", message)
+          // Warnings, Errors and Fatals will get added:
+          insert_log_message.query(&[&taskid, 
+            &message.severity, &message.category, &message.what, &message.details]).unwrap();
         }
       }
+      // TODO: Update dependencies
     }
     trans.set_commit();
     try!(trans.finish());
