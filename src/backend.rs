@@ -81,9 +81,9 @@ impl Backend {
     trans.execute("create index servicenameidx on services(name);", &[]).unwrap();
     // trans.execute("create index serviceiididx on services(iid);", &[]).unwrap();
     trans.execute("INSERT INTO services (name, version, inputformat,outputformat,complex)
-               values('import',0.1, 'tex','tex', true);", &[]).unwrap();
-    trans.execute("INSERT INTO services (name, version, inputformat,outputformat,complex)
            values('init',0.1, 'tex','tex', true);", &[]).unwrap();
+    trans.execute("INSERT INTO services (name, version, inputformat,outputformat,complex)
+           values('import',0.1, 'tex','tex', true);", &[]).unwrap();
 
     // Dependency Tables
     trans.execute("DROP TABLE IF EXISTS dependencies;", &[]).unwrap();

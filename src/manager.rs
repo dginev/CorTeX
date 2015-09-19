@@ -9,7 +9,8 @@ extern crate tempfile;
 
 use zmq::{Error, SNDMORE};
 use backend::{Backend, DEFAULT_DB_ADDRESS};
-use data::{Task, TaskReport, Service};
+use data::{Task, TaskReport, TaskStatus, Service, Corpus};
+use importer::Importer;
 
 use std::thread;
 use std::sync::Arc;
@@ -35,7 +36,8 @@ pub struct Server {
   pub port : usize,
   pub queue_size : usize,
   pub message_size : usize,
-  pub backend : Backend
+  pub backend : Backend,
+  pub backend_address : String
 }
 
 impl Default for TaskManager {
@@ -72,7 +74,8 @@ impl TaskManager {
         port : source_port,
         queue_size : source_queue_size,
         message_size : source_message_size,
-        backend : Backend::from_address(&source_backend_address)
+        backend : Backend::from_address(&source_backend_address),
+        backend_address : source_backend_address.clone()
       };
       sources.start_ventilator(vent_services_arc, vent_progress_queue_arc).unwrap();
     });
@@ -110,7 +113,8 @@ impl TaskManager {
         port : result_port,
         queue_size : result_queue_size,
         message_size : result_message_size,
-        backend : Backend::from_address(&result_backend_address)
+        backend : Backend::from_address(&result_backend_address),
+        backend_address: result_backend_address.clone()
       };
       results.start_sink(sink_services_arc, sink_progress_queue_arc, sink_done_queue_arc).unwrap();
     });
@@ -161,6 +165,30 @@ impl Server {
           match task_queue.pop() {
             Some(current_task) => {
               let taskid = current_task.id.unwrap();
+              let serviceid = current_task.serviceid;
+              if serviceid == 1 { // Init service is a special case
+                
+                let importer = Importer {
+                  corpus: self.backend.sync(
+                    &Corpus {
+                      id: Some(current_task.corpusid),
+                      path : current_task.entry.clone(),
+                      name : current_task.entry.clone(),
+                      complex : true }).unwrap(),
+                  backend: Backend::from_address(&self.backend_address),
+                  cwd : Importer::cwd() };
+                
+                importer.process();
+
+                let init_report = TaskReport {
+                  task : current_task.clone(),
+                  status : TaskStatus::NoProblem,
+                  messages : Vec::new()
+                };
+                let completed_init = vec![init_report];
+                self.backend.mark_done(&completed_init).unwrap(); // TODO: error handling if DB fails
+                continue;
+              }
               let file_opt = service.prepare_input_stream(current_task.clone());
               if file_opt.is_ok() {
                 let mut file = file_opt.unwrap();

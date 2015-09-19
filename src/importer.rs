@@ -239,7 +239,7 @@ impl Importer {
     } else {
       entry.clone()
     };
-    Task {id: None, entry : abs_entry, status : TaskStatus::NoProblem.raw(), corpusid : self.corpus.id.unwrap(), serviceid: 1}
+    Task {id: None, entry : abs_entry, status : TaskStatus::NoProblem.raw(), corpusid : self.corpus.id.unwrap(), serviceid: 2}
   }
 
   pub fn process(&self) -> Result<(),()> {

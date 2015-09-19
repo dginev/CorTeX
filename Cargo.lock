@@ -7,7 +7,7 @@ dependencies = [
  "hyper 0.6.13 (registry+https://github.com/rust-lang/crates.io-index)",
  "libarchive-sys 0.0.1 (git+https://github.com/dginev/libarchive-sys.git)",
  "libc 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)",
- "nickel 0.6.0 (git+https://github.com/nickel-org/nickel.rs.git)",
+ "nickel 0.7.0 (git+https://github.com/nickel-org/nickel.rs.git)",
  "postgres 0.9.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.3.11 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 0.1.41 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -24,7 +24,7 @@ name = "advapi32-sys"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
- "winapi 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "winapi 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "winapi-build 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -69,11 +69,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "gcc"
-version = "0.3.13"
+version = "0.3.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "advapi32-sys 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "winapi 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "winapi 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -130,7 +130,7 @@ name = "kernel32-sys"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
- "winapi 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "winapi 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "winapi-build 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -211,8 +211,8 @@ dependencies = [
 
 [[package]]
 name = "nickel"
-version = "0.6.0"
-source = "git+https://github.com/nickel-org/nickel.rs.git#1f78ab244b3b7f4000a3c35482505cbc2c39ce50"
+version = "0.7.0"
+source = "git+https://github.com/nickel-org/nickel.rs.git#197aac310c80b6963574c2a5e32f3f22434702d1"
 dependencies = [
  "groupable 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "hyper 0.6.13 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -252,7 +252,7 @@ name = "openssl-sys"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
- "gcc 0.3.13 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gcc 0.3.14 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "libressl-pnacl-sys 2.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "pkg-config 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -332,7 +332,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "advapi32-sys 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)",
- "winapi 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "winapi 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -385,7 +385,7 @@ name = "sys-info"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
- "gcc 0.3.13 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gcc 0.3.14 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -404,7 +404,7 @@ dependencies = [
  "kernel32-sys 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.3.11 (registry+https://github.com/rust-lang/crates.io-index)",
- "winapi 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "winapi 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -414,7 +414,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "kernel32-sys 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)",
- "winapi 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "winapi 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -464,7 +464,7 @@ dependencies = [
 
 [[package]]
 name = "winapi"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]

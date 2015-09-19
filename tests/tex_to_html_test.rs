@@ -51,7 +51,7 @@ fn mock_tex_to_html() {
     Task {
       id : None,
       entry : abs_entry.clone(),
-      serviceid : 1, // Import service always has id 1
+      serviceid : 2, // Import service always has id 2
       corpusid : mock_corpus.id.unwrap().clone(),
       status : TaskStatus::NoProblem.raw()
     }).unwrap();
