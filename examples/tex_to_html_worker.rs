@@ -7,8 +7,9 @@
 extern crate zmq;
 extern crate rand;
 extern crate tempfile;
-extern crate cortex;
-use cortex::worker::{Worker,TexToHtmlWorker};
+extern crate pericortex;
+
+use pericortex::worker::{Worker,TexToHtmlWorker};
 
 fn main() {
   println!("Starting up TeX to HTML worker and awaiting jobs...");

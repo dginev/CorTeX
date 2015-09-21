@@ -5,10 +5,12 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 extern crate cortex;
+extern crate pericortex;
+
 use cortex::backend::{Backend, TEST_DB_ADDRESS};
 use cortex::data::{Corpus,Service, Task, TaskStatus};
 use cortex::manager::{TaskManager};
-use cortex::worker::{EchoWorker, Worker};
+use pericortex::worker::{EchoWorker, Worker};
 use cortex::importer::Importer;
 use std::thread;
 #[test]

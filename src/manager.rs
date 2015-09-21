@@ -178,7 +178,7 @@ impl Server {
                   backend: Backend::from_address(&self.backend_address),
                   cwd : Importer::cwd() };
                 
-                importer.process();
+                importer.process().unwrap();
 
                 let init_report = TaskReport {
                   task : current_task.clone(),

@@ -24,10 +24,10 @@ extern crate Archive;
 extern crate rustc_serialize;
 extern crate rand;
 extern crate tempfile;
+extern crate pericortex;
 
 pub mod backend;
 pub mod importer;
 pub mod data;
 pub mod sysinfo;
 pub mod manager;
-pub mod worker;

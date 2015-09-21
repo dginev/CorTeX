@@ -22,6 +22,10 @@ git = "https://github.com/nickel-org/nickel.rs.git"
 [dependencies.zmq]
 git = "https://github.com/dginev/rust-zmq.git"
 
+[dependencies.pericortex]
+git = "https://github.com/dginev/rust-cortex-peripherals.git"
+
+
 [dependencies]
 libc = "~0.1"
 regex = "0.1.8"
