@@ -31,3 +31,4 @@ pub mod importer;
 pub mod data;
 pub mod sysinfo;
 pub mod manager;
+pub mod worker;

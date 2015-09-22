@@ -15,8 +15,7 @@ use std::path::PathBuf;
 use std::fs;
 use std::env;
 use std::io::Error;
-// use std::fs::File;
-use backend::Backend;
+use backend::{Backend};
 use data::{Task, TaskStatus, Corpus};
 
 // Only initialize auxiliary resources once and keep them in a Importer struct
@@ -196,6 +195,7 @@ impl Importer {
     let mut import_counter = 0;
     while walk_q.len() > 0 { 
       let current_path = walk_q.pop().unwrap();
+      // println!("-- current path {:?}", current_path);
       let current_metadata = try!(fs::metadata(current_path.clone()));
       if current_metadata.is_dir() { // Ignore files
         // First, test if we just found an entry:
@@ -205,7 +205,7 @@ impl Importer {
         match fs::metadata(current_entry_path.clone()) {
           Ok(_) => {
             // Found the expected file, import this entry:
-            // println!("Found entry: {:?}", current_entry_path);
+            println!("Found entry: {:?}", current_entry_path);
             import_counter += 1;
             import_q.push(self.new_task(current_entry_path));
             if import_q.len() >= 1000 {
@@ -239,6 +239,7 @@ impl Importer {
     } else {
       entry.clone()
     };
+    
     Task {id: None, entry : abs_entry, status : TaskStatus::NoProblem.raw(), corpusid : self.corpus.id.unwrap(), serviceid: 2}
   }
 
@@ -252,3 +253,4 @@ impl Importer {
     Ok(())
   }
 }
+

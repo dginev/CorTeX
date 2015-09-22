@@ -9,8 +9,7 @@ extern crate tempfile;
 
 use zmq::{Error, SNDMORE};
 use backend::{Backend, DEFAULT_DB_ADDRESS};
-use data::{Task, TaskReport, TaskStatus, Service, Corpus};
-use importer::Importer;
+use data::{Task, TaskReport, TaskStatus, Service};
 
 use std::thread;
 use std::sync::Arc;
@@ -166,58 +165,41 @@ impl Server {
             Some(current_task) => {
               let taskid = current_task.id.unwrap();
               let serviceid = current_task.serviceid;
-              if serviceid == 1 { // Init service is a special case
-                
-                let importer = Importer {
-                  corpus: self.backend.sync(
-                    &Corpus {
-                      id: Some(current_task.corpusid),
-                      path : current_task.entry.clone(),
-                      name : current_task.entry.clone(),
-                      complex : true }).unwrap(),
-                  backend: Backend::from_address(&self.backend_address),
-                  cwd : Importer::cwd() };
-                
-                importer.process().unwrap();
+              
+              dispatched_task = Some(current_task.clone());
 
-                let init_report = TaskReport {
-                  task : current_task.clone(),
-                  status : TaskStatus::NoProblem,
-                  messages : Vec::new()
-                };
-                let completed_init = vec![init_report];
-                self.backend.mark_done(&completed_init).unwrap(); // TODO: error handling if DB fails
-                continue;
-              }
-              let file_opt = service.prepare_input_stream(current_task.clone());
-              if file_opt.is_ok() {
-                let mut file = file_opt.unwrap();
-                dispatched_task = Some(current_task);
-
-                ventilator.send_msg(identity, SNDMORE).unwrap();
-                ventilator.send_str(&taskid.to_string(), SNDMORE).unwrap();
-                
-                let mut total_outgoing = 0;
-                loop {
-                  // Stream input data via zmq
-                  let mut data = vec![0; self.message_size];
-                  let size = file.read(&mut data).unwrap();
-                  total_outgoing += size;
-                  data.truncate(size);
-                  
-                  if size < self.message_size {
-                    // If exhausted, send the last frame
-                    ventilator.send(&data,0).unwrap(); 
-                    // And terminate
-                    break;
-                  } else {
-                    // If more to go, send the frame and indicate there's more to come
-                    ventilator.send(&data,SNDMORE).unwrap();
+              ventilator.send_msg(identity, SNDMORE).unwrap();
+              ventilator.send_str(&taskid.to_string(), SNDMORE).unwrap();
+              if serviceid == 1 { // No payload needed for init
+                ventilator.send(&[],0).unwrap(); }
+              else {
+                // Regular services fetch the task payload and transfer it to the worker
+                let file_opt = service.prepare_input_stream(current_task.clone());
+                if file_opt.is_ok() {
+                  let mut file = file_opt.unwrap();        
+                  let mut total_outgoing = 0;
+                  loop {
+                    // Stream input data via zmq
+                    let mut data = vec![0; self.message_size];
+                    let size = file.read(&mut data).unwrap();
+                    total_outgoing += size;
+                    data.truncate(size);
+                    
+                    if size < self.message_size {
+                      // If exhausted, send the last frame
+                      ventilator.send(&data,0).unwrap(); 
+                      // And terminate
+                      break;
+                    } else {
+                      // If more to go, send the frame and indicate there's more to come
+                      ventilator.send(&data,SNDMORE).unwrap();
+                    }
                   }
+                  println!("Source job {}, message size: {}", source_job_count, total_outgoing);
+                } else {
+                  // TODO: smart handling of failures
+                  ventilator.send(&[],0).unwrap(); 
                 }
-                println!("Source job {}, message size: {}", source_job_count, total_outgoing);
-              } else {
-                // TODO: smart handling of failures
               }
             },
             None => {}
@@ -270,27 +252,39 @@ impl Server {
           match service_option.clone() {
             None => {}, // TODO: Handle errors
             Some(service) => {
-              // println!("Service: {:?}", service);
-              if service.id.unwrap() == task.serviceid {
+              let serviceid = service.id.unwrap();
+              println!("Service: {:?}", serviceid);
+              if serviceid == task.serviceid {
                 // println!("Task and Service match up.");
-                
-                // Receive the rest of the input in the correct file
-                let recv_dir = Path::new(&task.entry).parent().unwrap();
-                let recv_pathname = recv_dir.to_str().unwrap().to_string() + "/" + &service.name + "_" + &service.version.round().to_string() + ".zip";
-                let recv_path = Path::new(&recv_pathname);
-                // println!("Will write to {:?}", recv_path);
-                let mut file = File::create(recv_path).unwrap();
-                loop {
-                  sink.recv(&mut recv_msg, 0).unwrap();
-
-                  total_incoming += file.write(recv_msg.deref()).unwrap();
-                  if !sink.get_rcvmore().unwrap() {
-                    break;
-                  }
+                if serviceid == 1 { // No payload needed for init
+                  sink.recv(&mut recv_msg, 0).unwrap(); 
+                  let done_report = TaskReport {
+                    task : task.clone(),
+                    status : TaskStatus::NoProblem,
+                    messages : Vec::new()
+                  };
+                  Server::push_done_queue(&done_queue_arc, done_report);
                 }
-                // Then mark the task done. This can be in a new thread later on
-                let done_report = task.generate_report(recv_path);
-                Server::push_done_queue(&done_queue_arc, done_report);
+                else {                
+                  // Receive the rest of the input in the correct file
+                  let recv_dir = Path::new(&task.entry).parent().unwrap();
+                  let recv_pathname = recv_dir.to_str().unwrap().to_string() + "/" + &service.name + "_" + &service.version.round().to_string() + ".zip";
+                  let recv_path = Path::new(&recv_pathname);
+                  // println!("Will write to {:?}", recv_path);
+                  let mut file = File::create(recv_path).unwrap();
+                  loop {
+                    sink.recv(&mut recv_msg, 0).unwrap();
+
+                    total_incoming += file.write(recv_msg.deref()).unwrap();
+                    if !sink.get_rcvmore().unwrap() {
+                      break;
+                    }
+                  }
+                  // Then mark the task done. This can be in a new thread later on
+                  let done_report = task.generate_report(recv_path);
+                  Server::push_done_queue(&done_queue_arc, done_report);
+                }
+                
               }
               else {
                 // Otherwise just discard the rest of the message
