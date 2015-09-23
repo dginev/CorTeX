@@ -45,9 +45,16 @@ impl Backend {
 
   // Instance methods
   pub fn needs_init(&self) -> bool {
-    match self.connection.execute("SELECT * FROM services where name='init'", &[]) {
-      Ok(_) => true,
-      _ => false
+    match self.connection.prepare("SELECT * FROM services where name='init'") {
+      Ok(init_check_query) => {
+        match init_check_query.query(&[]) {
+          Ok(rows) => {
+            rows.len() == 0
+          },
+          _ => true
+        }
+      },
+      _ => true
     }
   }
   pub fn setup_task_tables(&self) -> postgres::Result<()> {
