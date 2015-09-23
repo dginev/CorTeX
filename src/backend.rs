@@ -42,7 +42,14 @@ impl Backend {
       connection: Connection::connect(TEST_DB_ADDRESS.clone(), &SslMode::None).unwrap()
     }
   }
+
   // Instance methods
+  pub fn needs_init(&self) -> bool {
+    match self.connection.execute("SELECT * FROM services where name='init'", &[]) {
+      Ok(_) => true,
+      _ => false
+    }
+  }
   pub fn setup_task_tables(&self) -> postgres::Result<()> {
     let trans = try!(self.connection.transaction());
     // Tasks
@@ -212,6 +219,32 @@ impl Backend {
 
   pub fn clear_limbo_tasks(&self) -> Result<(), Error> {
     try!(self.connection.execute("UPDATE tasks SET status=$1 WHERE status > $2", &[&TaskStatus::TODO.raw(), &TaskStatus::NoProblem.raw(),]));
+    Ok(())
+  }
+
+  pub fn register_service(&self, service: Service, corpus_path: String) -> Result<(),Error> {
+    let corpus_placeholder = Corpus {
+      id : None,
+      path : corpus_path.clone(),
+      name : corpus_path,
+      complex : true
+    };
+    let corpus = self.sync(&corpus_placeholder).unwrap();
+    let corpusid = corpus.id.unwrap();
+    let serviceid = service.id.unwrap();
+    let todo_raw = TaskStatus::TODO.raw();
+
+    try!(self.connection.execute("DELETE from tasks where serviceid=$1 AND corpusid=$2", &[&serviceid, &corpusid]));
+    let task_entries_query = try!(self.connection.prepare("SELECT entry from tasks where serviceid=2 AND corpusid=$1"));
+    let task_entries = try!(task_entries_query.query(&[&corpus.id.unwrap()]));
+    let trans = try!(self.connection.transaction());   
+    for task_entry in task_entries.iter() {
+      let entry : String = task_entry.get(0);
+      trans.execute("INSERT INTO tasks (entry,serviceid,corpusid, status) VALUES ($1,$2,$3,$4)",
+        &[&entry, &serviceid, &corpusid, &todo_raw]).unwrap();
+    }
+    trans.set_commit();
+    try!(trans.finish());
     Ok(())
   }
 }

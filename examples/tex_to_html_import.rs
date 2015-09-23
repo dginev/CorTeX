@@ -17,7 +17,7 @@ use std::env;
 
 use std::thread;
 use cortex::backend::{Backend, DEFAULT_DB_ADDRESS};
-use cortex::data::{Task, TaskStatus};
+use cortex::data::{Task, TaskStatus, Service};
 use cortex::manager::TaskManager;
 use cortex::worker::InitWorker;
 use pericortex::worker::Worker;
@@ -33,14 +33,17 @@ fn main() {
     Some(name) => name,
     None => "arXMLiv".to_string()
   };
-  println!("Importing {:?} at {:?} ...",corpus_name, corpus_path);
+  println!("-- Importing {:?} at {:?} ...",corpus_name, corpus_path.clone());
   let backend = Backend::default();
-  backend.setup_task_tables().unwrap();
+  if backend.needs_init() {
+    println!("-- Backend not initialized, seting up tables.");
+    backend.setup_task_tables().unwrap();
+  }
 
   backend.add(
     Task {
       id : None,
-      entry : corpus_path,
+      entry : corpus_path.clone(),
       serviceid : 1, // Init service always has id 1
       corpusid : 1,
       status : TaskStatus::TODO.raw()
@@ -72,4 +75,22 @@ fn main() {
   assert!(worker.start(Some(1)).is_ok());
   // Wait for the final finisher to persist to DB 
   thread::sleep_ms(2001); // TODO: Can this be deterministic? Join?
+
+  // Then add a TeX-to-HTML service on this corpus.
+  let service_placeholder = Service {
+    id : None,
+    name : "tex_to_html".to_string(),
+    version : 0.1,
+    inputformat : "tex".to_string(),
+    outputformat : "html".to_string(),
+    inputconverter : Some("import".to_string()),
+    complex : true
+  };
+  let service_synced = backend.sync(&service_placeholder).unwrap();
+  let service_checked = match service_synced.id {
+    Some(_) => service_synced,
+    None => backend.add(service_synced).unwrap()
+  };
+
+  backend.register_service(service_checked, corpus_path).unwrap();
 }
