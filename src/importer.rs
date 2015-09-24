@@ -53,7 +53,7 @@ impl Importer {
     Ok(())
   }
   pub fn unpack_arxiv_top(&self) -> Result<(),()> {
-    // println!("Greetings from unpack_arxiv_top");
+    println!("-- Starting top-level unpack process");
     let path_str = self.corpus.path.clone();
     let tars_path = path_str.to_string() + "/*.tar";
     for entry in glob(&tars_path).unwrap() {
@@ -82,7 +82,12 @@ impl Importer {
                   Ok(_) => println!("File {:?} exists, won't unpack.", e.pathname()),
                   Err(_) => {
                     println!("To unpack: {:?}", full_extract_path); 
-                    e.extract_to(&full_extract_path, Vec::new()).unwrap();
+                    match e.extract_to(&full_extract_path, Vec::new()) {
+                      Ok(_) => {},
+                      _ => {
+                        println!("Failed to extract {:?}", full_extract_path);
+                      }
+                    }
                   }
                 }
               },
@@ -96,7 +101,7 @@ impl Importer {
     Ok(())
   }
   pub fn unpack_arxiv_months(&self) -> Result<(),()> {
-    // println!("Greetings from unpack_arxiv_months");
+    println!("-- Starting to unpack monthly .gz archives");
     let path_str = self.corpus.path.clone();
     let gzs_path = path_str.to_string() + "/*/*.gz";
     for entry in glob(&gzs_path).unwrap() {
@@ -150,7 +155,10 @@ impl Importer {
                           break;
                         }
                       }
-                      archive_writer_new.write_data(raw_data).unwrap();
+                      match archive_writer_new.write_data(raw_data) {
+                        Ok(_) => {},
+                        Err(e) => println!("Failed to write data to {:?} because {:?}", tex_target.clone(), e)
+                      };
                     },
                     Err(_) => println!("No content in archive: {:?}", entry_path)
                   }
@@ -162,7 +170,10 @@ impl Importer {
               loop {
                 match archive_reader.next_header() {
                   Ok(e) => {
-                    archive_writer_new.write_header(e).unwrap();
+                    match archive_writer_new.write_header(e) {
+                      Ok(_) => {},
+                      _ => {} // TODO: If we need to print an error message, we can do so later.
+                    };
                     loop {
                       let entry_data = archive_reader.read_data(10240);
                       match entry_data {
@@ -189,6 +200,7 @@ impl Importer {
   }
 
   pub fn walk_import<'walk>(&self) -> Result<(),Error> {
+    println!("-- Starting import walk");
     let import_extension = if self.corpus.complex { "zip" } else { "tex" };
     let mut walk_q : Vec<PathBuf> = vec![Path::new(&self.corpus.path).to_owned()];
     let mut import_q : Vec<Task> = Vec::new();
