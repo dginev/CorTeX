@@ -206,20 +206,20 @@ impl Task {
           // We'll need to do some manual truncations, since the POSTGRESQL wrapper prefers
           //   panicking to auto-truncating (would not have been the Perl way, but Rust is Rust)
           let mut truncated_severity = cap.at(1).unwrap_or("").to_string().to_lowercase();
-          if truncated_severity.len() > 50 {
-            truncated_severity.truncate(50);
+          if truncated_severity.len() >= 50 {
+            truncated_severity.truncate(49);
           }
           let mut truncated_category = cap.at(2).unwrap_or("").to_string().to_lowercase();
-          if truncated_category.len() > 50 {
-            truncated_category.truncate(50);
+          if truncated_category.len() >= 50 {
+            truncated_category.truncate(49);
           }
           let mut truncated_what = cap.at(3).unwrap_or("").to_string().to_lowercase();
-          if truncated_what.len() > 50 {
-            truncated_what.truncate(50);
+          if truncated_what.len() >= 50 {
+            truncated_what.truncate(49);
           }
           let mut truncated_details = cap.at(5).unwrap_or("").to_string();
-          if truncated_details.len() > 2000 {
-            truncated_details.truncate(2000);
+          if truncated_details.len() >= 2000 {
+            truncated_details.truncate(1999);
           }
           let message = TaskMessage {
             severity : truncated_severity,
