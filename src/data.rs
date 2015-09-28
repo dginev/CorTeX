@@ -123,12 +123,12 @@ impl Clone for Task {
 }
 impl Task {
   pub fn generate_report(&self, result: &Path) -> TaskReport {
-    println!("Preparing report for {:?}, result at {:?}",self.entry, result);
+    // println!("Preparing report for {:?}, result at {:?}",self.entry, result);
     let mut messages = Vec::new();
     let mut status = TaskStatus::Fatal; // Fatal by default
 
-    // Let's open the archive file and find the name.log file:
-    let log_name = self.id.unwrap().to_string() + ".log";
+    // Let's open the archive file and find the cortex.log file:
+    let log_name = "cortex.log";
     let archive_reader = Reader::new().unwrap()
       .support_filter_all()
       .support_format_all()
@@ -153,7 +153,7 @@ impl Task {
             messages = self.parse_log(log_string.to_string());
             // Look for the special status message - Fatal otherwise!
             for m in messages.iter() {
-              if (m.severity == "status") && (m.category == "conversion") && !m.what.is_empty(){
+              if (m.severity == "status") && (m.category == "conversion") && !(m.what.is_empty()) {
                 // Adapt status to the CorTeX scheme: cortex_status = -(latexml_status+1)
                 let latexml_scheme_status = m.what.parse::<i32>().unwrap();
                 let cortex_scheme_status = -(latexml_scheme_status+1);

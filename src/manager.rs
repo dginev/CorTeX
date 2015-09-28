@@ -268,7 +268,8 @@ impl Server {
                 else {                
                   // Receive the rest of the input in the correct file
                   let recv_dir = Path::new(&task.entry).parent().unwrap();
-                  let recv_pathname = recv_dir.to_str().unwrap().to_string() + "/" + &service.name + "_" + &service.version.round().to_string() + ".zip";
+                  // "_" + &service.version.round().to_string() +
+                  let recv_pathname = recv_dir.to_str().unwrap().to_string() + "/" + &service.name + ".zip";
                   let recv_path = Path::new(&recv_pathname);
                   // println!("Will write to {:?}", recv_path);
                   let mut file = File::create(recv_path).unwrap();
