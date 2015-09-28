@@ -16,8 +16,8 @@ fn main() {
   let manager = TaskManager {
     source_port : 5555,
     result_port : 5556,
-    queue_size : 100000,
-    message_size : 100,
+    queue_size : 10000,
+    message_size : 100000,
     backend_address : DEFAULT_DB_ADDRESS.clone().to_string()
   };
   manager.start().unwrap();
