@@ -203,11 +203,15 @@ impl Task {
       match message_line_regex.captures(line) {
         Some(cap) => {
           // Indeed a message, so record it:
+          let mut truncated_details = cap.at(5).unwrap_or("").to_string();
+          if truncated_details.len() > 2000 {
+            truncated_details.truncate(2000);
+          }
           let message = TaskMessage {
             severity : cap.at(1).unwrap_or("").to_string().to_lowercase(),
             category : cap.at(2).unwrap_or("").to_string().to_lowercase(),
             what     : cap.at(3).unwrap_or("").to_string().to_lowercase(),
-            details  : cap.at(5).unwrap_or("").to_string()
+            details  : truncated_details
           };
           // Prepare to record follow-up lines with the message details:
           in_details_mode = true;
