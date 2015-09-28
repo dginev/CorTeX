@@ -202,15 +202,29 @@ impl Task {
       // Since this isn't a details line, check if it's a message line:
       match message_line_regex.captures(line) {
         Some(cap) => {
-          // Indeed a message, so record it:
+          // Indeed a message, so record it
+          // We'll need to do some manual truncations, since the POSTGRESQL wrapper prefers
+          //   panicking to auto-truncating (would not have been the Perl way, but Rust is Rust)
+          let mut truncated_severity = cap.at(1).unwrap_or("").to_string().to_lowercase();
+          if truncated_severity.len() > 50 {
+            truncated_severity.truncate(50);
+          }
+          let mut truncated_category = cap.at(2).unwrap_or("").to_string().to_lowercase();
+          if truncated_category.len() > 50 {
+            truncated_category.truncate(50);
+          }
+          let mut truncated_what = cap.at(3).unwrap_or("").to_string().to_lowercase();
+          if truncated_what.len() > 50 {
+            truncated_what.truncate(50);
+          }
           let mut truncated_details = cap.at(5).unwrap_or("").to_string();
           if truncated_details.len() > 2000 {
             truncated_details.truncate(2000);
           }
           let message = TaskMessage {
-            severity : cap.at(1).unwrap_or("").to_string().to_lowercase(),
-            category : cap.at(2).unwrap_or("").to_string().to_lowercase(),
-            what     : cap.at(3).unwrap_or("").to_string().to_lowercase(),
+            severity : truncated_severity,
+            category : truncated_category,
+            what     : truncated_what,
             details  : truncated_details
           };
           // Prepare to record follow-up lines with the message details:
