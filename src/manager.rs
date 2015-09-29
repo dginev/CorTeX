@@ -242,6 +242,7 @@ impl Server {
       // We have a job, count it
       sink_job_count += 1;
       let mut total_incoming = 0;
+      println!("Incoming sink job {:?} for Service: {:?}, taskid: {:?}", sink_job_count, service_name, taskid_str);
 
       match Server::pop_progress_task(&progress_queue_arc, taskid) {
         None => {} // TODO: No such task, what to do?
@@ -253,7 +254,7 @@ impl Server {
             None => {}, // TODO: Handle errors
             Some(service) => {
               let serviceid = service.id.unwrap();
-              println!("Service: {:?}", serviceid);
+              // println!("Service: {:?}", serviceid);
               if serviceid == task.serviceid {
                 // println!("Task and Service match up.");
                 if serviceid == 1 { // No payload needed for init
