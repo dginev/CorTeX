@@ -191,7 +191,11 @@ impl Task {
         if start_tab_regex.is_match(line) {
           // Append details line to the last message
           let mut last_message = messages.pop().unwrap();
-          last_message.details = last_message.details + "\n" + line;
+          let mut truncated_details = last_message.details + "\n" + line;
+          if truncated_details.len() >= 2000 {
+            truncated_details.truncate(1999);
+          }
+          last_message.details = truncated_details;
           messages.push(last_message);
           continue; // This line has been consumed, next
         } else {
