@@ -246,11 +246,30 @@ pub struct TaskReport {
   pub status : TaskStatus,
   pub messages : Vec<TaskMessage>
 }
+impl Clone for TaskReport {
+  fn clone(&self) -> Self {
+    TaskReport {
+      task : self.task.clone(),
+      status : self.status.clone(),
+      messages : self.messages.clone()
+    }
+  }
+}
 pub struct TaskMessage {
   pub category : String,
   pub severity : String, 
   pub what : String, 
   pub details : String
+}
+impl Clone for TaskMessage {
+  fn clone(&self) -> Self {
+    TaskMessage {
+      category : self.category.clone(),
+      severity : self.severity.clone(),
+      what : self.what.clone(),
+      details : self.details.clone()
+    }
+  }
 }
 pub enum TaskStatus {
   NoProblem,
@@ -260,6 +279,19 @@ pub enum TaskStatus {
   TODO,
   Blocked(i32),
   Queued(i32)
+}
+impl Clone for TaskStatus {
+  fn clone(&self) -> Self {
+    match self {
+      &TaskStatus::NoProblem => TaskStatus::NoProblem,
+      &TaskStatus::Warning => TaskStatus::Warning,
+      &TaskStatus::Error => TaskStatus::Error,
+      &TaskStatus::Fatal => TaskStatus::Fatal,
+      &TaskStatus::TODO => TaskStatus::TODO,
+      &TaskStatus::Blocked(x) => TaskStatus::Blocked(x),
+      &TaskStatus::Queued(x) => TaskStatus::Queued(x),
+    }
+  }
 }
 
 impl fmt::Display for TaskMessage {
