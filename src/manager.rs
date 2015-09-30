@@ -325,10 +325,9 @@ impl Server {
   }
 
   pub fn mark_done_arc(backend : &Backend, reports_arc: &Arc<Mutex<Vec<TaskReport>>>) -> bool {
-    let mut reports = reports_arc.lock().unwrap();
+    let reports = Server::fetch_shared_vec(reports_arc);
     if reports.len() > 0 {
       backend.mark_done(&reports).unwrap(); // TODO: error handling if DB fails
-      reports.clear();
       true
     } else {
       false
@@ -347,5 +346,12 @@ impl Server {
   fn push_progress_task(progress_queue_arc : &Arc<Mutex<HashMap<i64, Task>>>, progress_task: Task) {
     let mut progress_queue = progress_queue_arc.lock().unwrap();
     progress_queue.insert(progress_task.id.unwrap(), progress_task);
+  }
+
+  fn fetch_shared_vec<T: Clone>(vec_arc: &Arc<Mutex<Vec<T>>>) -> Vec<T> {
+    let mut vec_mutex_guard = vec_arc.lock().unwrap();
+    let fetched_vec : Vec<T> = (*vec_mutex_guard).clone();
+    vec_mutex_guard.clear();
+    fetched_vec
   }
 }
