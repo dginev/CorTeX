@@ -24,6 +24,8 @@ use std::fs::File;
 use std::io::{Write};
 use std::io::Read;
 
+use time;
+
 pub struct TaskManager {
   pub source_port : usize,
   pub result_port : usize,
@@ -149,6 +151,7 @@ impl Server {
       ventilator.recv(&mut msg, 0).unwrap();
       let service_name = msg.as_str().unwrap().to_string();
       println!("Task requested for service: {}", service_name.clone());
+      let request_time = time::get_time();
       source_job_count += 1;
 
       let mut dispatched_task : Option<Task> = None;
@@ -195,7 +198,9 @@ impl Server {
                       ventilator.send(&data,SNDMORE).unwrap();
                     }
                   }
-                  println!("Source job {}, message size: {}", source_job_count, total_outgoing);
+                  let responded_time = time::get_time();
+                  let request_duration = (responded_time - request_time).num_milliseconds();
+                  println!("Source job {}, message size: {}, took {}ms.", source_job_count, total_outgoing, request_duration);
                 } else {
                   // TODO: smart handling of failures
                   ventilator.send(&[],0).unwrap(); 
@@ -242,6 +247,7 @@ impl Server {
       // We have a job, count it
       sink_job_count += 1;
       let mut total_incoming = 0;
+      let request_time = time::get_time();
       println!("Incoming sink job {:?} for Service: {:?}, taskid: {:?}", sink_job_count, service_name, taskid_str);
 
       match Server::pop_progress_task(&progress_queue_arc, taskid) {
@@ -301,7 +307,9 @@ impl Server {
           };
         }
       }
-      println!("Sink job {}, message size: {}", sink_job_count, total_incoming);
+      let responded_time = time::get_time();
+      let request_duration = (responded_time - request_time).num_milliseconds();
+      println!("Sink job {}, message size: {}, took {}ms.", sink_job_count, total_incoming, request_duration);
 
       // let mut file = File::create("/tmp/cortex_sink_".to_string() + &sink_job_count.to_string()).unwrap();
       // file.write_all(&payload).unwrap();
@@ -327,7 +335,11 @@ impl Server {
   pub fn mark_done_arc(backend : &Backend, reports_arc: &Arc<Mutex<Vec<TaskReport>>>) -> bool {
     let reports = Server::fetch_shared_vec(reports_arc);
     if reports.len() > 0 {
+      let request_time = time::get_time();
       backend.mark_done(&reports).unwrap(); // TODO: error handling if DB fails
+      let responded_time = time::get_time();
+      let request_duration = (responded_time - request_time).num_milliseconds();
+      println!("Reporting done tasks to DB took {}ms.", request_duration);
       true
     } else {
       false
