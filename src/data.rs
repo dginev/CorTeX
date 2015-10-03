@@ -129,44 +129,58 @@ impl Task {
 
     // Let's open the archive file and find the cortex.log file:
     let log_name = "cortex.log";
-    let archive_reader = Reader::new().unwrap()
+    let archive_reader_test = Reader::new().unwrap()
       .support_filter_all()
       .support_format_all()
-      .open_filename(result.to_str().unwrap(), 10240).unwrap();
-    loop {
-      match archive_reader.next_header() {
-        Ok(e) => {
-          let current_name = e.pathname();
-          if current_name != log_name {
-            continue;
-          } else {
-            // In a "raw" read, we don't know the data size in advance. So we bite the bullet and
-            // read the usually manageable log file in memory
-            let mut raw_log_data = Vec::new();
-            loop {
-              match archive_reader.read_data(10240) {
-                Ok(chunk) => raw_log_data.extend(chunk.into_iter()),
-                Err(_) => {break}
+      .open_filename(result.to_str().unwrap(), 10240);
+    match archive_reader_test {
+      Err(e) => {
+        println!("Error TODO: Couldn't open archive_reader: {:?}",e);
+      },
+      Ok(archive_reader) => {
+        loop { 
+        match archive_reader.next_header() {
+          Ok(e) => {
+            let current_name = e.pathname();
+            if current_name != log_name {
+              continue;
+            } else {
+              // In a "raw" read, we don't know the data size in advance. So we bite the bullet and
+              // read the usually manageable log file in memory
+              let mut raw_log_data = Vec::new();
+              loop {
+                match archive_reader.read_data(10240) {
+                  Ok(chunk) => raw_log_data.extend(chunk.into_iter()),
+                  Err(_) => {break}
+                };
+              }
+              let log_string = match str::from_utf8(&raw_log_data) {
+                Ok(some_utf_string) => some_utf_string,
+                _ => "Fatal:cortex:unicode_parse_error\nStatus:conversion:3"
               };
-            }
-            let log_string = match str::from_utf8(&raw_log_data) {
-              Ok(some_utf_string) => some_utf_string,
-              _ => "Fatal:cortex:unicode_parse_error\nStatus:conversion:3"
-            };
-            messages = self.parse_log(log_string.to_string());
-            // Look for the special status message - Fatal otherwise!
-            for m in messages.iter() {
-              if (m.severity == "status") && (m.category == "conversion") && !(m.what.is_empty()) {
-                // Adapt status to the CorTeX scheme: cortex_status = -(latexml_status+1)
-                let latexml_scheme_status = m.what.parse::<i32>().unwrap();
-                let cortex_scheme_status = -(latexml_scheme_status+1);
-                status = TaskStatus::from_raw(cortex_scheme_status);
+              messages = self.parse_log(log_string.to_string());
+              // Look for the special status message - Fatal otherwise!
+              for m in messages.iter() {
+                if (m.severity == "status") && (m.category == "conversion") && !(m.what.is_empty()) {
+                  // Adapt status to the CorTeX scheme: cortex_status = -(latexml_status+1)
+                  let latexml_scheme_status = match m.what.parse::<i32>() {
+                    Ok(num) => num,
+                    Err(e) => {
+                      println!("Error TODO: Failed to parse conversion status {:?}: {:?}", m.what, e);
+                      -4
+                    }
+                  };
+                  let cortex_scheme_status = -(latexml_scheme_status+1);
+                  status = TaskStatus::from_raw(cortex_scheme_status);
+                }
               }
             }
-          }
-        },
-        Err(_) => { break }
+          },
+          Err(_) => { break }
+        }
       }
+    }
+    
     }
 
     TaskReport {

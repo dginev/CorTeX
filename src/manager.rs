@@ -257,14 +257,21 @@ impl Server {
           // println!("{:?}", task);
           let service_option = Server::get_service_record(&services_arc, service_name.to_string());
           match service_option.clone() {
-            None => {}, // TODO: Handle errors
+            None => {
+              println!("Error TODO: Server::get_service_record found nothing.");
+            }, // TODO: Handle errors
             Some(service) => {
               let serviceid = service.id.unwrap();
               // println!("Service: {:?}", serviceid);
               if serviceid == task.serviceid {
                 // println!("Task and Service match up.");
                 if serviceid == 1 { // No payload needed for init
-                  sink.recv(&mut recv_msg, 0).unwrap(); 
+                  match sink.recv(&mut recv_msg, 0) {
+                    Ok(_) => {},
+                    Err(e) => {
+                      println!("Error TODO: sink.recv failed: {:?}",e);
+                    }
+                  };
                   let done_report = TaskReport {
                     task : task.clone(),
                     status : TaskStatus::NoProblem,
@@ -274,23 +281,58 @@ impl Server {
                 }
                 else {                
                   // Receive the rest of the input in the correct file
-                  let recv_dir = Path::new(&task.entry).parent().unwrap();
-                  // "_" + &service.version.round().to_string() +
-                  let recv_pathname = recv_dir.to_str().unwrap().to_string() + "/" + &service.name + ".zip";
-                  let recv_path = Path::new(&recv_pathname);
-                  // println!("Will write to {:?}", recv_path);
-                  let mut file = File::create(recv_path).unwrap();
-                  loop {
-                    sink.recv(&mut recv_msg, 0).unwrap();
+                  match Path::new(&task.entry).parent() {
+                    None => {
+                      println!("Error TODO: Path::new(&task.entry).parent() failed.");
+                    },
+                    Some(recv_dir) => {
+                      match recv_dir.to_str() {
+                        None => {
+                          println!("Error TODO: recv_dir.to_str() failed");
+                        },
+                        Some(recv_dir_str) => {
+                          let recv_dir_string = recv_dir_str.to_string();
+                          let recv_pathname = recv_dir_string + "/" + &service.name + ".zip";
+                          let recv_path = Path::new(&recv_pathname);
+                          // println!("Will write to {:?}", recv_path);
+                          let mut file = match File::create(recv_path) {
+                            Ok(f) => f,
+                            Err(e) => {
+                              println!("Error TODO: File::create(recv_path): {:?}", e);
+                              continue;
+                            }
+                          };
+                          loop {
+                            match sink.recv(&mut recv_msg, 0) {
+                              Ok(_) => {},
+                              Err(e) => {
+                                println!("Error TODO: sink.recv (line 309) failed: {:?}",e);
+                              }
+                            };
 
-                    total_incoming += file.write(recv_msg.deref()).unwrap();
-                    if !sink.get_rcvmore().unwrap() {
-                      break;
+                            match file.write(recv_msg.deref()) {
+                              Ok(written_bytes) => { total_incoming += written_bytes },
+                              Err(e) => { 
+                                println!("Error TODO: file.write(recv_msg.deref()) failed: {:?}",e); 
+                                break;
+                              }
+                            };
+                            match sink.get_rcvmore() {
+                              Ok(false) => break,
+                              Ok(true) => {},
+                              Err(e) => {
+                                println!("Error TODO: sink.get_rcvmore failed: {:?}", e);
+                                break;
+                              }
+                            };
+                          }
+                          // Then mark the task done. This can be in a new thread later on
+                          let done_report = task.generate_report(recv_path);
+                          Server::push_done_queue(&done_queue_arc, done_report);
+                        }
+                      }
                     }
                   }
-                  // Then mark the task done. This can be in a new thread later on
-                  let done_report = task.generate_report(recv_path);
-                  Server::push_done_queue(&done_queue_arc, done_report);
                 }
                 
               }
