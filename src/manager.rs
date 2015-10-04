@@ -307,36 +307,38 @@ impl Server {
                           let recv_pathname = recv_dir_string + "/" + &service.name + ".zip";
                           let recv_path = Path::new(&recv_pathname);
                           // println!("Will write to {:?}", recv_path);
-                          let mut file = match File::create(recv_path) {
-                            Ok(f) => f,
-                            Err(e) => {
-                              println!("Error TODO: File::create(recv_path): {:?}", e);
-                              continue;
-                            }
-                          };
-                          'recvsinkjob: loop {
-                            match sink.recv(&mut recv_msg, 0) {
-                              Ok(_) => {},
+                          { // Explicitly scope file, so that we drop it the moment we are done writing.
+                            let mut file = match File::create(recv_path) {
+                              Ok(f) => f,
                               Err(e) => {
-                                println!("Error TODO: sink.recv (line 309) failed: {:?}",e);
+                                println!("Error TODO: File::create(recv_path): {:?}", e);
+                                continue;
                               }
                             };
+                            'recvsinkjob: loop {
+                              match sink.recv(&mut recv_msg, 0) {
+                                Ok(_) => {},
+                                Err(e) => {
+                                  println!("Error TODO: sink.recv (line 309) failed: {:?}",e);
+                                }
+                              };
 
-                            match file.write(recv_msg.deref()) {
-                              Ok(written_bytes) => { total_incoming += written_bytes },
-                              Err(e) => { 
-                                println!("Error TODO: file.write(recv_msg.deref()) failed: {:?}",e); 
-                                break;
-                              }
-                            };
-                            match sink.get_rcvmore() {
-                              Ok(false) => break,
-                              Ok(true) => {},
-                              Err(e) => {
-                                println!("Error TODO: sink.get_rcvmore failed: {:?}", e);
-                                break;
-                              }
-                            };
+                              match file.write(recv_msg.deref()) {
+                                Ok(written_bytes) => { total_incoming += written_bytes },
+                                Err(e) => { 
+                                  println!("Error TODO: file.write(recv_msg.deref()) failed: {:?}",e); 
+                                  break;
+                                }
+                              };
+                              match sink.get_rcvmore() {
+                                Ok(false) => break,
+                                Ok(true) => {},
+                                Err(e) => {
+                                  println!("Error TODO: sink.get_rcvmore failed: {:?}", e);
+                                  break;
+                                }
+                              };
+                            }
                           }
                           // Then mark the task done. This can be in a new thread later on
                           let done_report = task.generate_report(recv_path);
@@ -364,9 +366,6 @@ impl Server {
       let responded_time = time::get_time();
       let request_duration = (responded_time - request_time).num_milliseconds();
       println!("Sink job {}, message size: {}, took {}ms.", sink_job_count, total_incoming, request_duration);
-
-      // let mut file = File::create("/tmp/cortex_sink_".to_string() + &sink_job_count.to_string()).unwrap();
-      // file.write_all(&payload).unwrap();
     }
   }
 
