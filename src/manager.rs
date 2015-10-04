@@ -87,7 +87,7 @@ impl TaskManager {
     let finalize_thread = thread::spawn(move || {
       let finalize_backend = Backend::from_address(&finalize_backend_address);
       // Persist every 1 second, if there is something to record
-      loop {
+      'markdonejob: loop {
         match Server::mark_done_arc(&finalize_backend, &finalize_done_queue_arc) {
           true => {
             true;
@@ -144,7 +144,7 @@ impl Server {
     assert!(ventilator.bind(&address).is_ok());
     let mut source_job_count = 0;
 
-    loop {
+    'ventjob: loop {
       let mut msg = zmq::Message::new().unwrap();
       let mut identity = zmq::Message::new().unwrap();
       ventilator.recv(&mut identity, 0).unwrap();
@@ -181,7 +181,7 @@ impl Server {
                 if file_opt.is_ok() {
                   let mut file = file_opt.unwrap();        
                   let mut total_outgoing = 0;
-                  loop {
+                  'streaminputjob: loop {
                     // Stream input data via zmq
                     let mut data = vec![0; self.message_size];
                     let size = file.read(&mut data).unwrap();
@@ -233,7 +233,7 @@ impl Server {
 
     let mut sink_job_count = 0;
 
-    loop {
+    'sinkjob: loop {
       let mut recv_msg = zmq::Message::new().unwrap();
       let mut taskid_msg = zmq::Message::new().unwrap();
       let mut service_msg = zmq::Message::new().unwrap();
@@ -251,7 +251,7 @@ impl Server {
       println!("Incoming sink job {:?} for Service: {:?}, taskid: {:?}", sink_job_count, service_name, taskid_str);
 
       match Server::pop_progress_task(&progress_queue_arc, taskid) {
-        None => {} // TODO: No such task, what to do?
+        None => {}, // TODO: No such task, what to do?
         Some(task) => {
 
           // println!("{:?}", task);
@@ -261,7 +261,10 @@ impl Server {
               println!("Error TODO: Server::get_service_record found nothing.");
             }, // TODO: Handle errors
             Some(service) => {
-              let serviceid = service.id.unwrap();
+              let serviceid = match service.id {
+                Some(found_id) => found_id,
+                None => continue // Skip if no such service 
+              };
               // println!("Service: {:?}", serviceid);
               if serviceid == task.serviceid {
                 // println!("Task and Service match up.");
@@ -302,7 +305,7 @@ impl Server {
                               continue;
                             }
                           };
-                          loop {
+                          'recvsinkjob: loop {
                             match sink.recv(&mut recv_msg, 0) {
                               Ok(_) => {},
                               Err(e) => {
@@ -338,7 +341,7 @@ impl Server {
               }
               else {
                 // Otherwise just discard the rest of the message
-                loop {
+                'discardjob: loop {
                   sink.recv(&mut recv_msg, 0).unwrap();
                   if !sink.get_rcvmore().unwrap() {
                     break;
