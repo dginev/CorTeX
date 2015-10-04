@@ -239,11 +239,20 @@ impl Server {
       let mut service_msg = zmq::Message::new().unwrap();
 
       sink.recv(&mut service_msg, 0).unwrap();
-      let service_name = service_msg.as_str().unwrap();
+      let service_name = match service_msg.as_str() {
+        Some(some_name) => some_name,
+        None => {"_unknown_"}
+      };
       
       sink.recv(&mut taskid_msg, 0).unwrap();
-      let taskid_str = taskid_msg.as_str().unwrap();
-      let taskid = taskid_str.parse::<i64>().unwrap();
+      let taskid_str = match taskid_msg.as_str() {
+        Some(some_id) => some_id,
+        None => "-1"
+      };
+      let taskid = match taskid_str.parse::<i64>() {
+        Ok(some_id) => some_id,
+        Err(_) => -1
+      };
       // We have a job, count it
       sink_job_count += 1;
       let mut total_incoming = 0;
@@ -263,7 +272,7 @@ impl Server {
             Some(service) => {
               let serviceid = match service.id {
                 Some(found_id) => found_id,
-                None => continue // Skip if no such service 
+                None => -1 // Skip if no such service 
               };
               // println!("Service: {:?}", serviceid);
               if serviceid == task.serviceid {
