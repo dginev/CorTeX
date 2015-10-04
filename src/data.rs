@@ -127,6 +127,7 @@ impl Task {
     let mut messages = Vec::new();
     let mut status = TaskStatus::Fatal; // Fatal by default
 
+    { // -- Archive::Reader, trying to localize (to .drop asap)
     // Let's open the archive file and find the cortex.log file:
     let log_name = "cortex.log";
     let archive_reader_test = Reader::new().unwrap()
@@ -178,10 +179,10 @@ impl Task {
           },
           Err(_) => { break }
         }
+        }
       }
     }
-    
-    }
+    } // -- END: Archive::Reader, trying to localize (to .drop asap)
 
     TaskReport {
       task : self.clone(),
