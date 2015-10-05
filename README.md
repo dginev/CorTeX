@@ -16,6 +16,7 @@ A general purpose processing framework for **Cor**-pora of **TeX** documents
  * Powerful workflow management and development support through the CorTeX web interface
  * Supports multi-corpora multi-service installations
  * Centralized storage, with distributed computing, motivated to enable collaborations across institutional and national borders.
+ * Routinely tested on 1 million scientific TeX papers from arXiv.org
 
 **History**:
  * Rust reimplementation of the original Perl [CorTeX](https://github.com/dginev/cortex) stack.
