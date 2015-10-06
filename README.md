@@ -8,15 +8,15 @@ A general purpose processing framework for **Cor**-pora of **TeX** documents
 [![Build Status](https://secure.travis-ci.org/dginev/CorTeX.png?branch=master)](http://travis-ci.org/dginev/CorTeX) [![license](http://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/dginev/CorTeX/master/LICENSE) [![Coverage Status](https://coveralls.io/repos/dginev/CorTeX/badge.svg?branch=master&service=github)](https://coveralls.io/github/dginev/CorTeX?branch=master)
 
 **Features**:
- * Safe and speedy Rust implementation
- * Distributed processing and streaming data transfers via **ZeroMQ**
- * A flexible array of backends for Document, Annotation and Task provenance.
- * Open set of supported representations
- * Automatic dependency management of registered Services
- * Powerful workflow management and development support through the CorTeX web interface
- * Supports multi-corpora multi-service installations
- * Centralized storage, with distributed computing, motivated to enable collaborations across institutional and national borders.
- * Routinely tested on 1 million scientific TeX papers from arXiv.org
+ - [x] Safe and speedy Rust implementation
+ - [x] Distributed processing and streaming data transfers via **ZeroMQ**
+ - [x] Backend support for Document (via FileSystem), Annotation (via ?) and Task (via Postgresql) provenance.
+ - [x] Open set of supported representations
+ - [ ] Automatic dependency management of registered Services (TODO)
+ - [ ] Powerful workflow management and development support through the CorTeX web interface (TODO)
+ - [x] Supports multi-corpora multi-service installations
+ - [x] Centralized storage, with distributed computing, motivated to enable collaborations across institutional and national borders.
+ - [x] Routinely tested on 1 million scientific TeX papers from arXiv.org
 
 **History**:
  * Rust reimplementation of the original Perl [CorTeX](https://github.com/dginev/cortex) stack.

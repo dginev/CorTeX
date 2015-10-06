@@ -23,7 +23,7 @@ git = "https://github.com/nickel-org/nickel.rs.git"
 git = "https://github.com/dginev/rust-zmq.git"
 
 [dependencies.pericortex]
-git = "https://github.com/dginev/rust-cortex-peripherals.git"
+git = "https://github.com/dginev/CorTeX-Peripherals.git"
 
 
 [dependencies]
