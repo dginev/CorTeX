@@ -120,10 +120,21 @@ impl TaskManager {
       results.start_sink(sink_services_arc, sink_progress_queue_arc, sink_done_queue_arc).unwrap();
     });
 
-    vent_thread.join().unwrap();
-    sink_thread.join().unwrap();
-    finalize_thread.join().unwrap();
-    Ok(())
+    if vent_thread.join().is_err() {
+      println!("Ventilator thread died unexpectedly!");
+      Err(zmq::Error::ETERM)
+    }
+    else if sink_thread.join().is_err() {
+      println!("Sink thread died unexpectedly!");
+      Err(zmq::Error::ETERM)
+    }
+    else if finalize_thread.join().is_err() {
+      println!("DB thread died unexpectedly!");
+      Err(zmq::Error::ETERM)
+    }
+    else {
+      Ok(())
+    }
   }
 }
 
@@ -400,6 +411,9 @@ impl Server {
   }
   pub fn push_done_queue(reports_arc : &Arc<Mutex<Vec<TaskReport>>>, report : TaskReport) {
     let mut reports = reports_arc.lock().unwrap();
+    if reports.len() > 10000 {
+      panic!("Done queue is too large: {:?} tasks. Stop the sink!");
+    }
     reports.push(report)
   }
 
@@ -410,6 +424,11 @@ impl Server {
 
   fn push_progress_task(progress_queue_arc : &Arc<Mutex<HashMap<i64, Task>>>, progress_task: Task) {
     let mut progress_queue = progress_queue_arc.lock().unwrap();
+    // NOTE: This constant should be adjusted if you expect a fringe of more than 10,000 jobs 
+    //       I am using this as a workaround for the inability to catch thread panic!() calls.
+    if progress_queue.len() > 10000 { 
+      panic!("Progress queue is too large: {:?} tasks. Stop the ventilator!");
+    }
     progress_queue.insert(progress_task.id.unwrap(), progress_task);
   }
 

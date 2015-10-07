@@ -72,7 +72,7 @@ fn main() {
       let backend = Backend::default();
       let mut data = HashMap::new();
       let mut message : String ;
-      let mut corpus_path;
+      // let mut corpus_path;
       let query = request.query();
       if let Some(p) = query.get("path") {
         corpus_path = p.to_string();
