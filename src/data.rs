@@ -180,6 +180,7 @@ impl Task {
           Err(_) => { break }
         }
         }
+        drop(archive_reader);
       }
     }
     } // -- END: Archive::Reader, trying to localize (to .drop asap)

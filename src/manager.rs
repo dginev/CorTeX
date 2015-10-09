@@ -362,6 +362,7 @@ impl Server {
                                 }
                               };
                             }
+                            drop(file);
                           }
                           // Then mark the task done. This can be in a new thread later on
                           let done_report = task.generate_report(recv_path);
