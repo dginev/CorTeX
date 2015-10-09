@@ -16,6 +16,7 @@ use std::thread;
 #[test]
 fn mock_round_trip() {
   // Initialize a corpus, import a single task, and enable a service on it
+  let job_limit : Option<usize> = Some(1);
   let test_backend = Backend::testdb();
   assert!(test_backend.setup_task_tables().is_ok());
   
@@ -57,7 +58,7 @@ fn mock_round_trip() {
     }).unwrap();
   
   // Start up a ventilator/sink pair
-  thread::spawn(move || {
+  let manager_thread = thread::spawn(move || {
     let manager = TaskManager {
       source_port : 5555,
       result_port : 5556,
@@ -65,11 +66,13 @@ fn mock_round_trip() {
       message_size : 100,
       backend_address : TEST_DB_ADDRESS.clone().to_string()
     };
-    assert!(manager.start().is_ok());
+    assert!(manager.start(job_limit).is_ok());
   });
+
   // Start up an echo worker
   let worker = EchoWorker::default();
   // Perform a single echo task 
-  assert!(worker.start(Some(1)).is_ok());
-  // Check round-trip success
+  assert!(worker.start(job_limit).is_ok());
+  assert!(manager_thread.join().is_ok());
+  // TODO: Check round-trip success
 }

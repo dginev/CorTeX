@@ -63,7 +63,7 @@ impl Worker for InitWorker {
     None
   }
 
-  fn start(&self, limit : Option<i32>) -> Result<(), Error> {
+  fn start(&self, limit : Option<usize>) -> Result<(), Error> {
     let mut work_counter = 0;
     // Connect to a task ventilator
     let mut context_source = Context::new();

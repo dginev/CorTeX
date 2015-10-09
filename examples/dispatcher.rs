@@ -20,5 +20,6 @@ fn main() {
     message_size : 100000,
     backend_address : DEFAULT_DB_ADDRESS.clone().to_string()
   };
-  manager.start().unwrap();
+  let job_limit = None;
+  manager.start(job_limit).unwrap();
 }

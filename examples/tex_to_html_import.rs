@@ -23,6 +23,7 @@ use cortex::worker::InitWorker;
 use pericortex::worker::Worker;
 
 fn main() {
+  let job_limit : Option<usize> = Some(1);
   let mut input_args = env::args();
   let _ = input_args.next();
   let corpus_path = match input_args.next() {
@@ -59,7 +60,7 @@ fn main() {
       message_size : 100,
       backend_address : DEFAULT_DB_ADDRESS.clone().to_string()
     };
-    assert!(manager.start().is_ok());
+    assert!(manager.start(job_limit).is_ok());
   });
 
   // Start up an init worker
@@ -72,7 +73,7 @@ fn main() {
     backend_address : DEFAULT_DB_ADDRESS.to_string()
   };
   // Perform a single echo task 
-  assert!(worker.start(Some(1)).is_ok());
+  assert!(worker.start(job_limit).is_ok());
   // Wait for the final finisher to persist to DB 
   thread::sleep_ms(2001); // TODO: Can this be deterministic? Join?
 

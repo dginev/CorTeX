@@ -52,7 +52,7 @@ impl Default for TaskManager {
     } } }
 
 impl TaskManager {
-  pub fn start<'manager>(&'manager self) -> Result<(), Error> {
+  pub fn start<'manager>(&'manager self, job_limit: Option<usize>) -> Result<(), Error> {
     // We'll use some local memoization shared between source and sink:
     let services: HashMap<String, Option<Service>> = HashMap::new();
     let progress_queue: HashMap<i64, Task> = HashMap::new();
@@ -78,7 +78,7 @@ impl TaskManager {
         backend : Backend::from_address(&source_backend_address),
         backend_address : source_backend_address.clone()
       };
-      sources.start_ventilator(vent_services_arc, vent_progress_queue_arc).unwrap();
+      sources.start_ventilator(vent_services_arc, vent_progress_queue_arc, job_limit).unwrap();
     });
 
     // Next prepare the finalize thread which will persist finished jobs to the DB
@@ -86,15 +86,20 @@ impl TaskManager {
     let finalize_done_queue_arc = done_queue_arc.clone();
     let finalize_thread = thread::spawn(move || {
       let finalize_backend = Backend::from_address(&finalize_backend_address);
+      let mut finalize_jobs_count : usize = 0;
       // Persist every 1 second, if there is something to record
       'markdonejob: loop {
         match Server::mark_done_arc(&finalize_backend, &finalize_done_queue_arc) {
           true => {
+            finalize_jobs_count+=1;
             true;
           } // we did some work, on to the next iteration
           false => { // If we have no reports to process, sleep for a second and recheck
             thread::sleep_ms(1000);
           }
+        }
+        if job_limit.is_some() && (finalize_jobs_count >= job_limit.unwrap()) {
+          break
         }
       };
     });
@@ -117,7 +122,7 @@ impl TaskManager {
         backend : Backend::from_address(&result_backend_address),
         backend_address: result_backend_address.clone()
       };
-      results.start_sink(sink_services_arc, sink_progress_queue_arc, sink_done_queue_arc).unwrap();
+      results.start_sink(sink_services_arc, sink_progress_queue_arc, sink_done_queue_arc, job_limit).unwrap();
     });
 
     if vent_thread.join().is_err() {
@@ -133,6 +138,7 @@ impl TaskManager {
       Err(zmq::Error::ETERM)
     }
     else {
+      println!("Manager successfully terminated!");
       Ok(())
     }
   }
@@ -141,7 +147,8 @@ impl TaskManager {
 impl Server {
   pub fn start_ventilator(&self, 
       services_arc : Arc<Mutex<HashMap<String, Option<Service>>>>,
-      progress_queue_arc : Arc<Mutex<HashMap<i64, Task>>>)
+      progress_queue_arc : Arc<Mutex<HashMap<i64, Task>>>,
+      job_limit : Option<usize>)
       -> Result <(),Error> {
     // We have a Ventilator-exclusive "queues" stack for tasks to be dispatched
     let mut queues : HashMap<String, Vec<Task>> = HashMap::new();
@@ -153,7 +160,7 @@ impl Server {
     let port_str = self.port.to_string();
     let address = "tcp://*:".to_string() + &port_str;
     assert!(ventilator.bind(&address).is_ok());
-    let mut source_job_count = 0;
+    let mut source_job_count : usize = 0;
 
     'ventjob: loop {
       let mut msg = zmq::Message::new().unwrap();
@@ -191,7 +198,7 @@ impl Server {
                 let file_opt = service.prepare_input_stream(current_task.clone());
                 if file_opt.is_ok() {
                   let mut file = file_opt.unwrap();        
-                  let mut total_outgoing = 0;
+                  let mut total_outgoing : usize = 0;
                   'streaminputjob: loop {
                     // Stream input data via zmq
                     let mut data = vec![0; self.message_size];
@@ -203,7 +210,7 @@ impl Server {
                       // If exhausted, send the last frame
                       ventilator.send(&data,0).unwrap(); 
                       // And terminate
-                      break;
+                      break
                     } else {
                       // If more to go, send the frame and indicate there's more to come
                       ventilator.send(&data,SNDMORE).unwrap();
@@ -226,13 +233,18 @@ impl Server {
       if dispatched_task.is_some() {
         Server::push_progress_task(&progress_queue_arc, dispatched_task.unwrap());
       }
+      if job_limit.is_some() && (source_job_count >= job_limit.unwrap()) {
+        break
+      }
     }
+    Ok(())
   }
 
   pub fn start_sink(&self,
       services_arc : Arc<Mutex<HashMap<String, Option<Service>>>>,
       progress_queue_arc : Arc<Mutex<HashMap<i64, Task>>>,
-      done_queue_arc : Arc<Mutex<Vec<TaskReport>>>)
+      done_queue_arc : Arc<Mutex<Vec<TaskReport>>>,
+      job_limit: Option<usize>)
       -> Result <(),Error> {
 
     // Ok, let's bind to a port and start broadcasting
@@ -242,7 +254,7 @@ impl Server {
     let address = "tcp://*:".to_string() + &port_str;
     assert!(sink.bind(&address).is_ok());
 
-    let mut sink_job_count = 0;
+    let mut sink_job_count : usize = 0;
 
     'sinkjob: loop {
       let mut recv_msg = zmq::Message::new().unwrap();
@@ -377,7 +389,11 @@ impl Server {
       let responded_time = time::get_time();
       let request_duration = (responded_time - request_time).num_milliseconds();
       println!("Sink job {}, message size: {}, took {}ms.", sink_job_count, total_incoming, request_duration);
+      if job_limit.is_some() && (sink_job_count >= job_limit.unwrap()) {
+        break
+      }
     }
+    Ok(())
   }
 
   fn get_sync_service_record(&self, services_arc : &Arc<Mutex<HashMap<String, Option<Service>>>>, service_name : String) -> Option<Service> {

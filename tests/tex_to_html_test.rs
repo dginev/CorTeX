@@ -18,6 +18,7 @@ use std::process::Command;
 
 #[test]
 fn mock_tex_to_html() {
+  let job_limit : Option<usize> = Some(1);
   // Check if we have latexmlc installed, skip otherwise:
   let which_result = Command::new("which").arg("latexmlc").output().unwrap().stdout;
   let latexmlc_path = str::from_utf8(&which_result).unwrap();
@@ -67,7 +68,7 @@ fn mock_tex_to_html() {
   test_backend.add(conversion_task.clone()).unwrap();
   
   // Start up a ventilator/sink pair
-  thread::spawn(move || {
+  let manager_thread = thread::spawn(move || {
     let manager = TaskManager {
       source_port : 5555,
       result_port : 5556,
@@ -75,14 +76,15 @@ fn mock_tex_to_html() {
       message_size : 100,
       backend_address : TEST_DB_ADDRESS.clone().to_string()
     };
-    assert!(manager.start().is_ok());
+    assert!(manager.start(job_limit).is_ok());
   });
   // Start up an tex to html worker
   let worker = TexToHtmlWorker::default();
   // Perform a single echo task 
-  assert!(worker.start(Some(1)).is_ok());
+  assert!(worker.start(job_limit).is_ok());
   // Wait for the finisher to persist to DB 
   thread::sleep_ms(2001); // TODO: Can this be deterministic? Join?
+  assert!(manager_thread.join().is_ok());
   // Check round-trip success
   let finished_task = test_backend.sync(&conversion_task).unwrap();
   println!("Finished: {:?}", finished_task);
