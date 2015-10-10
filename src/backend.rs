@@ -211,10 +211,11 @@ impl Backend {
     let mut rng = thread_rng();
     let mark: u16 = rng.gen();
 
+    // TODO: Concurrent use needs to add "and pg_try_advisory_xact_lock(taskid)" in the proper fashion
+    //       But we need to be careful that the LIMIT takes place before the lock, which is why I removed it for now.
     let stmt = try!(self.connection.prepare(
       "UPDATE tasks t SET status = $1 FROM (
           SELECT * FROM tasks WHERE serviceid = $2 and status = $3
-            and pg_try_advisory_xact_lock(taskid)
           LIMIT $4
           FOR UPDATE
         ) subt
