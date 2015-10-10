@@ -168,7 +168,7 @@ impl Server {
       ventilator.recv(&mut identity, 0).unwrap();
       ventilator.recv(&mut msg, 0).unwrap();
       let service_name = msg.as_str().unwrap().to_string();
-      println!("Task requested for service: {}", service_name.clone());
+      // println!("Task requested for service: {}", service_name.clone());
       let request_time = time::get_time();
       source_job_count += 1;
 

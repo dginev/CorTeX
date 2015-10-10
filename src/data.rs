@@ -130,11 +130,11 @@ impl Task {
     { // -- Archive::Reader, trying to localize (to .drop asap)
     // Let's open the archive file and find the cortex.log file:
     let log_name = "cortex.log";
-    let archive_reader_test = Reader::new().unwrap()
+    match Reader::new().unwrap()
       .support_filter_all()
       .support_format_all()
-      .open_filename(result.to_str().unwrap(), 10240);
-    match archive_reader_test {
+      .open_filename(result.to_str().unwrap(), 10240) {
+
       Err(e) => {
         println!("Error TODO: Couldn't open archive_reader: {:?}",e);
       },
