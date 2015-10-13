@@ -57,3 +57,5 @@ SET (autovacuum_analyze_scale_factor = 0.0);
 ALTER TABLE tasks  
 SET (autovacuum_vacuum_threshold = 5000);  
 ```
+
+Also, ensure you have the Postgres data directory on a sufficiently large disk. You may want 250GB available at a minimum for a LaTeXML run over arXiv. (See [here](https://github.com/dginev/CorTeX/issues/10) for details)
