@@ -211,7 +211,7 @@ impl Task {
           // Append details line to the last message
           let mut last_message = messages.pop().unwrap();
           let mut truncated_details = last_message.details + "\n" + line;
-          utf8_truncate(&mut truncated_details, 2000);
+          utf_truncate(&mut truncated_details, 2000);
           last_message.details = truncated_details;
           messages.push(last_message);
           continue; // This line has been consumed, next
@@ -227,13 +227,13 @@ impl Task {
           // We'll need to do some manual truncations, since the POSTGRESQL wrapper prefers
           //   panicking to auto-truncating (would not have been the Perl way, but Rust is Rust)
           let mut truncated_severity = cap.at(1).unwrap_or("").to_string().to_lowercase();
-          utf8_truncate(&mut truncated_severity, 50);
+          utf_truncate(&mut truncated_severity, 50);
           let mut truncated_category = cap.at(2).unwrap_or("").to_string().to_lowercase();
-          utf8_truncate(&mut truncated_category, 50);
+          utf_truncate(&mut truncated_category, 50);
           let mut truncated_what = cap.at(3).unwrap_or("").to_string().to_lowercase();
-          utf8_truncate(&mut truncated_what, 50);
+          utf_truncate(&mut truncated_what, 50);
           let mut truncated_details = cap.at(5).unwrap_or("").to_string();
-          utf8_truncate(&mut truncated_details, 2000);
+          utf_truncate(&mut truncated_details, 2000);
 
           let message = TaskMessage {
             severity : truncated_severity,
@@ -517,16 +517,18 @@ impl Service {
 }
 
 /// Utility functions, until they find a better place
-fn utf8_truncate(input : &mut String, maxsize: usize) {
-  let mut utf8_maxsize = input.len();
-  if utf8_maxsize >= maxsize {
+fn utf_truncate(input : &mut String, maxsize: usize) {
+  let mut utf_maxsize = input.len();
+  if utf_maxsize >= maxsize {
     { let mut char_iter = input.char_indices();
-    while utf8_maxsize >= maxsize {
-      utf8_maxsize = match char_iter.next_back() {
+    while utf_maxsize >= maxsize {
+      utf_maxsize = match char_iter.next_back() {
         Some((index, _)) => index,
         _ => 0
       };
     } } // Extra {} wrap to limit the immutable borrow of char_indices()
-    input.truncate(utf8_maxsize);
+    input.truncate(utf_maxsize);
   }
+  let no_nulls_regex = regex!(r"\x00");
+  *input = no_nulls_regex.replace_all(input,"");
 }
