@@ -33,6 +33,7 @@ pub trait CortexORM {
 
 // Tasks
 use std::fmt;
+#[derive(Clone)]
 pub struct Task {
   pub id : Option<i64>,
   pub entry: String,
@@ -110,17 +111,7 @@ impl CortexORM for Task {
     }
   }
 }
-impl Clone for Task {
-  fn clone(&self) -> Self {
-    Task {
-      id : self.id.clone(),
-      entry : self.entry.clone(),
-      serviceid : self.serviceid.clone(),
-      corpusid : self.corpusid.clone(),
-      status : self.status.clone()
-    }
-  }
-}
+
 impl Task {
   pub fn generate_report(&self, result: &Path) -> TaskReport {
     // println!("Preparing report for {:?}, result at {:?}",self.entry, result);
@@ -257,36 +248,21 @@ impl Task {
 }
 
 // Task Reports (completed tasks)
+#[derive(Clone)]
 pub struct TaskReport {
   pub task : Task,
   pub status : TaskStatus,
   pub messages : Vec<TaskMessage>
 }
-impl Clone for TaskReport {
-  fn clone(&self) -> Self {
-    TaskReport {
-      task : self.task.clone(),
-      status : self.status.clone(),
-      messages : self.messages.clone()
-    }
-  }
-}
+
+#[derive(Clone)]
 pub struct TaskMessage {
   pub category : String,
   pub severity : String, 
   pub what : String, 
   pub details : String
 }
-impl Clone for TaskMessage {
-  fn clone(&self) -> Self {
-    TaskMessage {
-      category : self.category.clone(),
-      severity : self.severity.clone(),
-      what : self.what.clone(),
-      details : self.details.clone()
-    }
-  }
-}
+#[derive(Clone)]
 pub enum TaskStatus {
   NoProblem,
   Warning,
@@ -295,19 +271,6 @@ pub enum TaskStatus {
   TODO,
   Blocked(i32),
   Queued(i32)
-}
-impl Clone for TaskStatus {
-  fn clone(&self) -> Self {
-    match self {
-      &TaskStatus::NoProblem => TaskStatus::NoProblem,
-      &TaskStatus::Warning => TaskStatus::Warning,
-      &TaskStatus::Error => TaskStatus::Error,
-      &TaskStatus::Fatal => TaskStatus::Fatal,
-      &TaskStatus::TODO => TaskStatus::TODO,
-      &TaskStatus::Blocked(x) => TaskStatus::Blocked(x),
-      &TaskStatus::Queued(x) => TaskStatus::Queued(x),
-    }
-  }
 }
 
 impl fmt::Display for TaskMessage {
@@ -345,7 +308,7 @@ impl TaskStatus {
   }
 }
 /// A CorTeX "Corpus" is a minimal description of a document collection. It is defined by a name, path and simple/complex file system setup.
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(RustcDecodable, RustcEncodable, Clone)]
 pub struct Corpus {
   pub id : Option<i32>,
   pub name : String,
@@ -361,16 +324,6 @@ impl ToJson for Corpus {
         map.insert("complex".to_string(), self.complex.to_json());
         Json::Object(map)
     }
-}
-impl Clone for Corpus {
-  fn clone(&self) -> Self {
-    Corpus {
-      id : self.id.clone(),
-      name : self.name.clone(),
-      path : self.path.clone(),
-      complex : self.complex.clone()
-    }
-  }
 }
 
 impl CortexORM for Corpus {
@@ -413,6 +366,7 @@ impl CortexORM for Corpus {
   }
 }
 // Services
+#[derive(Clone)]
 pub struct Service {
   pub id : Option<i32>,
   pub name : String,
@@ -442,19 +396,7 @@ impl fmt::Debug for Service {
                     serviceid, self.name, self.version, self.inputformat, self.outputformat, ic, self.complex)
     }
 }
-impl Clone for Service {
-  fn clone(&self) -> Self {
-    Service {
-      id : self.id.clone(),
-      name : self.name.clone(),
-      version : self.version.clone(),
-      inputformat : self.inputformat.clone(),
-      outputformat : self.outputformat.clone(),
-      inputconverter : self.inputconverter.clone(),
-      complex : self.complex.clone()
-    }
-  }
-}
+
 impl CortexORM for Service {
   fn get_id(&self) -> Option<i32> {self.id}
   fn select_by_id<'a>(&'a self, connection : &'a Connection) -> Result<Option<Service>,Error> {
