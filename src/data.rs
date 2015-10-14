@@ -246,15 +246,26 @@ impl Task {
     messages
   }
 }
-
-// Task Reports (completed tasks)
+/// Task in progress (pending dispatched tasks)
+#[derive(Clone)]
+pub struct TaskProgress {
+  pub task : Task,
+  pub created_at : i64,
+  pub retries : i64
+}
+impl TaskProgress {
+  pub fn expected_at(&self) -> i64 {
+    self.created_at + ((self.retries + 1)*3600)
+  }
+}
+/// Task Reports (completed tasks)
 #[derive(Clone)]
 pub struct TaskReport {
   pub task : Task,
   pub status : TaskStatus,
   pub messages : Vec<TaskMessage>
 }
-
+/// A container for LaTeXML-convention messages for tasks
 #[derive(Clone)]
 pub struct TaskMessage {
   pub category : String,
@@ -262,6 +273,7 @@ pub struct TaskMessage {
   pub what : String, 
   pub details : String
 }
+/// An enumeration of the expected CorTeX Task statuses
 #[derive(Clone)]
 pub enum TaskStatus {
   NoProblem,

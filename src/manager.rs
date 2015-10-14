@@ -9,7 +9,7 @@ extern crate tempfile;
 
 use zmq::{Error, SNDMORE};
 use backend::{Backend, DEFAULT_DB_ADDRESS};
-use data::{Task, TaskReport, TaskStatus, Service};
+use data::{TaskReport, TaskStatus, TaskProgress, TaskMessage, Service};
 
 use std::thread;
 use std::sync::Arc;
@@ -55,7 +55,7 @@ impl TaskManager {
   pub fn start<'manager>(&'manager self, job_limit: Option<usize>) -> Result<(), Error> {
     // We'll use some local memoization shared between source and sink:
     let services: HashMap<String, Option<Service>> = HashMap::new();
-    let progress_queue: HashMap<i64, Task> = HashMap::new();
+    let progress_queue: HashMap<i64, TaskProgress> = HashMap::new();
     let done_queue: Vec<TaskReport> = Vec::new();
 
     let services_arc = Arc::new(Mutex::new(services));
@@ -70,6 +70,7 @@ impl TaskManager {
 
     let vent_services_arc = services_arc.clone();
     let vent_progress_queue_arc = progress_queue_arc.clone();
+    let vent_done_queue_arc = done_queue_arc.clone();
     let vent_thread = thread::spawn(move || {
       let sources = Server {
         port : source_port,
@@ -78,7 +79,7 @@ impl TaskManager {
         backend : Backend::from_address(&source_backend_address),
         backend_address : source_backend_address.clone()
       };
-      sources.start_ventilator(vent_services_arc, vent_progress_queue_arc, job_limit).unwrap();
+      sources.start_ventilator(vent_services_arc, vent_progress_queue_arc, vent_done_queue_arc, job_limit).unwrap();
     });
 
     // Next prepare the finalize thread which will persist finished jobs to the DB
@@ -147,11 +148,12 @@ impl TaskManager {
 impl Server {
   pub fn start_ventilator(&self, 
       services_arc : Arc<Mutex<HashMap<String, Option<Service>>>>,
-      progress_queue_arc : Arc<Mutex<HashMap<i64, Task>>>,
+      progress_queue_arc : Arc<Mutex<HashMap<i64, TaskProgress>>>,
+      done_queue_arc : Arc<Mutex<Vec<TaskReport>>>,
       job_limit : Option<usize>)
       -> Result <(),Error> {
     // We have a Ventilator-exclusive "queues" stack for tasks to be dispatched
-    let mut queues : HashMap<String, Vec<Task>> = HashMap::new();
+    let mut queues : HashMap<String, Vec<TaskProgress>> = HashMap::new();
     // Assuming this is the only And tidy up the postgres tasks:
     self.backend.clear_limbo_tasks().unwrap();
     // Ok, let's bind to a port and start broadcasting
@@ -172,22 +174,55 @@ impl Server {
       let request_time = time::get_time();
       source_job_count += 1;
 
-      let mut dispatched_task : Option<Task> = None;
+      let mut dispatched_task : Option<TaskProgress> = None;
       match self.get_sync_service_record(&services_arc, service_name.clone()) {
         None => {},
         Some(service) => {
           if !queues.contains_key(&service_name) {
             queues.insert(service_name.clone(), Vec::new()); 
           }
-          let mut task_queue : &mut Vec<Task> = queues.get_mut(&service_name).unwrap();
+          let mut task_queue : &mut Vec<TaskProgress> = queues.get_mut(&service_name).unwrap();
           if task_queue.is_empty() {
-            task_queue.extend(self.backend.fetch_tasks(&service, self.queue_size).unwrap()); }
+            // Refetch a new batch of tasks
+            let now = time::get_time().sec;
+            task_queue.extend(self.backend.fetch_tasks(&service, self.queue_size).unwrap()
+              .into_iter().map(|task| TaskProgress {
+                task: task,
+                created_at : now,
+                retries : 0
+              })); 
+
+            // This is a good time to also take care that none of the old tasks are dead in the progress queue
+            // since the re-fetch happens infrequently, and directly implies the progress queue will grow
+            let expired_tasks = Server::timeout_progress_tasks(&progress_queue_arc);
+            for expired_t in expired_tasks {
+              if expired_t.retries > 1 { // Too many retries, mark as fatal failure
+                Server::push_done_queue(&done_queue_arc, TaskReport {
+                  task : expired_t.task.clone(),
+                  status : TaskStatus::Fatal,
+                  messages :  vec![TaskMessage {
+                    category : "cortex".to_string(),
+                    severity : "fatal".to_string(), 
+                    what : "never_completed_with_retries".to_string(), 
+                    details : String::new()
+                  }]
+                });
+              } else { // We can still retry, re-add to the dispatch queue
+                task_queue.push(TaskProgress {
+                  task : expired_t.task,
+                  created_at : expired_t.created_at,
+                  retries : expired_t.retries + 1
+                });
+              }
+            }
+          }
           match task_queue.pop() {
-            Some(current_task) => {
+            Some(current_task_progress) => {
+              dispatched_task = Some(current_task_progress.clone());
+
+              let current_task = current_task_progress.task;
               let taskid = current_task.id.unwrap();
               let serviceid = current_task.serviceid;
-              
-              dispatched_task = Some(current_task.clone());
 
               ventilator.send_msg(identity, SNDMORE).unwrap();
               ventilator.send_str(&taskid.to_string(), SNDMORE).unwrap();
@@ -242,7 +277,7 @@ impl Server {
 
   pub fn start_sink(&self,
       services_arc : Arc<Mutex<HashMap<String, Option<Service>>>>,
-      progress_queue_arc : Arc<Mutex<HashMap<i64, Task>>>,
+      progress_queue_arc : Arc<Mutex<HashMap<i64, TaskProgress>>>,
       done_queue_arc : Arc<Mutex<Vec<TaskReport>>>,
       job_limit: Option<usize>)
       -> Result <(),Error> {
@@ -284,9 +319,8 @@ impl Server {
 
       match Server::pop_progress_task(&progress_queue_arc, taskid) {
         None => {}, // TODO: No such task, what to do?
-        Some(task) => {
-
-          // println!("{:?}", task);
+        Some(task_progress) => {
+          let task = task_progress.task;
           let service_option = Server::get_service_record(&services_arc, service_name.to_string());
           match service_option.clone() {
             None => {
@@ -434,19 +468,38 @@ impl Server {
     reports.push(report)
   }
 
-  fn pop_progress_task(progress_queue_arc : &Arc<Mutex<HashMap<i64, Task>>>, taskid: i64) -> Option<Task> {
+  fn timeout_progress_tasks(progress_queue_arc : &Arc<Mutex<HashMap<i64, TaskProgress>>>) -> Vec<TaskProgress> {
+    let mut progress_queue = progress_queue_arc.lock().unwrap();
+    let now = time::get_time().sec;
+    let expired_keys = progress_queue.iter()
+                        .filter(|&(_, v)| v.expected_at() < now )
+                        .map(|(k, _)| k.clone()).collect::<Vec<_>>();
+    let mut expired_tasks = Vec::new();
+    for key in expired_keys {
+      match progress_queue.remove(&key) {
+        None => {},
+        Some(task_progress) => expired_tasks.push(task_progress)
+      }
+    }
+    return expired_tasks
+  }
+  fn pop_progress_task(progress_queue_arc : &Arc<Mutex<HashMap<i64, TaskProgress>>>, taskid: i64) -> Option<TaskProgress> {
     let mut progress_queue = progress_queue_arc.lock().unwrap();
     progress_queue.remove(&taskid)
   }
-
-  fn push_progress_task(progress_queue_arc : &Arc<Mutex<HashMap<i64, Task>>>, progress_task: Task) {
+  fn push_progress_task(progress_queue_arc : &Arc<Mutex<HashMap<i64, TaskProgress>>>, progress_task: TaskProgress) {
     let mut progress_queue = progress_queue_arc.lock().unwrap();
     // NOTE: This constant should be adjusted if you expect a fringe of more than 10,000 jobs 
     //       I am using this as a workaround for the inability to catch thread panic!() calls.
     if progress_queue.len() > 10000 { 
       panic!("Progress queue is too large: {:?} tasks. Stop the ventilator!");
     }
-    progress_queue.insert(progress_task.id.unwrap(), progress_task);
+    match progress_task.task.id.clone() {
+      Some(id) => {
+        progress_queue.insert(id, progress_task);
+      },
+      None => {}
+    };
   }
 
   fn fetch_shared_vec<T: Clone>(vec_arc: &Arc<Mutex<Vec<T>>>) -> Vec<T> {
