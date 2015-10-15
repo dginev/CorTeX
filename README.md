@@ -1,4 +1,4 @@
-:exclamation: **Warning** :exclamation: This repository is undergoing first stability runs and is not ready for third-party use! We have converted over 100,000 TeX articles from arXiv with this implementation, but take a look at the active issues for known stability problems.
+:exclamation: **Warning** :exclamation: This repository is undergoing first stability runs and is not ready for third-party use! We have converted over 500,000 TeX articles from arXiv with this implementation, but take a look at the active issues for known stability problems.
 
 ![CorTeX Framework](./public/img/logo.jpg) Framework
 ======
