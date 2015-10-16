@@ -463,7 +463,7 @@ impl Server {
   pub fn push_done_queue(reports_arc : &Arc<Mutex<Vec<TaskReport>>>, report : TaskReport) {
     let mut reports = reports_arc.lock().unwrap();
     if reports.len() > 10000 {
-      panic!("Done queue is too large: {:?} tasks. Stop the sink!");
+      panic!("Done queue is too large: {:?} tasks. Stop the sink!", reports.len());
     }
     reports.push(report)
   }
@@ -492,7 +492,7 @@ impl Server {
     // NOTE: This constant should be adjusted if you expect a fringe of more than 10,000 jobs 
     //       I am using this as a workaround for the inability to catch thread panic!() calls.
     if progress_queue.len() > 10000 { 
-      panic!("Progress queue is too large: {:?} tasks. Stop the ventilator!");
+      panic!("Progress queue is too large: {:?} tasks. Stop the ventilator!",progress_queue.len());
     }
     match progress_task.task.id.clone() {
       Some(id) => {
