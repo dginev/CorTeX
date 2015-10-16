@@ -15,15 +15,16 @@ use std::collections::HashMap;
 // use std::io::Read;
 use std::io::Error;
 use nickel::{Nickel, Mountable, StaticFilesHandler, HttpRouter}; //, MediaType, JsonBody
-// use hyper::header::Location;
-// use nickel::status::StatusCode;
+use hyper::header::Location;
+use nickel::status::StatusCode;
 // use nickel::QueryString;
 // use nickel::status::StatusCode;
 // use hyper::header::Location;
 
 use cortex::sysinfo;
 use cortex::backend::{Backend};
-// use cortex::data::{Corpus};
+use cortex::data::{Corpus, CortexORM};
+
 
 #[derive(RustcDecodable, RustcEncodable)]
 struct Person {
@@ -118,13 +119,39 @@ fn main() {
     //   return response.render("examples/assets/cortex-admin.html", &data);
     // });
 
-    server.get("/corpus/:corpus_name", middleware! { |request, response|
+    server.get("/corpus/:corpus_name", middleware! { |request, mut response|
       let mut data = HashMap::new();
+      let backend = Backend::default();
       let corpus_name = request.param("corpus_name").unwrap();
-      data.insert("title", "Registered services for ".to_string() + corpus_name.clone());
-      data.insert("description", "An analysis framework for corpora of TeX/LaTeX documents - registered services for ".to_string()+ corpus_name.clone());
-      data.insert("corpus_name", corpus_name.to_string());
-      return response.render("examples/assets/cortex-services.html", &data);
+      let corpus_result = Corpus{id: None, name: corpus_name.to_string(), path : String::new(), complex : true}.select_by_key(&backend.connection);
+      match corpus_result {
+        Ok(corpus_select) => {
+          match corpus_select {
+            Some(corpus) => {
+              data.insert("title", "Registered services for ".to_string() + corpus_name.clone());
+              data.insert("description", "An analysis framework for corpora of TeX/LaTeX documents - registered services for ".to_string()+ corpus_name.clone());
+              data.insert("corpus_name", corpus_name.to_string());
+
+              let services_result = corpus.select_services(&backend.connection);
+              match services_result {
+                Ok(services) => {
+                  for service in services.iter() {
+                    data.insert("service_name", service.name.clone());
+                  }
+                },
+                _ => {}
+              };
+              return response.render("examples/assets/cortex-services.html", &data);
+            },
+            None => {}
+          }
+        },
+        _ => {}
+      }
+      let message = "Error: Corpus ".to_string() + &corpus_name + " does not exist, aborting!";          
+      response.set(Location("/".into()));
+      response.set(StatusCode::TemporaryRedirect);
+      return response.send("")
     });
 
     server.get("/corpus/:corpus_name/:service_name", middleware! { |request, response|

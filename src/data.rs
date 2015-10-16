@@ -377,6 +377,27 @@ impl CortexORM for Corpus {
     }
   }
 }
+impl Corpus {
+  pub fn select_services<'a>(&'a self, connection : &'a Connection) -> Result<Vec<Service>,Error> {
+    let stmt = try!(connection.prepare("SELECT distinct(serviceid) FROM tasks WHERE corpusid = $1"));
+    let rows = try!(stmt.query(&[&self.id]));
+    let mut services = Vec::new();
+    if rows.len() > 0 {
+      let row = rows.get(0);
+      let service_result = Service{id: row.get(0), outputformat:String::new(), complex: true, inputconverter:None, name:String::new(), version:0.1, inputformat:String::new()}.select_by_id(&connection);
+      match service_result {
+        Ok(service_select) => {
+          match service_select {
+            Some(service) => services.push(service),
+            _ => {}
+          } 
+        },
+        _ => {}
+      }
+    }
+    return Ok(services)
+  }
+}
 // Services
 #[derive(Clone)]
 pub struct Service {
