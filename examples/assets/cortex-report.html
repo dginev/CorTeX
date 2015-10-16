@@ -1,8 +1,41 @@
 {{> layout-cortex-pre }}
-<h3>Corpus Statistics: 
-</h3>
-<div id="corpus-report"></div>
-<div id="pending-corpora-report"></div>
-<div id="countdown"></div>
-
+<div class="center">
+  <h1>{{service_name}} statistics</h1>
+  <br>
+  <div class="col-md-4"></div>
+  <div class="col-md-4">
+  <table id="corpus-report" class="table">
+  <thead>
+    <tr>
+      <th>Category</th>
+      <th>Percent</th>
+      <th>Count</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="success corpus-report-ok">
+      <td class="left">No Problems</td>
+      <td class="right">{{ok_percent}}%</td>
+      <td class="right">{{ok_count}}</td>
+    </tr>
+    <tr class="warning corpus-report-warnings">
+      <td class="left">Warning</td>
+      <td class="right">{{warning_percent}}%</td>
+      <td class="right">{{warning_count}}</td>
+    </tr>
+    <tr class="error corpus-report-errors">
+      <td class="left">Error</td>
+      <td class="right">{{error_percent}}</td>
+      <td class="right">{{error_count}}</td>
+    </tr>
+    <tr class="danger corpus-report-fatal">
+      <td class="left">Fatal</td>
+      <td class="right">{{error_percent}}</td>
+      <td class="right">{{error_count}}</td>
+    </tr>
+  </tbody>
+  </table>
+  </div>
+  <div class="col-md-4"></div>
+</div>
 {{> layout-cortex-post }}

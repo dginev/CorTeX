@@ -254,5 +254,23 @@ impl Backend {
     trans.set_commit();
     try!(trans.finish());
     Ok(())
+ }
+
+  pub fn corpora(&self) -> Vec<Corpus> {
+    let mut corpora = Vec::new();
+    match self.connection.prepare("SELECT corpusid,name,path,complex FROM corpora order by name") {
+      Ok(select_query) => {
+        match select_query.query(&[]) {
+          Ok(rows) => {
+            for row in rows.iter() {
+              corpora.push(Corpus::from_row(row));
+            }
+          },
+          _ => {}
+        }
+      }
+      _ => {}
+    }
+    return corpora;
   }
 }

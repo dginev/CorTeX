@@ -320,7 +320,7 @@ impl TaskStatus {
   }
 }
 /// A CorTeX "Corpus" is a minimal description of a document collection. It is defined by a name, path and simple/complex file system setup.
-#[derive(RustcDecodable, RustcEncodable, Clone)]
+#[derive(RustcDecodable, RustcEncodable, Clone, Debug)]
 pub struct Corpus {
   pub id : Option<i32>,
   pub name : String,
