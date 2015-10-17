@@ -19,7 +19,7 @@ A general purpose processing framework for **Cor**-pora of **TeX** documents
  - [x] Routinely tested on 1 million scientific TeX papers from arXiv.org
 
 **History**:
- * Rust reimplementation of the original Perl [CorTeX](https://github.com/dginev/cortex) stack.
+ * Rust reimplementation of the original Perl [CorTeX](https://github.com/dginev/deprecated-CorTeX) stack.
  * Builds on the expertise developed during the [arXMLiv project](https://trac.kwarc.info/arXMLiv) at Jacobs University. 
  * In particular, CorTeX is a successor to the [build system](http://arxmliv.kwarc.info) originally developed by Heinrich Stamerjohanns.
  * The architecture tiered towards generic processing with conversion, analysis and aggregation services was motivated by the [LLaMaPUn](https://trac.kwarc.info/lamapun)
