@@ -44,10 +44,18 @@
         </div>
         <nav class="collapse navbar-collapse bs-navbar-collapse" role="navigation">
           <ul class="nav navbar-nav">
-            <li class="corpus-nav"><a href="/corpus/{{corpus_name}}">{{corpus_name}}</a></li>
-            <li class="corpus-nav"><a href="/corpus/{{corpus_name}}/{{service_name}}">{{service_name}}</a></li>
-            <li class="corpus-nav"><a href="/corpus/{{corpus_name}}/{{service_name}}/{{category_name}}">{{category_name}}</a></li>
-            <li class="corpus-nav"><a href="/corpus/{{corpus_name}}/{{service_name}}/{{category_name}}/{{what_name}}">{{what_name}}</a></li>
+            <li class="nav-link" data-nav-name="{{corpus_name}}">
+              <a href="/corpus/{{corpus_name}}"><i class="fa fa-chevron-right fa-lg"></i>&nbsp;&nbsp;&nbsp;&nbsp;{{corpus_name}}</a>
+            </li>
+            <li class="nav-link" data-nav-name="{{service_name}}">
+              <a href="/corpus/{{corpus_name}}/{{service_name}}"><i class="fa fa-chevron-right fa-lg"></i>&nbsp;&nbsp;&nbsp;&nbsp;{{service_name}}</a>
+            </li>
+            <li class="nav-link" data-nav-name="{{category_name}}">
+              <a href="/corpus/{{corpus_name}}/{{service_name}}/{{category_name}}"><i class="fa fa-chevron-right fa-lg"></i>&nbsp;&nbsp;&nbsp;&nbsp;{{category_name}}</a>
+            </li>
+            <li class="nav-link" data-nav-name="{{what_name}}">
+              <a href="/corpus/{{corpus_name}}/{{service_name}}/{{category_name}}/{{what_name}}"><i class="fa fa-chevron-right fa-lg"></i>&nbsp;&nbsp;&nbsp;&nbsp;{{what_name}}</a>
+            </li>
           </ul>
         </nav>
       </div>

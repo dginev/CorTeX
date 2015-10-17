@@ -128,3 +128,6 @@ h1 {
   /*font-family: 'OFLGoudy';*/
   font-family: "Georgia";
 }
+.nav-link[data-nav-name=''] {
+  visibility: hidden;
+}
