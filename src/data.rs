@@ -6,7 +6,7 @@
 // except according to those terms.
 
 use rustc_serialize::json::{Json, ToJson};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 // use std::io::Read;
 use std::path::Path;
@@ -397,6 +397,12 @@ impl Corpus {
     }
     return Ok(services)
   }
+
+  pub fn to_hash(&self) -> HashMap<&'static str, String> {
+    let mut hm = HashMap::new();
+    hm.insert("name",self.name.clone());
+    hm
+  }
 }
 // Services
 #[derive(Clone)]
@@ -488,6 +494,22 @@ impl Service {
     let entry_path = Path::new(&task.entry);
     let file = try!(File::open(entry_path));
     Ok(file)
+  }
+  pub fn to_hash(&self) -> HashMap<&'static str, String> {
+    let mut hm = HashMap::new();
+    hm.insert("id",match self.id {
+      Some(id) => id.to_string(),
+      None => "None".to_string()});
+    hm.insert("name",self.name.clone());
+    hm.insert("version",self.version.to_string());
+    hm.insert("inputformat",self.inputformat.clone());
+    hm.insert("outputformat",self.outputformat.clone());
+    hm.insert("inputconverter", match self.inputconverter.clone() {
+      Some(ic) =>  ic,
+      None => "None".to_string()
+    });
+    hm.insert("complex", self.complex.to_string());
+    hm
   }
 }
 

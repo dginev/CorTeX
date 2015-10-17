@@ -54,26 +54,30 @@ fn main() {
     // Root greeter
     server.get("/", middleware! { |_, response|
         let mut data = HashMap::new();
-        data.insert("title", "Framework Overview".to_string());
-        data.insert("description", "An analysis framework for corpora of TeX/LaTeX documents - overview.".to_string());
+        let mut global = HashMap::new();
+        global.insert("title", "Framework Overview".to_string());
+        global.insert("description", "An analysis framework for corpora of TeX/LaTeX documents - overview.".to_string());
         
         let backend = Backend::default();
-        let corpora = backend.corpora();
-        for corpus in corpora.iter() {
-          data.insert("corpus_name",corpus.name.clone());
-        }
+        let corpora = backend.corpora().iter()
+        .map(|c| c.to_hash()).collect::<Vec<_>>();
+
+        data.insert("global",vec![global]);
+        data.insert("corpora",corpora);
         return response.render("examples/assets/cortex-overview.html", &data);
     });
 
     // Admin interface
     server.get("/admin", middleware! { |_, response|
       let mut data = HashMap::new();
-      data.insert("title", "Admin Interface".to_string());
-      data.insert("description", "An analysis framework for corpora of TeX/LaTeX documents - admin interface.".to_string());
-      match sysinfo::report(&mut data) {
+      let mut global = HashMap::new();
+      global.insert("title", "Admin Interface".to_string());
+      global.insert("description", "An analysis framework for corpora of TeX/LaTeX documents - admin interface.".to_string());
+      match sysinfo::report(&mut global) {
         Ok(_) => {},
         Err(e) => println!("Sys report failed: {:?}", e)
       };
+      data.insert("global",vec![global]);
       return response.render("examples/assets/cortex-admin.html", &data);
     });
 
@@ -121,6 +125,7 @@ fn main() {
 
     server.get("/corpus/:corpus_name", middleware! { |request, mut response|
       let mut data = HashMap::new();
+      let mut global = HashMap::new();
       let backend = Backend::default();
       let corpus_name = request.param("corpus_name").unwrap();
       let corpus_result = Corpus{id: None, name: corpus_name.to_string(), path : String::new(), complex : true}.select_by_key(&backend.connection);
@@ -128,16 +133,22 @@ fn main() {
         Ok(corpus_select) => {
           match corpus_select {
             Some(corpus) => {
-              data.insert("title", "Registered services for ".to_string() + corpus_name.clone());
-              data.insert("description", "An analysis framework for corpora of TeX/LaTeX documents - registered services for ".to_string()+ corpus_name.clone());
-              data.insert("corpus_name", corpus_name.to_string());
+              global.insert("title", "Registered services for ".to_string() + corpus_name.clone());
+              global.insert("description", "An analysis framework for corpora of TeX/LaTeX documents - registered services for ".to_string()+ corpus_name.clone());
+              global.insert("corpus_name", corpus_name.to_string());
+              data.insert("global",vec![global]);
 
               let services_result = corpus.select_services(&backend.connection);
               match services_result {
-                Ok(services) => {
-                  for service in services.iter() {
-                    data.insert("service_name", service.name.clone());
+                Ok(backend_services) => {
+                  let services = backend_services.iter()
+                                .map(|s| s.to_hash()).collect::<Vec<_>>();
+                  let mut service_reports = Vec::new();
+                  for mut service in services.into_iter() {
+                    service.insert("status","Running".to_string());
+                    service_reports.push(service);
                   }
+                  data.insert("services", service_reports);
                 },
                 _ => {}
               };
@@ -148,7 +159,7 @@ fn main() {
         },
         _ => {}
       }
-      let message = "Error: Corpus ".to_string() + &corpus_name + " does not exist, aborting!";          
+      // let message = "Error: Corpus ".to_string() + &corpus_name + " does not exist, aborting!";
       response.set(Location("/".into()));
       response.set(StatusCode::TemporaryRedirect);
       return response.send("")
@@ -156,13 +167,15 @@ fn main() {
 
     server.get("/corpus/:corpus_name/:service_name", middleware! { |request, response|
       let mut data = HashMap::new();
+      let mut global = HashMap::new();
       let corpus_name = request.param("corpus_name").unwrap();
       let service_name = request.param("service_name").unwrap();
 
-      data.insert("title", "Corpus Report for ".to_string() + corpus_name.clone());
-      data.insert("description", "An analysis framework for corpora of TeX/LaTeX documents - statistical reports for ".to_string()+ corpus_name.clone());
-      data.insert("corpus_name", corpus_name.to_string());
-      data.insert("service_name", service_name.to_string());
+      global.insert("title", "Corpus Report for ".to_string() + corpus_name.clone());
+      global.insert("description", "An analysis framework for corpora of TeX/LaTeX documents - statistical reports for ".to_string()+ corpus_name.clone());
+      global.insert("corpus_name", corpus_name.to_string());
+      global.insert("service_name", service_name.to_string());
+      data.insert("global",vec![global]);
       return response.render("examples/assets/cortex-report.html", &data);
 
     });
