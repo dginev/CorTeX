@@ -329,6 +329,18 @@ impl TaskStatus {
       _ => TaskStatus::Queued(num.clone())
     }
   }
+  pub fn from_key(key : &str) -> Self {
+    match key {
+      "no_problem" => TaskStatus::NoProblem,
+      "warning" => TaskStatus::Warning,
+      "error" => TaskStatus::Error,
+      "fatal" => TaskStatus::Fatal,
+      "todo" => TaskStatus::TODO,
+      "blocked" => TaskStatus::Blocked(-6),
+      "queued" => TaskStatus::Queued(1),
+      _ => TaskStatus::Fatal
+    }
+  }
   pub fn keys() -> Vec<String> {
     ["no_problem", "warning", "error", "fatal", "todo", "blocked", "queued"].iter().map(|&x| x.to_string()).collect::<Vec<_>>()
   }

@@ -10,6 +10,7 @@ extern crate rand;
 
 use postgres::{Connection, SslMode};
 use postgres::error::Error;
+use postgres::rows::{Rows};
 use std::clone::Clone;
 use std::collections::HashMap;
 use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
@@ -275,9 +276,7 @@ impl Backend {
     return corpora;
   }
 
-  pub fn progress_report<'report>(&self, c : &Corpus, s : &Service, 
-    severity: Option<&str>, category: Option<&str>, what: Option<&str>) -> HashMap<String, f64> {
-
+  pub fn progress_report<'report>(&self, c : &Corpus, s : &Service) -> HashMap<String, f64> {
     let mut stats_hash : HashMap<String, f64> = HashMap::new();
     for status_key in TaskStatus::keys().into_iter() {
       stats_hash.insert(status_key,0.0);
@@ -303,17 +302,43 @@ impl Backend {
       }
       _ => {}
     }
-    Backend::aux_stats_compute_percentages(&mut stats_hash);
+    Backend::aux_stats_compute_percentages(&mut stats_hash, None);
     stats_hash
   }
-  fn aux_stats_compute_percentages(stats_hash : &mut HashMap<String, f64>) {
-     //Compute percentages, now that we have a total
-    let mut total : f64;
-    {
-      let total_entry = stats_hash.get_mut("total").unwrap();
-      total = (*total_entry).clone();
+  pub fn task_report<'report>(&self, c : &Corpus, s : &Service,
+    severity: Option<&str>, category: Option<&str>, what: Option<&str>) -> Vec<HashMap<String, String>> {
+
+    match severity {
+      Some(severity_name) => {
+        match category {
+          None => {
+            match self.connection.prepare("select category, count(*) from (
+              select category,tasks.taskid from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3
+               group by category, tasks.taskid) as tmp group by category;") {
+            Ok(select_query) => {
+              match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &TaskStatus::from_key(severity_name).raw()]) {
+                Ok(rows) => Backend::aux_task_rows_stats(rows),
+                _ => Vec::new()
+              }
+            },
+            _ => Vec::new(),
+            }
+          }
+          _ => Vec::new()
+        }
+      },
+      None => Vec::new()
     }
-    if total <= 0.0 {total = 1.0;}
+  }
+  fn aux_stats_compute_percentages(stats_hash : &mut HashMap<String, f64>, total_given : Option<f64>) {
+     //Compute percentages, now that we have a total
+    let total : f64 = 1.0_f64.max(match total_given {
+      None => {
+          let total_entry = stats_hash.get_mut("total").unwrap();
+          (*total_entry).clone()
+        },
+      Some(total_num) => total_num
+    });
     let stats_keys = stats_hash.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>();
     for stats_key in stats_keys {
       {
@@ -323,5 +348,18 @@ impl Backend {
         stats_hash.insert(key_percent_name, key_percent_rounded);
       }
     }
+  }
+  fn aux_task_rows_stats(rows : Rows) -> Vec<HashMap<String,String>>{
+    let mut stats_hash = HashMap::new();
+    let mut report = Vec::new();
+    let total = 1.0;
+    Backend::aux_stats_compute_percentages(&mut stats_hash, Some(total));
+    let mut string_stats_hash = HashMap::new();
+    for (key, val) in stats_hash.iter() {
+      string_stats_hash.insert(key.clone(), val.to_string());
+    }
+    report.push(string_stats_hash);
+
+    report
   }
 }

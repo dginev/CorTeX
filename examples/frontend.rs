@@ -169,7 +169,7 @@ fn main() {
     server.get("/corpus/:corpus_name/:service_name", middleware! { |request, response|
       return serve_report(request, response)
     });
-    server.get("/corpus/:corpus_name/:service_name/:severity/", middleware! { |request, response|
+    server.get("/corpus/:corpus_name/:service_name/:severity", middleware! { |request, response|
       return serve_report(request, response)
     });
     server.get("/corpus/:corpus_name/:service_name/:severity/:category", middleware! { |request, response|
@@ -202,32 +202,51 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
       global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - statistical reports for ".to_string()+ corpus_name.clone());
       global.insert("corpus_name".to_string(), corpus_name.to_string());
       global.insert("service_name".to_string(), service_name.to_string());
+      global.insert("type".to_string(),"Conversion".to_string());
       let report;
       let template;
       let report_start = time::get_time();
       if severity.is_none() { // Top-level report
-        report = backend.progress_report(&corpus, &service, None, None, None);
+        report = backend.progress_report(&corpus, &service);
+        // Record the report into the globals
+        for (key, val) in report.iter() {
+          global.insert(key.clone(), val.to_string());
+        }
         template = "examples/assets/cortex-report.html";
       }
       else if category.is_none() { // Severity-level report
-        report = backend.progress_report(&corpus, &service, severity, None, None);
+        global.insert("severity".to_string(),severity.unwrap().to_string());
         template = match severity {
           Some("no_problem") => "examples/assets/cortex-entry-list.html",
-          _ => "examples/assets/cortex-report-severity.html"
+          _ => {
+            let categories = backend.task_report(&corpus, &service, severity, None, None);
+            // Record the report into "categories" vector
+            data.insert("categories",categories);
+            // And set the severity template
+            "examples/assets/cortex-report-severity.html"
+          }
         };
       }
       else if what.is_none() { // Category-level report
-        report = backend.progress_report(&corpus, &service, severity, category, None);
+        global.insert("severity".to_string(),severity.unwrap().to_string());
+        global.insert("category".to_string(),category.unwrap().to_string());
+        let whats = backend.task_report(&corpus, &service, severity, category, None);
+        // Record the report into "whats" vector
+        data.insert("whats",whats);
+        // And set the category template
         template = "examples/assets/cortex-report-category.html";
       }
       else { // What-level report
-        report = backend.progress_report(&corpus, &service, severity, category, what);
-        template = "examples/assets/cortex-report-entry-list.html";
+        global.insert("severity".to_string(),severity.unwrap().to_string());
+        global.insert("category".to_string(),category.unwrap().to_string());
+        global.insert("what".to_string(),what.unwrap().to_string());
+        let tasks = backend.task_report(&corpus, &service, severity, category, what);
+        // Record the report into "tasks" vector
+        data.insert("tasks",tasks);
+        // And set the task list template
+        template = "examples/assets/cortex-report-task-list.html";
       }
-      // Record the report into the globals
-      for (key, val) in report.iter() {
-        global.insert(key.clone(), val.to_string());
-      }
+
       // Report also the query times
       let report_end = time::get_time();
       let report_duration = (report_end - report_start).num_milliseconds();

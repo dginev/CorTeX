@@ -1,0 +1,32 @@
+{{> layout-cortex-pre }}
+{{#global}}
+<div class="center">
+  <h1>{{severity}} categories</h1>
+  <br>
+  <div class="row">
+  <div class="col-md-4"></div>
+  <div class="col-md-4">
+  <table id="corpus-report" class="table">
+  <thead>
+    <tr>
+      <th class="left">Category</th>
+      <th class="right">Percent</th>
+      <th class="right">Tasks</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#categories}}
+    <tr class="success corpus-report-no-problems">
+      <td class="left"><a href="/corpus/{{corpus_name}}/{{service_name}}/{{severity}}/{{name}}">{{name}}</a></td>
+      <td class="right">{{count_percent}}%</td>
+      <td class="right">{{count}}</td>
+    </tr>
+    {{/categories}}
+  </tbody>
+  </table>
+  </div>
+  <div class="col-md-4"></div>
+  </div>
+</div>
+{{/global}}
+{{> layout-cortex-post }}
