@@ -216,6 +216,7 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
       }
       else if category.is_none() { // Severity-level report
         global.insert("severity".to_string(),severity.unwrap().to_string());
+        global.insert("highlight".to_string(), severity_highlight(severity.unwrap().clone()));
         template = match severity {
           Some("no_problem") => "examples/assets/cortex-entry-list.html",
           _ => {
@@ -229,6 +230,7 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
       }
       else if what.is_none() { // Category-level report
         global.insert("severity".to_string(),severity.unwrap().to_string());
+        global.insert("highlight".to_string(), severity_highlight(severity.unwrap().clone()));
         global.insert("category".to_string(),category.unwrap().to_string());
         let whats = backend.task_report(&corpus, &service, severity, category, None);
         // Record the report into "whats" vector
@@ -263,4 +265,13 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
 
   // let message = "Error: Corpus ".to_string() + &corpus_name + " does not exist, aborting!";
   return response.send("")
+}
+fn severity_highlight(severity : &str) -> String {
+   match severity {// Bootstrap highlight classes
+    "no_problem" => "success",
+    "warning" => "warning",
+    "error" => "error",
+    "fatal" => "danger",
+    _ => "unknown"
+  }.to_string()
 }

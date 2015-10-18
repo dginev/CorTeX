@@ -1,7 +1,7 @@
 {{> layout-cortex-pre }}
 {{#global}}
 <div class="center">
-  <h1>{{severity}} categories</h1>
+  <h1>"{{category}}" classification</h1>
   <br>
   <div class="row">
   <div class="col-md-4"></div>
@@ -9,19 +9,19 @@
   <table id="corpus-report" class="table">
   <thead>
     <tr>
-      <th class="left">Category</th>
+      <th class="left">What</th>
       <th class="right">Percent</th>
       <th class="right">Tasks</th>
     </tr>
   </thead>
   <tbody>
-    {{#categories}}
-    <tr class="{{highlight}} corpus-report-{{severity}}">
-      <td class="left"><a class="link-{{name}}" href="/corpus/{{corpus_name}}/{{service_name}}/{{severity}}/{{name}}">{{name}}</a></td>
+    {{#whats}}
+    <tr class="{{highlight}} corpus-report-{{category}}">
+      <td class="left"><a class="link-{{name}}" href="/corpus/{{corpus_name}}/{{service_name}}/{{severity}}/{{category}}/{{name}}">{{name}}</a></td>
       <td class="right">{{count_percent}}%</td>
       <td class="right">{{count}}</td>
     </tr>
-    {{/categories}}
+    {{/whats}}
   </tbody>
   </table>
   </div>

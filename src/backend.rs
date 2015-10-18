@@ -282,7 +282,7 @@ impl Backend {
       stats_hash.insert(status_key,0.0);
     }
     stats_hash.insert("total".to_string(),0.0);
-    match self.connection.prepare("select status,count(*) from tasks where serviceid=$1 and corpusid=$2 group by status") {
+    match self.connection.prepare("select status,count(*) as status_count from tasks where serviceid=$1 and corpusid=$2 group by status order by status_count desc;") {
       Ok(select_query) => {
         match select_query.query(&[&s.id.unwrap(), &c.id.unwrap()]) {
           Ok(rows) => {
@@ -310,21 +310,59 @@ impl Backend {
 
     match severity {
       Some(severity_name) => {
+        let raw_status = TaskStatus::from_key(severity_name.clone()).raw();
         match category {
-          None => {
-            match self.connection.prepare("select category, count(*) from (
-              select category,tasks.taskid from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3
-               group by category, tasks.taskid) as tmp group by category;") {
+          None => match self.connection.prepare("select category, count(*) as category_count from (
+              select category,tasks.taskid from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4
+               group by category, tasks.taskid) as tmp group by category order by category_count desc;") {
             Ok(select_query) => {
-              match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &TaskStatus::from_key(severity_name).raw()]) {
-                Ok(rows) => Backend::aux_task_rows_stats(rows),
+              match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status,&severity_name]) {
+                Ok(category_rows) => {
+                  // How many tasks total in this category?
+                  match self.connection.prepare("select count(*) from tasks where serviceid=$1 and corpusid=$2 and status=$3;") {
+                  Ok(total_query) => {
+                    match total_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status]) {
+                      Ok(total_rows) => {
+                        let total : i64 = total_rows.get(0).get(0);
+                        Backend::aux_task_rows_stats(category_rows, total)
+                      },
+                      _ => Vec::new()
+                    }
+                  },
+                  _ => Vec::new()
+                  }
+                },
                 _ => Vec::new()
               }
             },
             _ => Vec::new(),
-            }
+          },
+          Some(category_name) => match what {
+            None => match self.connection.prepare("select what, count(*) as what_count from (
+              select what,tasks.taskid from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and category=$5
+               group by what, tasks.taskid) as tmp group by what order by what_count desc;") {
+              Ok(select_query) => match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status,&severity_name, &category_name]) {
+                Ok(what_rows) => {
+                  // How many tasks total in this category?
+                  match self.connection.prepare("select count(*) from (
+                    select distinct(tasks.taskid) from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and category=$5) as tmp;") {
+                  Ok(total_query) => {
+                    match total_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status, &severity_name, &category_name]) {
+                      Ok(total_rows) => {
+                        let total : i64 = total_rows.get(0).get(0);
+                        Backend::aux_task_rows_stats(what_rows, total)
+                      },
+                      _ => Vec::new()
+                    }},
+                  _ => Vec::new()
+                  }
+                },
+                _ => Vec::new()
+              },
+              _ => Vec::new()
+            },
+            _ => Vec::new()
           }
-          _ => Vec::new()
         }
       },
       None => Vec::new()
@@ -342,24 +380,39 @@ impl Backend {
     let stats_keys = stats_hash.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>();
     for stats_key in stats_keys {
       {
-        let key_percent_value : f64 = 100.0 * (*stats_hash.get_mut(&stats_key).unwrap() / total);
-        let key_percent_rounded : f64 = (key_percent_value * 100.0).round() / 100.0;
+        let key_percent_value : f64 = 100.0 * (*stats_hash.get_mut(&stats_key).unwrap() as f64 / total as f64);
+        let key_percent_rounded : f64 = (key_percent_value * 100.0).round() as f64 / 100.0;
         let key_percent_name = stats_key + "_percent";
         stats_hash.insert(key_percent_name, key_percent_rounded);
       }
     }
   }
-  fn aux_task_rows_stats(rows : Rows) -> Vec<HashMap<String,String>>{
-    let mut stats_hash = HashMap::new();
+  fn aux_task_rows_stats(rows : Rows, total : i64) -> Vec<HashMap<String,String>>{
     let mut report = Vec::new();
-    let total = 1.0;
-    Backend::aux_stats_compute_percentages(&mut stats_hash, Some(total));
-    let mut string_stats_hash = HashMap::new();
-    for (key, val) in stats_hash.iter() {
-      string_stats_hash.insert(key.clone(), val.to_string());
+
+    for row in rows.iter() {
+      let stat_type_fixedwidth : String = row.get(0);
+      let stat_type : String = stat_type_fixedwidth.trim_right().to_string();
+      let stat_count : i64 = row.get(1);
+      let mut stats_hash : HashMap<String, String> = HashMap::new();
+      stats_hash.insert("name".to_string(),stat_type);
+      stats_hash.insert("count".to_string(), stat_count.to_string());
+
+      let stat_percent_value : f64 = 100.0 * (stat_count  as f64 / total as f64);
+      let stat_percent_rounded : f64 = (stat_percent_value * 100.0).round() as f64 / 100.0;
+      stats_hash.insert("count_percent".to_string(), stat_percent_rounded.to_string());
+
+      report.push(stats_hash);
     }
-    report.push(string_stats_hash);
+    // Append the total to the end of the report:
+    let mut total_hash = HashMap::new();
+    total_hash.insert("name".to_string(),"total".to_string());
+    total_hash.insert("count".to_string(),total.to_string());
+    total_hash.insert("count_percent".to_string(),"100".to_string());
+    report.push(total_hash);
+
 
     report
   }
+
 }

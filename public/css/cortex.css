@@ -1,6 +1,12 @@
 .quietlink:link {color:#000000; text-decoration:none}      
 .quietlink:visited {color:#000000; text-decoration:none} 
-
+.link-total {
+   color:#000000;
+   text-decoration:none;
+   display:inline-block;
+   pointer-events: none;
+   cursor: default;
+}
 body {
   height: 100%; 
 }
