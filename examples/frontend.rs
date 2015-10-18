@@ -8,13 +8,14 @@ extern crate hyper;
 #[macro_use] extern crate nickel;
 extern crate cortex;
 extern crate rustc_serialize;
+extern crate time;
 
 use std::collections::HashMap;
 // use std::path::Path;
 // use std::fs;
 // use std::io::Read;
 use std::io::Error;
-use nickel::{Nickel, Mountable, StaticFilesHandler, HttpRouter}; //, MediaType, JsonBody
+use nickel::{Nickel, Mountable, StaticFilesHandler, HttpRouter, Request, Response, MiddlewareResult}; //, MediaType, JsonBody
 use hyper::header::Location;
 use nickel::status::StatusCode;
 // use nickel::QueryString;
@@ -165,41 +166,82 @@ fn main() {
       return response.send("")
     });
 
-    server.get("/corpus/:corpus_name/:service_name", middleware! { |request, mut response|
-      let mut data = HashMap::new();
-      let mut global = HashMap::new();
-      let backend = Backend::default();
-      let corpus_name = request.param("corpus_name").unwrap();
-      let service_name = request.param("service_name").unwrap();
-      let corpus_result = Corpus{id: None, name: corpus_name.to_string(), path : String::new(), complex : true}.select_by_key(&backend.connection);
-      match corpus_result { Ok(corpus_select) => {
-      match corpus_select {Some(corpus) => {
-        let service_result = Service{id: None, name: service_name.to_string(),  complex: true, version: 0.1, inputconverter: None, inputformat: String::new(), outputformat:String::new()}.select_by_key(&backend.connection);
-        match service_result { Ok(service_select) => {
-        match service_select {Some(service) => {
-          global.insert("title".to_string(), "Corpus Report for ".to_string() + corpus_name.clone());
-          global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - statistical reports for ".to_string()+ corpus_name.clone());
-          global.insert("corpus_name".to_string(), corpus_name.to_string());
-          global.insert("service_name".to_string(), service_name.to_string());
-
-          let report = backend.progress_report(&corpus, &service);
-          for (key, val) in report.iter() {
-            global.insert(key.clone(), val.to_string());
-          }
-          data.insert("global",vec![global]);
-          return response.render("examples/assets/cortex-report.html", &data);
-        },
-        _=>{}}},
-        _=>{}}},
-        _=>{}}},
-        _=>{}};
-
-      // let message = "Error: Corpus ".to_string() + &corpus_name + " does not exist, aborting!";
-      response.set(Location("/".into()));
-      response.set(StatusCode::TemporaryRedirect);
-      return response.send("")
-
+    server.get("/corpus/:corpus_name/:service_name", middleware! { |request, response|
+      return serve_report(request, response)
+    });
+    server.get("/corpus/:corpus_name/:service_name/:severity/", middleware! { |request, response|
+      return serve_report(request, response)
+    });
+    server.get("/corpus/:corpus_name/:service_name/:severity/:category", middleware! { |request, response|
+      return serve_report(request, response)
+    });
+    server.get("/corpus/:corpus_name/:service_name/:severity/:category/:what", middleware! { |request, response|
+      return serve_report(request, response)
     });
 
     server.listen("127.0.0.1:6767");
+}
+
+fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> MiddlewareResult<'a, D>  {
+  let mut data = HashMap::new();
+  let mut global = HashMap::new();
+  let backend = Backend::default();
+  let corpus_name = request.param("corpus_name").unwrap();
+  let service_name = request.param("service_name").unwrap();
+  let severity = request.param("severity");
+  let category = request.param("category");
+  let what = request.param("what");
+  let corpus_result = Corpus{id: None, name: corpus_name.to_string(), path : String::new(), complex : true}.select_by_key(&backend.connection);
+  match corpus_result { Ok(corpus_select) => {
+  match corpus_select {Some(corpus) => {
+    let service_result = Service{id: None, name: service_name.to_string(),  complex: true, version: 0.1, inputconverter: None, inputformat: String::new(), outputformat:String::new()}.select_by_key(&backend.connection);
+    match service_result { Ok(service_select) => {
+    match service_select {Some(service) => {
+      // Metadata in all reports
+      global.insert("title".to_string(), "Corpus Report for ".to_string() + corpus_name.clone());
+      global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - statistical reports for ".to_string()+ corpus_name.clone());
+      global.insert("corpus_name".to_string(), corpus_name.to_string());
+      global.insert("service_name".to_string(), service_name.to_string());
+      let report;
+      let template;
+      let report_start = time::get_time();
+      if severity.is_none() { // Top-level report
+        report = backend.progress_report(&corpus, &service, None, None, None);
+        template = "examples/assets/cortex-report.html";
+      }
+      else if category.is_none() { // Severity-level report
+        report = backend.progress_report(&corpus, &service, severity, None, None);
+        template = match severity {
+          Some("no_problem") => "examples/assets/cortex-entry-list.html",
+          _ => "examples/assets/cortex-report-severity.html"
+        };
+      }
+      else if what.is_none() { // Category-level report
+        report = backend.progress_report(&corpus, &service, severity, category, None);
+        template = "examples/assets/cortex-report-category.html";
+      }
+      else { // What-level report
+        report = backend.progress_report(&corpus, &service, severity, category, what);
+        template = "examples/assets/cortex-report-entry-list.html";
+      }
+      // Record the report into the globals
+      for (key, val) in report.iter() {
+        global.insert(key.clone(), val.to_string());
+      }
+      // Report also the query times
+      let report_end = time::get_time();
+      let report_duration = (report_end - report_start).num_milliseconds();
+      global.insert("report_duration".to_string(),report_duration.to_string());
+      // Pass the globals(reports+metadata) onto the stash
+      data.insert("global",vec![global]);
+      // And render the correct template
+      return response.render(template, &data)
+    },
+    _=>{}}},
+    _=>{}}},
+    _=>{}}},
+    _=>{}};
+
+  // let message = "Error: Corpus ".to_string() + &corpus_name + " does not exist, aborting!";
+  return response.send("")
 }

@@ -131,3 +131,9 @@ h1 {
 .nav-link[data-nav-name=''] {
   visibility: hidden;
 }
+.report-duration {
+  font-style: italic;
+}
+.report-duration[data-report-duration=''] {
+  visibility: hidden;
+}

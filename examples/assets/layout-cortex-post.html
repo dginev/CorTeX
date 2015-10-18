@@ -3,7 +3,9 @@
       <nav class="navbar navbar-default navbar-fixed-bottom" role="navigation">
       <div class="container">          
         <div class="pull-right">
-          
+          {{#global}}
+          <span class="report-duration" data-report-duration="{{report_duration}}">[Report generated in {{report_duration}}ms]</span>
+          {{/global}}
           
         </div>
       </div>
