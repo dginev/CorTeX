@@ -23,7 +23,7 @@ use nickel::status::StatusCode;
 
 use cortex::sysinfo;
 use cortex::backend::{Backend};
-use cortex::data::{Corpus, CortexORM};
+use cortex::data::{Corpus, CortexORM, Service};
 
 
 #[derive(RustcDecodable, RustcEncodable)]
@@ -165,18 +165,39 @@ fn main() {
       return response.send("")
     });
 
-    server.get("/corpus/:corpus_name/:service_name", middleware! { |request, response|
+    server.get("/corpus/:corpus_name/:service_name", middleware! { |request, mut response|
       let mut data = HashMap::new();
       let mut global = HashMap::new();
+      let backend = Backend::default();
       let corpus_name = request.param("corpus_name").unwrap();
       let service_name = request.param("service_name").unwrap();
+      let corpus_result = Corpus{id: None, name: corpus_name.to_string(), path : String::new(), complex : true}.select_by_key(&backend.connection);
+      match corpus_result { Ok(corpus_select) => {
+      match corpus_select {Some(corpus) => {
+        let service_result = Service{id: None, name: service_name.to_string(),  complex: true, version: 0.1, inputconverter: None, inputformat: String::new(), outputformat:String::new()}.select_by_key(&backend.connection);
+        match service_result { Ok(service_select) => {
+        match service_select {Some(service) => {
+          global.insert("title".to_string(), "Corpus Report for ".to_string() + corpus_name.clone());
+          global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - statistical reports for ".to_string()+ corpus_name.clone());
+          global.insert("corpus_name".to_string(), corpus_name.to_string());
+          global.insert("service_name".to_string(), service_name.to_string());
 
-      global.insert("title", "Corpus Report for ".to_string() + corpus_name.clone());
-      global.insert("description", "An analysis framework for corpora of TeX/LaTeX documents - statistical reports for ".to_string()+ corpus_name.clone());
-      global.insert("corpus_name", corpus_name.to_string());
-      global.insert("service_name", service_name.to_string());
-      data.insert("global",vec![global]);
-      return response.render("examples/assets/cortex-report.html", &data);
+          let report = backend.progress_report(&corpus, &service);
+          for (key, val) in report.iter() {
+            global.insert(key.clone(), val.to_string());
+          }
+          data.insert("global",vec![global]);
+          return response.render("examples/assets/cortex-report.html", &data);
+        },
+        _=>{}}},
+        _=>{}}},
+        _=>{}}},
+        _=>{}};
+
+      // let message = "Error: Corpus ".to_string() + &corpus_name + " does not exist, aborting!";
+      response.set(Location("/".into()));
+      response.set(StatusCode::TemporaryRedirect);
+      return response.send("")
 
     });
 

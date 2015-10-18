@@ -307,6 +307,17 @@ impl TaskStatus {
       &TaskStatus::Queued(x) => x
     }
   }
+  pub fn to_key(&self) -> String {
+    match self {
+      &TaskStatus::NoProblem => "no_problem",
+      &TaskStatus::Warning => "warning",
+      &TaskStatus::Error => "error",
+      &TaskStatus::Fatal => "fatal",
+      &TaskStatus::TODO => "todo",
+      &TaskStatus::Blocked(_) => "blocked",
+      &TaskStatus::Queued(_) => "queued"
+    }.to_string()
+  }
   pub fn from_raw(num : i32) -> Self {
     match num {
       -1 => TaskStatus::NoProblem,
@@ -317,6 +328,9 @@ impl TaskStatus {
       num if num < -5 => TaskStatus::Blocked(num.clone()),
       _ => TaskStatus::Queued(num.clone())
     }
+  }
+  pub fn keys() -> Vec<String> {
+    ["no_problem", "warning", "error", "fatal", "todo", "blocked", "queued"].iter().map(|&x| x.to_string()).collect::<Vec<_>>()
   }
 }
 /// A CorTeX "Corpus" is a minimal description of a document collection. It is defined by a name, path and simple/complex file system setup.

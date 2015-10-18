@@ -11,7 +11,8 @@ extern crate rand;
 use postgres::{Connection, SslMode};
 use postgres::error::Error;
 use std::clone::Clone;
-use data::*;
+use std::collections::HashMap;
+use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
 
 use rand::{thread_rng, Rng};
 
@@ -272,5 +273,49 @@ impl Backend {
       _ => {}
     }
     return corpora;
+  }
+
+  pub fn progress_report<'report>(&self, c : &Corpus, s : &Service) -> HashMap<String, f64> {
+    let mut stats_hash : HashMap<String, f64> = HashMap::new();
+    for status_key in TaskStatus::keys().into_iter() {
+      stats_hash.insert(status_key,0.0);
+    }
+    stats_hash.insert("total".to_string(),0.0);
+    match self.connection.prepare("select status,count(*) from tasks where serviceid=$1 and corpusid=$2 group by status") {
+      Ok(select_query) => {
+        match select_query.query(&[&s.id.unwrap(), &c.id.unwrap()]) {
+          Ok(rows) => {
+            for row in rows.iter() {
+              let status_code = TaskStatus::from_raw(row.get(0)).to_key();
+              let count : i64 = row.get(1);
+              {
+                let status_frequency = stats_hash.entry(status_code).or_insert(0.0);
+                *status_frequency += count as f64;
+              }
+              let total_frequency = stats_hash.entry("total".to_string()).or_insert(0.0);
+              *total_frequency += count as f64;
+            }
+          },
+          _ => {}
+        }
+      }
+      _ => {}
+    }
+    // Also compute percentages, now that we have a total
+    let mut total : f64;
+    {
+      let total_entry = stats_hash.get_mut("total").unwrap();
+      total = (*total_entry).clone();
+    }
+    if total <= 0.0 {total = 1.0;}
+    for status_key in TaskStatus::keys().into_iter() {
+      {
+        let key_percent_value : f64 = 100.0 * (*stats_hash.get_mut(&status_key).unwrap() / total);
+        let key_percent_rounded : f64 = (key_percent_value * 100.0).round() / 100.0;
+        let key_percent_name = status_key + "_percent";
+        stats_hash.insert(key_percent_name, key_percent_rounded);
+      }
+    }
+    stats_hash
   }
 }

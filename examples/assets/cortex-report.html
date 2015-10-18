@@ -1,8 +1,9 @@
 {{> layout-cortex-pre }}
 {{#global}}
 <div class="center">
-  <h1>{{type}} Statistics</h1>
+  <h1>{{type}} Results</h1>
   <br>
+  <div class="row">
   <div class="col-md-4"></div>
   <div class="col-md-4">
   <table id="corpus-report" class="table">
@@ -14,30 +15,51 @@
     </tr>
   </thead>
   <tbody>
-    <tr class="success corpus-report-ok">
+    <tr class="success corpus-report-no-problems">
       <td class="left">No Problems</td>
-      <td class="right">{{ok_percent}}%</td>
-      <td class="right">{{ok_count}}</td>
+      <td class="right">{{no_problem_percent}}%</td>
+      <td class="right">{{no_problem}}</td>
     </tr>
     <tr class="warning corpus-report-warnings">
       <td class="left">Warning</td>
       <td class="right">{{warning_percent}}%</td>
-      <td class="right">{{warning_count}}</td>
+      <td class="right">{{warning}}</td>
     </tr>
     <tr class="error corpus-report-errors">
       <td class="left">Error</td>
-      <td class="right">{{error_percent}}</td>
-      <td class="right">{{error_count}}</td>
+      <td class="right">{{error_percent}}%</td>
+      <td class="right">{{error}}</td>
     </tr>
     <tr class="danger corpus-report-fatal">
       <td class="left">Fatal</td>
-      <td class="right">{{error_percent}}</td>
-      <td class="right">{{error_count}}</td>
+      <td class="right">{{fatal_percent}}%</td>
+      <td class="right">{{fatal}}</td>
+    </tr>
+    <tr class="info corpus-report-info">
+      <td class="left">TODO</td>
+      <td class="right">{{todo_percent}}%</td>
+      <td class="right">{{todo}}</td>
+    </tr>
+    <tr class="info corpus-report-info">
+      <td class="left">In progress</td>
+      <td class="right">{{queued_percent}}%</td>
+      <td class="right">{{queued}}</td>
+    </tr>
+    <tr class="info corpus-report-info">
+      <td class="left">Blocked</td>
+      <td class="right">{{blocked_percent}}%</td>
+      <td class="right">{{blocked}}</td>
+    </tr>
+    <tr class="corpus-report-total">
+      <td class="left">Total</td>
+      <td class="right">100%</td>
+      <td class="right">{{total}}</td>
     </tr>
   </tbody>
   </table>
   </div>
   <div class="col-md-4"></div>
+  </div>
 </div>
 {{/global}}
 {{> layout-cortex-post }}
