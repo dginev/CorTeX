@@ -241,6 +241,7 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
       }
       else { // What-level report
         global.insert("severity".to_string(),severity.clone().unwrap());
+        global.insert("highlight".to_string(), aux_severity_highlight(&severity.clone().unwrap()).to_string());
         global.insert("category".to_string(),category.clone().unwrap());
         global.insert("what".to_string(),what.clone().unwrap());
         let entries = backend.task_report(&corpus, &service, severity, category, what);

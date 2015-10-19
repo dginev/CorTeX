@@ -1,32 +1,31 @@
 {{> layout-cortex-pre }}
-{{#global}}
 <div class="center">
-  <h1>Entries list</h1>
+  <h1>Entries (example 100)</h1>
   <br>
   <div class="row">
-  <div class="col-md-4"></div>
-  <div class="col-md-4">
   <table id="corpus-report" class="table">
   <thead>
     <tr>
       <th class="left">Entry</th>
-      <th class="right"></th>
-      <th class="right"></th>
+      <th class="left">Source</th>
+      <th class="left">Result</th>
+      <th class="left">Preview</th>
+      <th class="left">Details</th>
     </tr>
   </thead>
   <tbody>
     {{#entries}}
-    <tr class="{{highlight}} corpus-report-{{category}}">
-      <td class="left">{{entry}}</td>
-      <td class="right"></td>
-      <td class="right"></td>
+    {{#global}}
+    <tr class="{{highlight}} corpus-report-task-list">
+      <td class="left">{{entry_name}}</td>
+      <td class="left"><a class="link-total" href="/entry/{{corpus_name}}/import/{{entry_name}}">coming</a></td>
+      <td class="left"><a class="link-total" href="/entry/{{corpus_name}}/{{service_name}}/{{entry_name}}">soon</a></td>
+      <td class="left"><a class="link-total" href="/preview/{{corpus_name}}/{{service_name}}/{{entry_name}}"></a></td>
+      <td class="left">{{details}}</td>
     </tr>
+    {{/global}}
     {{/entries}}
   </tbody>
   </table>
-  </div>
-  <div class="col-md-4"></div>
-  </div>
 </div>
-{{/global}}
 {{> layout-cortex-post }}

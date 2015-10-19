@@ -360,15 +360,21 @@ impl Backend {
               },
               _ => Vec::new()
             },
-            Some(what_name) => match self.connection.prepare("select distinct(entry) from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and category=$5 and what=$6 limit 100;") {
+            Some(what_name) => match self.connection.prepare("select entry, details from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and category=$5 and what=$6 limit 100;") {
             Ok(select_query) => match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status,&severity_name, &category_name,&what_name]) {
               Ok(entry_rows) => {
+                let entry_name_regex = regex!(r"^.+/(.+)\..+$");
                 let mut entries = Vec::new();
                 for row in entry_rows {
                   let mut entry_map = HashMap::new();
                   let entry_fixedwidth : String = row.get(0);
+                  let details : String = row.get(1);
                   let entry = entry_fixedwidth.trim_right().to_string();
+                  let entry_name = entry_name_regex.replace(&entry,"$1");
+                  
                   entry_map.insert("entry".to_string(),entry);
+                  entry_map.insert("entry_name".to_string(),entry_name);
+                  entry_map.insert("details".to_string(),details);
                   entries.push(entry_map);
                 }
                 entries
