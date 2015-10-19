@@ -1,4 +1,4 @@
-:exclamation: **Warning** :exclamation: This repository is undergoing first stability runs and is not ready for third-party use! We have converted over 500,000 TeX articles from arXiv with this implementation, but take a look at the active issues for known stability problems.
+:exclamation: **Warning** :exclamation: This repository is undergoing first stability runs and is not ready for third-party use! We have converted ~1 million articles from arXiv.org with this implementation, and consider the CorTeX job manager largely stable. Next, we are investigating fragility of some peripheral workers in the coming weeks.
 
 ![CorTeX Framework](./public/img/logo.jpg) Framework
 ======
@@ -13,7 +13,7 @@ A general purpose processing framework for **Cor**-pora of **TeX** documents
  - [x] Backend support for Document (via FileSystem), Annotation (via ?) and Task (via Postgresql) provenance.
  - [x] Open set of supported representations
  - [ ] Automatic dependency management of registered Services (TODO)
- - [ ] Powerful workflow management and development support through the CorTeX web interface (TODO)
+ - [x] Powerful workflow management and development support through the CorTeX web interface
  - [x] Supports multi-corpora multi-service installations
  - [x] Centralized storage, with distributed computing, motivated to enable collaborations across institutional and national borders.
  - [x] Routinely tested on 1 million scientific TeX papers from arXiv.org
