@@ -58,4 +58,4 @@ ALTER TABLE tasks
 SET (autovacuum_vacuum_threshold = 5000);  
 ```
 
-Also, ensure you have the Postgres data directory on a sufficiently large disk. You may want 250GB available at a minimum for a LaTeXML run over arXiv. (See [here](https://github.com/dginev/CorTeX/issues/10) for details)
+Also, ensure you have the Postgres data directory on a sufficiently large disk. You may want 250GB available at a minimum for a LaTeXML run over arXiv. (See [here](https://github.com/dginev/CorTeX/issues/10) for details). Another consideration is running a newer version of Postgres, which may not be available in the default source list of some Linux server environments. The mathweb.org deployment currently uses Postgres 9.4 and upgraded from 9.1 roughly following an adaptation of [these upgrade guidelines](https://gist.github.com/tamoyal/2ea1fcdf99c819b4e07d).
