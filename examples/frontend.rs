@@ -189,9 +189,10 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
   let backend = Backend::default();
   let corpus_name = request.param("corpus_name").unwrap();
   let service_name = request.param("service_name").unwrap();
-  let severity = request.param("severity");
-  let category = request.param("category");
-  let what = request.param("what");
+  let severity = aux_uri_unescape(request.param("severity"));
+  let category = aux_uri_unescape(request.param("category"));
+  let what = aux_uri_unescape(request.param("what"));
+
   let corpus_result = Corpus{id: None, name: corpus_name.to_string(), path : String::new(), complex : true}.select_by_key(&backend.connection);
   match corpus_result { Ok(corpus_select) => {
   match corpus_select {Some(corpus) => {
@@ -216,23 +217,22 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
         template = "examples/assets/cortex-report.html";
       }
       else if category.is_none() { // Severity-level report
-        global.insert("severity".to_string(),severity.unwrap().to_string());
-        global.insert("highlight".to_string(), severity_highlight(severity.unwrap().clone()));
-        template = match severity {
-          Some("no_problem") => "examples/assets/cortex-entry-list.html",
-          _ => {
+        global.insert("severity".to_string(),severity.clone().unwrap());
+        global.insert("highlight".to_string(), aux_severity_highlight(&severity.clone().unwrap()).to_string());
+        template = if severity.is_some() && (severity.clone().unwrap() == "no_problem") {
+            "examples/assets/cortex-entry-list.html"
+          } else {
             let categories = backend.task_report(&corpus, &service, severity, None, None);
             // Record the report into "categories" vector
             data.insert("categories",categories);
             // And set the severity template
             "examples/assets/cortex-report-severity.html"
-          }
-        };
+          };
       }
       else if what.is_none() { // Category-level report
-        global.insert("severity".to_string(),severity.unwrap().to_string());
-        global.insert("highlight".to_string(), severity_highlight(severity.unwrap().clone()));
-        global.insert("category".to_string(),category.unwrap().to_string());
+        global.insert("severity".to_string(),severity.clone().unwrap());
+        global.insert("highlight".to_string(), aux_severity_highlight(&severity.clone().unwrap()).to_string());
+        global.insert("category".to_string(),category.clone().unwrap());
         let whats = backend.task_report(&corpus, &service, severity, category, None);
         // Record the report into "whats" vector
         data.insert("whats",whats);
@@ -240,12 +240,10 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
         template = "examples/assets/cortex-report-category.html";
       }
       else { // What-level report
-        global.insert("severity".to_string(),severity.unwrap().to_string());
-        global.insert("category".to_string(),category.unwrap().to_string());
-        global.insert("what".to_string(),what.unwrap().to_string());
-        let what_decoded = url::percent_encoding::lossy_utf8_percent_decode(what.unwrap().as_bytes());
-        let what_opt : Option<&str> = Some(&what_decoded);
-        let entries = backend.task_report(&corpus, &service, severity, category, what_opt);
+        global.insert("severity".to_string(),severity.clone().unwrap());
+        global.insert("category".to_string(),category.clone().unwrap());
+        global.insert("what".to_string(),what.clone().unwrap());
+        let entries = backend.task_report(&corpus, &service, severity, category, what);
         // Record the report into "entries" vector
         data.insert("entries",entries);
         // And set the task list template
@@ -269,12 +267,18 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
   // let message = "Error: Corpus ".to_string() + &corpus_name + " does not exist, aborting!";
   return response.send("")
 }
-fn severity_highlight(severity : &str) -> String {
+fn aux_severity_highlight<'highlight>(severity : &'highlight str) -> &'highlight str {
    match severity {// Bootstrap highlight classes
     "no_problem" => "success",
     "warning" => "warning",
     "error" => "error",
     "fatal" => "danger",
     _ => "unknown"
-  }.to_string()
+  }
+}
+fn aux_uri_unescape<'unescape>(param : Option<&'unescape str>) -> Option<String> {
+  match param {
+    None => None,
+    Some(param_encoded) => Some(url::percent_encoding::lossy_utf8_percent_decode(param_encoded.as_bytes()))
+  }
 }

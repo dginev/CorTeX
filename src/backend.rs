@@ -306,10 +306,10 @@ impl Backend {
     stats_hash
   }
   pub fn task_report<'report>(&self, c : &Corpus, s : &Service,
-    severity: Option<&str>, category: Option<&str>, what: Option<&str>) -> Vec<HashMap<String, String>> {
+    severity: Option<String>, category: Option<String>, what: Option<String>) -> Vec<HashMap<String, String>> {
     match severity {
       Some(severity_name) => {
-        let raw_status = TaskStatus::from_key(severity_name.clone()).raw();
+        let raw_status = TaskStatus::from_key(&severity_name).raw();
         match category {
           None => match self.connection.prepare("select category, count(*) as category_count from (
               select category,tasks.taskid from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4
