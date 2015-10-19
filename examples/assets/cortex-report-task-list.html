@@ -1,0 +1,32 @@
+{{> layout-cortex-pre }}
+{{#global}}
+<div class="center">
+  <h1>Entries list</h1>
+  <br>
+  <div class="row">
+  <div class="col-md-4"></div>
+  <div class="col-md-4">
+  <table id="corpus-report" class="table">
+  <thead>
+    <tr>
+      <th class="left">Entry</th>
+      <th class="right"></th>
+      <th class="right"></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#entries}}
+    <tr class="{{highlight}} corpus-report-{{category}}">
+      <td class="left">{{entry}}</td>
+      <td class="right"></td>
+      <td class="right"></td>
+    </tr>
+    {{/entries}}
+  </tbody>
+  </table>
+  </div>
+  <div class="col-md-4"></div>
+  </div>
+</div>
+{{/global}}
+{{> layout-cortex-post }}

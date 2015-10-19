@@ -307,7 +307,6 @@ impl Backend {
   }
   pub fn task_report<'report>(&self, c : &Corpus, s : &Service,
     severity: Option<&str>, category: Option<&str>, what: Option<&str>) -> Vec<HashMap<String, String>> {
-
     match severity {
       Some(severity_name) => {
         let raw_status = TaskStatus::from_key(severity_name.clone()).raw();
@@ -361,7 +360,23 @@ impl Backend {
               },
               _ => Vec::new()
             },
+            Some(what_name) => match self.connection.prepare("select distinct(entry) from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and category=$5 and what=$6 limit 100;") {
+            Ok(select_query) => match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status,&severity_name, &category_name,&what_name]) {
+              Ok(entry_rows) => {
+                let mut entries = Vec::new();
+                for row in entry_rows {
+                  let mut entry_map = HashMap::new();
+                  let entry_fixedwidth : String = row.get(0);
+                  let entry = entry_fixedwidth.trim_right().to_string();
+                  entry_map.insert("entry".to_string(),entry);
+                  entries.push(entry_map);
+                }
+                entries
+              },
+              _ => Vec::new()
+            },
             _ => Vec::new()
+            }
           }
         }
       },

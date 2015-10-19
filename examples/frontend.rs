@@ -4,6 +4,7 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
+extern crate url;
 extern crate hyper;
 #[macro_use] extern crate nickel;
 extern crate cortex;
@@ -242,9 +243,11 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
         global.insert("severity".to_string(),severity.unwrap().to_string());
         global.insert("category".to_string(),category.unwrap().to_string());
         global.insert("what".to_string(),what.unwrap().to_string());
-        let tasks = backend.task_report(&corpus, &service, severity, category, what);
-        // Record the report into "tasks" vector
-        data.insert("tasks",tasks);
+        let what_decoded = url::percent_encoding::lossy_utf8_percent_decode(what.unwrap().as_bytes());
+        let what_opt : Option<&str> = Some(&what_decoded);
+        let entries = backend.task_report(&corpus, &service, severity, category, what_opt);
+        // Record the report into "entries" vector
+        data.insert("entries",entries);
         // And set the task list template
         template = "examples/assets/cortex-report-task-list.html";
       }
