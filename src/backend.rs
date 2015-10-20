@@ -126,7 +126,7 @@ impl Backend {
     //   messageid BIGSERIAL PRIMARY KEY,
     //   details varchar(2000)
     // );", &[]).unwrap();
-    trans.execute("create index logtaskcatwhat on logs(taskid,category,what);", &[]).unwrap();
+    trans.execute("create index logtasksevcatwhat on logs(taskid,severity,category,what);", &[]).unwrap();
 
     trans.set_commit();
     try!(trans.finish());
