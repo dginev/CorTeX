@@ -287,7 +287,7 @@ impl Backend {
       stats_hash.insert(status_key,0.0);
     }
     stats_hash.insert("total".to_string(),0.0);
-    match self.connection.prepare("select status,count(*) as status_count from tasks where serviceid=$1 and corpusid=$2 group by status order by status_count;") {
+    match self.connection.prepare("select status,count(*) as status_count from tasks where serviceid=$1 and corpusid=$2 group by status order by status_count desc;") {
       Ok(select_query) => {
         match select_query.query(&[&s.id.unwrap(), &c.id.unwrap()]) {
           Ok(rows) => {
@@ -340,7 +340,7 @@ impl Backend {
         else {match category {
           None => match self.connection.prepare("select category, count(*) as category_count from (
               select logs.category,logs.taskid from tasks LEFT OUTER JOIN logs ON (tasks.taskid=logs.taskid) WHERE serviceid=$1 and corpusid=$2 and status=$3 and severity=$4
-               group by logs.category, logs.taskid) as tmp group by category order by category_count;") {
+               group by logs.category, logs.taskid) as tmp group by category order by category_count desc;") {
             Ok(select_query) => {
               match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status,&severity_name]) {
                 Ok(category_rows) => {
@@ -366,7 +366,7 @@ impl Backend {
           Some(category_name) => match what {
             None => match self.connection.prepare("select what, count(*) as what_count from (
               select what,tasks.taskid from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and category=$5
-               group by what, tasks.taskid) as tmp group by what order by what_count;") {
+               group by what, tasks.taskid) as tmp group by what order by what_count desc;") {
               Ok(select_query) => match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status,&severity_name, &category_name]) {
                 Ok(what_rows) => {
                   // How many tasks total in this category?
