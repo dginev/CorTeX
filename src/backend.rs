@@ -72,7 +72,7 @@ impl Backend {
     );", &[]).unwrap();
     trans.execute("create index entryidx on tasks(entry);", &[]).unwrap();
     trans.execute("create index serviceidx on tasks(serviceid);", &[]).unwrap();
-    trans.execute("create index scst_index on tasks(status,serviceid,corpusid,taskid);", &[]).unwrap();
+    trans.execute("create index scs_index on tasks(serviceid,corpusid,status);", &[]).unwrap();
     // Corpora
     trans.execute("DROP TABLE IF EXISTS corpora;", &[]).unwrap();
     trans.execute("CREATE TABLE corpora (
