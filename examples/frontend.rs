@@ -220,14 +220,18 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
         global.insert("severity".to_string(),severity.clone().unwrap());
         global.insert("highlight".to_string(), aux_severity_highlight(&severity.clone().unwrap()).to_string());
         template = if severity.is_some() && (severity.clone().unwrap() == "no_problem") {
-            "examples/assets/cortex-entry-list.html"
-          } else {
-            let categories = backend.task_report(&corpus, &service, severity, None, None);
-            // Record the report into "categories" vector
-            data.insert("categories",categories);
-            // And set the severity template
-            "examples/assets/cortex-report-severity.html"
-          };
+          let entries = backend.task_report(&corpus, &service, severity, None, None);
+          // Record the report into "entries" vector
+          data.insert("entries",entries);
+          // And set the task list template
+          "examples/assets/cortex-report-task-list.html"
+        } else {
+          let categories = backend.task_report(&corpus, &service, severity, None, None);
+          // Record the report into "categories" vector
+          data.insert("categories",categories);
+          // And set the severity template
+          "examples/assets/cortex-report-severity.html"
+        };
       }
       else if what.is_none() { // Category-level report
         global.insert("severity".to_string(),severity.clone().unwrap());

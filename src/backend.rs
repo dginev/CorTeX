@@ -315,7 +315,29 @@ impl Backend {
     match severity {
       Some(severity_name) => {
         let raw_status = TaskStatus::from_key(&severity_name).raw();
-        match category {
+        if severity_name == "no_problem" {
+        match self.connection.prepare("select entry from tasks where serviceid=$1 and corpusid=$2 and status=$3 limit 100;") {
+          Ok(select_query) => match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status]) {
+            Ok(entry_rows) => {
+              let entry_name_regex = regex!(r"^.+/(.+)\..+$");
+              let mut entries = Vec::new();
+              for row in entry_rows {
+                let mut entry_map = HashMap::new();
+                let entry_fixedwidth : String = row.get(0);
+                let entry = entry_fixedwidth.trim_right().to_string();
+                let entry_name = entry_name_regex.replace(&entry,"$1");
+                
+                entry_map.insert("entry".to_string(),entry);
+                entry_map.insert("entry_name".to_string(),entry_name);
+                entry_map.insert("details".to_string(),"OK".to_string());
+                entries.push(entry_map);
+              }
+              entries},
+            _ => Vec::new()
+          },
+          _ => Vec::new()
+        }}
+        else {match category {
           None => match self.connection.prepare("select category, count(*) as category_count from (
               select logs.category,logs.taskid from tasks LEFT OUTER JOIN logs ON (tasks.taskid=logs.taskid) WHERE serviceid=$1 and corpusid=$2 and status=$3 and severity=$4
                group by logs.category, logs.taskid) as tmp group by category order by category_count;") {
@@ -389,7 +411,7 @@ impl Backend {
             _ => Vec::new()
             }
           }
-        }
+        }}
       },
       None => Vec::new()
     }
