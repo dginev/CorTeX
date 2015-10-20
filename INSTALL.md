@@ -35,7 +35,7 @@
      grant all privileges on database cortex to cortex;
  ```
 
- This should evolve as we get nearer to production deploys...
+ This should evolve as we get nearer to production deploys... Also, for now postgresql is expected on the default 5432 port.
  
  One of the problems that is experienced with arXiv, is that as we enter the tens-of-millions of rows for log messages, performance degrades very rapidly. One good solution to avoid that is to use a small threshold for VACUUM ANALYZE, given that the inserts are generally quick at the moment. [source of this trick](https://lob.com/blog/supercharge-your-postgresql-performance/) 
  ```
