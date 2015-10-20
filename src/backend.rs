@@ -72,7 +72,10 @@ impl Backend {
     );", &[]).unwrap();
     trans.execute("create index entryidx on tasks(entry);", &[]).unwrap();
     trans.execute("create index serviceidx on tasks(serviceid);", &[]).unwrap();
-    trans.execute("create index scs_index on tasks(serviceid,corpusid,status);", &[]).unwrap();
+    trans.execute("create index ok_index on tasks(status,serviceid,corpusid,taskid,entry) where status = -1;", &[]).unwrap();
+    trans.execute("create index warning_index on tasks(status,serviceid,corpusid,taskid,entry) where status = -2;", &[]).unwrap();
+    trans.execute("create index error_index on tasks(status,serviceid,corpusid,taskid,entry) where status = -3;", &[]).unwrap();
+    trans.execute("create index fatal_index on tasks(status,serviceid,corpusid,taskid,entry) where status = -4;", &[]).unwrap();
     // Corpora
     trans.execute("DROP TABLE IF EXISTS corpora;", &[]).unwrap();
     trans.execute("CREATE TABLE corpora (
@@ -126,7 +129,9 @@ impl Backend {
     //   messageid BIGSERIAL PRIMARY KEY,
     //   details varchar(2000)
     // );", &[]).unwrap();
-    trans.execute("create index logtasksevcatwhat on logs(taskid,severity,category,what);", &[]).unwrap();
+    trans.execute("create index log_fatal_index on logs(taskid,severity,category,what) where severity = 'fatal';", &[]).unwrap();
+    trans.execute("create index log_error_index on logs(taskid,severity,category,what) where severity = 'error';", &[]).unwrap();
+    trans.execute("create index log_warning_index on logs(taskid,severity,category,what) where severity = 'warning';", &[]).unwrap();
 
     trans.set_commit();
     try!(trans.finish());
@@ -282,7 +287,7 @@ impl Backend {
       stats_hash.insert(status_key,0.0);
     }
     stats_hash.insert("total".to_string(),0.0);
-    match self.connection.prepare("select status,count(*) as status_count from tasks where serviceid=$1 and corpusid=$2 group by status order by status_count desc limit 100;") {
+    match self.connection.prepare("select status,count(*) as status_count from tasks where serviceid=$1 and corpusid=$2 group by status order by status_count;") {
       Ok(select_query) => {
         match select_query.query(&[&s.id.unwrap(), &c.id.unwrap()]) {
           Ok(rows) => {
@@ -312,8 +317,8 @@ impl Backend {
         let raw_status = TaskStatus::from_key(&severity_name).raw();
         match category {
           None => match self.connection.prepare("select category, count(*) as category_count from (
-              select category,tasks.taskid from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4
-               group by category, tasks.taskid) as tmp group by category order by category_count desc limit 100;") {
+              select logs.category,logs.taskid from tasks LEFT OUTER JOIN logs ON (tasks.taskid=logs.taskid) WHERE serviceid=$1 and corpusid=$2 and status=$3 and severity=$4
+               group by logs.category, logs.taskid) as tmp group by category order by category_count;") {
             Ok(select_query) => {
               match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status,&severity_name]) {
                 Ok(category_rows) => {
@@ -339,7 +344,7 @@ impl Backend {
           Some(category_name) => match what {
             None => match self.connection.prepare("select what, count(*) as what_count from (
               select what,tasks.taskid from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and category=$5
-               group by what, tasks.taskid) as tmp group by what order by what_count desc limit 100;") {
+               group by what, tasks.taskid) as tmp group by what order by what_count;") {
               Ok(select_query) => match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status,&severity_name, &category_name]) {
                 Ok(what_rows) => {
                   // How many tasks total in this category?
