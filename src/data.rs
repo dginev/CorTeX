@@ -146,11 +146,11 @@ impl Task {
                   Err(_) => {break}
                 };
               }
-              let log_string = match str::from_utf8(&raw_log_data) {
-                Ok(some_utf_string) => some_utf_string,
-                _ => "Fatal:cortex:unicode_parse_error\nStatus:conversion:3"
+              let log_string : String = match str::from_utf8(&raw_log_data) {
+                Ok(some_utf_string) => some_utf_string.to_string(),
+                Err(e) => "Fatal:cortex:unicode_parse_error ".to_string() + &e.to_string() + "\nStatus:conversion:3"
               };
-              messages = self.parse_log(log_string.to_string());
+              messages = self.parse_log(log_string);
               // Look for the special status message - Fatal otherwise!
               for m in messages.iter() {
                 if (m.severity == "status") && (m.category == "conversion") && !(m.what.is_empty()) {
