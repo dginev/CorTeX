@@ -20,7 +20,7 @@ git = "https://github.com/dginev/libarchive-sys.git"
 git = "https://github.com/nickel-org/nickel.rs.git"
 
 [dependencies.zmq]
-git = "https://github.com/dginev/rust-zmq.git"
+git = "https://github.com/erickt/rust-zmq.git"
 
 [dependencies.pericortex]
 git = "https://github.com/dginev/CorTeX-Peripherals.git"
@@ -34,7 +34,7 @@ rustc-serialize = "0.3"
 postgres = "0.9"
 sys-info = "*"
 url = "*"
-hyper = "*"
+hyper = "0.6.16"
 glob = "*"
 rand = "*"
 tempfile = "*"
