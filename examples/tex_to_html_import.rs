@@ -16,6 +16,7 @@ use std::env;
 // use std::io::Error;
 
 use std::thread;
+use std::time::Duration;
 use cortex::backend::{Backend, DEFAULT_DB_ADDRESS};
 use cortex::data::{Task, TaskStatus, Service};
 use cortex::manager::TaskManager;
@@ -75,7 +76,7 @@ fn main() {
   // Perform a single echo task 
   assert!(worker.start(job_limit).is_ok());
   // Wait for the final finisher to persist to DB 
-  thread::sleep_ms(2001); // TODO: Can this be deterministic? Join?
+  thread::sleep(Duration::new(2,0)); // TODO: Can this be deterministic? Join?
 
   // Then add a TeX-to-HTML service on this corpus.
   let service_placeholder = Service {

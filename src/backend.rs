@@ -13,6 +13,8 @@ use postgres::error::Error;
 use postgres::rows::{Rows};
 use std::clone::Clone;
 use std::collections::HashMap;
+use regex::Regex;
+
 use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
 
 use rand::{thread_rng, Rng};
@@ -319,7 +321,7 @@ impl Backend {
         match self.connection.prepare("select entry from tasks where serviceid=$1 and corpusid=$2 and status=$3 limit 100;") {
           Ok(select_query) => match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status]) {
             Ok(entry_rows) => {
-              let entry_name_regex = regex!(r"^.+/(.+)\..+$");
+              let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
               let mut entries = Vec::new();
               for row in entry_rows {
                 let mut entry_map = HashMap::new();
@@ -390,7 +392,7 @@ impl Backend {
             Some(what_name) => match self.connection.prepare("select entry, details from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and category=$5 and what=$6 limit 100;") {
             Ok(select_query) => match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status,&severity_name, &category_name,&what_name]) {
               Ok(entry_rows) => {
-                let entry_name_regex = regex!(r"^.+/(.+)\..+$");
+                let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
                 let mut entries = Vec::new();
                 for row in entry_rows {
                   let mut entry_map = HashMap::new();

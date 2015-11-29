@@ -12,6 +12,8 @@ use zmq::{Context, Message, SNDMORE, Error};
 use std::path::Path;
 use std::fs::File;
 use std::thread;
+use std::time::Duration;
+
 use backend::{DEFAULT_DB_ADDRESS, Backend};
 use data::{Task, Corpus};
 use importer::Importer;
@@ -100,7 +102,7 @@ impl Worker for InitWorker {
         Ok(t) => t,
         _ => {
           // If there was nothing to do, retry a minute later
-          thread::sleep_ms(60000);
+          thread::sleep(Duration::new(60,0));
           continue;
         }
       };
@@ -116,7 +118,7 @@ impl Worker for InitWorker {
         Some(upper_bound) => {
           if work_counter >= upper_bound {
             // Give enough time to complete the Final job.
-            thread::sleep_ms(500);
+            thread::sleep(Duration::from_millis(500));
             break;
           }
         },

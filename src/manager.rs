@@ -12,6 +12,7 @@ use backend::{Backend, DEFAULT_DB_ADDRESS};
 use data::{TaskReport, TaskStatus, TaskProgress, TaskMessage, Service};
 
 use std::thread;
+use std::time::Duration;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -96,7 +97,7 @@ impl TaskManager {
             true;
           } // we did some work, on to the next iteration
           false => { // If we have no reports to process, sleep for a second and recheck
-            thread::sleep_ms(1000);
+            thread::sleep(Duration::new(1,0));
           }
         }
         if job_limit.is_some() && (finalize_jobs_count >= job_limit.unwrap()) {

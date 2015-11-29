@@ -7,14 +7,13 @@ dependencies = [
  "hyper 0.6.16 (registry+https://github.com/rust-lang/crates.io-index)",
  "libarchive-sys 0.0.1 (git+https://github.com/dginev/libarchive-sys.git)",
  "libc 0.1.12 (registry+https://github.com/rust-lang/crates.io-index)",
+ "libxml 0.0.2 (git+https://github.com/dginev/rust-libxml.git)",
  "nickel 0.7.3 (git+https://github.com/nickel-org/nickel.rs.git)",
  "pericortex 0.1.0 (git+https://github.com/dginev/CorTeX-Peripherals.git)",
  "postgres 0.9.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.3.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 0.1.41 (registry+https://github.com/rust-lang/crates.io-index)",
- "regex_macros 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustc-serialize 0.3.16 (registry+https://github.com/rust-lang/crates.io-index)",
- "rustlibxml 0.0.1 (git+https://github.com/jfschaefer/rust-libxml.git)",
  "sys-info 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "tempfile 1.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.1.34 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -175,6 +174,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "libxml"
+version = "0.0.2"
+source = "git+https://github.com/dginev/rust-libxml.git#8d614d82dc0e827c035727a82d6abf42c2c0feba"
+dependencies = [
+ "libc 0.1.12 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "log"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -281,13 +288,12 @@ dependencies = [
 [[package]]
 name = "pericortex"
 version = "0.1.0"
-source = "git+https://github.com/dginev/CorTeX-Peripherals.git#da327b90fc851b5847c2dc7e7011897c7d25c383"
+source = "git+https://github.com/dginev/CorTeX-Peripherals.git#7190ae5128aedd473c5cf7c23fe48c5725908ef2"
 dependencies = [
  "libarchive-sys 0.0.1 (git+https://github.com/dginev/libarchive-sys.git)",
  "libc 0.1.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.3.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 0.1.41 (registry+https://github.com/rust-lang/crates.io-index)",
- "regex_macros 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustc-serialize 0.3.16 (registry+https://github.com/rust-lang/crates.io-index)",
  "tempfile 1.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "zmq 0.7.0 (git+https://github.com/erickt/rust-zmq.git)",
@@ -385,25 +391,9 @@ version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
-name = "regex_macros"
-version = "0.1.23"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "regex 0.1.41 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
 name = "rustc-serialize"
 version = "0.3.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "rustlibxml"
-version = "0.0.1"
-source = "git+https://github.com/jfschaefer/rust-libxml.git#2ccba58f6bb4b4a33dab3fab11ff2146b2a1869f"
-dependencies = [
- "libc 0.1.12 (registry+https://github.com/rust-lang/crates.io-index)",
-]
 
 [[package]]
 name = "serde"

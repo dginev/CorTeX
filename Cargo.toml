@@ -7,8 +7,8 @@ authors = ["Deyan Ginev <d.ginev@jacobs-university.de>"]
 name = "cortex"
 crate-type = ["rlib", "dylib", "staticlib"]
 
-[dependencies.rustlibxml]
-git = "https://github.com/jfschaefer/rust-libxml.git"
+[dependencies.libxml]
+git = "https://github.com/dginev/rust-libxml.git"
 
 [dependencies.gnuplot]
 git = "https://github.com/SiegeLord/RustGnuplot.git"
@@ -28,8 +28,7 @@ git = "https://github.com/dginev/CorTeX-Peripherals.git"
 
 [dependencies]
 libc = "~0.1"
-regex = "0.1.8"
-regex_macros = "0.1.8"
+regex = "*"
 rustc-serialize = "0.3"
 postgres = "0.9"
 sys-info = "*"

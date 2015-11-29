@@ -13,6 +13,7 @@ use cortex::manager::{TaskManager};
 use pericortex::worker::{TexToHtmlWorker, Worker};
 use cortex::importer::Importer;
 use std::thread;
+use std::time::Duration;
 use std::str;
 use std::process::Command;
 
@@ -83,7 +84,7 @@ fn mock_tex_to_html() {
   // Perform a single echo task 
   assert!(worker.start(job_limit).is_ok());
   // Wait for the finisher to persist to DB 
-  thread::sleep_ms(2001); // TODO: Can this be deterministic? Join?
+  thread::sleep(Duration::new(2,0)); // TODO: Can this be deterministic? Join?
   assert!(manager_thread.join().is_ok());
   // Check round-trip success
   let finished_task = test_backend.sync(&conversion_task).unwrap();

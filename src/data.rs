@@ -11,6 +11,7 @@ use std::fs::File;
 // use std::io::Read;
 use std::path::Path;
 use std::str;
+use regex::Regex;
 
 use postgres::Connection;
 use postgres::rows::{Row};
@@ -190,8 +191,8 @@ impl Task {
     let mut in_details_mode = false;
     
     // regexes:
-    let message_line_regex = regex!(r"^([^ :]+):([^ :]+):([^ ]+)(\s(.*))?$");
-    let start_tab_regex = regex!(r"^\t");
+    let message_line_regex = Regex::new(r"^([^ :]+):([^ :]+):([^ ]+)(\s(.*))?$").unwrap();
+    let start_tab_regex = Regex::new(r"^\t").unwrap();
     for line in log.lines() {
       // Skip empty lines
       if line.is_empty() {continue;}
@@ -209,6 +210,7 @@ impl Task {
         } else {
           // Otherwise, no tab at the line beginning means last message has ended
           in_details_mode = false;
+          if in_details_mode {} // hacky? disable "unused" warning
         }
       }
       // Since this isn't a details line, check if it's a message line:
@@ -551,6 +553,6 @@ fn utf_truncate(input : &mut String, maxsize: usize) {
     } } // Extra {} wrap to limit the immutable borrow of char_indices()
     input.truncate(utf_maxsize);
   }
-  let no_nulls_regex = regex!(r"\x00");
+  let no_nulls_regex = Regex::new(r"\x00").unwrap();
   *input = no_nulls_regex.replace_all(input,"");
 }

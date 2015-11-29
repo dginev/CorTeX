@@ -55,18 +55,17 @@ fn main() {
     });
     // Root greeter
     server.get("/", middleware! { |_, response|
-        let mut data = HashMap::new();
-        let mut global = HashMap::new();
-        global.insert("title", "Framework Overview".to_string());
-        global.insert("description", "An analysis framework for corpora of TeX/LaTeX documents - overview.".to_string());
-        
-        let backend = Backend::default();
-        let corpora = backend.corpora().iter()
-        .map(|c| c.to_hash()).collect::<Vec<_>>();
+      let mut data = HashMap::new();
+      let mut global = HashMap::new();
+      global.insert("title", "Framework Overview".to_string());
+      global.insert("description", "An analysis framework for corpora of TeX/LaTeX documents - overview.".to_string());
+      
+      let backend = Backend::default();
+      let corpora = backend.corpora().iter().map(|c| c.to_hash()).collect::<Vec<_>>();
 
-        data.insert("global",vec![global]);
-        data.insert("corpora",corpora);
-        return response.render("examples/assets/cortex-overview.html", &data);
+      data.insert("global",vec![global]);
+      data.insert("corpora",corpora);
+      return response.render("examples/assets/cortex-overview.html", &data);
     });
 
     // Admin interface

@@ -126,14 +126,14 @@ fn main() {
   };
 
   let mut f4 = File::create("arxiv_stats.txt").unwrap();
-  f4.write_all(b"Min size: \n");
-  f4.write_all(min_size.to_string().as_bytes());
-  f4.write_all(b"\nMin path: \n");
-  f4.write_all(min_path.as_bytes());
-  f4.write_all(b"\nMax size: \n");
-  f4.write_all(max_size.to_string().as_bytes());
-  f4.write_all(b"\nMax path: \n");
-  f4.write_all(max_path.as_bytes());
+  f4.write_all(b"Min size: \n").unwrap();
+  f4.write_all(min_size.to_string().as_bytes()).unwrap();
+  f4.write_all(b"\nMin path: \n").unwrap();
+  f4.write_all(min_path.as_bytes()).unwrap();
+  f4.write_all(b"\nMax size: \n").unwrap();
+  f4.write_all(max_size.to_string().as_bytes()).unwrap();
+  f4.write_all(b"\nMax path: \n").unwrap();
+  f4.write_all(max_path.as_bytes()).unwrap();
 
   // arXiv months in order
   // TODO: Only current as of 1505, you'll have to extend manually next time this is run
