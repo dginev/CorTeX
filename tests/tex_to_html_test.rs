@@ -49,7 +49,7 @@ fn mock_tex_to_html() {
       complex : true
     }).unwrap();
   let mut abs_path = Importer::cwd();
-  abs_path.push("tests/data/1206.5501/1206.5501.zip");
+  abs_path.push("tests/data/1508.01222/1508.01222.zip");
   let abs_entry = abs_path.to_str().unwrap().to_string();
   test_backend.add(
     Task {
