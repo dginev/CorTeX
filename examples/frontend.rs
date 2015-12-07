@@ -223,7 +223,9 @@ fn main() {
     println!("-- serving verified human request for entry download");
 
     let service_name = aux_uri_unescape(request.param("service_name")).unwrap();
-    let entry = aux_uri_unescape(request.param("entry")).unwrap();
+    let mut entry = aux_uri_unescape(request.param("entry")).unwrap();
+    let just_in_case_slash = Regex::new(r"%2F").unwrap();
+    entry = just_in_case_slash.replace_all(&entry,"/");
 
     let zip_path = if service_name == "import" {
       entry }
