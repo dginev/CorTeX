@@ -3,29 +3,68 @@
   <h1>Entries (example 100)</h1>
   <br>
   <div class="row">
-  <table id="corpus-report" class="table">
-  <thead>
-    <tr>
-      <th class="left">Entry</th>
-      <th class="left">Source</th>
-      <th class="left">Result</th>
-      <th class="left">Preview</th>
-      <th class="left">Details</th>
-    </tr>
-  </thead>
-  <tbody>
-    {{#entries}}
-    {{#global}}
-    <tr class="{{highlight}} corpus-report-task-list">
-      <td class="left">{{entry_name}}</td>
-      <td class="left"><a class="link-total" href="/entry/{{corpus_name}}/import/{{entry_name}}">coming</a></td>
-      <td class="left"><a class="link-total" href="/entry/{{corpus_name}}/{{service_name}}/{{entry_name}}">soon</a></td>
-      <td class="left"><a class="link-total" href="/preview/{{corpus_name}}/{{service_name}}/{{entry_name}}"></a></td>
-      <td class="left">{{details}}</td>
-    </tr>
-    {{/global}}
-    {{/entries}}
-  </tbody>
-  </table>
+  
+    <table id="corpus-report" class="table">
+    <thead>
+      <tr>
+        <th class="left">Entry</th>
+        <th class="left">Source</th>
+        <th class="left">Result</th>
+        <th class="left">Preview</th>
+        <th class="left">Details</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#entries}}
+      {{#global}}
+      <tr class="{{highlight}} corpus-report-task-list">
+        <td class="left">{{entry_name}}</td>
+        <td class="left">
+          <a class="entry-submit" href="/entry/{{corpus_name}}/{{inputconverter}}/{{entry_name}}">{{inputformat}}</a>
+        </td>
+        <td class="left">
+          <a class="entry-submit" href="/entry/{{corpus_name}}/{{service_name}}/{{entry_name}}">{{outputformat}}</a>
+        </td>
+        <td class="left">
+          <a class="entry-submit" href="/preview/{{corpus_name}}/{{service_name}}/{{entry_name}}">
+          preview</a>
+        </td>
+        <td class="left">{{details}}</td>
+      </tr>
+      {{/global}}
+      {{/entries}}
+    </tbody>
+    </table>
+
+    <div id="modal-get-entry" class="modal fade" tabindex="-1" role="dialog">
+      <div class="modal-dialog">
+      <div class="modal-content">
+      <form id="form-get-entry" class="form-get-entry" name="form-get-entry" method="post"  accept-charset="UTF-8" action="">
+      <div class="modal-header">
+          <a class="close" data-dismiss="modal">×</a>
+          <h3>Are you human?</h3>
+      </div>
+      <div class="modal-body">
+        <center>
+          <div class="g-recaptcha" data-sitekey="6LdEehITAAAAAG81QWBR7rTGxz5Rk7-FjwR7so_F"></div>
+        </center>
+      </div>
+      <div class="modal-footer">
+          <input class="btn btn-success" type="submit" value="" id="btn-get-entry">
+      </div>
+      </form>
+      </div>
+      </div>
+    </div>
+  </div>
 </div>
+<script src='https://www.google.com/recaptcha/api.js'></script>
+<script>
+$(".entry-submit").click(function(e) {
+  e.preventDefault();
+  $("#btn-get-entry").val("Get "+$(this).parent().parent().find(":first-child").first().text());
+  $("#form-get-entry").attr("action", $(this).attr("href"));
+  $("#modal-get-entry").modal("show");
+});
+</script>
 {{> layout-cortex-post }}

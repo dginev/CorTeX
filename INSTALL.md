@@ -40,22 +40,18 @@
  One of the problems that is experienced with arXiv, is that as we enter the tens-of-millions of rows for log messages, performance degrades very rapidly. One good solution to avoid that is to use a small threshold for VACUUM ANALYZE, given that the inserts are generally quick at the moment. [source of this trick](https://lob.com/blog/supercharge-your-postgresql-performance/) 
  ```
 ALTER TABLE logs  
-SET (autovacuum_vacuum_scale_factor = 0.0);
-ALTER TABLE logs  
-SET (autovacuum_vacuum_threshold = 10000);
-ALTER TABLE logs  
-SET (autovacuum_analyze_scale_factor = 0.0);
-ALTER TABLE logs  
-SET (autovacuum_vacuum_threshold = 10000);  
+SET (autovacuum_enabled = true,
+autovacuum_vacuum_scale_factor = 0.001,
+autovacuum_analyze_scale_factor = 0.0005,
+autovacuum_analyze_threshold = 50,
+autovacuum_vacuum_threshold = 50);
 
 ALTER TABLE tasks  
-SET (autovacuum_vacuum_scale_factor = 0.0);
-ALTER TABLE tasks  
-SET (autovacuum_vacuum_threshold = 10000);
-ALTER TABLE tasks  
-SET (autovacuum_analyze_scale_factor = 0.0);
-ALTER TABLE tasks  
-SET (autovacuum_vacuum_threshold = 10000);  
+SET (autovacuum_enabled = true,
+autovacuum_vacuum_scale_factor = 0.001,
+autovacuum_analyze_scale_factor = 0.0005,
+autovacuum_analyze_threshold = 50,
+autovacuum_vacuum_threshold = 50);
 ```
 
 Also, ensure you have the Postgres data directory on a sufficiently large disk. You may want 250GB available at a minimum for a LaTeXML run over arXiv. (See [here](https://github.com/dginev/CorTeX/issues/10) for details). Another consideration is running a newer version of Postgres, which may not be available in the default source list of some Linux server environments. The mathweb.org deployment currently uses Postgres 9.4 and upgraded from 9.1 roughly following an adaptation of [these upgrade guidelines](https://gist.github.com/tamoyal/2ea1fcdf99c819b4e07d).
