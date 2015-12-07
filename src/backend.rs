@@ -323,6 +323,7 @@ impl Backend {
             Ok(entry_rows) => {
               let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
               let dot_regex = Regex::new(r"\.").unwrap();
+              let slash_regex = Regex::new(r"[/]").unwrap();
               let mut entries = Vec::new();
               for row in entry_rows {
                 let mut entry_map = HashMap::new();
@@ -330,8 +331,9 @@ impl Backend {
                 let entry = entry_fixedwidth.trim_right().to_string();
                 let entry_name = entry_name_regex.replace(&entry,"$1");
                 // TODO: Also use url-escape
-                let entry_name_encoded = dot_regex.replace_all(&entry_name,"%2E");
-                entry_map.insert("entry_name_encoded".to_string(),entry_name_encoded);
+                let mut entry_path_encoded = dot_regex.replace_all(&entry,"%2E");
+                entry_path_encoded = slash_regex.replace_all(&entry_path_encoded,"%2F");
+                entry_map.insert("entry_path_encoded".to_string(),entry_path_encoded);
                 
                 entry_map.insert("entry".to_string(),entry);
                 entry_map.insert("entry_name".to_string(),entry_name);
@@ -398,6 +400,7 @@ impl Backend {
               Ok(entry_rows) => {
                 let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
                 let dot_regex = Regex::new(r"\.").unwrap();
+                let slash_regex = Regex::new(r"[/]").unwrap();
                 let mut entries = Vec::new();
                 for row in entry_rows {
                   let mut entry_map = HashMap::new();
@@ -406,9 +409,10 @@ impl Backend {
                   let entry = entry_fixedwidth.trim_right().to_string();
                   let entry_name = entry_name_regex.replace(&entry,"$1");
                   // TODO: Also use url-escape
-                  let entry_name_encoded = dot_regex.replace_all(&entry_name,"%2E");
-                  entry_map.insert("entry_name_encoded".to_string(),entry_name_encoded);
-                
+                  let mut entry_path_encoded = dot_regex.replace_all(&entry,"%2E");
+                  entry_path_encoded = slash_regex.replace_all(&entry_path_encoded,"%2F");
+                  entry_map.insert("entry_path_encoded".to_string(),entry_path_encoded);
+
                   entry_map.insert("entry".to_string(),entry);
                   entry_map.insert("entry_name".to_string(),entry_name);
                   entry_map.insert("details".to_string(),details);

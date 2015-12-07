@@ -10,6 +10,7 @@ extern crate hyper;
 extern crate cortex;
 extern crate rustc_serialize;
 extern crate time;
+extern crate regex;
 
 use std::collections::HashMap;
 // use std::path::Path;
@@ -19,6 +20,7 @@ use std::fs::File;
 use std::io::Read;
 use std::io::Error;
 use std::path::Path;
+use regex::Regex;
 use nickel::{Nickel, Mountable, StaticFilesHandler, HttpRouter, Request, Response, MiddlewareResult};
 use hyper::header::Location;
 use hyper::Client;
@@ -206,7 +208,7 @@ fn main() {
   });
 
   let cortex_config2 = cortex_config.clone();
-  server.post("/entry/:corpus_name/:service_name/:entry", middleware! { |request, mut response|
+  server.post("/entry/:service_name/:entry", middleware! { |request, mut response|
     let mut body_bytes = vec![];
     request.origin.read_to_end(&mut body_bytes).unwrap();
     let g_recaptcha_response = from_utf8(&body_bytes[21..]).unwrap();
@@ -220,28 +222,16 @@ fn main() {
     }
     println!("-- serving verified human request for entry download");
 
-    let corpus_name = aux_uri_unescape(request.param("corpus_name")).unwrap();
     let service_name = aux_uri_unescape(request.param("service_name")).unwrap();
     let entry = aux_uri_unescape(request.param("entry")).unwrap();
 
-    let backend = Backend::default();
-    let corpus_result = Corpus{id: None, name: corpus_name.to_string(), path : String::new(), complex : true}.select_by_key(&backend.connection);
-    match corpus_result {
-      Ok(corpus_select) => {
-        match corpus_select {
-          Some(corpus) => {
-            let zip_path = if service_name == "import" {
-              corpus.path + "/" + &entry + "/" + &entry + ".zip" }
-            else {
-              corpus.path + "/" + &entry + "/" + &service_name + ".zip"
-            };
-            return response.send_file(Path::new(&zip_path));
-          },
-          _ => {}
-        }
-      },
-      _ => {}
+    let zip_path = if service_name == "import" {
+      entry }
+    else {
+      let strip_name_regex = Regex::new(r"/[^/]+$").unwrap();
+      strip_name_regex.replace(&entry,"") + "/" + &service_name + ".zip"
     };
+    return response.send_file(Path::new(&zip_path));
   });
 
   server.listen("127.0.0.1:6767");
