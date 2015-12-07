@@ -18,6 +18,7 @@ use std::str::*;
 use std::fs::File;
 use std::io::Read;
 use std::io::Error;
+use std::path::Path;
 use nickel::{Nickel, Mountable, StaticFilesHandler, HttpRouter, Request, Response, MiddlewareResult};
 use hyper::header::Location;
 use hyper::Client;
@@ -219,6 +220,28 @@ fn main() {
     }
     println!("-- serving verified human request for entry download");
 
+    let corpus_name = aux_uri_unescape(request.param("corpus_name")).unwrap();
+    let service_name = aux_uri_unescape(request.param("service_name")).unwrap();
+    let entry = aux_uri_unescape(request.param("entry")).unwrap();
+
+    let backend = Backend::default();
+    let corpus_result = Corpus{id: None, name: corpus_name.to_string(), path : String::new(), complex : true}.select_by_key(&backend.connection);
+    match corpus_result {
+      Ok(corpus_select) => {
+        match corpus_select {
+          Some(corpus) => {
+            let zip_path = if service_name == "import" {
+              corpus.path + "/" + &entry + "/" + &entry + ".zip" }
+            else {
+              corpus.path + "/" + &entry + "/" + &service_name + ".zip"
+            };
+            return response.send_file(Path::new(&zip_path));
+          },
+          _ => {}
+        }
+      },
+      _ => {}
+    };
   });
 
   server.post("/preview/:corpus_name/:service_name/:entry", middleware! { |request, mut response|
