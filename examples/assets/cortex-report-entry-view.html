@@ -1,0 +1,100 @@
+<div id="modal-get-entry" class="modal fade" tabindex="-1" role="dialog">
+  <div class="modal-dialog">
+  <div class="modal-content">
+  <form id="form-get-entry" class="form-get-entry" name="form-get-entry" method="post"  accept-charset="UTF-8" action="">
+  <div class="modal-header">
+      <a class="close" data-dismiss="modal">×</a>
+      <h3>Are you human?</h3>
+  </div>
+  <div class="modal-body">
+    <div style="text-align: left; margin-bottom: 10px;">
+    <p>By proceeding to a download you:</p>
+    <ol>
+     <li>Agree to a <strong>temporary preview</strong> of the implied data sample,</li>
+     <li>Agree that this download is intended and authorized only for <strong>research use</strong>,</li>
+     <li>Agree to <strong>purging all local copies</strong> of the data at the immediate end of the research experiment,</li>
+     <li>Agree to protecting the <strong>original copyright</strong> of all implied data,</li>
+     <li>Agree to <strong>provide attribution</strong> as appropriate.</li>
+    </ol>
+    <br>
+    </div>
+    <center>
+      <div class="g-recaptcha" data-sitekey="6LdEehITAAAAAG81QWBR7rTGxz5Rk7-FjwR7so_F"></div>
+    </center>
+  </div>
+  <div class="modal-footer">
+      <input class="btn btn-success" type="submit" value="" id="btn-get-entry">
+  </div>
+  </form>
+  </div>
+  </div>
+</div>
+
+<div id="modal-preview-entry" class="modal fade" tabindex="-1" role="dialog">
+  <div class="modal-dialog" style="width: 100%;height: 100%;padding: 0;margin: 0;">
+  <div class="modal-content" style="height: 100%; border-radius: 0;">
+  <div class="modal-header">
+    <a href="#" class="close" data-dismiss="modal">&times;</a>
+  </div>
+  <div class="modal-body" style="height: 100%; border-radius: 0;">
+    <iframe id="iframe-preview-entry" frameborder="0"></iframe>
+  </div>
+  <div class="modal-footer">
+  </div>
+  </div>
+  </div>
+</div>
+
+<script src='https://www.google.com/recaptcha/api.js'></script>
+<script src='/public/js/jszip.min.js'></script>
+<script>
+$(".entry-submit").click(function(e) {
+  e.preventDefault();
+  $("#btn-get-entry").val("Get "+$(this).parent().parent().find(":first-child").first().text());
+  $("#form-get-entry").attr("action", $(this).attr("href"));
+  $("#form-get-entry").attr("data-action",$(this).attr("data-action"));
+  $("#modal-get-entry").modal("show");
+});
+$("#form-get-entry").submit(function(e) {
+  if ($(this).attr("data-action") == "preview") {
+    console.info("preview mode, switch to AJAX");
+    e.preventDefault();
+    var xhr = new XMLHttpRequest();
+    xhr.responseType = "arraybuffer";
+    xhr.onreadystatechange = function(){
+      if (this.readyState == 4) {
+        if (this.status == 200){
+          var zip = new JSZip(xhr.response);
+          var main_content;
+          var url_map = {};
+          $.each(zip.files, function(filename, fileobject) {
+            if (filename.match(/\.html$/)) {
+              main_content = fileobject.asText();
+              var fileblob = new Blob([fileobject.asText()], {type : 'text/html'});
+              var objectURL = window.URL.createObjectURL(fileblob);
+              url_map[filename] = objectURL;
+            } else if (filename.match(/\.png$/)) {
+              var fileblob = new Blob([fileobject.asUint8Array()], {type : 'image/png'});
+              var objectURL = window.URL.createObjectURL(fileblob);
+              url_map[filename] = objectURL;
+            }
+          });
+          $.each(url_map, function(filename, newurl) {
+            var re = new RegExp(filename, 'g');
+            main_content = main_content.replace(re, newurl);
+          });
+          var mainblob = new Blob([main_content], {type : 'text/html'});
+          var main_object_url = window.URL.createObjectURL(mainblob);
+          $("#iframe-preview-entry").attr("src",main_object_url);
+          $("#iframe-preview-entry").attr("style","width: 100%; height: 100%; padding: 0; margin: 0;");
+          $("#modal-get-entry").modal("hide");
+          $("#modal-preview-entry").modal("show");
+        }
+      }
+    }
+    xhr.open('POST', $(this).attr("action"));
+    xhr.setRequestHeader('Content-Type', 'application/json; charset=utf-8');
+    xhr.send($(this).serialize()); 
+  }
+});
+</script>

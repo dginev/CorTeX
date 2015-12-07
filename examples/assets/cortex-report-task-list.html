@@ -20,13 +20,13 @@
       <tr class="{{highlight}} corpus-report-task-list">
         <td class="left">{{entry_name}}</td>
         <td class="left">
-          <a class="entry-submit" href="/entry/{{corpus_name}}/{{inputconverter}}/{{entry_name_encoded}}">{{inputformat}}</a>
+          <a class="entry-submit" data-action="download" href="/entry/{{corpus_name}}/{{inputconverter}}/{{entry_name_encoded}}">{{inputformat}}</a>
         </td>
         <td class="left">
-          <a class="entry-submit" href="/entry/{{corpus_name}}/{{service_name}}/{{entry_name_encoded}}">{{outputformat}}</a>
+          <a class="entry-submit" data-action="download" href="/entry/{{corpus_name}}/{{service_name}}/{{entry_name_encoded}}">{{outputformat}}</a>
         </td>
         <td class="left">
-          <a class="entry-submit" href="/preview/{{corpus_name}}/{{service_name}}/{{entry_name_encoded}}">
+          <a class="entry-submit" data-action="preview" href="/entry/{{corpus_name}}/{{service_name}}/{{entry_name_encoded}}">
           preview</a>
         </td>
         <td class="left">{{details}}</td>
@@ -35,47 +35,7 @@
       {{/entries}}
     </tbody>
     </table>
-
-    <div id="modal-get-entry" class="modal fade" tabindex="-1" role="dialog">
-      <div class="modal-dialog">
-      <div class="modal-content">
-      <form id="form-get-entry" class="form-get-entry" name="form-get-entry" method="post"  accept-charset="UTF-8" action="">
-      <div class="modal-header">
-          <a class="close" data-dismiss="modal">×</a>
-          <h3>Are you human?</h3>
-      </div>
-      <div class="modal-body">
-        <div style="text-align: left; margin-bottom: 10px;">
-        <p>By proceeding to a download you:</p>
-        <ol>
-         <li>Agree to a <strong>temporary preview</strong> of the implied data sample,</li>
-         <li>Agree that this download is intended and authorized only for <strong>research use</strong>,</li>
-         <li>Agree to <strong>purging all local copies</strong> of the data at the immediate end of the research experiment,</li>
-         <li>Agree to protecting the <strong>original copyright</strong> of all implied data,</li>
-         <li>Agree to <strong>provide attribution</strong> as appropriate.</li>
-        </ol>
-        <br>
-        </div>
-        <center>
-          <div class="g-recaptcha" data-sitekey="6LdEehITAAAAAG81QWBR7rTGxz5Rk7-FjwR7so_F"></div>
-        </center>
-      </div>
-      <div class="modal-footer">
-          <input class="btn btn-success" type="submit" value="" id="btn-get-entry">
-      </div>
-      </form>
-      </div>
-      </div>
-    </div>
+  {{> cortex-report-entry-view }}
   </div>
 </div>
-<script src='https://www.google.com/recaptcha/api.js'></script>
-<script>
-$(".entry-submit").click(function(e) {
-  e.preventDefault();
-  $("#btn-get-entry").val("Get "+$(this).parent().parent().find(":first-child").first().text());
-  $("#form-get-entry").attr("action", $(this).attr("href"));
-  $("#modal-get-entry").modal("show");
-});
-</script>
 {{> layout-cortex-post }}

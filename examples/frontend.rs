@@ -244,24 +244,6 @@ fn main() {
     };
   });
 
-  server.post("/preview/:corpus_name/:service_name/:entry", middleware! { |request, mut response|
-    let mut body_bytes = vec![];
-    request.origin.read_to_end(&mut body_bytes).unwrap();
-    let g_recaptcha_response = from_utf8(&body_bytes[21..]).unwrap();
-    let captcha_verified = aux_check_captcha(g_recaptcha_response, &cortex_config.clone().captcha_secret);
-
-    // If you are not human, you have no business here.
-    if !captcha_verified {
-      response.set(Location("/".into()));
-      response.set(StatusCode::TemporaryRedirect);
-      return response.send("");
-    }
-    println!("-- serving verified human request for entry preview");
-
-
-  });
-
-
   server.listen("127.0.0.1:6767");
 }
 
