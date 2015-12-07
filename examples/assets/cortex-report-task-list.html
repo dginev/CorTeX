@@ -20,13 +20,13 @@
       <tr class="{{highlight}} corpus-report-task-list">
         <td class="left">{{entry_name}}</td>
         <td class="left">
-          <a class="entry-submit" href="/entry/{{corpus_name}}/{{inputconverter}}/{{entry_name}}">{{inputformat}}</a>
+          <a class="entry-submit" href="/entry/{{corpus_name}}/{{inputconverter}}/{{entry_name_encoded}}">{{inputformat}}</a>
         </td>
         <td class="left">
-          <a class="entry-submit" href="/entry/{{corpus_name}}/{{service_name}}/{{entry_name}}">{{outputformat}}</a>
+          <a class="entry-submit" href="/entry/{{corpus_name}}/{{service_name}}/{{entry_name_encoded}}">{{outputformat}}</a>
         </td>
         <td class="left">
-          <a class="entry-submit" href="/preview/{{corpus_name}}/{{service_name}}/{{entry_name}}">
+          <a class="entry-submit" href="/preview/{{corpus_name}}/{{service_name}}/{{entry_name_encoded}}">
           preview</a>
         </td>
         <td class="left">{{details}}</td>
@@ -45,6 +45,17 @@
           <h3>Are you human?</h3>
       </div>
       <div class="modal-body">
+        <div style="text-align: left; margin-bottom: 10px;">
+        <p>By proceeding to a download you:</p>
+        <ol>
+         <li>Agree to a <strong>temporary preview</strong> of the implied data sample,</li>
+         <li>Agree that this download is intended and authorized only for <strong>research use</strong>,</li>
+         <li>Agree to <strong>purging all local copies</strong> of the data at the immediate end of the research experiment,</li>
+         <li>Agree to protecting the <strong>original copyright</strong> of all implied data,</li>
+         <li>Agree to <strong>provide attribution</strong> as appropriate.</li>
+        </ol>
+        <br>
+        </div>
         <center>
           <div class="g-recaptcha" data-sitekey="6LdEehITAAAAAG81QWBR7rTGxz5Rk7-FjwR7so_F"></div>
         </center>
