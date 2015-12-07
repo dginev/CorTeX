@@ -1,0 +1,21 @@
+#
+# This page reflects a transient state of large-scale experiments on the representation and semantic substance 
+# of corpora of TeX documents.
+# As such it is not intended for automatic download and reuse - stable and quality-controlled snapshots
+# will be archived and distributed separately with their own DOI numbers.
+#
+# Please refrain from crawling this build system
+# we are open to requests and discussions, write to d.ginev@jacobs-university.de for details
+
+User-agent: *
+Disallow: /
+
+# www.google.com
+User-agent: googlebot
+Allow: /$
+Disallow: /
+
+# alexa
+User-agent: ia_archiver
+Allow: /$
+Disallow: /

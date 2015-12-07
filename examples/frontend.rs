@@ -18,7 +18,7 @@ use std::str::*;
 use std::fs::File;
 use std::io::Read;
 use std::io::Error;
-use nickel::{Nickel, Mountable, StaticFilesHandler, HttpRouter, Request, Response, MiddlewareResult, JsonBody}; //, MediaType
+use nickel::{Nickel, Mountable, StaticFilesHandler, HttpRouter, Request, Response, MiddlewareResult};
 use hyper::header::Location;
 use hyper::Client;
 use nickel::status::StatusCode;
@@ -68,10 +68,15 @@ fn main() {
    * the request uri must be reset so that it can be matched against other middleware.
    */
   server.mount("/public/", StaticFilesHandler::new("public/"));
-  
   //middleware function logs each request to console
   server.utilize(middleware! { |request|
       println!("logging request: {:?}", request.origin.uri);
+  });
+
+  server.get("/robots.txt", middleware! { |_, mut response|
+    response.set(Location("/public/robots.txt".into()));
+    response.set(StatusCode::PermanentRedirect);
+    return response.send("")
   });
   // Root greeter
   server.get("/", middleware! { |_, response|
