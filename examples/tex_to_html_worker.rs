@@ -13,5 +13,5 @@ use pericortex::worker::{Worker,TexToHtmlWorker};
 
 fn main() {
   println!("Starting up TeX to HTML worker and awaiting jobs...");
-  let worker = TexToHtmlWorker::default().start(None);
+  let _worker = TexToHtmlWorker::default().start(None);
 }
