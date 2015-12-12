@@ -131,10 +131,10 @@ impl Backend {
     //   messageid BIGSERIAL PRIMARY KEY,
     //   details varchar(2000)
     // );", &[]).unwrap();
+    trans.execute("create index log_taskid on logs(taskid);", &[]).unwrap(); // We need this guy for the rerun queries
     trans.execute("create index log_fatal_index on logs(taskid,severity,category,what) where severity = 'fatal';", &[]).unwrap();
     trans.execute("create index log_error_index on logs(taskid,severity,category,what) where severity = 'error';", &[]).unwrap();
     trans.execute("create index log_warning_index on logs(taskid,severity,category,what) where severity = 'warning';", &[]).unwrap();
-
     trans.set_commit();
     try!(trans.finish());
     Ok(())
@@ -174,6 +174,10 @@ impl Backend {
     try!(trans.finish());
     Ok(())
   }
+
+  // TODO, example for mark_rerun:
+  // update tasks set status=-5 where taskid in (select taskid from logs where severity='fatal' and category='cortex' and what='unicode_parse_error');
+  // delete from logs where taskid in (select taskid from logs where severity='fatal' and category='cortex' and what='unicode_parse_error');
 
   pub fn sync<D: CortexORM + Clone>(&self, d: &D) -> Result<D, Error> {
     let synced = match d.get_id() {
