@@ -1,9 +1,11 @@
-:exclamation: **Warning** :exclamation: This repository is undergoing first stability runs and is not ready for third-party use! We have converted ~1 million articles from arXiv.org with this implementation, and consider the CorTeX job manager largely stable. Next, we are investigating fragility of some peripheral workers in the coming weeks.
+:exclamation: **Warning**: This repository is undergoing first stability runs and is not ready for third-party use! We have converted ~1 million articles from arXiv.org with this implementation, and consider the CorTeX job manager largely stable. Next, we are investigating fragility of some peripheral workers in the coming weeks.
 
 ![CorTeX Framework](./public/img/logo.jpg) Framework
 ======
 
-A general purpose processing framework for **Cor**-pora of **TeX** documents
+**A general purpose processing framework for corpora of scientific documents.**
+
+(Originally motivated by the desire to process any **Cor**-pus of **TeX** documents.)
 
 [![Build Status](https://secure.travis-ci.org/dginev/CorTeX.png?branch=master)](http://travis-ci.org/dginev/CorTeX) [![license](http://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/dginev/CorTeX/master/LICENSE) [![Coverage Status](https://coveralls.io/repos/dginev/CorTeX/badge.svg?branch=master&service=github)](https://coveralls.io/github/dginev/CorTeX?branch=master)
 
@@ -11,7 +13,7 @@ A general purpose processing framework for **Cor**-pora of **TeX** documents
  - [x] Safe and speedy Rust implementation
  - [x] Distributed processing and streaming data transfers via **ZeroMQ**
  - [x] Backend support for Document (via FileSystem), Annotation (via ?) and Task (via Postgresql) provenance.
- - [x] Open set of supported representations
+ - [x] Representation-aware and -independent (TeX, HTML+RDFa, ePub, TEI, JATS, ...)
  - [ ] Automatic dependency management of registered Services (TODO)
  - [x] Powerful workflow management and development support through the CorTeX web interface
  - [x] Supports multi-corpora multi-service installations
