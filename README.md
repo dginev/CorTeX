@@ -3,9 +3,7 @@
 ![CorTeX Framework](./public/img/logo.jpg) Framework
 ======
 
-**A general purpose processing framework for corpora of scientific documents.**
-
-(Originally motivated by the desire to process any **Cor**-pus of **TeX** documents.)
+**A general purpose processing framework for corpora of scientific documents**
 
 [![Build Status](https://secure.travis-ci.org/dginev/CorTeX.png?branch=master)](http://travis-ci.org/dginev/CorTeX) [![license](http://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/dginev/CorTeX/master/LICENSE) [![Coverage Status](https://coveralls.io/repos/dginev/CorTeX/badge.svg?branch=master&service=github)](https://coveralls.io/github/dginev/CorTeX?branch=master)
 
@@ -21,6 +19,7 @@
  - [x] Routinely tested on 1 million scientific TeX papers from arXiv.org
 
 **History**:
+ * Originally motivated by the desire to process any **Cor**-pus of **TeX** documents.
  * Rust reimplementation of the original Perl [CorTeX](https://github.com/dginev/deprecated-CorTeX) stack.
  * Builds on the expertise developed during the [arXMLiv project](https://trac.kwarc.info/arXMLiv) at Jacobs University. 
  * In particular, CorTeX is a successor to the [build system](http://arxmliv.kwarc.info) originally developed by Heinrich Stamerjohanns.
