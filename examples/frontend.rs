@@ -35,7 +35,7 @@ use redis::Commands;
 use rustc_serialize::json;
 use cortex::sysinfo;
 use cortex::backend::{Backend};
-use cortex::data::{Corpus, CortexORM, Service};
+use cortex::data::{Corpus, CortexORM, Service, Task};
 
 
 #[derive(RustcDecodable, RustcEncodable, Debug, Clone)]
@@ -244,10 +244,17 @@ fn main() {
     println!("-- serving verified human request for entry download");
 
     let service_name = aux_uri_unescape(request.param("service_name")).unwrap();
-    let mut entry = aux_uri_unescape(request.param("entry")).unwrap();
-    let just_in_case_slash = Regex::new(r"%2F").unwrap();
-    entry = just_in_case_slash.replace_all(&entry,"/");
-
+    let entry_taskid = aux_uri_unescape(request.param("entry")).unwrap();
+    let placeholder_task = Task {
+      id: Some(entry_taskid.parse::<i64>().unwrap()),
+      entry: String::new(),
+      corpusid : 0,
+      serviceid : 0,
+      status : 0
+    };
+    let backend = Backend::default();
+    let task = backend.sync(&placeholder_task).unwrap(); // TODO: Error-reporting
+    let entry = task.entry;
     let zip_path = if service_name == "import" {
       entry }
     else {

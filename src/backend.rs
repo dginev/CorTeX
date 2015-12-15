@@ -175,9 +175,49 @@ impl Backend {
     Ok(())
   }
 
-  // TODO, example for mark_rerun:
-  // update tasks set status=-5 where taskid in (select taskid from logs where severity='fatal' and category='cortex' and what='unicode_parse_error');
-  // delete from logs where taskid in (select taskid from logs where severity='fatal' and category='cortex' and what='unicode_parse_error');
+  // WIP:
+  // pub fn mark_rerun(&self, c : &Corpus, s : &Service, 
+  //   severity: Option<String>, category: Option<String>, what: Option<String>) -> Result<(), Error> {
+  //
+  //   let mut rng = thread_rng();
+  //   let mark: u16 = rng.gen();
+  //
+  //   match severity {
+  //     Some(severity) => {
+  //       match category {
+  //         Some(category) => {
+  //           match what {
+  //             Some(what) => {
+  //               try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and taskid in (select distinct(taskid) from logs where severity=$5 and category=$6 and what=$7)");
+  //             },
+  //             None => {
+  //               try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and taskid in (select distinct(taskid) from logs where severity=$5 and category=$6)");
+  //             }
+  //           };
+  //         },
+  //         None => {
+  //           try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and status=$4");
+  //         }
+  //       }
+  //     },
+  //     None => {
+  //       try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3");
+  //     }
+  //   }
+  //  
+  //
+  //
+  //   try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and taskid in 
+  //     (select distinct(taskid) from logs where severity=$4 and category=$5 and what=$6);", 
+  //     &[&(mark as i32), &service.id.unwrap()]));
+  //
+  //   // delete from logs where taskid in (select taskid from tasks where corpusid=? and serviceid=? and status=$mark);
+  //   // update tasks set status=-5 where status=$mark
+  //
+  //   // update tasks set status=-500 where corpusid=4 and serviceid=3 and taskid in (select distinct(taskid) from logs where severity='fatal' and category='perl');
+  //   // delete from logs where taskid in (select taskid from tasks where corpusid=4 and serviceid=3 and status=-500);
+  //
+  // }
 
   pub fn sync<D: CortexORM + Clone>(&self, d: &D) -> Result<D, Error> {
     let synced = match d.get_id() {
@@ -240,6 +280,10 @@ impl Backend {
 
   pub fn clear_limbo_tasks(&self) -> Result<(), Error> {
     try!(self.connection.execute("UPDATE tasks SET status=$1 WHERE status > $2", &[&TaskStatus::TODO.raw(), &TaskStatus::NoProblem.raw(),]));
+    Ok(())
+  }
+
+  pub fn rerun_tasks(&self) -> Result<(), Error> {
     Ok(())
   }
 
@@ -322,25 +366,21 @@ impl Backend {
       Some(severity_name) => {
         let raw_status = TaskStatus::from_key(&severity_name).raw();
         if severity_name == "no_problem" {
-        match self.connection.prepare("select entry from tasks where serviceid=$1 and corpusid=$2 and status=$3 limit 100;") {
+        match self.connection.prepare("select entry,taskid from tasks where serviceid=$1 and corpusid=$2 and status=$3 limit 100;") {
           Ok(select_query) => match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status]) {
             Ok(entry_rows) => {
               let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
-              let dot_regex = Regex::new(r"\.").unwrap();
-              let slash_regex = Regex::new(r"[/]").unwrap();
               let mut entries = Vec::new();
               for row in entry_rows {
                 let mut entry_map = HashMap::new();
                 let entry_fixedwidth : String = row.get(0);
+                let entry_taskid : i64 = row.get(1);
                 let entry = entry_fixedwidth.trim_right().to_string();
                 let entry_name = entry_name_regex.replace(&entry,"$1");
-                // TODO: Also use url-escape
-                let mut entry_path_encoded = dot_regex.replace_all(&entry,"%2E");
-                entry_path_encoded = slash_regex.replace_all(&entry_path_encoded,"%2F");
-                entry_map.insert("entry_path_encoded".to_string(),entry_path_encoded);
                 
                 entry_map.insert("entry".to_string(),entry);
                 entry_map.insert("entry_name".to_string(),entry_name);
+                entry_map.insert("entry_taskid".to_string(),entry_taskid.to_string());
                 entry_map.insert("details".to_string(),"OK".to_string());
                 entries.push(entry_map);
               }
@@ -399,26 +439,22 @@ impl Backend {
               },
               _ => Vec::new()
             },
-            Some(what_name) => match self.connection.prepare("select entry, details from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and category=$5 and what=$6 limit 100;") {
+            Some(what_name) => match self.connection.prepare("select tasks.taskid, tasks.entry, logs.details from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and category=$5 and what=$6 limit 100;") {
             Ok(select_query) => match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status,&severity_name, &category_name,&what_name]) {
               Ok(entry_rows) => {
                 let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
-                let dot_regex = Regex::new(r"\.").unwrap();
-                let slash_regex = Regex::new(r"[/]").unwrap();
                 let mut entries = Vec::new();
                 for row in entry_rows {
                   let mut entry_map = HashMap::new();
-                  let entry_fixedwidth : String = row.get(0);
-                  let details : String = row.get(1);
+                  let entry_taskid : i64 = row.get(0);
+                  let entry_fixedwidth : String = row.get(1);
+                  let details : String = row.get(2);
                   let entry = entry_fixedwidth.trim_right().to_string();
                   let entry_name = entry_name_regex.replace(&entry,"$1");
                   // TODO: Also use url-escape
-                  let mut entry_path_encoded = dot_regex.replace_all(&entry,"%2E");
-                  entry_path_encoded = slash_regex.replace_all(&entry_path_encoded,"%2F");
-                  entry_map.insert("entry_path_encoded".to_string(),entry_path_encoded);
-
                   entry_map.insert("entry".to_string(),entry);
                   entry_map.insert("entry_name".to_string(),entry_name);
+                  entry_map.insert("entry_taskid".to_string(),entry_taskid.to_string());
                   entry_map.insert("details".to_string(),details);
                   entries.push(entry_map);
                 }
