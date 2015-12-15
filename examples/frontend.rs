@@ -11,6 +11,7 @@ extern crate cortex;
 extern crate rustc_serialize;
 extern crate time;
 extern crate regex;
+extern crate redis;
 
 use std::collections::HashMap;
 // use std::path::Path;
@@ -23,12 +24,13 @@ use std::path::Path;
 use regex::Regex;
 use nickel::{Nickel, Mountable, StaticFilesHandler, HttpRouter, Request, Response, MiddlewareResult};
 use hyper::header::Location;
+use nickel::extensions::{Referer, Redirect};
 use hyper::Client;
 use nickel::status::StatusCode;
 // use nickel::QueryString;
 // use nickel::status::StatusCode;
 // use hyper::header::Location;
-
+use redis::Commands;
 
 use rustc_serialize::json;
 use cortex::sysinfo;
@@ -212,13 +214,32 @@ fn main() {
     let mut body_bytes = vec![];
     request.origin.read_to_end(&mut body_bytes).unwrap();
     let g_recaptcha_response = from_utf8(&body_bytes[21..]).unwrap();
-    let captcha_verified = aux_check_captcha(g_recaptcha_response, &cortex_config2.captcha_secret);
+    // Check if we hve the g_recaptcha_response in Redis, then reuse
+    let redis_client = redis::Client::open("redis://127.0.0.1/").unwrap(); // TODO: Better error handling
+    let redis_connection = redis_client.get_connection().unwrap();
+    let quota : usize = redis_connection.get(g_recaptcha_response).unwrap_or(0);
+    let captcha_verified = if quota > 0 {
+      if quota == 1 {
+        // Remove if last
+        let _ : () = redis_connection.del(g_recaptcha_response).unwrap();
+      }
+      // We have quota available, decrement it
+      let _ : () = redis_connection.set(g_recaptcha_response, quota-1).unwrap();
+      // And allow operation
+      true
+    } else {
+      let check_val = aux_check_captcha(g_recaptcha_response, &cortex_config2.captcha_secret);
+      if check_val {
+        // Add a reuse quota if things check out, 19 more downloads
+        let _ : () = redis_connection.set(g_recaptcha_response, 19).unwrap();
+      }
+      check_val
+    };
 
     // If you are not human, you have no business here.
     if !captcha_verified {
-      response.set(Location("/".into()));
-      response.set(StatusCode::TemporaryRedirect);
-      return response.send("");
+      let back = request.referer().unwrap_or("/");
+      return response.redirect(back.to_string()+"?expire_quotas")
     }
     println!("-- serving verified human request for entry download");
 

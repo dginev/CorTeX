@@ -53,48 +53,123 @@ $(".entry-submit").click(function(e) {
   $("#btn-get-entry").val("Get "+$(this).parent().parent().find(":first-child").first().text());
   $("#form-get-entry").attr("action", $(this).attr("href"));
   $("#form-get-entry").attr("data-action",$(this).attr("data-action"));
-  $("#modal-get-entry").modal("show");
+  var saved_recaptcha = localStorage.getItem("g_recaptcha_response");
+  if (saved_recaptcha && (saved_recaptcha.length > 0)) {
+    // We have a saved recaptcha, reuse for convenience
+    $("#g-recaptcha-response").val(saved_recaptcha);
+    $("#form-get-entry").submit();    
+  } else {
+    $("#modal-get-entry").modal("show");
+  }
 });
+
 $("#form-get-entry").submit(function(e) {
-  if ($(this).attr("data-action") == "preview") {
-    console.info("preview mode, switch to AJAX");
-    e.preventDefault();
-    var xhr = new XMLHttpRequest();
-    xhr.responseType = "arraybuffer";
-    xhr.onreadystatechange = function(){
-      if (this.readyState == 4) {
-        if (this.status == 200){
-          var zip = new JSZip(xhr.response);
-          var main_content;
-          var url_map = {};
-          $.each(zip.files, function(filename, fileobject) {
-            if (filename.match(/\.html$/)) {
-              main_content = fileobject.asText();
-              var fileblob = new Blob([fileobject.asText()], {type : 'text/html'});
-              var objectURL = window.URL.createObjectURL(fileblob);
-              url_map[filename] = objectURL;
-            } else if (filename.match(/\.png$/)) {
-              var fileblob = new Blob([fileobject.asUint8Array()], {type : 'image/png'});
-              var objectURL = window.URL.createObjectURL(fileblob);
-              url_map[filename] = objectURL;
-            }
-          });
-          $.each(url_map, function(filename, newurl) {
-            var re = new RegExp(filename, 'g');
-            main_content = main_content.replace(re, newurl);
-          });
-          var mainblob = new Blob([main_content], {type : 'text/html'});
-          var main_object_url = window.URL.createObjectURL(mainblob);
-          $("#iframe-preview-entry").attr("src",main_object_url);
-          $("#iframe-preview-entry").attr("style","width: 100%; height: 100%; padding: 0; margin: 0;");
-          $("#modal-get-entry").modal("hide");
-          $("#modal-preview-entry").modal("show");
+  // We'll AJAX our fetch, to have a handle on permissions
+  e.preventDefault();
+  // Record the captcha key, which gets another 1 free uses
+  var g_recaptcha_response = $("#g-recaptcha-response").val();
+  if (localStorage.getItem("g_recaptcha_response") != g_recaptcha_response) {
+    console.log("SETTING localStorage with ",g_recaptcha_response);
+    localStorage.setItem("g_recaptcha_response", g_recaptcha_response);
+    localStorage.setItem("g_recaptcha_quota", 19);
+  } else {
+    // Otherwise just decrement 1
+    var new_quota = localStorage.getItem("g_recaptcha_quota") - 1;
+    if (new_quota > 0) {
+      localStorage.setItem("g_recaptcha_quota", new_quota);
+    } else {
+      // Quota expired, reseting
+      localStorage.removeItem("g_recaptcha_response");
+      localStorage.removeItem("g_recaptcha_quota");
+    }
+  }
+  var form_action = $(this).attr("data-action");
+  var xhr = new XMLHttpRequest();
+  xhr.responseType = "arraybuffer";
+  xhr.onreadystatechange = function(){
+    if (this.readyState == 4) { // Only process when done.
+      if (this.status != 200) {
+        // Something went wrong, throw out the localStorage and re-auth (Redis could've fallen, etc)
+        localStorage.removeItem("g_recaptcha_response");
+        localStorage.removeItem("g_recaptcha_quota");
+        $("#modal-get-entry").modal("show");
+        return;
+      }
+      if (form_action == "download") {// Download file
+        var filename = "";
+        var disposition = xhr.getResponseHeader('Content-Disposition');
+        if (disposition && disposition.indexOf('attachment') !== -1) {
+          var filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+          var matches = filenameRegex.exec(disposition);
+          if (matches != null && matches[1]) filename = matches[1].replace(/['"]/g, '');
         }
+        var type = xhr.getResponseHeader('Content-Type');
+        var blob = new Blob([this.response], { type: type });
+        if (type == "text/html") {
+          // HTML means an error, reset!
+          console.info(this.response);
+          localStorage.removeItem("g_recaptcha_response");
+          localStorage.removeItem("g_recaptcha_quota");
+          $("#modal-get-entry").modal("show");
+          return;
+        }
+        if (typeof window.navigator.msSaveBlob !== 'undefined') {
+          // IE workaround for "HTML7007: One or more blob URLs were revoked by closing the blob for which they were created. These URLs will no longer resolve as the data backing the URL has been freed."
+          window.navigator.msSaveBlob(blob, filename);
+        } else {
+          var URL = window.URL || window.webkitURL;
+          var downloadUrl = URL.createObjectURL(blob);
+          if (filename) {
+            // use HTML5 a[download] attribute to specify filename
+            var a = document.createElement("a");
+            // safari doesn't support this yet
+            if (typeof a.download === 'undefined') {
+              window.location = downloadUrl;
+            } else {
+              a.href = downloadUrl;
+              a.download = filename;
+              document.body.appendChild(a);
+              a.click();
+            }
+          } else {
+            window.location = downloadUrl;
+          }
+          setTimeout(function () { URL.revokeObjectURL(downloadUrl); }, 100); // cleanup
+        }
+        $("#modal-get-entry").modal("hide");
+      }
+      else if (form_action == "preview") {  // All is good, preview the result
+        var zip = new JSZip(xhr.response);
+        var main_content;
+        var url_map = {};
+        $.each(zip.files, function(filename, fileobject) {
+          if (filename.match(/\.html$/)) {
+            main_content = fileobject.asText();
+            var fileblob = new Blob([fileobject.asText()], {type : 'text/html'});
+            var objectURL = window.URL.createObjectURL(fileblob);
+            url_map[filename] = objectURL;
+          } else if (filename.match(/\.png$/)) {
+            var fileblob = new Blob([fileobject.asUint8Array()], {type : 'image/png'});
+            var objectURL = window.URL.createObjectURL(fileblob);
+            url_map[filename] = objectURL;
+          }
+        });
+        $.each(url_map, function(filename, newurl) {
+          var re = new RegExp(filename, 'g');
+          main_content = main_content.replace(re, newurl);
+        });
+        var mainblob = new Blob([main_content], {type : 'text/html'});
+        var main_object_url = window.URL.createObjectURL(mainblob);
+        $("#iframe-preview-entry").attr("src",main_object_url);
+        $("#iframe-preview-entry").attr("style","width: 100%; height: 100%; padding: 0; margin: 0;");
+        $("#modal-get-entry").modal("hide");
+        $("#modal-preview-entry").modal("show");
       }
     }
-    xhr.open('POST', $(this).attr("action"));
-    xhr.setRequestHeader('Content-Type', 'application/json; charset=utf-8');
-    xhr.send($(this).serialize()); 
-  }
+  };
+  xhr.open('POST', $(this).attr("action"));
+  xhr.setRequestHeader('Content-Type', 'application/json; charset=utf-8');
+  var xhr_payload = $(this).serialize();
+  xhr.send(xhr_payload); 
 });
 </script>

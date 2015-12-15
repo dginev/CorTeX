@@ -25,6 +25,8 @@ git = "https://github.com/erickt/rust-zmq.git"
 [dependencies.pericortex]
 git = "https://github.com/dginev/CorTeX-Peripherals.git"
 
+[dependencies.redis]
+git = "https://github.com/mitsuhiko/redis-rs.git"
 
 [dependencies]
 libc = "~0.1"

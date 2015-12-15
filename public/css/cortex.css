@@ -9,6 +9,7 @@
 }
 body {
   height: 100%; 
+  font-family: "Helvetica Neue",Helvetica,Arial,sans-serif;
 }
 #body {
   min-height: 100%;
@@ -97,6 +98,9 @@ footer {
 
 h1 {
   font-weight: bold;
+  padding-bottom: 0.3em;
+  font-size: 2.25em;
+  line-height: 1.2;
 }
 .bold {
   font-weight: bold;

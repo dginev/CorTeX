@@ -18,6 +18,16 @@
  sudo apt-get install libarchive-dev
 ```
 
+* A Redis caching server for mitigating DB load and maintaining temporary frontend state
+```
+  cd /tmp &&
+  wget http://download.redis.io/redis-stable.tar.gz &&
+  tar xvzf redis-stable.tar.gz &&
+  cd redis-stable &&
+  make &&
+  make install
+```
+
 ### Setting up postgresql:
  This is not normative, but the simplest (insecure!) approach is just:
  ```
