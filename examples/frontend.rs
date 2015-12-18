@@ -381,7 +381,13 @@ fn aux_severity_highlight<'highlight>(severity : &'highlight str) -> &'highlight
 fn aux_uri_unescape<'unescape>(param : Option<&'unescape str>) -> Option<String> {
   match param {
     None => None,
-    Some(param_encoded) => Some(url::percent_encoding::lossy_utf8_percent_decode(param_encoded.as_bytes()))
+    Some(param_encoded) => {
+      let colon_regex = Regex::new(r"%3A").unwrap();
+      let slash_regex = Regex::new(r"%2F").unwrap();
+      let decoded_colon = colon_regex.replace_all(&param_encoded,":");
+      let decoded_slash = slash_regex.replace_all(&decoded_colon,"/");
+      Some(url::percent_encoding::lossy_utf8_percent_decode(decoded_slash.as_bytes()))
+    }
   }
 }
 fn aux_uri_escape(param : Option<String>) -> Option<String> {
