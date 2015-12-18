@@ -19,15 +19,14 @@
       {{#global}}
       <tr class="{{highlight}} corpus-report-task-list">
         <td class="left">{{entry_name}}</td>
-        <td class="left">
-          <a class="entry-submit" data-action="download" href="/entry/{{inputconverter}}/{{entry_taskid}}">{{inputformat}}</a>
+        <td class="left task-source">
+          <a class="entry-submit" data-action="download" href="/entry/{{inputconverter_uri}}/{{entry_taskid}}">{{inputformat}}</a>
         </td>
-        <td class="left">
-          <a class="entry-submit" data-action="download" href="/entry/{{service_name}}/{{entry_taskid}}">{{outputformat}}</a>
+        <td class="left task-result">
+          <a class="entry-submit" data-action="download" href="/entry/{{service_name_uri}}/{{entry_taskid}}">{{outputformat}}</a>
         </td>
-        <td class="left">
-          <a class="entry-submit" data-action="preview" href="/entry/{{service_name}}/{{entry_taskid}}">
-          preview</a>
+        <td class="left task-preview">
+          <a class="entry-submit" data-action="preview" href="/entry/{{service_name_uri}}/{{entry_taskid}}">preview</a>
         </td>
         <td class="left">{{details}}</td>
       </tr>

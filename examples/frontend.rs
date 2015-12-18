@@ -87,14 +87,15 @@ fn main() {
   server.get("/", middleware! { |_, response|
     let mut data = HashMap::new();
     let mut global = HashMap::new();
-    global.insert("title", "Framework Overview".to_string());
-    global.insert("description", "An analysis framework for corpora of TeX/LaTeX documents - overview.".to_string());
+    global.insert("title".to_string(), "Framework Overview".to_string());
+    global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - overview.".to_string());
     
     let backend = Backend::default();
     let corpora = backend.corpora().iter().map(|c| c.to_hash()).collect::<Vec<_>>();
 
-    data.insert("global",vec![global]);
-    data.insert("corpora",corpora);
+    data.insert("global".to_string(),vec![global]);
+    data.insert("corpora".to_string(),corpora);
+    aux_decorate_uri_encodings(&mut data);
     return response.render("examples/assets/cortex-overview.html", &data);
   });
 
@@ -102,13 +103,14 @@ fn main() {
   server.get("/admin", middleware! { |_, response|
     let mut data = HashMap::new();
     let mut global = HashMap::new();
-    global.insert("title", "Admin Interface".to_string());
-    global.insert("description", "An analysis framework for corpora of TeX/LaTeX documents - admin interface.".to_string());
+    global.insert("title".to_string(), "Admin Interface".to_string());
+    global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - admin interface.".to_string());
     match sysinfo::report(&mut global) {
       Ok(_) => {},
       Err(e) => println!("Sys report failed: {:?}", e)
     };
-    data.insert("global",vec![global]);
+    data.insert("global".to_string(),vec![global]);
+    aux_decorate_uri_encodings(&mut data);
     return response.render("examples/assets/cortex-admin.html", &data);
   });
 
@@ -164,10 +166,10 @@ fn main() {
       Ok(corpus_select) => {
         match corpus_select {
           Some(corpus) => {
-            global.insert("title", "Registered services for ".to_string() + &corpus_name);
-            global.insert("description", "An analysis framework for corpora of TeX/LaTeX documents - registered services for ".to_string()+ &corpus_name);
-            global.insert("corpus_name", corpus_name.to_string());
-            data.insert("global",vec![global]);
+            global.insert("title".to_string(), "Registered services for ".to_string() + &corpus_name);
+            global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - registered services for ".to_string()+ &corpus_name);
+            global.insert("corpus_name".to_string(), corpus_name.to_string());
+            data.insert("global".to_string(),vec![global]);
 
             let services_result = corpus.select_services(&backend.connection);
             match services_result {
@@ -176,13 +178,14 @@ fn main() {
                               .map(|s| s.to_hash()).collect::<Vec<_>>();
                 let mut service_reports = Vec::new();
                 for mut service in services.into_iter() {
-                  service.insert("status","Running".to_string());
+                  service.insert("status".to_string(),"Running".to_string());
                   service_reports.push(service);
                 }
-                data.insert("services", service_reports);
+                data.insert("services".to_string(), service_reports);
               },
               _ => {}
             };
+            aux_decorate_uri_encodings(&mut data);
             return response.render("examples/assets/cortex-services.html", &data);
           },
           None => {}
@@ -271,6 +274,7 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
   let mut data = HashMap::new();
   let mut global = HashMap::new();
   let backend = Backend::default();
+
   let corpus_name = aux_uri_unescape(request.param("corpus_name")).unwrap();
   let service_name = aux_uri_unescape(request.param("service_name")).unwrap();
   let severity = aux_uri_unescape(request.param("severity"));
@@ -313,13 +317,13 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
         template = if severity.is_some() && (severity.clone().unwrap() == "no_problem") {
           let entries = backend.task_report(&corpus, &service, severity, None, None);
           // Record the report into "entries" vector
-          data.insert("entries",entries);
+          data.insert("entries".to_string(),entries);
           // And set the task list template
           "examples/assets/cortex-report-task-list.html"
         } else {
           let categories = backend.task_report(&corpus, &service, severity, None, None);
           // Record the report into "categories" vector
-          data.insert("categories",categories);
+          data.insert("categories".to_string(),categories);
           // And set the severity template
           "examples/assets/cortex-report-severity.html"
         };
@@ -330,7 +334,7 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
         global.insert("category".to_string(),category.clone().unwrap());
         let whats = backend.task_report(&corpus, &service, severity, category, None);
         // Record the report into "whats" vector
-        data.insert("whats",whats);
+        data.insert("whats".to_string(),whats);
         // And set the category template
         template = "examples/assets/cortex-report-category.html";
       }
@@ -341,7 +345,7 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
         global.insert("what".to_string(),what.clone().unwrap());
         let entries = backend.task_report(&corpus, &service, severity, category, what);
         // Record the report into "entries" vector
-        data.insert("entries",entries);
+        data.insert("entries".to_string(),entries);
         // And set the task list template
         template = "examples/assets/cortex-report-task-list.html";
       }
@@ -351,8 +355,10 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
       let report_duration = (report_end - report_start).num_milliseconds();
       global.insert("report_duration".to_string(),report_duration.to_string());
       // Pass the globals(reports+metadata) onto the stash
-      data.insert("global",vec![global]);
+      data.insert("global".to_string(),vec![global]);
+      // And pass the handy lambdas
       // And render the correct template
+      aux_decorate_uri_encodings(&mut data);
       return response.render(template, &data)
     },
     _=>{}}},
@@ -376,6 +382,36 @@ fn aux_uri_unescape<'unescape>(param : Option<&'unescape str>) -> Option<String>
   match param {
     None => None,
     Some(param_encoded) => Some(url::percent_encoding::lossy_utf8_percent_decode(param_encoded.as_bytes()))
+  }
+}
+fn aux_uri_escape(param : Option<String>) -> Option<String> {
+  match param {
+    None => None,
+    Some(param_pure) => {
+      let colon_regex = Regex::new(r"[:]").unwrap();
+      let slash_regex = Regex::new(r"[/]").unwrap();
+      let lib_encoded = url::percent_encoding::utf8_percent_encode(&param_pure, url::percent_encoding::DEFAULT_ENCODE_SET);
+      let encoded_colon = colon_regex.replace_all(&lib_encoded,"%3A");
+      let encoded_slash = slash_regex.replace_all(&encoded_colon,"%2F");
+
+      let encoded_final = encoded_slash;
+      Some(encoded_final)
+    }
+  }
+}
+fn aux_decorate_uri_encodings(data : &mut HashMap<String, Vec<HashMap<String,String>>>) {
+  for (_, inner_vec) in data.into_iter() {
+    for mut subhash in inner_vec.into_iter() {
+      let mut uri_decorations = vec![];
+      for (subkey, subval) in subhash.iter() {
+        uri_decorations.push((subkey.to_string() + "_uri", aux_uri_escape(Some(subval.to_string())).unwrap()));
+      }
+      for decoration in uri_decorations.into_iter() {
+        match decoration {
+          (decoration_key, decoration_val) => subhash.insert(decoration_key, decoration_val)
+        };
+      }
+    }
   }
 }
 

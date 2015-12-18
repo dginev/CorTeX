@@ -23,10 +23,18 @@ footer {
   height: 15px;
 }
 
-
-.error {
-  background-color: #FFE9BF
+tr.error {
+  background-color: #FFE9BF;
 }
+
+tr.danger > td.task-result > a {
+  visibility: hidden;
+}
+
+tr.danger > td.task-preview > a {
+  visibility: hidden;
+}
+
 .welcome-title {
  font-weight: normal;
 }
