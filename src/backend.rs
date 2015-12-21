@@ -126,15 +126,13 @@ impl Backend {
       what char(50),
       details varchar(2000)
     );", &[]).unwrap();
-    trans.execute("DROP TABLE if EXISTS logdetails", &[]).unwrap();
-    // trans.execute("CREATE TABLE logdetails (
-    //   messageid BIGSERIAL PRIMARY KEY,
-    //   details varchar(2000)
-    // );", &[]).unwrap();
-    trans.execute("create index log_taskid on logs(taskid);", &[]).unwrap(); // We need this guy for the rerun queries
-    trans.execute("create index log_fatal_index on logs(taskid,severity,category,what) where severity = 'fatal';", &[]).unwrap();
-    trans.execute("create index log_error_index on logs(taskid,severity,category,what) where severity = 'error';", &[]).unwrap();
-    trans.execute("create index log_warning_index on logs(taskid,severity,category,what) where severity = 'warning';", &[]).unwrap();
+
+    // Note: Needed for efficient task rerun queries
+    trans.execute("create index log_taskid on logs(taskid);", &[]).unwrap();
+    // Note: to avoid a sequential scan on logs for all the report pages, the following 3 indexes are crucial:
+    trans.execute("create index log_fatal_index on logs(severity,category,what,taskid) where severity = 'fatal';", &[]).unwrap();
+    trans.execute("create index log_error_index on logs(severity,category,what,taskid) where severity = 'error';", &[]).unwrap();
+    trans.execute("create index log_warning_index on logs(severity,category,what,taskid) where severity = 'warning';", &[]).unwrap();
     trans.set_commit();
     try!(trans.finish());
     Ok(())
@@ -214,7 +212,10 @@ impl Backend {
   //   // delete from logs where taskid in (select taskid from tasks where corpusid=? and serviceid=? and status=$mark);
   //   // update tasks set status=-5 where status=$mark
   //
-  //   // update tasks set status=-500 where corpusid=4 and serviceid=3 and taskid in (select distinct(taskid) from logs where severity='fatal' and category='perl');
+        // Maybe using the from subtrable syntax is best ????
+        //update tasks as ut set status=-500 from (select taskid from logs where severity='fatal' and category='malformed') sub where ut.corpusid=4 and ut.serviceid=3 and  ut.taskid = sub.taskid ; 
+
+  //   // update tasks set status=-500 where corpusid=4 and serviceid=3 and taskid in ();
   //   // delete from logs where taskid in (select taskid from tasks where corpusid=4 and serviceid=3 and status=-500);
   //
   // }
