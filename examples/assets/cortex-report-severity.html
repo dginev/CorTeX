@@ -4,28 +4,32 @@
   <h1>{{severity}} categories</h1>
   <br>
   <div class="row">
-  <div class="col-md-4"></div>
-  <div class="col-md-4">
+  <div class="col-md-3"></div>
+  <div class="col-md-6">
   <table id="corpus-report" class="table">
   <thead>
     <tr>
       <th class="left">Category</th>
-      <th class="right">Percent</th>
+      <th class="right">Tasks %</th>
       <th class="right">Tasks</th>
+      <th class="right">Messages %</th>
+      <th class="right">Messages</th>
     </tr>
   </thead>
   <tbody>
     {{#categories}}
     <tr class="{{highlight}} corpus-report-{{severity}}">
       <td class="left"><a class="link-{{name}}" href="/corpus/{{corpus_name_uri}}/{{service_name_uri}}/{{severity_uri}}/{{name_uri}}">{{name}}</a></td>
-      <td class="right">{{count_percent}}%</td>
-      <td class="right">{{count}}</td>
+      <td class="right">{{tasks_percent}}%</td>
+      <td class="right">{{tasks}}</td>
+      <td class="right">{{messages_percent}}%</td>
+      <td class="right">{{messages}}</td>
     </tr>
     {{/categories}}
   </tbody>
   </table>
   </div>
-  <div class="col-md-4"></div>
+  <div class="col-md-3"></div>
   </div>
 </div>
 {{/global}}

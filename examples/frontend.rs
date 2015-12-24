@@ -339,7 +339,7 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
         global.insert("category".to_string(),category.clone().unwrap());
         let whats = aux_task_report(&mut global, &corpus, &service, severity, category, None);
         // Record the report into "whats" vector
-        data.insert("whats".to_string(),whats);
+        data.insert("whats".to_string(), whats);
         // And set the category template
         template = "examples/assets/cortex-report-category.html";
       }

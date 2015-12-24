@@ -391,19 +391,22 @@ impl Backend {
           _ => Vec::new()
         }}
         else {match category {
-          None => match self.connection.prepare("select category, count(*) as category_count from (
-              select logs.category,logs.taskid from tasks LEFT OUTER JOIN logs ON (tasks.taskid=logs.taskid) WHERE serviceid=$1 and corpusid=$2 and status=$3 and severity=$4
-               group by logs.category, logs.taskid) as tmp group by category order by category_count desc;") {
+          // using ::int4 since the rust postgresql wrapper can't map Numeric into Rust yet, but it is fine with bigint (as i64)
+          None => match self.connection.prepare("select category, count(*) as task_count, sum(total_counts::int4) from (
+              select logs.category, logs.taskid, count(*) as total_counts from tasks LEFT OUTER JOIN logs ON (tasks.taskid=logs.taskid) WHERE serviceid=$1 and corpusid=$2 and status=$3 and severity=$4
+               group by logs.category, logs.taskid) as tmp GROUP BY category ORDER BY task_count desc;") {
             Ok(select_query) => {
-              match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status,&severity_name]) {
+              match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status, &severity_name]) {
                 Ok(category_rows) => {
                   // How many tasks total in this category?
-                  match self.connection.prepare("select count(*) from tasks where serviceid=$1 and corpusid=$2 and status=$3;") {
+                  match self.connection.prepare("select count(distinct(taskid)), count(*) from (
+                    select logs.taskid from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4) as tmp;") {
                   Ok(total_query) => {
-                    match total_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status]) {
+                    match total_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status, &severity_name]) {
                       Ok(total_rows) => {
-                        let total : i64 = total_rows.get(0).get(0);
-                        Backend::aux_task_rows_stats(category_rows, total)
+                        let total_tasks : i64 = total_rows.get(0).get(0);
+                        let total_messages : i64 = total_rows.get(0).get(1);
+                        Backend::aux_task_rows_stats(category_rows, total_tasks, total_messages)
                       },
                       _ => Vec::new()
                     }
@@ -417,19 +420,22 @@ impl Backend {
             _ => Vec::new(),
           },
           Some(category_name) => match what {
-            None => match self.connection.prepare("select what, count(*) as what_count from (
-              select what,tasks.taskid from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and category=$5
-               group by what, tasks.taskid) as tmp group by what order by what_count desc;") {
-              Ok(select_query) => match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status,&severity_name, &category_name]) {
+            // using ::int4 since the rust postgresql wrapper can't map Numeric into Rust yet, but it is fine with bigint (as i64)
+            None => match self.connection.prepare("select what, count(*) as task_count, sum(total_counts::int4) from (
+              select logs.what, logs.taskid, count(*) as total_counts from tasks LEFT OUTER JOIN logs ON (tasks.taskid=logs.taskid)
+              WHERE serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and category=$5
+              GROUP BY logs.what, logs.taskid) as tmp GROUP BY what ORDER BY task_count desc;") {
+              Ok(select_query) => match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status, &severity_name, &category_name]) {
                 Ok(what_rows) => {
                   // How many tasks total in this category?
-                  match self.connection.prepare("select count(*) from (
-                    select distinct(tasks.taskid) from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and category=$5) as tmp;") {
+                  match self.connection.prepare("select count(distinct(logs.taskid)), count(*) from tasks, logs 
+                    where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and category=$5;") {
                   Ok(total_query) => {
                     match total_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status, &severity_name, &category_name]) {
                       Ok(total_rows) => {
-                        let total : i64 = total_rows.get(0).get(0);
-                        Backend::aux_task_rows_stats(what_rows, total)
+                        let total_tasks : i64 = total_rows.get(0).get(0);
+                        let total_messages : i64 = total_rows.get(0).get(1);
+                        Backend::aux_task_rows_stats(what_rows, total_tasks, total_messages)
                       },
                       _ => Vec::new()
                     }},
@@ -490,28 +496,35 @@ impl Backend {
       }
     }
   }
-  fn aux_task_rows_stats(rows : Rows, total : i64) -> Vec<HashMap<String,String>>{
+  fn aux_task_rows_stats(rows : Rows, total_tasks : i64, total_messages : i64) -> Vec<HashMap<String,String>>{
     let mut report = Vec::new();
 
     for row in rows.iter() {
       let stat_type_fixedwidth : String = row.get(0);
       let stat_type : String = stat_type_fixedwidth.trim_right().to_string();
-      let stat_count : i64 = row.get(1);
+      let stat_tasks : i64 = row.get(1);
+      let stat_messages : i64 = row.get(2);
       let mut stats_hash : HashMap<String, String> = HashMap::new();
       stats_hash.insert("name".to_string(),stat_type);
-      stats_hash.insert("count".to_string(), stat_count.to_string());
+      stats_hash.insert("tasks".to_string(), stat_tasks.to_string());
+      stats_hash.insert("messages".to_string(), stat_messages.to_string());
 
-      let stat_percent_value : f64 = 100.0 * (stat_count  as f64 / total as f64);
-      let stat_percent_rounded : f64 = (stat_percent_value * 100.0).round() as f64 / 100.0;
-      stats_hash.insert("count_percent".to_string(), stat_percent_rounded.to_string());
+      let tasks_percent_value : f64 = 100.0 * (stat_tasks  as f64 / total_tasks as f64);
+      let tasks_percent_rounded : f64 = (tasks_percent_value * 100.0).round() as f64 / 100.0;
+      stats_hash.insert("tasks_percent".to_string(), tasks_percent_rounded.to_string());
+      let messages_percent_value : f64 = 100.0 * (stat_messages  as f64 / total_messages as f64);
+      let messages_percent_rounded : f64 = (messages_percent_value * 100.0).round() as f64 / 100.0;
+      stats_hash.insert("messages_percent".to_string(), messages_percent_rounded.to_string());
 
       report.push(stats_hash);
     }
     // Append the total to the end of the report:
     let mut total_hash = HashMap::new();
     total_hash.insert("name".to_string(),"total".to_string());
-    total_hash.insert("count".to_string(),total.to_string());
-    total_hash.insert("count_percent".to_string(),"100".to_string());
+    total_hash.insert("tasks".to_string(),total_tasks.to_string());
+    total_hash.insert("tasks_percent".to_string(),"100".to_string());
+    total_hash.insert("messages".to_string(),total_messages.to_string());
+    total_hash.insert("messages_percent".to_string(),"100".to_string());
     report.push(total_hash);
 
 

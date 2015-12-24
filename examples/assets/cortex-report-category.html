@@ -1,31 +1,35 @@
 {{> layout-cortex-pre }}
 {{#global}}
 <div class="center">
-  <h1>"{{category}}" classification</h1>
+  <h1>"{{category}}" classes</h1>
   <br>
   <div class="row">
-  <div class="col-md-4"></div>
-  <div class="col-md-4">
+  <div class="col-md-3"></div>
+  <div class="col-md-6">
   <table id="corpus-report" class="table">
   <thead>
     <tr>
       <th class="left">What</th>
-      <th class="right">Percent</th>
+      <th class="right">Tasks %</th>
       <th class="right">Tasks</th>
+      <th class="right">Messages %</th>
+      <th class="right">Messages</th>
     </tr>
   </thead>
   <tbody>
     {{#whats}}
     <tr class="{{highlight}} corpus-report-{{category}}">
       <td class="left"><a class="link-{{name}}" href="/corpus/{{corpus_name_uri}}/{{service_name_uri}}/{{severity}}/{{category_uri}}/{{name_uri}}">{{name}}</a></td>
-      <td class="right">{{count_percent}}%</td>
-      <td class="right">{{count}}</td>
+      <td class="right">{{tasks_percent}}%</td>
+      <td class="right">{{tasks}}</td>
+      <td class="right">{{messages_percent}}%</td>
+      <td class="right">{{messages}}</td>
     </tr>
     {{/whats}}
   </tbody>
   </table>
   </div>
-  <div class="col-md-4"></div>
+  <div class="col-md-3"></div>
   </div>
 </div>
 {{/global}}
