@@ -19,7 +19,6 @@ use std::collections::HashMap;
 use std::str::*;
 use std::fs::File;
 use std::io::Read;
-use std::io::Error;
 use std::path::Path;
 use std::thread;
 use std::time::Duration;
