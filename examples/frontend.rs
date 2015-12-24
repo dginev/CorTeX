@@ -21,6 +21,8 @@ use std::fs::File;
 use std::io::Read;
 use std::io::Error;
 use std::path::Path;
+use std::thread;
+use std::time::Duration;
 use regex::Regex;
 use nickel::{Nickel, Mountable, StaticFilesHandler, HttpRouter, Request, Response, MiddlewareResult};
 use hyper::header::Location;
@@ -59,6 +61,8 @@ fn aux_load_config() -> Result<CortexConfig, String> {
 }
 
 fn main() {
+  let _ = thread::spawn(move || { cache_worker(); });
+
   // Any secrets reside in examples/config.json
   let cortex_config = match aux_load_config() {
     Ok(cfg) => cfg,
@@ -83,20 +87,21 @@ fn main() {
     response.set(StatusCode::PermanentRedirect);
     return response.send("")
   });
-  // Root greeter
+
   server.get("/", middleware! { |_, response|
     let mut data = HashMap::new();
     let mut global = HashMap::new();
     global.insert("title".to_string(), "Framework Overview".to_string());
     global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - overview.".to_string());
-    
+
     let backend = Backend::default();
     let corpora = backend.corpora().iter().map(|c| c.to_hash()).collect::<Vec<_>>();
 
     data.insert("global".to_string(),vec![global]);
     data.insert("corpora".to_string(),corpora);
     aux_decorate_uri_encodings(&mut data);
-    return response.render("examples/assets/cortex-overview.html", &data);
+
+    return response.render("examples/assets/cortex-overview.html", &data)
   });
 
   // Admin interface
@@ -111,7 +116,7 @@ fn main() {
     };
     data.insert("global".to_string(),vec![global]);
     aux_decorate_uri_encodings(&mut data);
-    return response.render("examples/assets/cortex-admin.html", &data);
+    return response.render("examples/assets/cortex-admin.html", &data)
   });
 
   // server.get("/add_corpus", middleware! { |request, mut response| 
@@ -213,7 +218,7 @@ fn main() {
   });
 
   let cortex_config2 = cortex_config.clone();
-  server.post("/entry/:service_name/:entry", middleware! { |request, mut response|
+  server.post("/entry/:service_name/:entry", middleware! { |request, response|
     let mut body_bytes = vec![];
     request.origin.read_to_end(&mut body_bytes).unwrap();
     let g_recaptcha_response = from_utf8(&body_bytes[21..]).unwrap();
@@ -264,7 +269,7 @@ fn main() {
       let strip_name_regex = Regex::new(r"/[^/]+$").unwrap();
       strip_name_regex.replace(&entry,"") + "/" + &service_name + ".zip"
     };
-    return response.send_file(Path::new(&zip_path));
+    return response.send_file(Path::new(&zip_path))
   });
 
   server.listen("127.0.0.1:6767");
@@ -315,13 +320,13 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
         global.insert("severity".to_string(),severity.clone().unwrap());
         global.insert("highlight".to_string(), aux_severity_highlight(&severity.clone().unwrap()).to_string());
         template = if severity.is_some() && (severity.clone().unwrap() == "no_problem") {
-          let entries = backend.task_report(&corpus, &service, severity, None, None);
+          let entries = aux_task_report(&mut global, &corpus, &service, severity, None, None);
           // Record the report into "entries" vector
           data.insert("entries".to_string(),entries);
           // And set the task list template
           "examples/assets/cortex-report-task-list.html"
         } else {
-          let categories = backend.task_report(&corpus, &service, severity, None, None);
+          let categories = aux_task_report(&mut global, &corpus, &service, severity, None, None);
           // Record the report into "categories" vector
           data.insert("categories".to_string(),categories);
           // And set the severity template
@@ -332,7 +337,7 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
         global.insert("severity".to_string(),severity.clone().unwrap());
         global.insert("highlight".to_string(), aux_severity_highlight(&severity.clone().unwrap()).to_string());
         global.insert("category".to_string(),category.clone().unwrap());
-        let whats = backend.task_report(&corpus, &service, severity, category, None);
+        let whats = aux_task_report(&mut global, &corpus, &service, severity, category, None);
         // Record the report into "whats" vector
         data.insert("whats".to_string(),whats);
         // And set the category template
@@ -343,7 +348,7 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
         global.insert("highlight".to_string(), aux_severity_highlight(&severity.clone().unwrap()).to_string());
         global.insert("category".to_string(),category.clone().unwrap());
         global.insert("what".to_string(),what.clone().unwrap());
-        let entries = backend.task_report(&corpus, &service, severity, category, what);
+        let entries = aux_task_report(&mut global, &corpus, &service, severity, category, what);
         // Record the report into "entries" vector
         data.insert("entries".to_string(),entries);
         // And set the task list template
@@ -448,4 +453,119 @@ fn aux_check_captcha(g_recaptcha_response : &str, captcha_secret: &str) -> bool 
     _ => {}
   };
   return verified
+}
+
+fn aux_task_report(global: &mut HashMap<String, String>, corpus: &Corpus, service: &Service, severity : Option<String>, category: Option<String>, what :Option<String>) -> Vec<HashMap<String, String>>{
+  let key_tail = match severity.clone() {
+    Some(severity) => {
+      let cat_tail = match category.clone() {
+        Some(category) => {
+          let what_tail = match what.clone() {
+            Some(what) => "_".to_string() + &what,
+            None => String::new()
+          };
+          "_".to_string() + &category + &what_tail
+        },
+        None => String::new()
+      };
+      "_".to_string() + &severity + &cat_tail
+    },
+    None => String::new()
+  };
+  let cache_key : String = corpus.id.unwrap().to_string() + "_" + &service.id.unwrap().to_string() + &key_tail;
+  let cache_key_time = cache_key.clone() + "_time";
+  let redis_client = redis::Client::open("redis://127.0.0.1/").unwrap(); // TODO: Better error handling
+  let redis_connection = redis_client.get_connection().unwrap();
+  let cache_val : Result<String,_> = redis_connection.get(cache_key.clone());
+  let fetched_report;
+  let time_val : String;
+
+  match cache_val {
+    Ok(cached_report_json) => {
+      let cached_report = json::decode(&cached_report_json).unwrap_or(Vec::new());
+      if cached_report.is_empty() {
+        let backend = Backend::default();
+        let report : Vec<HashMap<String, String>> = backend.task_report(corpus, service, severity, category, what);
+        let report_json : String = json::encode(&report).unwrap();
+        // println!("SET {:?}", cache_key);
+        let _ : () = redis_connection.set(cache_key, report_json).unwrap();
+        time_val = time::now().rfc822().to_string();
+        let _ : () = redis_connection.set(cache_key_time, time_val.clone()).unwrap();
+        fetched_report = report;
+      } else {
+        // Get the report time, so that the user knows where the data is coming from
+        time_val = redis_connection.get(cache_key_time).unwrap_or(time::now().rfc822().to_string());
+        fetched_report = cached_report;
+      }
+    },
+    Err(_) => {
+      let backend = Backend::default();
+      let report = backend.task_report(corpus, service, severity, category, what);
+      let report_json : String = json::encode(&report).unwrap();
+      // println!("SET2 {:?}", cache_key);
+      let _ : () = redis_connection.set(cache_key, report_json).unwrap();
+      time_val = time::now().rfc822().to_string();
+      let _ : () = redis_connection.set(cache_key_time, time_val.clone()).unwrap();
+      fetched_report = report;
+    }
+  }
+  // Setup the return
+  global.insert("report_time".to_string(), time_val);
+  return fetched_report;
+}
+
+fn cache_worker() {
+  let redis_client = redis::Client::open("redis://127.0.0.1/").unwrap(); // TODO: Better error handling
+  let redis_connection = redis_client.get_connection().unwrap();
+  let backend = Backend::default();
+  let mut global_stub : HashMap<String,String> = HashMap::new();
+  let mut queued_cache : HashMap<String, usize> = HashMap::new();
+  loop {
+    // each corpus+service (non-import)
+    for corpus in backend.corpora().iter() {
+      let services_result = corpus.select_services(&backend.connection);
+      match services_result {
+        Err(_) => {},
+        Ok(services) => {
+          for service in services.iter() {
+            if service.name == "import" {continue;}
+            // Pages we'll cache:
+            let report = backend.progress_report(corpus, service);
+            let zero : f64 = 0.0;
+            let huge : usize = 999999;
+            let queued_count_f64 = report.get("queued").unwrap_or(&zero);
+            let queued_count : usize = *queued_count_f64 as usize; 
+            let key_base : String = corpus.id.unwrap().to_string() + "_" + &service.id.unwrap().to_string();
+            // Only recompute the inner pages if we are seeing a change / first visit, on the top corpus+service level
+            if *queued_cache.get(&key_base).unwrap_or(&huge) != queued_count {
+              // first cache the count for the next check:
+              queued_cache.insert(key_base.clone(), queued_count);
+              // each reported severity (fatal, warning, error)
+              for severity in vec!["fatal".to_string(), "error".to_string(), "warning".to_string()].iter() {
+                // most importantly, DEL the key from Redis!
+                let key_severity = key_base.clone() + "_" + severity;
+                //println!("DEL {:?}", key_severity);
+                let _ : () = redis_connection.del(key_severity.clone()).unwrap_or(());
+                if *report.get(severity).unwrap_or(&zero) > 0.0 {
+                  // cache category page
+                  let category_report = aux_task_report(&mut global_stub, &corpus, &service, Some(severity.to_string()), None, None);
+                  // for each category, cache the what page
+                  for cat_hash in category_report.iter() {
+                    let category = cat_hash.get("name").unwrap();
+                    if category == "total" {continue;}
+                    let key_category = key_severity.clone() + "_" + category;
+                    // println!("  DEL {:?}", key_category);
+                    let _ : () = redis_connection.del(key_category).unwrap_or(());
+                    let _what_report = aux_task_report(&mut global_stub, &corpus, &service, Some(severity.to_string()), Some(category.to_string()), None);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    // Take a minute before we recheck.
+    thread::sleep(Duration::new(60,0));
+  }
 }
