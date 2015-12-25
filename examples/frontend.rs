@@ -38,6 +38,7 @@ use cortex::sysinfo;
 use cortex::backend::{Backend};
 use cortex::data::{Corpus, CortexORM, Service, Task};
 
+static UNKNOWN: &'static str = "_unknown_";
 
 #[derive(RustcDecodable, RustcEncodable, Debug, Clone)]
 struct CortexConfig {
@@ -164,7 +165,7 @@ fn main() {
     let mut data = HashMap::new();
     let mut global = HashMap::new();
     let backend = Backend::default();
-    let corpus_name = aux_uri_unescape(request.param("corpus_name")).unwrap();
+    let corpus_name = aux_uri_unescape(request.param("corpus_name")).unwrap_or(UNKNOWN.to_string());
     let corpus_result = Corpus{id: None, name: corpus_name.to_string(), path : String::new(), complex : true}.select_by_key(&backend.connection);
     match corpus_result {
       Ok(corpus_select) => {
@@ -219,26 +220,45 @@ fn main() {
   let cortex_config2 = cortex_config.clone();
   server.post("/entry/:service_name/:entry", middleware! { |request, response|
     let mut body_bytes = vec![];
-    request.origin.read_to_end(&mut body_bytes).unwrap();
-    let g_recaptcha_response = from_utf8(&body_bytes[21..]).unwrap();
+    request.origin.read_to_end(&mut body_bytes).unwrap_or(0);
+    let g_recaptcha_response = from_utf8(&body_bytes[21..]).unwrap_or(&UNKNOWN);
     // Check if we hve the g_recaptcha_response in Redis, then reuse
-    let redis_client = redis::Client::open("redis://127.0.0.1/").unwrap(); // TODO: Better error handling
-    let redis_connection = redis_client.get_connection().unwrap();
-    let quota : usize = redis_connection.get(g_recaptcha_response).unwrap_or(0);
+    let mut redis_opt = None;
+    let quota : usize = match redis::Client::open("redis://127.0.0.1/") {
+      Err(_) => 0,
+      Ok(redis_client) => match redis_client.get_connection() {
+        Err(_) => 0,
+        Ok(redis_connection) => {
+          let quota = redis_connection.get(g_recaptcha_response).unwrap_or(0);
+          redis_opt = Some(redis_connection);
+          quota
+        }
+      }
+    };
     let captcha_verified = if quota > 0 {
       if quota == 1 {
-        // Remove if last
-        let _ : () = redis_connection.del(g_recaptcha_response).unwrap();
+        match &redis_opt {
+          &Some(ref redis_connection) => {
+            // Remove if last
+            let _ : () = redis_connection.del(g_recaptcha_response).unwrap_or(());
+            // We have quota available, decrement it
+            let _ : () = redis_connection.set(g_recaptcha_response, quota-1).unwrap_or(());
+          },
+          &None => {} // compatibility mode: redis has ran away?
+        };
       }
-      // We have quota available, decrement it
-      let _ : () = redis_connection.set(g_recaptcha_response, quota-1).unwrap();
       // And allow operation
       true
     } else {
       let check_val = aux_check_captcha(g_recaptcha_response, &cortex_config2.captcha_secret);
       if check_val {
-        // Add a reuse quota if things check out, 19 more downloads
-        let _ : () = redis_connection.set(g_recaptcha_response, 19).unwrap();
+        match &redis_opt {
+          &Some(ref redis_connection) => {
+            // Add a reuse quota if things check out, 19 more downloads
+            let _ : () = redis_connection.set(g_recaptcha_response, 19).unwrap_or(());
+          },
+          &None => {} 
+        };
       }
       check_val
     };
@@ -250,17 +270,17 @@ fn main() {
     }
     println!("-- serving verified human request for entry download");
 
-    let service_name = aux_uri_unescape(request.param("service_name")).unwrap();
-    let entry_taskid = aux_uri_unescape(request.param("entry")).unwrap();
+    let service_name = aux_uri_unescape(request.param("service_name")).unwrap_or(UNKNOWN.to_string());
+    let entry_taskid = aux_uri_unescape(request.param("entry")).unwrap_or(UNKNOWN.to_string());
     let placeholder_task = Task {
-      id: Some(entry_taskid.parse::<i64>().unwrap()),
+      id: Some(entry_taskid.parse::<i64>().unwrap_or(0)),
       entry: String::new(),
       corpusid : 0,
       serviceid : 0,
       status : 0
     };
     let backend = Backend::default();
-    let task = backend.sync(&placeholder_task).unwrap(); // TODO: Error-reporting
+    let task = backend.sync(&placeholder_task).unwrap_or(placeholder_task); // TODO: Error-reporting
     let entry = task.entry;
     let zip_path = if service_name == "import" {
       entry }
@@ -279,8 +299,8 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
   let mut global = HashMap::new();
   let backend = Backend::default();
 
-  let corpus_name = aux_uri_unescape(request.param("corpus_name")).unwrap();
-  let service_name = aux_uri_unescape(request.param("service_name")).unwrap();
+  let corpus_name = aux_uri_unescape(request.param("corpus_name")).unwrap_or(UNKNOWN.to_string());
+  let service_name = aux_uri_unescape(request.param("service_name")).unwrap_or(UNKNOWN.to_string());
   let severity = aux_uri_unescape(request.param("severity"));
   let category = aux_uri_unescape(request.param("category"));
   let what = aux_uri_unescape(request.param("what"));
@@ -514,8 +534,8 @@ fn aux_task_report(global: &mut HashMap<String, String>, corpus: &Corpus, servic
 }
 
 fn cache_worker() {
-  let redis_client = redis::Client::open("redis://127.0.0.1/").unwrap(); // TODO: Better error handling
-  let redis_connection = redis_client.get_connection().unwrap();
+  let redis_client = redis::Client::open("redis://127.0.0.1/").unwrap_or(panic!("Redis connection failed, please boot up redis and restart the frontend!"));
+  let redis_connection = redis_client.get_connection().unwrap_or(panic!("Redis connection failed, please boot up redis and restart the frontend!"));
   let backend = Backend::default();
   let mut global_stub : HashMap<String,String> = HashMap::new();
   let mut queued_cache : HashMap<String, usize> = HashMap::new();
@@ -534,7 +554,7 @@ fn cache_worker() {
             let huge : usize = 999999;
             let queued_count_f64 = report.get("queued").unwrap_or(&zero);
             let queued_count : usize = *queued_count_f64 as usize; 
-            let key_base : String = corpus.id.unwrap().to_string() + "_" + &service.id.unwrap().to_string();
+            let key_base : String = corpus.id.unwrap_or(0).to_string() + "_" + &service.id.unwrap_or(0).to_string();
             // Only recompute the inner pages if we are seeing a change / first visit, on the top corpus+service level
             if *queued_cache.get(&key_base).unwrap_or(&huge) != queued_count {
               // first cache the count for the next check:
@@ -550,7 +570,8 @@ fn cache_worker() {
                   let category_report = aux_task_report(&mut global_stub, &corpus, &service, Some(severity.to_string()), None, None);
                   // for each category, cache the what page
                   for cat_hash in category_report.iter() {
-                    let category = cat_hash.get("name").unwrap();
+                    let string_unknown = UNKNOWN.to_string();
+                    let category = cat_hash.get("name").unwrap_or(&string_unknown);
                     if category == "total" {continue;}
                     let key_category = key_severity.clone() + "_" + category;
                     // println!("  DEL {:?}", key_category);
