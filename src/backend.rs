@@ -390,7 +390,13 @@ impl Backend {
           },
           _ => Vec::new()
         }}
-        else {match category {
+        else {
+          let total_count_query = self.connection.prepare("select count(*) from tasks WHERE serviceid=$1 and corpusid=$2;").unwrap();
+          let total_tasks : i64 = match total_count_query.query(&[&s.id.unwrap(), &c.id.unwrap()]) {
+            Err(_) => 0,
+            Ok(count) => count.get(0).get(0)
+          };
+          match category {
           // using ::int4 since the rust postgresql wrapper can't map Numeric into Rust yet, but it is fine with bigint (as i64)
           None => match self.connection.prepare("select category, count(*) as task_count, sum(total_counts::int4) from (
               select logs.category, logs.taskid, count(*) as total_counts from tasks LEFT OUTER JOIN logs ON (tasks.taskid=logs.taskid) WHERE serviceid=$1 and corpusid=$2 and status=$3 and severity=$4
@@ -399,13 +405,11 @@ impl Backend {
               match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status, &severity_name]) {
                 Ok(category_rows) => {
                   // How many tasks total in this category?
-                  match self.connection.prepare("select count(distinct(taskid)), count(*) from (
-                    select logs.taskid from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4) as tmp;") {
+                  match self.connection.prepare("select count(*) from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4;") {
                   Ok(total_query) => {
                     match total_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status, &severity_name]) {
                       Ok(total_rows) => {
-                        let total_tasks : i64 = total_rows.get(0).get(0);
-                        let total_messages : i64 = total_rows.get(0).get(1);
+                        let total_messages : i64 = total_rows.get(0).get(0);
                         Backend::aux_task_rows_stats(category_rows, total_tasks, total_messages)
                       },
                       _ => Vec::new()
@@ -428,13 +432,11 @@ impl Backend {
               Ok(select_query) => match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status, &severity_name, &category_name]) {
                 Ok(what_rows) => {
                   // How many tasks total in this category?
-                  match self.connection.prepare("select count(distinct(logs.taskid)), count(*) from tasks, logs 
-                    where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and category=$5;") {
+                  match self.connection.prepare("select count(*) from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and category=$5;") {
                   Ok(total_query) => {
                     match total_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status, &severity_name, &category_name]) {
                       Ok(total_rows) => {
-                        let total_tasks : i64 = total_rows.get(0).get(0);
-                        let total_messages : i64 = total_rows.get(0).get(1);
+                        let total_messages : i64 = total_rows.get(0).get(0);
                         Backend::aux_task_rows_stats(what_rows, total_tasks, total_messages)
                       },
                       _ => Vec::new()
