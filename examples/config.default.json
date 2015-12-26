@@ -1,0 +1,8 @@
+{
+  "captcha_secret": "the secret goes in here.",
+  "rerun_tokens" : {
+    "token1" : "username1",
+    "token2" : "username2",
+    "etc" : "etc"
+  }
+}
