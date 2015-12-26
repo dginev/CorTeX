@@ -155,3 +155,19 @@ h1 {
 .report-duration[data-report-duration=''] {
   visibility: hidden;
 }
+.rerun-total-count {
+  font-weight: bold;
+  font-size: 1.4em;
+}
+.rerun-banner {
+  padding-left: 20px;
+}
+.rerun-banner-segment {
+  display: block;
+  color: #777;
+  font-size: 1.2em;
+  padding-bottom: 10px;
+}
+.rerun-banner-segment:empty{
+  visibility: hidden;
+}

@@ -27,7 +27,7 @@ use nickel::{Nickel, Mountable, StaticFilesHandler, HttpRouter, Request, Respons
 use hyper::header::Location;
 use nickel::extensions::{Referer, Redirect};
 use hyper::Client;
-use nickel::status::StatusCode;
+use nickel::status::StatusCode::{self, Forbidden};
 // use nickel::QueryString;
 // use nickel::status::StatusCode;
 // use hyper::header::Location;
@@ -42,7 +42,8 @@ static UNKNOWN: &'static str = "_unknown_";
 
 #[derive(RustcDecodable, RustcEncodable, Debug, Clone)]
 struct CortexConfig {
-  captcha_secret : String
+  captcha_secret : String,
+  rerun_tokens : HashMap<String, String>
 }
 
 // fn slurp_file (path : &'static str) -> Result<String, Error> {
@@ -79,7 +80,8 @@ fn main() {
   server.mount("/public/", StaticFilesHandler::new("public/"));
   //middleware function logs each request to console
   server.utilize(middleware! { |request|
-      println!("logging request: {:?}", request.origin.uri);
+      println!("{:?} {:?}", request.origin.method, request.origin.uri);
+      println!("    from {:?}", request.origin.remote_addr);
   });
 
   server.get("/robots.txt", middleware! { |_, mut response|
@@ -291,6 +293,24 @@ fn main() {
     return response.send_file(Path::new(&zip_path))
   });
 
+  // Rerun queries
+  let rerun_config1 = cortex_config.clone();
+  server.post("/rerun/:corpus_name/:service_name", middleware! { |request, response|
+    return serve_rerun(&rerun_config1, request, response)
+  });
+  let rerun_config2 = cortex_config.clone();
+  server.post("/rerun/:corpus_name/:service_name/:severity", middleware! { |request, response|
+    return serve_rerun(&rerun_config2, request, response)
+  });
+  let rerun_config3 = cortex_config.clone();
+  server.post("/rerun/:corpus_name/:service_name/:severity/:category", middleware! { |request, response|
+    return serve_rerun(&rerun_config3, request, response)
+  });
+  let rerun_config4 = cortex_config.clone(); // TODO: There has to be a better way...
+  server.post("/rerun/:corpus_name/:service_name/:severity/:category/:what", middleware! { |request, response|
+    return serve_rerun(&rerun_config4, request, response)
+  });
+
   server.listen("127.0.0.1:6767");
 }
 
@@ -393,6 +413,37 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
   // let message = "Error: Corpus ".to_string() + &corpus_name + " does not exist, aborting!";
   return response.send("")
 }
+
+fn serve_rerun<'a, D>(config : &CortexConfig, request: &mut Request<D>, response: Response<'a, D>) -> MiddlewareResult<'a, D>  {
+  let corpus_name = aux_uri_unescape(request.param("corpus_name")).unwrap_or(UNKNOWN.to_string());
+  let service_name = aux_uri_unescape(request.param("service_name")).unwrap_or(UNKNOWN.to_string());
+  let severity = aux_uri_unescape(request.param("severity"));
+  let category = aux_uri_unescape(request.param("category"));
+  let what = aux_uri_unescape(request.param("what"));
+
+  // Ensure we're given a valid rerun token to rerun, or anyone can wipe the cortex results
+  let mut body_bytes = vec![];
+  request.origin.read_to_end(&mut body_bytes).unwrap_or(0);
+  let token = from_utf8(&body_bytes).unwrap_or(&UNKNOWN);
+  let user_opt = config.rerun_tokens.get(token);
+  match user_opt {
+    Some(user) => {
+
+      println!("-- User {:?}: Mark for rerun on {:?}/{:?}/{:?}/{:?}/{:?}", user, corpus_name, service_name, severity, category, what);
+    },
+    None => return response.error(Forbidden, "Access denied")
+  };
+  
+  // let mut data = HashMap::new();
+  // let mut global = HashMap::new();
+  // let backend = Backend::default();
+
+
+
+  
+  return response.send("");
+}
+
 fn aux_severity_highlight<'highlight>(severity : &'highlight str) -> &'highlight str {
    match severity {// Bootstrap highlight classes
     "no_problem" => "success",
@@ -534,8 +585,14 @@ fn aux_task_report(global: &mut HashMap<String, String>, corpus: &Corpus, servic
 }
 
 fn cache_worker() {
-  let redis_client = redis::Client::open("redis://127.0.0.1/").unwrap_or(panic!("Redis connection failed, please boot up redis and restart the frontend!"));
-  let redis_connection = redis_client.get_connection().unwrap_or(panic!("Redis connection failed, please boot up redis and restart the frontend!"));
+  let redis_client = match redis::Client::open("redis://127.0.0.1/") {
+    Ok(client) => client,
+    _ => panic!("Redis connection failed, please boot up redis and restart the frontend!")
+  };
+  let redis_connection = match redis_client.get_connection() { 
+    Ok(conn) => conn,
+    _ => panic!("Redis connection failed, please boot up redis and restart the frontend!")
+  };
   let backend = Backend::default();
   let mut global_stub : HashMap<String,String> = HashMap::new();
   let mut queued_cache : HashMap<String, usize> = HashMap::new();
