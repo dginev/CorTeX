@@ -11,7 +11,7 @@ use cortex::data::Corpus;
 
 use std::vec::Vec;
 use std::fs;
-use std::io::{Error};
+// use std::io::{Error};
 
 fn assert_files(files:Vec<&str>) -> Result<(),std::io::Error> {
   for file in files.iter() {
