@@ -173,52 +173,63 @@ impl Backend {
     Ok(())
   }
 
-  // WIP:
-  // pub fn mark_rerun(&self, c : &Corpus, s : &Service, 
-  //   severity: Option<String>, category: Option<String>, what: Option<String>) -> Result<(), Error> {
-  //
-  //   let mut rng = thread_rng();
-  //   let mark: u16 = rng.gen();
-  //
-  //   match severity {
-  //     Some(severity) => {
-  //       match category {
-  //         Some(category) => {
-  //           match what {
-  //             Some(what) => {
-  //               try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and taskid in (select distinct(taskid) from logs where severity=$5 and category=$6 and what=$7)");
-  //             },
-  //             None => {
-  //               try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and taskid in (select distinct(taskid) from logs where severity=$5 and category=$6)");
-  //             }
-  //           };
-  //         },
-  //         None => {
-  //           try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and status=$4");
-  //         }
-  //       }
-  //     },
-  //     None => {
-  //       try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3");
-  //     }
-  //   }
-  //  
-  //
-  //
-  //   try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and taskid in 
-  //     (select distinct(taskid) from logs where severity=$4 and category=$5 and what=$6);", 
-  //     &[&(mark as i32), &service.id.unwrap()]));
-  //
-  //   // delete from logs where taskid in (select taskid from tasks where corpusid=? and serviceid=? and status=$mark);
-  //   // update tasks set status=-5 where status=$mark
-  //
-        // Maybe using the from subtrable syntax is best ????
-        //update tasks as ut set status=-500 from (select taskid from logs where severity='fatal' and category='malformed') sub where ut.corpusid=4 and ut.serviceid=3 and  ut.taskid = sub.taskid ; 
+  pub fn mark_rerun(&self, corpus : &Corpus, service : &Service,
+    severity: Option<String>, category: Option<String>, what: Option<String>) -> Result<(), Error> {
 
-  //   // update tasks set status=-500 where corpusid=4 and serviceid=3 and taskid in ();
-  //   // delete from logs where taskid in (select taskid from tasks where corpusid=4 and serviceid=3 and status=-500);
-  //
-  // }
+    let mut rng = thread_rng();
+    let mark_rng: u16 = rng.gen();
+    let mark : i32 = -1 * (mark_rng as i32);
+
+    // First, mark as blocked all of the tasks in the chosen scope, using a special mark
+    match severity {
+      Some(severity) => {
+        match category {
+          Some(category) => {
+            match what {
+              Some(what) => { // All tasks in a "what" class
+                try!(self.connection.execute(
+                  "UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and taskid in (select distinct(taskid) from logs where severity=$4 and category=$5 and what=$6)",
+                  &[&mark, &corpus.id.unwrap(), &service.id.unwrap(), &severity, &category, &what])
+                );
+              },
+              None => { // All tasks in a category
+                try!(self.connection.execute(
+                  "UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and taskid in (select distinct(taskid) from logs where severity=$4 and category=$5)",
+                  &[&mark, &corpus.id.unwrap(), &service.id.unwrap(), &severity, &category])
+                );
+              }
+            };
+          },
+          None => { // All tasks in a certain status
+            let status : i32 = TaskStatus::from_key(&severity).raw();
+            try!(self.connection.execute(
+              "UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and status=$4",
+              &[&mark, &corpus.id.unwrap(), &service.id.unwrap(), &status])
+            );
+          }
+        }
+      },
+      None => { // Entire corpus
+        try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3",
+          &[&mark, &corpus.id.unwrap(), &service.id.unwrap()])
+        );
+      }
+    };
+
+    // Next, delete all logs for the blocked tasks.
+    // Note that if we are using a negative blocking status, this query should get sped up via an "Index Scan using log_taskid on logs"
+    try!(self.connection.execute(
+      "DELETE from logs USING tasks WHERE logs.taskid=tasks.taskid and tasks.status=$1 and tasks.corpusid=$2 and tasks.serviceid=$3;",
+      &[&mark, &corpus.id.unwrap(), &service.id.unwrap()])
+    );
+
+    // Lastly, switch all blocked tasks to "queued", and complete the rerun mark pass.
+    try!(self.connection.execute(
+      "UPDATE tasks set status=-5 where status=$1 and corpusid=$2 and serviceid=$3;",
+      &[&mark, &corpus.id.unwrap(), &service.id.unwrap()])
+    );
+    Ok(())
+  }
 
   pub fn sync<D: CortexORM + Clone>(&self, d: &D) -> Result<D, Error> {
     let synced = match d.get_id() {
@@ -281,10 +292,6 @@ impl Backend {
 
   pub fn clear_limbo_tasks(&self) -> Result<(), Error> {
     try!(self.connection.execute("UPDATE tasks SET status=$1 WHERE status > $2", &[&TaskStatus::TODO.raw(), &TaskStatus::NoProblem.raw(),]));
-    Ok(())
-  }
-
-  pub fn rerun_tasks(&self) -> Result<(), Error> {
     Ok(())
   }
 

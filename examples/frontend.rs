@@ -426,22 +426,40 @@ fn serve_rerun<'a, D>(config : &CortexConfig, request: &mut Request<D>, response
   request.origin.read_to_end(&mut body_bytes).unwrap_or(0);
   let token = from_utf8(&body_bytes).unwrap_or(&UNKNOWN);
   let user_opt = config.rerun_tokens.get(token);
-  match user_opt {
-    Some(user) => {
-
-      println!("-- User {:?}: Mark for rerun on {:?}/{:?}/{:?}/{:?}/{:?}", user, corpus_name, service_name, severity, category, what);
-    },
-    None => return response.error(Forbidden, "Access denied")
+  let user = match user_opt {
+    None => return response.error(Forbidden, "Access denied"),
+    Some(user) => user
   };
+  println!("-- User {:?}: Mark for rerun on {:?}/{:?}/{:?}/{:?}/{:?}", user, corpus_name, service_name, severity, category, what);
   
-  // let mut data = HashMap::new();
-  // let mut global = HashMap::new();
-  // let backend = Backend::default();
-
-
-
-  
-  return response.send("");
+  // Run (and measure) the three rerun queries
+  let report_start = time::get_time();
+  let backend = Backend::default();
+  // Build corpus and service objects
+  let placeholder_corpus = Corpus{id: None, name: corpus_name.to_string(), path : String::new(), complex : true};
+  let corpus = match placeholder_corpus.select_by_key(&backend.connection) {
+    Err(_) => return response.error(Forbidden, "Access denied"),
+    Ok(corpus_opt) => match corpus_opt {
+      None => return response.error(Forbidden, "Access denied"),
+      Some(corpus) => corpus
+    }
+  };
+  let placeholder_service = Service{id: None, name: service_name.clone(),  complex: true, version: 0.1, inputconverter: None, inputformat: String::new(), outputformat:String::new()};
+  let service = match placeholder_service.select_by_key(&backend.connection) {
+    Err(_) => return response.error(Forbidden, "Access denied"),
+    Ok(service_opt) => match service_opt {
+      None => return response.error(Forbidden, "Access denied"),
+      Some(service) => service
+    }
+  };
+  let rerun_result = backend.mark_rerun(&corpus, &service, severity, category, what);
+  let report_end = time::get_time();
+  let report_duration = (report_end - report_start).num_milliseconds();
+  println!("-- User {:?}: Mark for rerun took {:?}ms", user, report_duration);
+  return match rerun_result {
+    Err(_) => response.error(Forbidden, "Access denied"), // TODO: better error message?
+    Ok(_) => response.send("")
+  }
 }
 
 fn aux_severity_highlight<'highlight>(severity : &'highlight str) -> &'highlight str {
@@ -609,8 +627,8 @@ fn cache_worker() {
             let report = backend.progress_report(corpus, service);
             let zero : f64 = 0.0;
             let huge : usize = 999999;
-            let queued_count_f64 = report.get("queued").unwrap_or(&zero);
-            let queued_count : usize = *queued_count_f64 as usize; 
+            let queued_count_f64 : f64 = report.get("queued").unwrap_or(&zero) + report.get("todo").unwrap_or(&zero);
+            let queued_count : usize = queued_count_f64 as usize; 
             let key_base : String = corpus.id.unwrap_or(0).to_string() + "_" + &service.id.unwrap_or(0).to_string();
             // Only recompute the inner pages if we are seeing a change / first visit, on the top corpus+service level
             if *queued_cache.get(&key_base).unwrap_or(&huge) != queued_count {
