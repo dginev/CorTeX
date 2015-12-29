@@ -642,6 +642,7 @@ fn cache_worker() {
                 let _ : () = redis_connection.del(key_severity.clone()).unwrap_or(());
                 if *report.get(severity).unwrap_or(&zero) > 0.0 {
                   // cache category page
+                  thread::sleep(Duration::new(1,0)); // Courtesy sleep of 1 second.
                   let category_report = aux_task_report(&mut global_stub, &corpus, &service, Some(severity.to_string()), None, None);
                   // for each category, cache the what page
                   for cat_hash in category_report.iter() {
@@ -651,6 +652,7 @@ fn cache_worker() {
                     let key_category = key_severity.clone() + "_" + category;
                     // println!("  DEL {:?}", key_category);
                     let _ : () = redis_connection.del(key_category).unwrap_or(());
+                    thread::sleep(Duration::new(1,0)); // Courtesy sleep of 1 second.
                     let _what_report = aux_task_report(&mut global_stub, &corpus, &service, Some(severity.to_string()), Some(category.to_string()), None);
                   }
                 }
@@ -660,7 +662,7 @@ fn cache_worker() {
         }
       }
     }
-    // Take a minute before we recheck.
-    thread::sleep(Duration::new(60,0));
+    // Take two minutes before we recheck.
+    thread::sleep(Duration::new(120,0));
   }
 }
