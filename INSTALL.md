@@ -51,14 +51,14 @@
  ```
 ALTER TABLE logs  
 SET (autovacuum_enabled = true,
-autovacuum_vacuum_scale_factor = 0.001,
+autovacuum_vacuum_scale_factor = 0.0002,
 autovacuum_analyze_scale_factor = 0.0005,
 autovacuum_analyze_threshold = 50,
 autovacuum_vacuum_threshold = 50);
 
 ALTER TABLE tasks  
 SET (autovacuum_enabled = true,
-autovacuum_vacuum_scale_factor = 0.001,
+autovacuum_vacuum_scale_factor = 0.0002,
 autovacuum_analyze_scale_factor = 0.0005,
 autovacuum_analyze_threshold = 50,
 autovacuum_vacuum_threshold = 50);
