@@ -353,6 +353,7 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
         for (key, val) in report.iter() {
           global.insert(key.clone(), val.to_string());
         }
+        global.insert("report_time".to_string(), time::now().rfc822().to_string());
         template = "examples/assets/cortex-report.html";
       }
       else if category.is_none() { // Severity-level report
