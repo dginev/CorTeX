@@ -5,11 +5,11 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! # The CorTeX library in Rust
-//! The original library can be found at https://github.com/dginev/CorTeX
+//! A general purpose processing framework for corpora of scientific documents
 
 #![doc(html_root_url = "https://dginev.github.io/rust-cortex/")]
 #![doc(html_logo_url = "https://raw.githubusercontent.com/dginev/rust-cortex/master/public/img/logo.jpg")]
+#![warn(missing_docs)]
 
 extern crate glob;
 extern crate libxml;

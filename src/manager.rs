@@ -231,7 +231,7 @@ impl Server {
                 ventilator.send(&[],0).unwrap(); }
               else {
                 // Regular services fetch the task payload and transfer it to the worker
-                let file_opt = service.prepare_input_stream(current_task.clone());
+                let file_opt = current_task.prepare_input_stream();
                 if file_opt.is_ok() {
                   let mut file = file_opt.unwrap();        
                   let mut total_outgoing : usize = 0;

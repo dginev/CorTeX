@@ -23,11 +23,17 @@ use Archive::*;
 
 /// A minimalistic ORM trait for CorTeX data items
 pub trait CortexORM {
+  /// Select from TaskDB via the primary id
   fn select_by_id<'a>(&'a self, connection: &'a Connection) -> Result<Option<Self>, Error> where Self: Sized;
+  /// Select from TaskDB via a struct-specific uniquely identifying key
   fn select_by_key<'a>(&'a self, connection : &'a Connection) -> Result<Option<Self>,Error> where Self: Sized;
+  /// Inser the row identified by this struct into the TaskDB (overwrite if present)
   fn insert(&self, connection: &Connection) -> Result<(),Error>;
+  /// Delete the row identified by this struct from the TaskDB
   fn delete(&self, connection: &Connection) -> Result<(),Error>;
+  /// Construct a struct from a given TaskDB row
   fn from_row(row : Row) -> Self;
+  /// Obtain the id of the struct, if any
   fn get_id(&self) -> Option<i32>;
 }
 
@@ -35,11 +41,17 @@ pub trait CortexORM {
 // Tasks
 use std::fmt;
 #[derive(Clone)]
+/// Struct representing a CorTeX `Task`, stored in the tasks table
 pub struct Task {
+  /// optional id (None for mock / yet-to-be-inserted rows)
   pub id : Option<i64>,
+  /// entry path on the file system
   pub entry: String,
+  /// id of the service owning this task
   pub serviceid: i32,
+  /// id of the corpus hosting this task
   pub corpusid: i32,
+  /// current processing status of this task
   pub status: i32
 }
 impl fmt::Display for Task {
@@ -114,6 +126,8 @@ impl CortexORM for Task {
 }
 
 impl Task {
+  /// Generates a `TaskReport`, given the path to a result archive from a CorTeX processing job
+  /// Expects a "cortex.log" file in the archive, following the LaTeXML messaging conventions
   pub fn generate_report(&self, result: &Path) -> TaskReport {
     // println!("Preparing report for {:?}, result at {:?}",self.entry, result);
     let mut messages = Vec::new();
@@ -247,43 +261,73 @@ impl Task {
     }
     messages
   }
+
+  /// Returns an open file handle to the task's entry
+  pub fn prepare_input_stream(&self) -> Result<File, Error> {
+    let entry_path = Path::new(&self.entry);
+    let file = try!(File::open(entry_path));
+    Ok(file)
+  }
 }
-/// Task in progress (pending dispatched tasks)
+
 #[derive(Clone)]
+/// Task in progress (pending dispatched tasks)
 pub struct TaskProgress {
+  /// the `Task` struct being tracked
   pub task : Task,
+  /// time of entering the job queue / first dispatch
   pub created_at : i64,
+  /// number of dispatch retries
   pub retries : i64
 }
 impl TaskProgress {
+  /// What is the latest admissible time for this task to be completed?
   pub fn expected_at(&self) -> i64 {
     self.created_at + ((self.retries + 1)*3600)
   }
 }
-/// Task Reports (completed tasks)
+
 #[derive(Clone)]
+/// Task Reports (completed tasks)
 pub struct TaskReport {
+  /// the `Task` we are reporting on
   pub task : Task,
+  /// the reported processing status
   pub status : TaskStatus,
+  /// a vector of `TaskMessage` log entries
   pub messages : Vec<TaskMessage>
 }
-/// A container for LaTeXML-convention messages for tasks
+
 #[derive(Clone)]
+/// A container for LaTeXML-convention messages for tasks
 pub struct TaskMessage {
+  /// high level description
+  /// ("fatal", "error", "warning" or "info")
+  pub severity : String,
+  /// mid-level description (open set)
   pub category : String,
-  pub severity : String, 
+  /// low-level description (open set)
   pub what : String, 
+  /// technical details of the message (e.g. localization info)
   pub details : String
 }
-/// An enumeration of the expected CorTeX Task statuses
+
 #[derive(Clone)]
+/// An enumeration of the expected CorTeX task statuses
 pub enum TaskStatus {
+  /// everything went smoothly
   NoProblem,
+  /// minor issues
   Warning,
+  /// major issues
   Error,
+  /// critical/panic issues
   Fatal,
+  /// currently queued for processing
   TODO,
+  /// currently blocked by dependencies
   Blocked(i32),
+  /// currently being processed (marker identifies batch)
   Queued(i32)
 }
 
@@ -298,6 +342,7 @@ impl fmt::Debug for TaskMessage {
   }
 }
 impl TaskStatus {
+  /// Maps the enumeration into the raw ints for the TaskDB
   pub fn raw(&self) -> i32 {
     match self {
       &TaskStatus::NoProblem => -1,
@@ -309,6 +354,7 @@ impl TaskStatus {
       &TaskStatus::Queued(x) => x
     }
   }
+  /// Maps the enumeration into the raw severity string for the TaskDB logs / frontend reports
   pub fn to_key(&self) -> String {
     match self {
       &TaskStatus::NoProblem => "no_problem",
@@ -320,6 +366,7 @@ impl TaskStatus {
       &TaskStatus::Queued(_) => "queued"
     }.to_string()
   }
+  /// Maps from the raw TaskDB value into the enumeration
   pub fn from_raw(num : i32) -> Self {
     match num {
       -1 => TaskStatus::NoProblem,
@@ -331,6 +378,7 @@ impl TaskStatus {
       _ => TaskStatus::Queued(num.clone())
     }
   }
+  /// Maps from the raw severity log values into the enumeration
   pub fn from_key(key : &str) -> Self {
     match key {
       "no_problem" => TaskStatus::NoProblem,
@@ -343,16 +391,24 @@ impl TaskStatus {
       _ => TaskStatus::Fatal
     }
   }
+  /// Returns all raw severity strings as a vector
   pub fn keys() -> Vec<String> {
     ["no_problem", "warning", "error", "fatal", "todo", "blocked", "queued"].iter().map(|&x| x.to_string()).collect::<Vec<_>>()
   }
 }
-/// A CorTeX "Corpus" is a minimal description of a document collection. It is defined by a name, path and simple/complex file system setup.
+
 #[derive(RustcDecodable, RustcEncodable, Clone, Debug)]
+/// A minimal description of a document collection. Defined by a name, path and simple/complex file system setup.
 pub struct Corpus {
+  /// optional id (None for mock / yet-to-be-inserted rows)
   pub id : Option<i32>,
+  /// a human-readable name for this corpus
   pub name : String,
+  /// file system path to corpus root
+  /// (a corpus is held in a single top-level directory)
   pub path : String,
+  /// are we using multiple files to represent a document entry?
+  /// (if unsure, always use "true")
   pub complex : bool
 }
 impl ToJson for Corpus {
@@ -406,6 +462,7 @@ impl CortexORM for Corpus {
   }
 }
 impl Corpus {
+  /// Return a vector of services currently activated on this corpus
   pub fn select_services<'a>(&'a self, connection : &'a Connection) -> Result<Vec<Service>,Error> {
     let stmt = try!(connection.prepare("SELECT distinct(serviceid) FROM tasks WHERE corpusid = $1"));
     let rows = try!(stmt.query(&[&self.id]));
@@ -424,25 +481,33 @@ impl Corpus {
     }
     return Ok(services)
   }
-
+  /// Return a hash representation of the corpus, usually for frontend reports
   pub fn to_hash(&self) -> HashMap<String, String> {
     let mut hm = HashMap::new();
     hm.insert("name".to_string(),self.name.clone());
     hm
   }
 }
-// Services
+
 #[derive(Clone)]
+/// A CorTeX processing Service
 pub struct Service {
+  /// optional id (None for mock / yet-to-be-inserted rows)
   pub id : Option<i32>,
+  /// a human-readable name for this service
   pub name : String,
+  /// a floating-point number to mark the current version (e.g. 0.01)
   pub version : f32,
-  // pub url : String,
+  /// the expected input format for this service (e.g. tex)
   pub inputformat : String,
+  /// the produced output format by this service (e.g. html)
   pub outputformat : String,
   // pub xpath : String,
   // pub resource : String,
+  /// prerequisite input conversion service, if any
   pub inputconverter : Option<String>,
+  /// is this service requiring more than the main textual content of a document?
+  /// mark "true" if unsure
   pub complex : bool, 
 }
 impl fmt::Debug for Service {
@@ -506,7 +571,8 @@ impl CortexORM for Service {
     }
   }
 }
-impl Service { 
+impl Service {
+  /// Select a service from the TaskDB via its human-readable name. Requires a postgres `Connection`.
   pub fn from_name(connection : &Connection, name : String) -> Result<Option<Self>, Error> { 
     let stmt =  try!(connection.prepare("SELECT serviceid,name,version,inputformat,outputformat,inputconverter,complex FROM services WHERE name = $1"));
     let rows = try!(stmt.query(&[&name]));
@@ -517,11 +583,7 @@ impl Service {
       Ok(None)
     }
   }
-  pub fn prepare_input_stream(&self, task: Task) -> Result<File, Error> {
-    let entry_path = Path::new(&task.entry);
-    let file = try!(File::open(entry_path));
-    Ok(file)
-  }
+  /// Returns a hash representation of the `Service`, usually for frontend reports
   pub fn to_hash(&self) -> HashMap<String, String> {
     let mut hm = HashMap::new();
     hm.insert("id".to_string(),match self.id {

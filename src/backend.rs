@@ -19,12 +19,15 @@ use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
 
 use rand::{thread_rng, Rng};
 
-// Only initialize auxiliary resources once and keep them in a Backend struct
+/// The `Backend` struct represents the CorTeX TaskDB
 pub struct Backend {
+  /// the Postgres database `Connection`
   pub connection : Connection
 }
 
+/// By default, use a localhost-only cortex user/pass
 pub static DEFAULT_DB_ADDRESS : &'static str = "postgres://cortex:cortex@localhost/cortex";
+/// Similarly, use a cortex_tester user/pass for tests
 pub static TEST_DB_ADDRESS : &'static str = "postgres://cortex_tester:cortex_tester@localhost/cortex_tester";
 impl Default for Backend {
   fn default() -> Backend {
@@ -35,19 +38,22 @@ impl Default for Backend {
 }
 
 impl Backend {
-  // Globals
+  /// Constructs a new TaskDB representation from a Postgres DB address
   pub fn from_address(address : &str) -> Backend {
    Backend {
       connection: Connection::connect(address, &SslMode::None).unwrap()
     } 
   }
+  /// Constructs the default Backend struct for testing
   pub fn testdb() -> Backend {
    Backend {
       connection: Connection::connect(TEST_DB_ADDRESS.clone(), &SslMode::None).unwrap()
     }
   }
 
-  // Instance methods
+  /// Instance methods
+
+  /// Checks if the TaskDB has been initialized, heuristically, by trying to detect if the `init` service has been added.
   pub fn needs_init(&self) -> bool {
     match self.connection.prepare("SELECT * FROM services where name='init'") {
       Ok(init_check_query) => {
@@ -61,6 +67,7 @@ impl Backend {
       _ => true
     }
   }
+  /// Sets up the CorTeX tables and indexes, dropping existing infrastructure when applicable (hard reset)
   pub fn setup_task_tables(&self) -> postgres::Result<()> {
     let trans = try!(self.connection.transaction());
     // Tasks
@@ -138,6 +145,8 @@ impl Backend {
     Ok(())
   }
 
+  /// Insert a vector of new `Task` tasks into the TaskDB
+  /// For example, on import, or when a new service is activated on a corpus
   pub fn mark_imported(&self, tasks: &Vec<Task>) -> Result<(),Error> {
     let trans = try!(self.connection.transaction());
     for task in tasks {
@@ -149,6 +158,7 @@ impl Backend {
     Ok(())
   }
 
+  /// Insert a vector of `TaskReport` reports into the TaskDB, also marking their tasks as completed with the correct status code.
   pub fn mark_done(&self, reports: &Vec<TaskReport>) -> Result<(),Error> {
     let trans = try!(self.connection.transaction());
     let insert_log_message = trans.prepare("INSERT INTO logs (taskid, severity, category, what, details) values($1,$2,$3,$4,$5)").unwrap();
@@ -173,6 +183,8 @@ impl Backend {
     Ok(())
   }
 
+  /// Given a complex selector, of a `Corpus`, `Service`, and the optional `severity`, `category` and `what`
+  /// mark all matching tasks to be rerun
   pub fn mark_rerun(&self, corpus : &Corpus, service : &Service,
     severity: Option<String>, category: Option<String>, what: Option<String>) -> Result<(), Error> {
 
@@ -231,6 +243,9 @@ impl Backend {
     Ok(())
   }
 
+  /// Generic sync method, attempting to obtain the DB record for a given mock TaskDB datum
+  /// applicable for any struct implementing the `CortexORM` trait
+  /// (for example `Corpus`, `Service`, `Task`)
   pub fn sync<D: CortexORM + Clone>(&self, d: &D) -> Result<D, Error> {
     let synced = match d.get_id() {
       Some(_) => {
@@ -246,6 +261,9 @@ impl Backend {
     }
   }
 
+  /// Generic delete method, attempting to delete the DB record for a given TaskDB datum
+  /// applicable for any struct implementing the `CortexORM` trait
+  /// (for example `Corpus`, `Service`, `Task`)
   pub fn delete<D: CortexORM + Clone>(&self, d: &D) -> Result<(), Error> {
     let d_checked = try!(self.sync(d));
     match d_checked.get_id() {
@@ -253,6 +271,12 @@ impl Backend {
       None => Ok(()) // No ID means we don't really know what to delete.
     }
   }
+
+  /// Generic addition method, attempting to insert in the DB a TaskDB datum
+  /// applicable for any struct implementing the `CortexORM` trait
+  /// (for example `Corpus`, `Service`, `Task`)
+  ///
+  /// Note: Overwrites if the entry already existed.
   pub fn add<D: CortexORM + Clone>(&self, d: D) -> Result<D, Error> {
     let d_checked = try!(self.sync(&d));
     match d_checked.get_id() {
@@ -268,6 +292,7 @@ impl Backend {
     Ok(d_final)
   }
 
+  /// Fetches no more than `limit` queued tasks for a given `Service`
   pub fn fetch_tasks(&self, service: &Service, limit : usize) -> Result<Vec<Task>, Error> {
     match service.id { 
       Some(_) => {}
@@ -290,11 +315,14 @@ impl Backend {
     Ok(rows.iter().map(|row| Task::from_row(row)).collect::<Vec<_>>())
   }
 
+  /// Globally resets any "in progress" tasks back to "queued".
+  /// Particularly useful for dispatcher restarts, when all "in progress" tasks need to be invalidated
   pub fn clear_limbo_tasks(&self) -> Result<(), Error> {
     try!(self.connection.execute("UPDATE tasks SET status=$1 WHERE status > $2", &[&TaskStatus::TODO.raw(), &TaskStatus::NoProblem.raw(),]));
     Ok(())
   }
 
+  /// Activates an existing service on a given corpus path
   pub fn register_service(&self, service: Service, corpus_path: String) -> Result<(),Error> {
     let corpus_placeholder = Corpus {
       id : None,
@@ -321,6 +349,7 @@ impl Backend {
     Ok(())
  }
 
+  /// Returns a vector of currently available corpora in the TaskDB
   pub fn corpora(&self) -> Vec<Corpus> {
     let mut corpora = Vec::new();
     match self.connection.prepare("SELECT corpusid,name,path,complex FROM corpora order by name") {
@@ -339,6 +368,7 @@ impl Backend {
     return corpora;
   }
 
+  /// Provides a progress report, grouped by severity, for a given `Corpus` and `Service` pair
   pub fn progress_report<'report>(&self, c : &Corpus, s : &Service) -> HashMap<String, f64> {
     let mut stats_hash : HashMap<String, f64> = HashMap::new();
     for status_key in TaskStatus::keys().into_iter() {
@@ -368,6 +398,9 @@ impl Backend {
     Backend::aux_stats_compute_percentages(&mut stats_hash, None);
     stats_hash
   }
+
+  /// Given a complex selector, of a `Corpus`, `Service`, and the optional `severity`, `category` and `what`,
+  /// Provide a progress report at the chosen granularity
   pub fn task_report<'report>(&self, c : &Corpus, s : &Service,
     severity: Option<String>, category: Option<String>, what: Option<String>) -> Vec<HashMap<String, String>> {
     match severity {
