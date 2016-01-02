@@ -5,10 +5,11 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
+//! Data structures and traits for each framework component in the Task store
+
 use rustc_serialize::json::{Json, ToJson};
 use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
-// use std::io::Read;
 use std::path::Path;
 use std::str;
 use regex::Regex;
@@ -19,19 +20,17 @@ use postgres::error::Error;
 
 use Archive::*;
 
-// The CorTeX data structures and traits:
-
 /// A minimalistic ORM trait for CorTeX data items
 pub trait CortexORM {
-  /// Select from TaskDB via the primary id
+  /// Select from Task store via the primary id
   fn select_by_id<'a>(&'a self, connection: &'a Connection) -> Result<Option<Self>, Error> where Self: Sized;
-  /// Select from TaskDB via a struct-specific uniquely identifying key
+  /// Select from Task store via a struct-specific uniquely identifying key
   fn select_by_key<'a>(&'a self, connection : &'a Connection) -> Result<Option<Self>,Error> where Self: Sized;
-  /// Inser the row identified by this struct into the TaskDB (overwrite if present)
+  /// Inser the row identified by this struct into the Task store (overwrite if present)
   fn insert(&self, connection: &Connection) -> Result<(),Error>;
-  /// Delete the row identified by this struct from the TaskDB
+  /// Delete the row identified by this struct from the Task store
   fn delete(&self, connection: &Connection) -> Result<(),Error>;
-  /// Construct a struct from a given TaskDB row
+  /// Construct a struct from a given Task store row
   fn from_row(row : Row) -> Self;
   /// Obtain the id of the struct, if any
   fn get_id(&self) -> Option<i32>;
@@ -41,7 +40,7 @@ pub trait CortexORM {
 // Tasks
 use std::fmt;
 #[derive(Clone)]
-/// Struct representing a CorTeX `Task`, stored in the tasks table
+/// Struct representation of a task store row
 pub struct Task {
   /// optional id (None for mock / yet-to-be-inserted rows)
   pub id : Option<i64>,
@@ -271,7 +270,7 @@ impl Task {
 }
 
 #[derive(Clone)]
-/// Task in progress (pending dispatched tasks)
+/// In-progress task, with dispatch metadata
 pub struct TaskProgress {
   /// the `Task` struct being tracked
   pub task : Task,
@@ -288,7 +287,7 @@ impl TaskProgress {
 }
 
 #[derive(Clone)]
-/// Task Reports (completed tasks)
+/// Completed task, with its processing status and report messages
 pub struct TaskReport {
   /// the `Task` we are reporting on
   pub task : Task,
@@ -299,7 +298,7 @@ pub struct TaskReport {
 }
 
 #[derive(Clone)]
-/// A container for LaTeXML-convention messages for tasks
+/// A task processing message, as per the LaTeXML convention
 pub struct TaskMessage {
   /// high level description
   /// ("fatal", "error", "warning" or "info")
@@ -313,7 +312,7 @@ pub struct TaskMessage {
 }
 
 #[derive(Clone)]
-/// An enumeration of the expected CorTeX task statuses
+/// An enumeration of the expected task statuses
 pub enum TaskStatus {
   /// everything went smoothly
   NoProblem,
@@ -342,7 +341,7 @@ impl fmt::Debug for TaskMessage {
   }
 }
 impl TaskStatus {
-  /// Maps the enumeration into the raw ints for the TaskDB
+  /// Maps the enumeration into the raw ints for the Task store
   pub fn raw(&self) -> i32 {
     match self {
       &TaskStatus::NoProblem => -1,
@@ -354,7 +353,7 @@ impl TaskStatus {
       &TaskStatus::Queued(x) => x
     }
   }
-  /// Maps the enumeration into the raw severity string for the TaskDB logs / frontend reports
+  /// Maps the enumeration into the raw severity string for the Task store logs / frontend reports
   pub fn to_key(&self) -> String {
     match self {
       &TaskStatus::NoProblem => "no_problem",
@@ -366,7 +365,7 @@ impl TaskStatus {
       &TaskStatus::Queued(_) => "queued"
     }.to_string()
   }
-  /// Maps from the raw TaskDB value into the enumeration
+  /// Maps from the raw Task store value into the enumeration
   pub fn from_raw(num : i32) -> Self {
     match num {
       -1 => TaskStatus::NoProblem,
@@ -572,7 +571,7 @@ impl CortexORM for Service {
   }
 }
 impl Service {
-  /// Select a service from the TaskDB via its human-readable name. Requires a postgres `Connection`.
+  /// Select a service from the Task store via its human-readable name. Requires a postgres `Connection`.
   pub fn from_name(connection : &Connection, name : String) -> Result<Option<Self>, Error> { 
     let stmt =  try!(connection.prepare("SELECT serviceid,name,version,inputformat,outputformat,inputconverter,complex FROM services WHERE name = $1"));
     let rows = try!(stmt.query(&[&name]));

@@ -4,6 +4,9 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
+
+//! Worker for performing corpus imports, when served as "init" tasks by the CorTeX dispatcher
+
 extern crate pericortex;
 extern crate zmq;
 extern crate rand;
@@ -19,12 +22,20 @@ use data::{Task, Corpus};
 use importer::Importer;
 use pericortex::worker::Worker;
 
+/// `Worker` for initializing/importing a new corpus into CorTeX
 pub struct InitWorker {
+  /// name of the service ("init")
   pub service : String,
+  /// version, as usual
   pub version : f32,
+  /// message size, as usual
   pub message_size : usize,
+  /// full URL (including port) to task source/dispatcher
   pub source : String,
+  /// full URL (including port) to task sink/receiver
   pub sink : String,
+  /// address to the Task store backend
+  /// (special case, only for the init service, third-party workers can't access the Task store directly)
   pub backend_address : String
 }
 impl Default for InitWorker {

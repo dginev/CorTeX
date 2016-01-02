@@ -4,6 +4,9 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
+
+//! Import a new corpus into the framework
+
 extern crate glob;
 extern crate Archive;
 
@@ -18,13 +21,13 @@ use std::io::Error;
 use backend::{Backend};
 use data::{Task, TaskStatus, Corpus};
 
-// Only initialize auxiliary resources once and keep them in a Importer struct
-
-/// Given a corpus specification, the Importer traverses the filesystem and records each found entry
-/// in the Task store, as a NoProblem Task for the "import" service
+/// Struct for performing corpus imports into CorTeX
 pub struct Importer {
+  /// a `Corpus` to be imported, containing all relevant metadata
   pub corpus : Corpus,
+  /// a `Backend` on which to persist the import into the Task store
   pub backend : Backend,
+  /// the current working directory, to resolve relative paths
   pub cwd : PathBuf
 }
 impl Default for Importer {
@@ -44,14 +47,17 @@ impl Default for Importer {
 }
 
 impl Importer {
+  /// Convenience method for (recklessly?) obtaining the current working dir
   pub fn cwd() -> PathBuf {
     env::current_dir().unwrap()
   }
+  /// Top-level method for unpacking an arxiv-toplogy corpus from its tar-ed form
   pub fn unpack(&self) -> Result<(),()> {
     try!(self.unpack_arxiv_top());
     try!(self.unpack_arxiv_months());
     Ok(())
   }
+  /// Unpack the top-level tar files from an arxiv-topology corpus
   pub fn unpack_arxiv_top(&self) -> Result<(),()> {
     println!("-- Starting top-level unpack process");
     let path_str = self.corpus.path.clone();
@@ -100,6 +106,7 @@ impl Importer {
     }
     Ok(())
   }
+  /// Unpack the monthly sub-archives of an arxiv-topology corpus, into the CorTeX organization
   pub fn unpack_arxiv_months(&self) -> Result<(),()> {
     println!("-- Starting to unpack monthly .gz archives");
     let path_str = self.corpus.path.clone();
@@ -198,7 +205,7 @@ impl Importer {
     }
     Ok(())
   }
-
+  /// Given a CorTeX-topology corpus, walk the file system and import it into the Task store
   pub fn walk_import<'walk>(&self) -> Result<(),Error> {
     println!("-- Starting import walk");
     let import_extension = if self.corpus.complex { "zip" } else { "tex" };
@@ -254,12 +261,12 @@ impl Importer {
     
     Task {id: None, entry : abs_entry, status : TaskStatus::NoProblem.raw(), corpusid : self.corpus.id.unwrap(), serviceid: 2}
   }
-
+  /// Top-level import driver, performs an optional unpack, and then an import into the Task store
   pub fn process(&self) -> Result<(),()> {
     // println!("Greetings from the import processor");
     if self.corpus.complex { // Complex setup has an unpack step:
       self.unpack().unwrap(); }
-    // Walk the directory tree and import the files in the TaskDB:
+    // Walk the directory tree and import the files in the Task store:
     self.walk_import().unwrap();
 
     Ok(())

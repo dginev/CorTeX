@@ -4,10 +4,13 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
+
+//! Convenience reports for system info (experimental)
+
 use sys_info::*;
 use std::collections::HashMap;
 
-
+/// Prepare a report for the file system metrics offered by `sys_info`
 pub fn report(store : &mut HashMap<String,String>) -> Result<(),Error> {
   
   store.insert("sys_os_type".to_string(),os_type().unwrap());

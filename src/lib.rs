@@ -9,7 +9,7 @@
 
 #![doc(html_root_url = "https://dginev.github.io/rust-cortex/")]
 #![doc(html_logo_url = "https://raw.githubusercontent.com/dginev/rust-cortex/master/public/img/logo.jpg")]
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 extern crate glob;
 extern crate libxml;

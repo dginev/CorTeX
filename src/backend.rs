@@ -4,6 +4,8 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
+
+//! ORM-like capabilities for high- and mid-level operations on the Task store
 extern crate postgres;
 extern crate rustc_serialize;
 extern crate rand;
@@ -19,7 +21,7 @@ use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
 
 use rand::{thread_rng, Rng};
 
-/// The `Backend` struct represents the CorTeX TaskDB
+/// Provides an interface to the Postgres task store
 pub struct Backend {
   /// the Postgres database `Connection`
   pub connection : Connection
@@ -38,7 +40,7 @@ impl Default for Backend {
 }
 
 impl Backend {
-  /// Constructs a new TaskDB representation from a Postgres DB address
+  /// Constructs a new Task store representation from a Postgres DB address
   pub fn from_address(address : &str) -> Backend {
    Backend {
       connection: Connection::connect(address, &SslMode::None).unwrap()
@@ -53,7 +55,7 @@ impl Backend {
 
   /// Instance methods
 
-  /// Checks if the TaskDB has been initialized, heuristically, by trying to detect if the `init` service has been added.
+  /// Checks if the Task store has been initialized, heuristically, by trying to detect if the `init` service has been added.
   pub fn needs_init(&self) -> bool {
     match self.connection.prepare("SELECT * FROM services where name='init'") {
       Ok(init_check_query) => {
@@ -145,7 +147,7 @@ impl Backend {
     Ok(())
   }
 
-  /// Insert a vector of new `Task` tasks into the TaskDB
+  /// Insert a vector of new `Task` tasks into the Task store
   /// For example, on import, or when a new service is activated on a corpus
   pub fn mark_imported(&self, tasks: &Vec<Task>) -> Result<(),Error> {
     let trans = try!(self.connection.transaction());
@@ -158,7 +160,7 @@ impl Backend {
     Ok(())
   }
 
-  /// Insert a vector of `TaskReport` reports into the TaskDB, also marking their tasks as completed with the correct status code.
+  /// Insert a vector of `TaskReport` reports into the Task store, also marking their tasks as completed with the correct status code.
   pub fn mark_done(&self, reports: &Vec<TaskReport>) -> Result<(),Error> {
     let trans = try!(self.connection.transaction());
     let insert_log_message = trans.prepare("INSERT INTO logs (taskid, severity, category, what, details) values($1,$2,$3,$4,$5)").unwrap();
@@ -243,7 +245,7 @@ impl Backend {
     Ok(())
   }
 
-  /// Generic sync method, attempting to obtain the DB record for a given mock TaskDB datum
+  /// Generic sync method, attempting to obtain the DB record for a given mock Task store datum
   /// applicable for any struct implementing the `CortexORM` trait
   /// (for example `Corpus`, `Service`, `Task`)
   pub fn sync<D: CortexORM + Clone>(&self, d: &D) -> Result<D, Error> {
@@ -261,7 +263,7 @@ impl Backend {
     }
   }
 
-  /// Generic delete method, attempting to delete the DB record for a given TaskDB datum
+  /// Generic delete method, attempting to delete the DB record for a given Task store datum
   /// applicable for any struct implementing the `CortexORM` trait
   /// (for example `Corpus`, `Service`, `Task`)
   pub fn delete<D: CortexORM + Clone>(&self, d: &D) -> Result<(), Error> {
@@ -272,7 +274,7 @@ impl Backend {
     }
   }
 
-  /// Generic addition method, attempting to insert in the DB a TaskDB datum
+  /// Generic addition method, attempting to insert in the DB a Task store datum
   /// applicable for any struct implementing the `CortexORM` trait
   /// (for example `Corpus`, `Service`, `Task`)
   ///
@@ -349,7 +351,7 @@ impl Backend {
     Ok(())
  }
 
-  /// Returns a vector of currently available corpora in the TaskDB
+  /// Returns a vector of currently available corpora in the Task store
   pub fn corpora(&self) -> Vec<Corpus> {
     let mut corpora = Vec::new();
     match self.connection.prepare("SELECT corpusid,name,path,complex FROM corpora order by name") {

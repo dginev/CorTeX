@@ -4,6 +4,9 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
+
+//! A ZMQ-based job dispatcher, interfacing between the task `Backend` and an open set of remote workers
+
 extern crate zmq;
 extern crate tempfile;
 
@@ -26,19 +29,34 @@ use std::io::{Write};
 use std::io::Read;
 
 use time;
-
+/// Manager struct responsible for dispatching and receiving tasks
 pub struct TaskManager {
+  /// port for requesting/dispatching jobs
   pub source_port : usize,
+  /// port for responding/receiving results
   pub result_port : usize,
+  /// the size of the dispatch queue
+  /// (also the batch size for Task store queue requests)
   pub queue_size : usize,
+  /// size of an individual message chunk sent via zeromq
+  /// (keep this small to avoid large RAM use, increase to reduce network bandwidth)
   pub message_size : usize,
+  /// address for the Task store postgres endpoint
   pub backend_address : String
 }
+/// Represents a message queue server, can be used as either dispatcher or a sink
 pub struct Server {
+  /// port to listen on
   pub port : usize,
+  /// the size of the dispatch queue
+  /// (also the batch size for Task store queue requests)
   pub queue_size : usize,
+  /// size of an individual message chunk sent via zeromq
+  /// (keep this small to avoid large RAM use, increase to reduce network bandwidth)
   pub message_size : usize,
+  /// a backend struct, in order to reuse the same connection 
   pub backend : Backend,
+  /// address for the Task store postgres endpoint
   pub backend_address : String
 }
 
@@ -53,6 +71,7 @@ impl Default for TaskManager {
     } } }
 
 impl TaskManager {
+  /// Starts a new manager, spinning of dispatch/sink servers, listening on the specified ports
   pub fn start<'manager>(&'manager self, job_limit: Option<usize>) -> Result<(), Error> {
     // We'll use some local memoization shared between source and sink:
     let services: HashMap<String, Option<Service>> = HashMap::new();
@@ -147,6 +166,10 @@ impl TaskManager {
 }
 
 impl Server {
+  /// Starts a new dispatch `Server` (ZMQ Ventilator), to serve tasks to processing workers.
+  /// The ventilator shares state with other manager threads via queues for tasks in progress, 
+  /// as well as a queue for completed tasks pending persisting to disk.
+  /// A job limit can be provided as a termination condition for the sink server.
   pub fn start_ventilator(&self, 
       services_arc : Arc<Mutex<HashMap<String, Option<Service>>>>,
       progress_queue_arc : Arc<Mutex<HashMap<i64, TaskProgress>>>,
@@ -275,7 +298,10 @@ impl Server {
     }
     Ok(())
   }
-
+  /// Starts a receiver/sink `Server` (ZMQ Pull), to accept processing responses.
+  /// The sink shares state with other manager threads via queues for tasks in progress, 
+  /// as well as a queue for completed tasks pending persisting to disk.
+  /// A job limit can be provided as a termination condition for the sink server.
   pub fn start_sink(&self,
       services_arc : Arc<Mutex<HashMap<String, Option<Service>>>>,
       progress_queue_arc : Arc<Mutex<HashMap<i64, TaskProgress>>>,
@@ -447,7 +473,7 @@ impl Server {
       Some(service_option) => service_option.clone()
     }
   }
-
+  /// Persists a shared vector of reports to the Task store
   pub fn mark_done_arc(backend : &Backend, reports_arc: &Arc<Mutex<Vec<TaskReport>>>) -> bool {
     let reports = Server::fetch_shared_vec(reports_arc);
     if reports.len() > 0 {
@@ -461,6 +487,7 @@ impl Server {
       false
     }
   }
+  /// Adds a task report to a shared report queue 
   pub fn push_done_queue(reports_arc : &Arc<Mutex<Vec<TaskReport>>>, report : TaskReport) {
     let mut reports = reports_arc.lock().unwrap();
     if reports.len() > 10000 {
