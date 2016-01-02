@@ -2,6 +2,11 @@
 name = "cortex"
 version = "0.0.1"
 authors = ["Deyan Ginev <d.ginev@jacobs-university.de>"]
+license = "MIT"
+repository = "https://github.com/dginev/CorTeX"
+description = """
+A general purpose processing framework for corpora of scientific documents
+"""
 
 [lib]
 name = "cortex"
