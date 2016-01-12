@@ -94,5 +94,5 @@ fn main() {
     None => backend.add(service_synced).unwrap()
   };
 
-  backend.register_service(service_checked, corpus_path).unwrap();
+  backend.register_service(service_checked, corpus_name).unwrap();
 }

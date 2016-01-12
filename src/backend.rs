@@ -152,7 +152,8 @@ impl Backend {
   pub fn mark_imported(&self, tasks: &Vec<Task>) -> Result<(),Error> {
     let trans = try!(self.connection.transaction());
     for task in tasks {
-      trans.execute("INSERT INTO tasks (entry,serviceid,corpusid,status) VALUES ($1,$2,$3,$4)",
+      // Insert, but only if the task is new (allow for extension calls with the same method)
+      trans.execute("INSERT INTO tasks (entry,serviceid,corpusid,status) SELECT $1,$2,$3,$4 WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE entry=$1);",
         &[&task.entry, &task.serviceid, &task.corpusid, &task.status]).unwrap();
     }
     trans.set_commit();
@@ -324,12 +325,12 @@ impl Backend {
     Ok(())
   }
 
-  /// Activates an existing service on a given corpus path
-  pub fn register_service(&self, service: Service, corpus_path: String) -> Result<(),Error> {
+  /// Activates an existing service on a given corpus (via NAME)
+  pub fn register_service(&self, service: Service, corpus_name: String) -> Result<(),Error> {
     let corpus_placeholder = Corpus {
       id : None,
-      path : corpus_path.clone(),
-      name : corpus_path,
+      path : String::new(),
+      name : corpus_name,
       complex : true
     };
     let corpus = self.sync(&corpus_placeholder).unwrap();
@@ -343,7 +344,7 @@ impl Backend {
     let trans = try!(self.connection.transaction());   
     for task_entry in task_entries.iter() {
       let entry : String = task_entry.get(0);
-      trans.execute("INSERT INTO tasks (entry,serviceid,corpusid, status) VALUES ($1,$2,$3,$4)",
+      trans.execute("INSERT INTO tasks (entry,serviceid,corpusid, status) SELECT $1,$2,$3,$4 WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE entry=$1 and serviceid=$2 and corpusid=$3);",
         &[&entry, &serviceid, &corpusid, &todo_raw]).unwrap();
     }
     trans.set_commit();

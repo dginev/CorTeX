@@ -64,8 +64,10 @@ impl Worker for InitWorker {
           path : path_str.clone(),
           name : path_str,
           complex : true };
+    // Add the new corpus.
     let checked_corpus = backend.add(corpus).unwrap();
 
+    // Create an importer for the corpus, and then process all entries to populate CorTeX tasks
     let importer = Importer {
       corpus: checked_corpus,
       backend: Backend::from_address(&self.backend_address),

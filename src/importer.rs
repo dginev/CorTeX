@@ -52,13 +52,21 @@ impl Importer {
     env::current_dir().unwrap()
   }
   /// Top-level method for unpacking an arxiv-toplogy corpus from its tar-ed form
-  pub fn unpack(&self) -> Result<(),()> {
+  fn unpack(&self) -> Result<(),Error> {
     try!(self.unpack_arxiv_top());
     try!(self.unpack_arxiv_months());
     Ok(())
   }
+  fn unpack_extend(&self) -> Result<(),Error> {
+    try!(self.unpack_extend_arxiv_top());
+    // We can reuse the monthly unpack, as it deletes all unpacked document archives
+    // In other words, it always acts as a conservative extension
+    try!(self.unpack_arxiv_months()); 
+    Ok(())
+  }
+
   /// Unpack the top-level tar files from an arxiv-topology corpus
-  pub fn unpack_arxiv_top(&self) -> Result<(),()> {
+  fn unpack_arxiv_top(&self) -> Result<(),Error> {
     println!("-- Starting top-level unpack process");
     let path_str = self.corpus.path.clone();
     let tars_path = path_str.to_string() + "/*.tar";
@@ -106,8 +114,57 @@ impl Importer {
     }
     Ok(())
   }
+  /// Top-level extension unpacking for arxiv-topology corpora
+  fn unpack_extend_arxiv_top(&self) -> Result<(),Error> {
+    // What I am trying to figure out right now is how to avoid a monstrous amount of code duplication
+    // I don't want to copy-paste all of unpack_arxiv_top in here ...
+    println!("-- Starting top-level unpack-extend process");
+    let path_str = self.corpus.path.clone();
+    let tars_path = path_str.to_string() + "/*.tar";
+    for entry in glob(&tars_path).unwrap() {
+      match entry {
+        Ok(path) => {
+          // Let's open the tar file and unpack it:
+          let archive_reader = Reader::new().unwrap()
+            .support_filter_all()
+            .support_format_all()
+            .open_filename(path.to_str().unwrap(), 10240).unwrap();
+          loop {
+            match archive_reader.next_header() {
+              Ok(e) => {
+                let full_extract_path = path_str.to_string() + &e.pathname();
+                match fs::metadata(full_extract_path.clone()) {
+                  Ok(_) => {},//println!("File {:?} exists, won't unpack.", e.pathname()),
+                  Err(_) => {
+                    // Archive entries end in .gz, let's try that as well, to check if the directory is there
+                    let dir_extract_path = &full_extract_path[0..full_extract_path.len()-3];
+                    match fs::metadata(dir_extract_path) {
+                      Ok(_) => {},//println!("Directory for {:?} already exists, won't unpack.", e.pathname()),
+                      Err(_) => {
+                        println!("To unpack: {:?}", full_extract_path); 
+                        match e.extract_to(&full_extract_path, Vec::new()) {
+                          Ok(_) => {},
+                          _ => {
+                            println!("Failed to extract {:?}", full_extract_path);
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              Err(_) => { break }
+            }
+          }
+        },
+        Err(e) => {println!("Failed tar glob: {:?}", e)}
+      }
+    }
+    Ok(())
+  }
+
   /// Unpack the monthly sub-archives of an arxiv-topology corpus, into the CorTeX organization
-  pub fn unpack_arxiv_months(&self) -> Result<(),()> {
+  fn unpack_arxiv_months(&self) -> Result<(),Error> {
     println!("-- Starting to unpack monthly .gz archives");
     let path_str = self.corpus.path.clone();
     let gzs_path = path_str.to_string() + "/*/*.gz";
@@ -205,6 +262,7 @@ impl Importer {
     }
     Ok(())
   }
+
   /// Given a CorTeX-topology corpus, walk the file system and import it into the Task store
   pub fn walk_import<'walk>(&self) -> Result<(),Error> {
     println!("-- Starting import walk");
@@ -224,11 +282,12 @@ impl Importer {
         match fs::metadata(current_entry_path.clone()) {
           Ok(_) => {
             // Found the expected file, import this entry:
-            println!("Found entry: {:?}", current_entry_path);
+            // println!("Found entry: {:?}", current_entry_path);
             import_counter += 1;
             import_q.push(self.new_task(current_entry_path));
             if import_q.len() >= 1000 {
               // Flush the import queue to backend:
+              println!("Checkpoint backend writer: job {:?}", import_q.len());
               self.backend.mark_imported(&import_q).unwrap(); // TODO: Proper Error-handling 
               import_q.clear();
             }
@@ -244,6 +303,7 @@ impl Importer {
       }
     }
     if !import_q.is_empty() {
+      println!("Checkpoint backend writer: job {:?}", import_q.len());
       self.backend.mark_imported(&import_q).unwrap();} // TODO: Proper Error-handling
     println!("--- Imported {:?} entries.", import_counter);
     Ok(())
@@ -262,13 +322,25 @@ impl Importer {
     Task {id: None, entry : abs_entry, status : TaskStatus::NoProblem.raw(), corpusid : self.corpus.id.unwrap(), serviceid: 2}
   }
   /// Top-level import driver, performs an optional unpack, and then an import into the Task store
-  pub fn process(&self) -> Result<(),()> {
+  pub fn process(&self) -> Result<(),Error> {
     // println!("Greetings from the import processor");
     if self.corpus.complex { // Complex setup has an unpack step:
-      self.unpack().unwrap(); }
+      try!(self.unpack());
+    }
     // Walk the directory tree and import the files in the Task store:
-    self.walk_import().unwrap();
+    try!(self.walk_import());
 
+    Ok(())
+  }
+
+  /// Top-level corpus extension, performs a check for newly added documents and extracts+adds them to the existing corpus tasks
+  pub fn extend_corpus(&self) -> Result<(), Error> {
+    if self.corpus.complex { // Complex setup has an unpack step:
+      try!(self.unpack_extend());
+    }
+    // Use the regular walk_import, at the cost of more database work, 
+    // the "Backend::mark_imported" ORM method allows us to insert only if new
+    try!(self.walk_import());
     Ok(())
   }
 }

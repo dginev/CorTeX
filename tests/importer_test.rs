@@ -47,7 +47,7 @@ fn can_import_simple() {
     cwd : Importer::cwd() };
   
   println!("-- Testing simple import");
-  assert_eq!( importer.process(), Ok(()) );
+  assert!( importer.process().is_ok());
 }
 
 #[test]
@@ -65,7 +65,7 @@ fn can_import_complex() {
 
   
   println!("-- Testing complex import");
-  assert_eq!( importer.process(), Ok(()) );
+  assert!( importer.process().is_ok() );
 
   let repeat_importer = Importer {
     corpus: test_backend.add(
@@ -79,7 +79,7 @@ fn can_import_complex() {
 
   
   println!("-- Testing repeated complex import (successful and no-op)");
-  assert_eq!( repeat_importer.process(), Ok(()) );
+  assert!( repeat_importer.process().is_ok());
 
   let files_removed_ok = assert_files(vec![
     "tests/data/9107/hep-lat9107001/hep-lat9107001.zip",
