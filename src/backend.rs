@@ -326,6 +326,7 @@ impl Backend {
   }
 
   /// Activates an existing service on a given corpus (via NAME)
+  /// if the service has previously been registered, this has "extend" semantics, without any "overwrite" or "reset"
   pub fn register_service(&self, service: Service, corpus_name: String) -> Result<(),Error> {
     let corpus_placeholder = Corpus {
       id : None,
@@ -338,7 +339,13 @@ impl Backend {
     let serviceid = service.id.unwrap();
     let todo_raw = TaskStatus::TODO.raw();
 
-    try!(self.connection.execute("DELETE from tasks where serviceid=$1 AND corpusid=$2", &[&serviceid, &corpusid]));
+    // If we wanted to erase old tasks for this service, we could do as follows, but there is a lot more logic missing
+    // - also erase log entries
+    // - update dependencies
+    // so instead, for now we'll just add new tasks, leaving existing ones as-is.
+    // try!(self.connection.execute("DELETE from tasks where serviceid=$1 AND corpusid=$2", &[&serviceid, &corpusid]));
+
+
     let task_entries_query = try!(self.connection.prepare("SELECT entry from tasks where serviceid=2 AND corpusid=$1"));
     let task_entries = try!(task_entries_query.query(&[&corpus.id.unwrap()]));
     let trans = try!(self.connection.transaction());   
