@@ -79,7 +79,8 @@ impl Backend {
       serviceid INTEGER NOT NULL,
       corpusid INTEGER NOT NULL,
       entry char(200) NOT NULL,
-      status INTEGER NOT NULL
+      status INTEGER NOT NULL,
+      UNIQUE (entry, serviceid, corpusid)
     );", &[]).unwrap();
     trans.execute("create index entryidx on tasks(entry);", &[]).unwrap();
     trans.execute("create index serviceidx on tasks(serviceid);", &[]).unwrap();
@@ -153,7 +154,7 @@ impl Backend {
     let trans = try!(self.connection.transaction());
     for task in tasks {
       // Insert, but only if the task is new (allow for extension calls with the same method)
-      trans.execute("INSERT INTO tasks (entry,serviceid,corpusid,status) SELECT $1,$2,$3,$4 WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE entry=$1);",
+      trans.execute("INSERT INTO tasks (entry,serviceid,corpusid,status) VALUES($1,$2,$3,$4) ON CONFLICT(entry, serviceid, corpusid) DO NOTHING;",
         &[&task.entry, &task.serviceid, &task.corpusid, &task.status]).unwrap();
     }
     trans.set_commit();
@@ -351,7 +352,7 @@ impl Backend {
     let trans = try!(self.connection.transaction());   
     for task_entry in task_entries.iter() {
       let entry : String = task_entry.get(0);
-      trans.execute("INSERT INTO tasks (entry,serviceid,corpusid, status) SELECT $1,$2,$3,$4 WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE entry=$1 and serviceid=$2 and corpusid=$3);",
+      trans.execute("INSERT INTO tasks (entry,serviceid,corpusid, status) VALUES($1,$2,$3,$4) ON CONFLICT(entry, serviceid, corpusid) DO NOTHING;",
         &[&entry, &serviceid, &corpusid, &todo_raw]).unwrap();
     }
     trans.set_commit();

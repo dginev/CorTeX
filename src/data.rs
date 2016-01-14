@@ -106,7 +106,7 @@ impl CortexORM for Task {
     }
   }
   fn insert(&self, connection : &Connection) -> Result<(), Error> {
-    try!(connection.execute("INSERT INTO tasks (serviceid, corpusid, status, entry) values($1, $2, $3, $4)", &[&self.serviceid, &self.corpusid, &self.status, &self.entry]));
+    try!(connection.execute("INSERT INTO tasks (serviceid, corpusid, status, entry) values($1, $2, $3, $4) ON CONFLICT(entry, serviceid, corpusid) DO UPDATE SET status=excluded.status;", &[&self.serviceid, &self.corpusid, &self.status, &self.entry]));
     Ok(()) }
   fn delete(&self, connection: &Connection) -> Result<(),Error> {
     try!(connection.execute("DELETE FROM tasks WHERE taskid = $1", &[&self.id])); 
