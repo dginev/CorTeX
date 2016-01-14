@@ -1,6 +1,7 @@
 language: rust
 rust: nightly
-sudo: false
+sudo: required
+
 addons:
   apt:
     packages:
@@ -13,6 +14,13 @@ addons:
       - binutils-dev # optional: only required for the --verify flag of coveralls
 
 before_script:
+  # Obtain postgresql 9.5 until travis officially ships it
+  - sudo /etc/init.d/postgresql stop
+  - wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+  - sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt/ precise-pgdg main 9.5" >> /etc/apt/sources.list.d/postgresql.list'
+  - sudo apt-get update
+  - sudo apt-get install postgresql-9.5
+  - sudo /etc/init.d/postgresql start
   - psql -c 'create database cortex_tester;' -U postgres
   - psql -c "create user cortex_tester with password 'cortex_tester';" -U postgres
   - psql -c 'GRANT ALL PRIVILEGES ON DATABASE cortex_tester TO cortex_tester;' -U postgres
@@ -36,6 +44,8 @@ after_success:
 
 env:
   global:
+    - PGPORT=5432
+    - PGHOST=localhost
     # override the default `--features unstable` used for the nightly branch
     - TRAVIS_CARGO_NIGHTLY_FEATURE=""
     # encrypted github token for doc upload
