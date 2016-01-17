@@ -612,10 +612,11 @@ fn cache_worker() {
     Ok(conn) => conn,
     _ => panic!("Redis connection failed, please boot up redis and restart the frontend!")
   };
-  let backend = Backend::default();
-  let mut global_stub : HashMap<String,String> = HashMap::new();
   let mut queued_cache : HashMap<String, usize> = HashMap::new();
   loop {
+    // Keep a fresh backend connection on each invalidation pass.
+    let backend = Backend::default();
+    let mut global_stub : HashMap<String,String> = HashMap::new();  
     // each corpus+service (non-import)
     for corpus in backend.corpora().iter() {
       let services_result = corpus.select_services(&backend.connection);
