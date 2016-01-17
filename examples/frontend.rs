@@ -665,7 +665,6 @@ fn cache_worker() {
                       let key_what = key_category.clone() + "_" + what;
                       println!("[cache worker] DEL {:?}", key_what);
                       let _ : () = redis_connection.del(key_what).unwrap_or(());
-                      thread::sleep(Duration::new(1,0)); // Courtesy sleep of 1 second.
                       let _entries = aux_task_report(&mut global_stub, &corpus, &service, Some(severity.to_string()), Some(category.to_string()), Some(what.to_string()));
                     }
                   }
