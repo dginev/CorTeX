@@ -625,6 +625,7 @@ fn cache_worker() {
         Ok(services) => {
           for service in services.iter() {
             if service.name == "import" {continue;}
+            println!("[cache worker] Examining corpus {:?}, service {:?}", corpus.name, service.name);
             // Pages we'll cache:
             let report = backend.progress_report(corpus, service);
             let zero : f64 = 0.0;
@@ -634,13 +635,14 @@ fn cache_worker() {
             let key_base : String = corpus.id.unwrap_or(0).to_string() + "_" + &service.id.unwrap_or(0).to_string();
             // Only recompute the inner pages if we are seeing a change / first visit, on the top corpus+service level
             if *queued_cache.get(&key_base).unwrap_or(&huge) != queued_count {
+              println!("[cache worker] state changed, invalidating ...");
               // first cache the count for the next check:
               queued_cache.insert(key_base.clone(), queued_count);
               // each reported severity (fatal, warning, error)
               for severity in vec!["fatal".to_string(), "error".to_string(), "warning".to_string()].iter() {
                 // most importantly, DEL the key from Redis!
                 let key_severity = key_base.clone() + "_" + severity;
-                //println!("DEL {:?}", key_severity);
+                println!("[cache worker] DEL {:?}", key_severity);
                 let _ : () = redis_connection.del(key_severity.clone()).unwrap_or(());
                 if *report.get(severity).unwrap_or(&zero) > 0.0 {
                   // cache category page
@@ -652,7 +654,7 @@ fn cache_worker() {
                     let category = cat_hash.get("name").unwrap_or(&string_unknown);
                     if category == "total" {continue;}
                     let key_category = key_severity.clone() + "_" + category;
-                    // println!("  DEL {:?}", key_category);
+                    println!("[cache worker] DEL {:?}", key_category);
                     let _ : () = redis_connection.del(key_category).unwrap_or(());
                     thread::sleep(Duration::new(1,0)); // Courtesy sleep of 1 second.
                     let _what_report = aux_task_report(&mut global_stub, &corpus, &service, Some(severity.to_string()), Some(category.to_string()), None);
