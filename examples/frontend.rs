@@ -639,7 +639,7 @@ fn cache_worker() {
               // first cache the count for the next check:
               queued_cache.insert(key_base.clone(), queued_count);
               // each reported severity (fatal, warning, error)
-              for severity in vec!["fatal".to_string(), "error".to_string(), "warning".to_string()].iter() {
+              for severity in vec!["fatal".to_string(), "error".to_string(), "warning".to_string(), "no_problem".to_string()].iter() {
                 // most importantly, DEL the key from Redis!
                 let key_severity = key_base.clone() + "_" + severity;
                 println!("[cache worker] DEL {:?}", key_severity);
@@ -655,9 +655,19 @@ fn cache_worker() {
                     if category == "total" {continue;}
                     let key_category = key_severity.clone() + "_" + category;
                     println!("[cache worker] DEL {:?}", key_category);
-                    let _ : () = redis_connection.del(key_category).unwrap_or(());
+                    let _ : () = redis_connection.del(key_category.clone()).unwrap_or(());
                     thread::sleep(Duration::new(1,0)); // Courtesy sleep of 1 second.
-                    let _what_report = aux_task_report(&mut global_stub, &corpus, &service, Some(severity.to_string()), Some(category.to_string()), None);
+                    let what_report = aux_task_report(&mut global_stub, &corpus, &service, Some(severity.to_string()), Some(category.to_string()), None);
+                    // for each what, cache the "task list" page
+                    for what_hash in what_report.iter() {
+                      let what = what_hash.get("name").unwrap_or(&string_unknown);
+                      if what == "total" {continue;}
+                      let key_what = key_category.clone() + "_" + what;
+                      println!("[cache worker] DEL {:?}", key_what);
+                      let _ : () = redis_connection.del(key_what).unwrap_or(());
+                      thread::sleep(Duration::new(1,0)); // Courtesy sleep of 1 second.
+                      let _entries = aux_task_report(&mut global_stub, &corpus, &service, Some(severity.to_string()), Some(category.to_string()), Some(what.to_string()));
+                    }
                   }
                 }
               }
