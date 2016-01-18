@@ -234,9 +234,9 @@ impl Task {
           //   panicking to auto-truncating (would not have been the Perl way, but Rust is Rust)
           let mut truncated_severity = cap.at(1).unwrap_or("").to_string().to_lowercase();
           utf_truncate(&mut truncated_severity, 50);
-          let mut truncated_category = cap.at(2).unwrap_or("").to_string().to_lowercase();
+          let mut truncated_category = cap.at(2).unwrap_or("").to_string();
           utf_truncate(&mut truncated_category, 50);
-          let mut truncated_what = cap.at(3).unwrap_or("").to_string().to_lowercase();
+          let mut truncated_what = cap.at(3).unwrap_or("").to_string();
           utf_truncate(&mut truncated_what, 50);
           let mut truncated_details = cap.at(5).unwrap_or("").to_string();
           utf_truncate(&mut truncated_details, 2000);
