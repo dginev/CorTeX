@@ -650,9 +650,9 @@ fn cache_worker() {
                   let category_report = aux_task_report(&mut global_stub, &corpus, &service, Some(severity.to_string()), None, None);
                   // for each category, cache the what page
                   for cat_hash in category_report.iter() {
-                    let string_unknown = UNKNOWN.to_string();
-                    let category = cat_hash.get("name").unwrap_or(&string_unknown);
-                    if category == "total" {continue;}
+                    let string_empty = String::new();
+                    let category = cat_hash.get("name").unwrap_or(&string_empty);
+                    if category.is_empty() || (category == "total") {continue;}
                     let key_category = key_severity.clone() + "_" + category;
                     println!("[cache worker] DEL {:?}", key_category);
                     let _ : () = redis_connection.del(key_category.clone()).unwrap_or(());
@@ -660,8 +660,8 @@ fn cache_worker() {
                     let what_report = aux_task_report(&mut global_stub, &corpus, &service, Some(severity.to_string()), Some(category.to_string()), None);
                     // for each what, cache the "task list" page
                     for what_hash in what_report.iter() {
-                      let what = what_hash.get("name").unwrap_or(&string_unknown);
-                      if what == "total" {continue;}
+                      let what = what_hash.get("name").unwrap_or(&string_empty);
+                      if what.is_empty() || (what == "total") {continue;}
                       let key_what = key_category.clone() + "_" + what;
                       println!("[cache worker] DEL {:?}", key_what);
                       let _ : () = redis_connection.del(key_what).unwrap_or(());
