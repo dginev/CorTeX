@@ -377,11 +377,19 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
         global.insert("severity".to_string(),severity.clone().unwrap());
         global.insert("highlight".to_string(), aux_severity_highlight(&severity.clone().unwrap()).to_string());
         global.insert("category".to_string(),category.clone().unwrap());
-        let whats = aux_task_report(&mut global, &corpus, &service, severity, category, None);
-        // Record the report into "whats" vector
-        data.insert("whats".to_string(), whats);
-        // And set the category template
-        template = "examples/assets/cortex-report-category.html";
+        if category.is_some() && (category.clone().unwrap() == "no_messages") {
+          let entries = aux_task_report(&mut global, &corpus, &service, severity, category, None);
+          // Record the report into "entries" vector
+          data.insert("entries".to_string(),entries);
+          // And set the task list template
+          template = "examples/assets/cortex-report-task-list.html";
+        } else {
+          let whats = aux_task_report(&mut global, &corpus, &service, severity, category, None);
+          // Record the report into "whats" vector
+          data.insert("whats".to_string(), whats);
+          // And set the category template
+          template = "examples/assets/cortex-report-category.html";
+        }
       }
       else { // What-level report
         global.insert("severity".to_string(),severity.clone().unwrap());
@@ -656,7 +664,6 @@ fn cache_worker() {
                     let key_category = key_severity.clone() + "_" + category;
                     println!("[cache worker] DEL {:?}", key_category);
                     let _ : () = redis_connection.del(key_category.clone()).unwrap_or(());
-                    thread::sleep(Duration::new(1,0)); // Courtesy sleep of 1 second.
                     let what_report = aux_task_report(&mut global_stub, &corpus, &service, Some(severity.to_string()), Some(category.to_string()), None);
                     // for each what, cache the "task list" page
                     for what_hash in what_report.iter() {
