@@ -379,6 +379,30 @@ impl Backend {
     return corpora;
   }
 
+  /// Returns a vector of tasks for a given Corpus, Service and status
+  pub fn entries(&self, corpus : &Corpus, service: &Service, status : &TaskStatus) -> Vec<String> {
+    let raw_status = status.raw();
+    match self.connection.prepare("select entry from tasks where serviceid=$1 and corpusid=$2 and status=$3") {
+      Ok(select_query) => match select_query.query(&[&service.id.unwrap_or(-1), &corpus.id.unwrap_or(-1), &raw_status]) {
+        Ok(entry_rows) => {
+          let entry_name_regex = Regex::new(r"^(.+)/[^/]+$").unwrap();
+          let mut entries = Vec::new();
+          for row in entry_rows {
+            let entry_fixedwidth : String = row.get(0);
+            let entry = entry_fixedwidth.trim_right().to_string();
+            if service.name == "import" {
+              entries.push(entry);
+            } else {
+              let entry_service_result = entry_name_regex.replace(&entry,"$1") + "/" + &service.name + ".zip";
+              entries.push(entry_service_result);
+            }
+          }
+          entries},
+        _ => Vec::new()
+      },
+      _ => Vec::new()
+    }
+  }
   /// Provides a progress report, grouped by severity, for a given `Corpus` and `Service` pair
   pub fn progress_report<'report>(&self, c : &Corpus, s : &Service) -> HashMap<String, f64> {
     let mut stats_hash : HashMap<String, f64> = HashMap::new();
@@ -388,7 +412,7 @@ impl Backend {
     stats_hash.insert("total".to_string(),0.0);
     match self.connection.prepare("select status,count(*) as status_count from tasks where serviceid=$1 and corpusid=$2 group by status order by status_count desc;") {
       Ok(select_query) => {
-        match select_query.query(&[&s.id.unwrap(), &c.id.unwrap()]) {
+        match select_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1)]) {
           Ok(rows) => {
             for row in rows.iter() {
               let status_code = TaskStatus::from_raw(row.get(0)).to_key();
@@ -419,7 +443,7 @@ impl Backend {
         let raw_status = TaskStatus::from_key(&severity_name).raw();
         if severity_name == "no_problem" {
         match self.connection.prepare("select entry,taskid from tasks where serviceid=$1 and corpusid=$2 and status=$3 limit 100;") {
-          Ok(select_query) => match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status]) {
+          Ok(select_query) => match select_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1), &raw_status]) {
             Ok(entry_rows) => {
               let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
               let mut entries = Vec::new();
@@ -443,7 +467,7 @@ impl Backend {
         }}
         else {
           let total_count_query = self.connection.prepare("select count(*) from tasks WHERE serviceid=$1 and corpusid=$2;").unwrap();
-          let total_tasks : i64 = match total_count_query.query(&[&s.id.unwrap(), &c.id.unwrap()]) {
+          let total_tasks : i64 = match total_count_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1)]) {
             Err(_) => 1, // don't divide by 0
             Ok(count) => count.get(0).get(0)
           };
@@ -453,13 +477,13 @@ impl Backend {
               select logs.category, logs.taskid, count(*) as total_counts from tasks LEFT OUTER JOIN logs ON (tasks.taskid=logs.taskid) WHERE serviceid=$1 and corpusid=$2 and status=$3 and severity=$4
                group by logs.category, logs.taskid) as tmp GROUP BY category ORDER BY task_count desc;") {
             Ok(select_query) => {
-              match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status, &severity_name]) {
+              match select_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1), &raw_status, &severity_name]) {
                 Ok(category_rows) => {
                   // How many tasks total in this severity?
                   let severity_tasks : i64 =
                     match self.connection.prepare("select count(*) from tasks where serviceid=$1 and corpusid=$2 and status=$3;") {
                       Ok(total_severity_query) => {
-                        match total_severity_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status]) {
+                        match total_severity_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1), &raw_status]) {
                           Ok(total_severity_rows) => total_severity_rows.get(0).get(0),
                           _ => -1
                         }
@@ -468,7 +492,7 @@ impl Backend {
                     };
                   match self.connection.prepare("select count(*), sum(message_count::int4) from (select tasks.taskid, count(*) as message_count from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 group by tasks.taskid) as tmp;") {
                   Ok(total_query) => {
-                    match total_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status, &severity_name]) {
+                    match total_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1), &raw_status, &severity_name]) {
                       Ok(total_rows) => {
                         let severity_message_tasks : i64 = total_rows.get(0).get_opt(0).unwrap_or(0);
                         let severity_messages : i64 = total_rows.get(0).get_opt(1).unwrap_or(0);
@@ -493,7 +517,7 @@ impl Backend {
           Some(category_name) => {
             if category_name == "no_messages" {
               match self.connection.prepare("select entry,taskid from tasks t where serviceid=$1 and corpusid=$2 and status=$3 and not exists (select null from logs where logs.taskid = t.taskid) limit 100;") {
-              Ok(select_query) => match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status]) {
+              Ok(select_query) => match select_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1), &raw_status]) {
                 Ok(entry_rows) => {
                   let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
                   let mut entries = Vec::new();
@@ -522,12 +546,12 @@ impl Backend {
                 select logs.what, logs.taskid, count(*) as total_counts from tasks LEFT OUTER JOIN logs ON (tasks.taskid=logs.taskid)
                 WHERE serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and category=$5
                 GROUP BY logs.what, logs.taskid) as tmp GROUP BY what ORDER BY task_count desc;") {
-                Ok(select_query) => match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status, &severity_name, &category_name]) {
+                Ok(select_query) => match select_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1), &raw_status, &severity_name, &category_name]) {
                   Ok(what_rows) => {
                     // How many tasks and messages total in this category?
                     match self.connection.prepare("select count(*), sum(message_count::int4) from (select tasks.taskid, count(*) as message_count from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and category=$5 group by tasks.taskid) as tmp;") {
                     Ok(total_query) => {
-                      match total_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status, &severity_name, &category_name]) {
+                      match total_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1), &raw_status, &severity_name, &category_name]) {
                         Ok(total_rows) => {
                           let category_tasks : i64  = total_rows.get(0).get(0);
                           let category_messages : i64 = total_rows.get(0).get(1);
@@ -543,7 +567,7 @@ impl Backend {
                 _ => Vec::new()
               },
               Some(what_name) => match self.connection.prepare("select tasks.taskid, tasks.entry, logs.details from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and category=$5 and what=$6 limit 100;") {
-              Ok(select_query) => match select_query.query(&[&s.id.unwrap(), &c.id.unwrap(), &raw_status,&severity_name, &category_name,&what_name]) {
+              Ok(select_query) => match select_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1), &raw_status,&severity_name, &category_name,&what_name]) {
                 Ok(entry_rows) => {
                   let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
                   let mut entries = Vec::new();
