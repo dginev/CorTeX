@@ -68,6 +68,7 @@ fn main() {
   let is_html_regex = Regex::new(r"\.html$").unwrap();
   let entry_name_regex = Regex::new(r"([^/]+)/([^/]+)/([^/]+)\.zip$").unwrap();
   // Set the database archive file
+  let mut total_dataset_entries = 0;
   let mut archive_writer_new = Writer::new().unwrap()
     .set_compression(ArchiveFilter::None) // could be imporoved later (libarchive-sys needs an upgrade ?)
     .set_format(ArchiveFormat::Zip);
@@ -114,7 +115,7 @@ fn main() {
                   let paper_dir = cap.at(2).unwrap_or("paperXX");
                   let dataset_path = status.to_key() + "/" + month_dir + "/" + paper_dir + ".html";
                   println!("Writing {:?} ...", dataset_path);
-
+                  total_dataset_entries += 1;
                   match archive_writer_new.write_header_new(&dataset_path, raw_entry_data.len() as i64) {
                     Ok(_) => {},
                     Err(e) => {
@@ -143,6 +144,5 @@ fn main() {
 
   let bundle_duration = (end_bundle - start_bundle).num_milliseconds();
   println!("-- Dataset bundler for corpus {:?} and service {:?} took {:?}ms", corpus.name, service.name, bundle_duration);
-
-
+  println!("-- Bundled {:?} dataset entries.", total_dataset_entries);
 }
