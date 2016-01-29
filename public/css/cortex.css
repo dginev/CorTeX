@@ -94,6 +94,12 @@ tr.danger > td.task-preview > a {
 .table-nonfluid {
    width: auto !important;
 }
+.btn-github-star {
+  padding-top: 15px;
+  padding-bottom: 15px;
+  text-align: center;
+  margin: auto;
+}
 
 
 .vertical-center {
