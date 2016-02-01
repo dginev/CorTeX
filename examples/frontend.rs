@@ -484,11 +484,20 @@ fn aux_uri_unescape<'unescape>(param : Option<&'unescape str>) -> Option<String>
   match param {
     None => None,
     Some(param_encoded) => {
-      let colon_regex = Regex::new(r"%3A").unwrap();
-      let slash_regex = Regex::new(r"%2F").unwrap();
-      let decoded_colon = colon_regex.replace_all(&param_encoded,":");
-      let decoded_slash = slash_regex.replace_all(&decoded_colon,"/");
-      Some(url::percent_encoding::lossy_utf8_percent_decode(decoded_slash.as_bytes()))
+      let mut param_decoded : String = param_encoded.to_owned();
+      // TODO: This could/should be done faster by using lazy_static!
+      for (replacement, decoding_regex) in
+      vec![
+        (":", Regex::new(r"%3A").unwrap()),
+        ("/", Regex::new(r"%2F").unwrap()),
+        ("$", Regex::new(r"%24").unwrap()),
+        (".", Regex::new(r"%D0").unwrap()),
+        ("!", Regex::new(r"%30").unwrap()),
+        ("@", Regex::new(r"%A0").unwrap())
+      ].into_iter() {
+        param_decoded = decoding_regex.replace_all(&param_decoded,replacement);
+      }
+      Some(url::percent_encoding::lossy_utf8_percent_decode(param_decoded.as_bytes()))
     }
   }
 }
@@ -496,14 +505,20 @@ fn aux_uri_escape(param : Option<String>) -> Option<String> {
   match param {
     None => None,
     Some(param_pure) => {
-      let colon_regex = Regex::new(r"[:]").unwrap();
-      let slash_regex = Regex::new(r"[/]").unwrap();
-      let lib_encoded = url::percent_encoding::utf8_percent_encode(&param_pure, url::percent_encoding::DEFAULT_ENCODE_SET);
-      let encoded_colon = colon_regex.replace_all(&lib_encoded,"%3A");
-      let encoded_slash = slash_regex.replace_all(&encoded_colon,"%2F");
-
-      let encoded_final = encoded_slash;
-      Some(encoded_final)
+      let mut param_encoded : String = url::percent_encoding::utf8_percent_encode(&param_pure, url::percent_encoding::DEFAULT_ENCODE_SET);
+      // TODO: This could/should be done faster by using lazy_static!
+      for (replacement, encoding_regex) in
+      vec![
+        ("%3A", Regex::new(r"[:]").unwrap()),
+        ("%2F", Regex::new(r"[/]").unwrap()),
+        ("%24", Regex::new(r"[$]").unwrap()),
+        ("%D0", Regex::new(r"[.]").unwrap()),
+        ("%30", Regex::new(r"[!]").unwrap()),
+        ("%A0", Regex::new(r"[@]").unwrap())
+      ].into_iter() {
+        param_encoded = encoding_regex.replace_all(&param_encoded,replacement);
+      }
+      Some(param_encoded)
     }
   }
 }
