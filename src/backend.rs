@@ -14,7 +14,7 @@ use postgres::{Connection, SslMode};
 use postgres::error::Error;
 use postgres::rows::{Rows};
 use std::clone::Clone;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use regex::Regex;
 
 use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
@@ -44,7 +44,7 @@ impl Backend {
   pub fn from_address(address : &str) -> Backend {
    Backend {
       connection: Connection::connect(address, &SslMode::None).unwrap()
-    } 
+    }
   }
   /// Constructs the default Backend struct for testing
   pub fn testdb() -> Backend {
@@ -176,7 +176,7 @@ impl Backend {
           continue; // Skip info and status information, keep the DB small
         } else {
           // Warnings, Errors and Fatals will get added:
-          insert_log_message.query(&[&taskid, 
+          insert_log_message.query(&[&taskid,
             &message.severity, &message.category, &message.what, &message.details]).unwrap();
         }
       }
@@ -298,7 +298,7 @@ impl Backend {
 
   /// Fetches no more than `limit` queued tasks for a given `Service`
   pub fn fetch_tasks(&self, service: &Service, limit : usize) -> Result<Vec<Task>, Error> {
-    match service.id { 
+    match service.id {
       Some(_) => {}
       None => {return Ok(Vec::new())}
     };
@@ -345,13 +345,22 @@ impl Backend {
     // - update dependencies
     // so instead, for now we'll just add new tasks, leaving existing ones as-is.
     // try!(self.connection.execute("DELETE from tasks where serviceid=$1 AND corpusid=$2", &[&serviceid, &corpusid]));
-
+    let mut prior_set : HashSet<String> = HashSet::new();
+    let prior_entries_query = try!(self.connection.prepare("SELECT entry from tasks where serviceid=$1 AND corpusid=$2"));
+    let prior_entries = try!(prior_entries_query.query(&[&serviceid, &corpusid]));
+    for prior_entry in prior_entries.iter() {
+      let entry : String = prior_entry.get(0);
+      prior_set.insert(entry);
+    }
 
     let task_entries_query = try!(self.connection.prepare("SELECT entry from tasks where serviceid=2 AND corpusid=$1"));
-    let task_entries = try!(task_entries_query.query(&[&corpus.id.unwrap()]));
-    let trans = try!(self.connection.transaction());   
+    let task_entries = try!(task_entries_query.query(&[&corpusid]));
+    let trans = try!(self.connection.transaction());
     for task_entry in task_entries.iter() {
       let entry : String = task_entry.get(0);
+      if prior_set.contains(&entry) {
+        continue;
+      }
       trans.execute("INSERT INTO tasks (entry,serviceid,corpusid, status) VALUES($1,$2,$3,$4) ON CONFLICT(entry, serviceid, corpusid) DO NOTHING;",
         &[&entry, &serviceid, &corpusid, &todo_raw]).unwrap();
     }
@@ -453,7 +462,7 @@ impl Backend {
                 let entry_taskid : i64 = row.get(1);
                 let entry = entry_fixedwidth.trim_right().to_string();
                 let entry_name = entry_name_regex.replace(&entry,"$1");
-                
+
                 entry_map.insert("entry".to_string(),entry);
                 entry_map.insert("entry_name".to_string(),entry_name);
                 entry_map.insert("entry_taskid".to_string(),entry_taskid.to_string());
@@ -497,7 +506,7 @@ impl Backend {
                         let severity_message_tasks : i64 = total_rows.get(0).get_opt(0).unwrap_or(0);
                         let severity_messages : i64 = total_rows.get(0).get_opt(1).unwrap_or(0);
                         let severity_silent_tasks = if severity_message_tasks >= severity_tasks {
-                          None 
+                          None
                         } else {
                           Some(severity_tasks - severity_message_tasks)
                         };
@@ -527,7 +536,7 @@ impl Backend {
                     let entry_taskid : i64 = row.get(1);
                     let entry = entry_fixedwidth.trim_right().to_string();
                     let entry_name = entry_name_regex.replace(&entry,"$1");
-                    
+
                     entry_map.insert("entry".to_string(),entry);
                     entry_map.insert("entry_name".to_string(),entry_name);
                     entry_map.insert("entry_taskid".to_string(),entry_taskid.to_string());
