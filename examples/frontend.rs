@@ -121,7 +121,7 @@ fn main() {
     return response.render("examples/assets/cortex-admin.html", &data)
   });
 
-  // server.get("/add_corpus", middleware! { |request, mut response| 
+  // server.get("/add_corpus", middleware! { |request, mut response|
   //   let backend = Backend::default();
   //   let mut data = HashMap::new();
   //   let mut message : String ;
@@ -140,7 +140,7 @@ fn main() {
   //     Ok(_) => {},
   //     Err(_) => {
   //       message = "Error: Path ".to_string() + &corpus_path + " does not exist, aborting!";
-        
+
   //       response.set(Location("/admin".into()));
   //       response.set(StatusCode::TemporaryRedirect);
   //       return response.send("")
@@ -223,7 +223,11 @@ fn main() {
   server.post("/entry/:service_name/:entry", middleware! { |request, response|
     let mut body_bytes = vec![];
     request.origin.read_to_end(&mut body_bytes).unwrap_or(0);
-    let g_recaptcha_response = from_utf8(&body_bytes[21..]).unwrap_or(&UNKNOWN);
+    let g_recaptcha_response = if body_bytes.len() > 21 {
+      from_utf8(&body_bytes[21..]).unwrap_or(&UNKNOWN)
+    } else {
+      UNKNOWN
+    };
     // Check if we hve the g_recaptcha_response in Redis, then reuse
     let mut redis_opt = None;
     let quota : usize = match redis::Client::open("redis://127.0.0.1/") {
@@ -259,7 +263,7 @@ fn main() {
             // Add a reuse quota if things check out, 19 more downloads
             let _ : () = redis_connection.set(g_recaptcha_response, 19).unwrap_or(());
           },
-          &None => {} 
+          &None => {}
         };
       }
       check_val
@@ -343,7 +347,7 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
         &Some(ref ic_service_name) => global.insert("inputconverter".to_string(), ic_service_name.clone()),
         &None => global.insert("inputconverter".to_string(), "missing?".to_string()),
       };
-      
+
       let report;
       let template;
       let report_start = time::get_time();
@@ -440,7 +444,7 @@ fn serve_rerun<'a, D>(config : &CortexConfig, request: &mut Request<D>, response
     Some(user) => user
   };
   println!("-- User {:?}: Mark for rerun on {:?}/{:?}/{:?}/{:?}/{:?}", user, corpus_name, service_name, severity, category, what);
-  
+
   // Run (and measure) the three rerun queries
   let report_start = time::get_time();
   let backend = Backend::default();
@@ -491,9 +495,9 @@ fn aux_uri_unescape<'unescape>(param : Option<&'unescape str>) -> Option<String>
         (":", Regex::new(r"%3A").unwrap()),
         ("/", Regex::new(r"%2F").unwrap()),
         ("$", Regex::new(r"%24").unwrap()),
-        (".", Regex::new(r"%D0").unwrap()),
-        ("!", Regex::new(r"%30").unwrap()),
-        ("@", Regex::new(r"%A0").unwrap())
+        (".", Regex::new(r"%2E").unwrap()),
+        ("!", Regex::new(r"%21").unwrap()),
+        ("@", Regex::new(r"%40").unwrap())
       ].into_iter() {
         param_decoded = decoding_regex.replace_all(&param_decoded,replacement);
       }
@@ -512,9 +516,9 @@ fn aux_uri_escape(param : Option<String>) -> Option<String> {
         ("%3A", Regex::new(r"[:]").unwrap()),
         ("%2F", Regex::new(r"[/]").unwrap()),
         ("%24", Regex::new(r"[$]").unwrap()),
-        ("%D0", Regex::new(r"[.]").unwrap()),
-        ("%30", Regex::new(r"[!]").unwrap()),
-        ("%A0", Regex::new(r"[@]").unwrap())
+        ("%2E", Regex::new(r"[.]").unwrap()),
+        ("%21", Regex::new(r"[!]").unwrap()),
+        ("%40", Regex::new(r"[@]").unwrap())
       ].into_iter() {
         param_encoded = encoding_regex.replace_all(&param_encoded,replacement);
       }
@@ -631,7 +635,7 @@ fn cache_worker() {
     Ok(client) => client,
     _ => panic!("Redis connection failed, please boot up redis and restart the frontend!")
   };
-  let redis_connection = match redis_client.get_connection() { 
+  let redis_connection = match redis_client.get_connection() {
     Ok(conn) => conn,
     _ => panic!("Redis connection failed, please boot up redis and restart the frontend!")
   };
@@ -639,7 +643,7 @@ fn cache_worker() {
   loop {
     // Keep a fresh backend connection on each invalidation pass.
     let backend = Backend::default();
-    let mut global_stub : HashMap<String,String> = HashMap::new();  
+    let mut global_stub : HashMap<String,String> = HashMap::new();
     // each corpus+service (non-import)
     for corpus in backend.corpora().iter() {
       let services_result = corpus.select_services(&backend.connection);
@@ -654,7 +658,7 @@ fn cache_worker() {
             let zero : f64 = 0.0;
             let huge : usize = 999999;
             let queued_count_f64 : f64 = report.get("queued").unwrap_or(&zero) + report.get("todo").unwrap_or(&zero);
-            let queued_count : usize = queued_count_f64 as usize; 
+            let queued_count : usize = queued_count_f64 as usize;
             let key_base : String = corpus.id.unwrap_or(0).to_string() + "_" + &service.id.unwrap_or(0).to_string();
             // Only recompute the inner pages if we are seeing a change / first visit, on the top corpus+service level
             if *queued_cache.get(&key_base).unwrap_or(&huge) != queued_count {

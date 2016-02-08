@@ -54,7 +54,7 @@ pub struct Server {
   /// size of an individual message chunk sent via zeromq
   /// (keep this small to avoid large RAM use, increase to reduce network bandwidth)
   pub message_size : usize,
-  /// a backend struct, in order to reuse the same connection 
+  /// a backend struct, in order to reuse the same connection
   pub backend : Backend,
   /// address for the Task store postgres endpoint
   pub backend_address : String
@@ -64,10 +64,10 @@ impl Default for TaskManager {
   fn default() -> TaskManager {
     TaskManager {
         source_port : 5555,
-        result_port : 5555,
+        result_port : 5556,
         queue_size : 100,
         message_size : 100000,
-        backend_address : DEFAULT_DB_ADDRESS.clone().to_string() 
+        backend_address : DEFAULT_DB_ADDRESS.clone().to_string()
     } } }
 
 impl TaskManager {
@@ -167,10 +167,10 @@ impl TaskManager {
 
 impl Server {
   /// Starts a new dispatch `Server` (ZMQ Ventilator), to serve tasks to processing workers.
-  /// The ventilator shares state with other manager threads via queues for tasks in progress, 
+  /// The ventilator shares state with other manager threads via queues for tasks in progress,
   /// as well as a queue for completed tasks pending persisting to disk.
   /// A job limit can be provided as a termination condition for the sink server.
-  pub fn start_ventilator(&self, 
+  pub fn start_ventilator(&self,
       services_arc : Arc<Mutex<HashMap<String, Option<Service>>>>,
       progress_queue_arc : Arc<Mutex<HashMap<i64, TaskProgress>>>,
       done_queue_arc : Arc<Mutex<Vec<TaskReport>>>,
@@ -203,7 +203,7 @@ impl Server {
         None => {},
         Some(service) => {
           if !queues.contains_key(&service_name) {
-            queues.insert(service_name.clone(), Vec::new()); 
+            queues.insert(service_name.clone(), Vec::new());
           }
           let mut task_queue : &mut Vec<TaskProgress> = queues.get_mut(&service_name).unwrap();
           if task_queue.is_empty() {
@@ -214,7 +214,7 @@ impl Server {
                 task: task,
                 created_at : now,
                 retries : 0
-              })); 
+              }));
 
             // This is a good time to also take care that none of the old tasks are dead in the progress queue
             // since the re-fetch happens infrequently, and directly implies the progress queue will grow
@@ -226,8 +226,8 @@ impl Server {
                   status : TaskStatus::Fatal,
                   messages :  vec![TaskMessage {
                     category : "cortex".to_string(),
-                    severity : "fatal".to_string(), 
-                    what : "never_completed_with_retries".to_string(), 
+                    severity : "fatal".to_string(),
+                    what : "never_completed_with_retries".to_string(),
                     details : String::new()
                   }]
                 });
@@ -256,7 +256,7 @@ impl Server {
                 // Regular services fetch the task payload and transfer it to the worker
                 let file_opt = current_task.prepare_input_stream();
                 if file_opt.is_ok() {
-                  let mut file = file_opt.unwrap();        
+                  let mut file = file_opt.unwrap();
                   let mut total_outgoing : usize = 0;
                   'streaminputjob: loop {
                     // Stream input data via zmq
@@ -264,10 +264,10 @@ impl Server {
                     let size = file.read(&mut data).unwrap();
                     total_outgoing += size;
                     data.truncate(size);
-                    
+
                     if size < self.message_size {
                       // If exhausted, send the last frame
-                      ventilator.send(&data,0).unwrap(); 
+                      ventilator.send(&data,0).unwrap();
                       // And terminate
                       break
                     } else {
@@ -280,7 +280,7 @@ impl Server {
                   println!("Source job {}, message size: {}, took {}ms.", source_job_count, total_outgoing, request_duration);
                 } else {
                   // TODO: smart handling of failures
-                  ventilator.send(&[],0).unwrap(); 
+                  ventilator.send(&[],0).unwrap();
                 }
               }
             },
@@ -299,7 +299,7 @@ impl Server {
     Ok(())
   }
   /// Starts a receiver/sink `Server` (ZMQ Pull), to accept processing responses.
-  /// The sink shares state with other manager threads via queues for tasks in progress, 
+  /// The sink shares state with other manager threads via queues for tasks in progress,
   /// as well as a queue for completed tasks pending persisting to disk.
   /// A job limit can be provided as a termination condition for the sink server.
   pub fn start_sink(&self,
@@ -328,7 +328,7 @@ impl Server {
         Some(some_name) => some_name,
         None => {"_unknown_"}
       };
-      
+
       sink.recv(&mut taskid_msg, 0).unwrap();
       let taskid_str = match taskid_msg.as_str() {
         Some(some_id) => some_id,
@@ -356,7 +356,7 @@ impl Server {
             Some(service) => {
               let serviceid = match service.id {
                 Some(found_id) => found_id,
-                None => -1 // Skip if no such service 
+                None => -1 // Skip if no such service
               };
               // println!("Service: {:?}", serviceid);
               if serviceid == task.serviceid {
@@ -375,7 +375,7 @@ impl Server {
                   };
                   Server::push_done_queue(&done_queue_arc, done_report);
                 }
-                else {                
+                else {
                   // Receive the rest of the input in the correct file
                   match Path::new(&task.entry).parent() {
                     None => {
@@ -409,8 +409,8 @@ impl Server {
 
                               match file.write(recv_msg.deref()) {
                                 Ok(written_bytes) => { total_incoming += written_bytes },
-                                Err(e) => { 
-                                  println!("Error TODO: file.write(recv_msg.deref()) failed: {:?}",e); 
+                                Err(e) => {
+                                  println!("Error TODO: file.write(recv_msg.deref()) failed: {:?}",e);
                                   break;
                                 }
                               };
@@ -433,7 +433,7 @@ impl Server {
                     }
                   }
                 }
-                
+
               }
               else {
                 // Otherwise just discard the rest of the message
@@ -487,7 +487,7 @@ impl Server {
       false
     }
   }
-  /// Adds a task report to a shared report queue 
+  /// Adds a task report to a shared report queue
   pub fn push_done_queue(reports_arc : &Arc<Mutex<Vec<TaskReport>>>, report : TaskReport) {
     let mut reports = reports_arc.lock().unwrap();
     if reports.len() > 10000 {
@@ -517,9 +517,9 @@ impl Server {
   }
   fn push_progress_task(progress_queue_arc : &Arc<Mutex<HashMap<i64, TaskProgress>>>, progress_task: TaskProgress) {
     let mut progress_queue = progress_queue_arc.lock().unwrap();
-    // NOTE: This constant should be adjusted if you expect a fringe of more than 10,000 jobs 
+    // NOTE: This constant should be adjusted if you expect a fringe of more than 10,000 jobs
     //       I am using this as a workaround for the inability to catch thread panic!() calls.
-    if progress_queue.len() > 10000 { 
+    if progress_queue.len() > 10000 {
       panic!("Progress queue is too large: {:?} tasks. Stop the ventilator!",progress_queue.len());
     }
     match progress_task.task.id.clone() {

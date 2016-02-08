@@ -30,7 +30,7 @@ fn mock_tex_to_html() {
   // Initialize a corpus, import a single task, and enable a service on it
   let test_backend = Backend::testdb();
   assert!(test_backend.setup_task_tables().is_ok());
-  
+
   let mock_corpus = test_backend.add(
     Corpus {
       id : None,
@@ -39,7 +39,7 @@ fn mock_tex_to_html() {
       complex : true,
     }).unwrap();
   let tex_to_html_service = test_backend.add(
-    Service { 
+    Service {
       id : None,
       name : "tex_to_html".to_string(),
       version : 0.1,
@@ -67,23 +67,24 @@ fn mock_tex_to_html() {
       status : TaskStatus::TODO.raw()
     };
   test_backend.add(conversion_task.clone()).unwrap();
-  
+
   // Start up a ventilator/sink pair
   let manager_thread = thread::spawn(move || {
     let manager = TaskManager {
-      source_port : 5555,
-      result_port : 5556,
-      queue_size : 100000,
-      message_size : 100,
-      backend_address : TEST_DB_ADDRESS.clone().to_string()
+      backend_address : TEST_DB_ADDRESS.clone().to_string(),
+      ..TaskManager::default()
     };
     assert!(manager.start(job_limit).is_ok());
   });
   // Start up an tex to html worker
-  let worker = TexToHtmlWorker::default();
-  // Perform a single echo task 
+  let worker = TexToHtmlWorker {
+      source: "tcp://localhost:5555".to_string(),
+      sink: "tcp://localhost:5556".to_string(),
+    ..TexToHtmlWorker::default()
+  };
+  // Perform a single echo task
   assert!(worker.start(job_limit).is_ok());
-  // Wait for the finisher to persist to DB 
+  // Wait for the finisher to persist to DB
   thread::sleep(Duration::new(2,0)); // TODO: Can this be deterministic? Join?
   assert!(manager_thread.join().is_ok());
   // Check round-trip success

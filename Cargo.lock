@@ -291,7 +291,7 @@ dependencies = [
 [[package]]
 name = "pericortex"
 version = "0.1.0"
-source = "git+https://github.com/dginev/CorTeX-Peripherals.git#1c806adbdcf6ee6b07e4aa94910d113e29f30326"
+source = "git+https://github.com/dginev/CorTeX-Peripherals.git#73f9e7df3abed6ffc0696d25b8e180452100c892"
 dependencies = [
  "libarchive-sys 0.0.1 (git+https://github.com/dginev/libarchive-sys.git)",
  "libc 0.1.12 (registry+https://github.com/rust-lang/crates.io-index)",
