@@ -109,8 +109,8 @@ impl CortexORM for Task {
     try!(connection.execute("INSERT INTO tasks (serviceid, corpusid, status, entry) values($1, $2, $3, $4) ON CONFLICT(entry, serviceid, corpusid) DO UPDATE SET status=excluded.status;", &[&self.serviceid, &self.corpusid, &self.status, &self.entry]));
     Ok(()) }
   fn delete(&self, connection: &Connection) -> Result<(),Error> {
-    try!(connection.execute("DELETE FROM tasks WHERE taskid = $1", &[&self.id])); 
-    Ok(()) 
+    try!(connection.execute("DELETE FROM tasks WHERE taskid = $1", &[&self.id]));
+    Ok(())
   }
   fn from_row<'a>(row : Row) -> Self {
     let fix_width_entry : String = row.get(1);
@@ -144,7 +144,7 @@ impl Task {
         println!("Error TODO: Couldn't open archive_reader: {:?}",e);
       },
       Ok(archive_reader) => {
-        loop { 
+        loop {
         match archive_reader.next_header() {
           Ok(e) => {
             let current_name = e.pathname();
@@ -202,7 +202,7 @@ impl Task {
   pub fn parse_log(&self, log : String) -> Vec<TaskMessage> {
     let mut messages : Vec<TaskMessage> = Vec::new();
     let mut in_details_mode = false;
-    
+
     // regexes:
     let message_line_regex = Regex::new(r"^([^ :]+):([^ :]+):([^ ]+)(\s(.*))?$").unwrap();
     let start_tab_regex = Regex::new(r"^\t").unwrap();
@@ -306,7 +306,7 @@ pub struct TaskMessage {
   /// mid-level description (open set)
   pub category : String,
   /// low-level description (open set)
-  pub what : String, 
+  pub what : String,
   /// technical details of the message (e.g. localization info)
   pub details : String
 }
@@ -369,7 +369,7 @@ impl TaskStatus {
   pub fn from_raw(num : i32) -> Self {
     match num {
       -1 => TaskStatus::NoProblem,
-      -2 => TaskStatus::Warning, 
+      -2 => TaskStatus::Warning,
       -3 => TaskStatus::Error,
       -4 => TaskStatus::Fatal,
       -5 => TaskStatus::TODO,
@@ -410,15 +410,25 @@ pub struct Corpus {
   /// (if unsure, always use "true")
   pub complex : bool
 }
-impl ToJson for Corpus {
-    fn to_json(&self) -> Json {
-        let mut map = BTreeMap::new();
-        map.insert("id".to_string(), self.id.to_json());
-        map.insert("path".to_string(), self.path.to_json());
-        map.insert("name".to_string(), self.name.to_json());
-        map.insert("complex".to_string(), self.complex.to_json());
-        Json::Object(map)
+impl Default for Corpus {
+  fn default() -> Self {
+    Corpus {
+      id : None,
+      name: "mock corpus".to_string(),
+      path: ".".to_string(),
+      complex : true
     }
+  }
+}
+impl ToJson for Corpus {
+  fn to_json(&self) -> Json {
+    let mut map = BTreeMap::new();
+    map.insert("id".to_string(), self.id.to_json());
+    map.insert("path".to_string(), self.path.to_json());
+    map.insert("name".to_string(), self.name.to_json());
+    map.insert("complex".to_string(), self.complex.to_json());
+    Json::Object(map)
+  }
 }
 
 impl CortexORM for Corpus {
@@ -447,9 +457,9 @@ impl CortexORM for Corpus {
     try!(connection.execute("INSERT INTO corpora (name, path, complex) values($1, $2, $3)", &[&self.name, &self.path, &self.complex]));
     Ok(()) }
   fn delete(&self, connection: &Connection) -> Result<(),Error> {
-    try!(connection.execute("DELETE FROM tasks WHERE corpusid = $1", &[&self.id])); 
-    try!(connection.execute("DELETE FROM corpora WHERE corpusid = $1", &[&self.id])); 
-    Ok(()) 
+    try!(connection.execute("DELETE FROM tasks WHERE corpusid = $1", &[&self.id]));
+    try!(connection.execute("DELETE FROM corpora WHERE corpusid = $1", &[&self.id]));
+    Ok(())
   }
   fn from_row(row : Row) -> Self {
     Corpus {
@@ -473,7 +483,7 @@ impl Corpus {
           match service_select {
             Some(service) => services.push(service),
             _ => {}
-          } 
+          }
         },
         _ => {}
       }
@@ -507,7 +517,7 @@ pub struct Service {
   pub inputconverter : Option<String>,
   /// is this service requiring more than the main textual content of a document?
   /// mark "true" if unsure
-  pub complex : bool, 
+  pub complex : bool,
 }
 impl fmt::Debug for Service {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -554,9 +564,9 @@ impl CortexORM for Service {
        &[&self.name, &self.version, &self.inputformat, &self.outputformat, &self.inputconverter, &self.complex]));
     Ok(()) }
   fn delete(&self, connection: &Connection) -> Result<(),Error> {
-    try!(connection.execute("DELETE FROM tasks WHERE serviceid = $1", &[&self.id])); 
-    try!(connection.execute("DELETE FROM services WHERE serviceid = $1", &[&self.id])); 
-    Ok(()) 
+    try!(connection.execute("DELETE FROM tasks WHERE serviceid = $1", &[&self.id]));
+    try!(connection.execute("DELETE FROM services WHERE serviceid = $1", &[&self.id]));
+    Ok(())
   }
   fn from_row(row : Row) -> Self {
     Service {
@@ -572,7 +582,7 @@ impl CortexORM for Service {
 }
 impl Service {
   /// Select a service from the Task store via its human-readable name. Requires a postgres `Connection`.
-  pub fn from_name(connection : &Connection, name : String) -> Result<Option<Self>, Error> { 
+  pub fn from_name(connection : &Connection, name : String) -> Result<Option<Self>, Error> {
     let stmt =  try!(connection.prepare("SELECT serviceid,name,version,inputformat,outputformat,inputconverter,complex FROM services WHERE name = $1"));
     let rows = try!(stmt.query(&[&name]));
     if rows.len() == 1 {
