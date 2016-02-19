@@ -601,10 +601,12 @@ fn aux_task_report(global: &mut HashMap<String, String>, corpus: &Corpus, servic
       let cached_report = json::decode(&cached_report_json).unwrap_or(Vec::new());
       if cached_report.is_empty() {
         let backend = Backend::default();
-        let report : Vec<HashMap<String, String>> = backend.task_report(corpus, service, severity, category, what);
+        let report : Vec<HashMap<String, String>> = backend.task_report(corpus, service, severity, category, what.clone());
         let report_json : String = json::encode(&report).unwrap();
         // println!("SET {:?}", cache_key);
-        let _ : () = redis_connection.set(cache_key, report_json).unwrap();
+        if what.is_none() { // don't cache the task list pages
+          let _ : () = redis_connection.set(cache_key, report_json).unwrap();
+        }
         time_val = time::now().rfc822().to_string();
         let _ : () = redis_connection.set(cache_key_time, time_val.clone()).unwrap();
         fetched_report = report;
@@ -616,10 +618,12 @@ fn aux_task_report(global: &mut HashMap<String, String>, corpus: &Corpus, servic
     },
     Err(_) => {
       let backend = Backend::default();
-      let report = backend.task_report(corpus, service, severity, category, what);
+      let report = backend.task_report(corpus, service, severity, category, what.clone());
       let report_json : String = json::encode(&report).unwrap();
       // println!("SET2 {:?}", cache_key);
-      let _ : () = redis_connection.set(cache_key, report_json).unwrap();
+      if what.is_none() { // don't cache the task lists pages
+        let _ : () = redis_connection.set(cache_key, report_json).unwrap();
+      }
       time_val = time::now().rfc822().to_string();
       let _ : () = redis_connection.set(cache_key_time, time_val.clone()).unwrap();
       fetched_report = report;
@@ -683,16 +687,16 @@ fn cache_worker() {
                     let key_category = key_severity.clone() + "_" + category;
                     println!("[cache worker] DEL {:?}", key_category);
                     let _ : () = redis_connection.del(key_category.clone()).unwrap_or(());
-                    let what_report = aux_task_report(&mut global_stub, &corpus, &service, Some(severity.to_string()), Some(category.to_string()), None);
+                    let _ = aux_task_report(&mut global_stub, &corpus, &service, Some(severity.to_string()), Some(category.to_string()), None);
                     // for each what, cache the "task list" page
-                    for what_hash in what_report.iter() {
-                      let what = what_hash.get("name").unwrap_or(&string_empty);
-                      if what.is_empty() || (what == "total") {continue;}
-                      let key_what = key_category.clone() + "_" + what;
-                      println!("[cache worker] DEL {:?}", key_what);
-                      let _ : () = redis_connection.del(key_what).unwrap_or(());
-                      let _entries = aux_task_report(&mut global_stub, &corpus, &service, Some(severity.to_string()), Some(category.to_string()), Some(what.to_string()));
-                    }
+                    // for what_hash in what_report.iter() {
+                    //   let what = what_hash.get("name").unwrap_or(&string_empty);
+                    //   if what.is_empty() || (what == "total") {continue;}
+                    //   let key_what = key_category.clone() + "_" + what;
+                    //   println!("[cache worker] DEL {:?}", key_what);
+                    //   let _ : () = redis_connection.del(key_what).unwrap_or(());
+                    //   let _entries = aux_task_report(&mut global_stub, &corpus, &service, Some(severity.to_string()), Some(category.to_string()), Some(what.to_string()));
+                    // }
                   }
                 }
               }
