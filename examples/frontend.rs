@@ -481,6 +481,7 @@ fn aux_severity_highlight<'highlight>(severity : &'highlight str) -> &'highlight
     "warning" => "warning",
     "error" => "error",
     "fatal" => "danger",
+    "invalid" => "info",
     _ => "unknown"
   }
 }
@@ -670,7 +671,7 @@ fn cache_worker() {
               // first cache the count for the next check:
               queued_cache.insert(key_base.clone(), queued_count);
               // each reported severity (fatal, warning, error)
-              for severity in vec!["fatal".to_string(), "error".to_string(), "warning".to_string(), "no_problem".to_string()].iter() {
+              for severity in vec!["invalid".to_string(), "fatal".to_string(), "error".to_string(), "warning".to_string(), "no_problem".to_string()].iter() {
                 // most importantly, DEL the key from Redis!
                 let key_severity = key_base.clone() + "_" + severity;
                 println!("[cache worker] DEL {:?}", key_severity);
