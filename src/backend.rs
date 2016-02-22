@@ -246,7 +246,7 @@ impl Backend {
     // Lastly, switch all blocked tasks to "queued", and complete the rerun mark pass.
     try!(self.connection.execute(
       "UPDATE tasks set status=$1 where status=$2 and corpusid=$3 and serviceid=$4;",
-      &[&TaskStatus::NoProblem.raw(), &mark, &corpus.id.unwrap(), &service.id.unwrap()])
+      &[&TaskStatus::TODO.raw(), &mark, &corpus.id.unwrap(), &service.id.unwrap()])
     );
     Ok(())
   }
