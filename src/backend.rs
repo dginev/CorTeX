@@ -84,10 +84,13 @@ impl Backend {
     );", &[]).unwrap();
     trans.execute("create index entryidx on tasks(entry);", &[]).unwrap();
     trans.execute("create index serviceidx on tasks(serviceid);", &[]).unwrap();
-    trans.execute("create index ok_index on tasks(status,serviceid,corpusid,taskid,entry) where status = -1;", &[]).unwrap();
-    trans.execute("create index warning_index on tasks(status,serviceid,corpusid,taskid,entry) where status = -2;", &[]).unwrap();
-    trans.execute("create index error_index on tasks(status,serviceid,corpusid,taskid,entry) where status = -3;", &[]).unwrap();
-    trans.execute("create index fatal_index on tasks(status,serviceid,corpusid,taskid,entry) where status = -4;", &[]).unwrap();
+    // TECHNICAL DEBT: I want to express the status codes via status=$1 arguments, such as &TaskStatus::NoProblem.raw(),
+    //   but currently the postgres crate gives runtime errors of argument mismatch, so I'll hardcode here. Probably related to using a transaction
+    trans.execute("create index ok_index on tasks(status,serviceid,corpusid,taskid,entry) where status=-1;", &[]).unwrap();
+    trans.execute("create index warning_index on tasks(status,serviceid,corpusid,taskid,entry) where status=-2;", &[]).unwrap();
+    trans.execute("create index error_index on tasks(status,serviceid,corpusid,taskid,entry) where status=-3;", &[]).unwrap();
+    trans.execute("create index fatal_index on tasks(status,serviceid,corpusid,taskid,entry) where status=-4;", &[]).unwrap();
+    trans.execute("create index invalid_index on tasks(status,serviceid,corpusid,taskid,entry) where status=-5;", &[]).unwrap();
     // Corpora
     trans.execute("DROP TABLE IF EXISTS corpora;", &[]).unwrap();
     trans.execute("CREATE TABLE corpora (
@@ -140,9 +143,10 @@ impl Backend {
     // Note: Needed for efficient task rerun queries
     trans.execute("create index log_taskid on logs(taskid);", &[]).unwrap();
     // Note: to avoid a sequential scan on logs for all the report pages, the following 3 indexes are crucial:
-    trans.execute("create index log_fatal_index on logs(severity,category,what,taskid) where severity = 'fatal';", &[]).unwrap();
-    trans.execute("create index log_error_index on logs(severity,category,what,taskid) where severity = 'error';", &[]).unwrap();
-    trans.execute("create index log_warning_index on logs(severity,category,what,taskid) where severity = 'warning';", &[]).unwrap();
+    trans.execute("create index log_fatal_index on logs(severity,category,what,taskid) where severity='fatal';", &[]).unwrap();
+    trans.execute("create index log_error_index on logs(severity,category,what,taskid) where severity='error';", &[]).unwrap();
+    trans.execute("create index log_warning_index on logs(severity,category,what,taskid) where severity='warning';", &[]).unwrap();
+    trans.execute("create index log_invalid_index on logs(severity,category,what,taskid) where severity='invalid';", &[]).unwrap();
     trans.set_commit();
     try!(trans.finish());
     Ok(())
@@ -241,8 +245,8 @@ impl Backend {
 
     // Lastly, switch all blocked tasks to "queued", and complete the rerun mark pass.
     try!(self.connection.execute(
-      "UPDATE tasks set status=-5 where status=$1 and corpusid=$2 and serviceid=$3;",
-      &[&mark, &corpus.id.unwrap(), &service.id.unwrap()])
+      "UPDATE tasks set status=$1 where status=$2 and corpusid=$3 and serviceid=$4;",
+      &[&TaskStatus::NoProblem.raw(), &mark, &corpus.id.unwrap(), &service.id.unwrap()])
     );
     Ok(())
   }
@@ -308,12 +312,12 @@ impl Backend {
     // TODO: Concurrent use needs to add "and pg_try_advisory_xact_lock(taskid)" in the proper fashion
     //       But we need to be careful that the LIMIT takes place before the lock, which is why I removed it for now.
     let stmt = try!(self.connection.prepare(
-      "UPDATE tasks t SET status = $1 FROM (
-          SELECT * FROM tasks WHERE serviceid = $2 and status = $3
+      "UPDATE tasks t SET status=$1 FROM (
+          SELECT * FROM tasks WHERE serviceid=$2 and status=$3
           LIMIT $4
           FOR UPDATE
         ) subt
-        WHERE t.taskid = subt.taskid
+        WHERE t.taskid=subt.taskid
         RETURNING t.taskid,t.entry,t.serviceid,t.corpusid,t.status;"));
     let rows = try!(stmt.query(&[&(mark as i32), &service.id.unwrap(), &TaskStatus::TODO.raw(), &(limit as i64)]));
     Ok(rows.iter().map(|row| Task::from_row(row)).collect::<Vec<_>>())
@@ -525,7 +529,7 @@ impl Backend {
           },
           Some(category_name) => {
             if category_name == "no_messages" {
-              match self.connection.prepare("select entry,taskid from tasks t where serviceid=$1 and corpusid=$2 and status=$3 and not exists (select null from logs where logs.taskid = t.taskid) limit 100;") {
+              match self.connection.prepare("select entry,taskid from tasks t where serviceid=$1 and corpusid=$2 and status=$3 and not exists (select null from logs where logs.taskid=t.taskid) limit 100;") {
               Ok(select_query) => match select_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1), &raw_status]) {
                 Ok(entry_rows) => {
                   let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();

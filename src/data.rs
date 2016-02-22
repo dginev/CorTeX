@@ -167,17 +167,23 @@ impl Task {
               messages = self.parse_log(log_string);
               // Look for the special status message - Fatal otherwise!
               for m in messages.iter() {
+                // Invalids are a bit of a workaround for now, they're fatal messages in latexml, but we want them separated out in cortex
+                if m.severity == "invalid" {
+                  status = TaskStatus::Invalid;
+                  break;
+                } else
                 if (m.severity == "status") && (m.category == "conversion") && !(m.what.is_empty()) {
                   // Adapt status to the CorTeX scheme: cortex_status = -(latexml_status+1)
                   let latexml_scheme_status = match m.what.parse::<i32>() {
                     Ok(num) => num,
                     Err(e) => {
                       println!("Error TODO: Failed to parse conversion status {:?}: {:?}", m.what, e);
-                      -4
+                      TaskStatus::Fatal.raw()
                     }
                   };
                   let cortex_scheme_status = -(latexml_scheme_status+1);
                   status = TaskStatus::from_raw(cortex_scheme_status);
+                  break;
                 }
               }
             }
@@ -240,6 +246,12 @@ impl Task {
           utf_truncate(&mut truncated_what, 50);
           let mut truncated_details = cap.at(5).unwrap_or("").to_string();
           utf_truncate(&mut truncated_details, 2000);
+
+          if truncated_severity == "fatal" && truncated_category == "invalid" {
+            truncated_severity = "invalid".to_string();
+            truncated_category = truncated_what;
+            truncated_what = "all".to_string();
+          };
 
           let message = TaskMessage {
             severity : truncated_severity,
@@ -314,6 +326,8 @@ pub struct TaskMessage {
 #[derive(Clone)]
 /// An enumeration of the expected task statuses
 pub enum TaskStatus {
+  /// currently queued for processing
+  TODO,
   /// everything went smoothly
   NoProblem,
   /// minor issues
@@ -322,8 +336,8 @@ pub enum TaskStatus {
   Error,
   /// critical/panic issues
   Fatal,
-  /// currently queued for processing
-  TODO,
+  /// invalid task, fatal + discard from statistics
+  Invalid,
   /// currently blocked by dependencies
   Blocked(i32),
   /// currently being processed (marker identifies batch)
@@ -344,11 +358,12 @@ impl TaskStatus {
   /// Maps the enumeration into the raw ints for the Task store
   pub fn raw(&self) -> i32 {
     match self {
+      &TaskStatus::TODO => 0,
       &TaskStatus::NoProblem => -1,
       &TaskStatus::Warning => -2,
       &TaskStatus::Error => -3,
       &TaskStatus::Fatal => -4,
-      &TaskStatus::TODO => -5,
+      &TaskStatus::Invalid => -5,
       &TaskStatus::Blocked(x) => x,
       &TaskStatus::Queued(x) => x
     }
@@ -361,6 +376,7 @@ impl TaskStatus {
       &TaskStatus::Error => "error",
       &TaskStatus::Fatal => "fatal",
       &TaskStatus::TODO => "todo",
+      &TaskStatus::Invalid => "invalid",
       &TaskStatus::Blocked(_) => "blocked",
       &TaskStatus::Queued(_) => "queued"
     }.to_string()
@@ -368,11 +384,12 @@ impl TaskStatus {
   /// Maps from the raw Task store value into the enumeration
   pub fn from_raw(num : i32) -> Self {
     match num {
+      0 => TaskStatus::TODO,
       -1 => TaskStatus::NoProblem,
       -2 => TaskStatus::Warning,
       -3 => TaskStatus::Error,
       -4 => TaskStatus::Fatal,
-      -5 => TaskStatus::TODO,
+      -5 => TaskStatus::Invalid,
       num if num < -5 => TaskStatus::Blocked(num.clone()),
       _ => TaskStatus::Queued(num.clone())
     }
@@ -385,6 +402,7 @@ impl TaskStatus {
       "error" => TaskStatus::Error,
       "fatal" => TaskStatus::Fatal,
       "todo" => TaskStatus::TODO,
+      "invalid" => TaskStatus::Invalid,
       "blocked" => TaskStatus::Blocked(-6),
       "queued" => TaskStatus::Queued(1),
       _ => TaskStatus::Fatal
@@ -392,7 +410,7 @@ impl TaskStatus {
   }
   /// Returns all raw severity strings as a vector
   pub fn keys() -> Vec<String> {
-    ["no_problem", "warning", "error", "fatal", "todo", "blocked", "queued"].iter().map(|&x| x.to_string()).collect::<Vec<_>>()
+    ["no_problem", "warning", "error", "fatal", "invalid", "todo", "blocked", "queued"].iter().map(|&x| x.to_string()).collect::<Vec<_>>()
   }
 }
 
