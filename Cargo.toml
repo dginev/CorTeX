@@ -13,7 +13,7 @@ name = "cortex"
 crate-type = ["rlib", "dylib", "staticlib"]
 
 [dependencies.libxml]
-git = "https://github.com/dginev/rust-libxml.git"
+git = "https://github.com/KWARC/rust-libxml.git"
 
 [dependencies.gnuplot]
 git = "https://github.com/SiegeLord/RustGnuplot.git"

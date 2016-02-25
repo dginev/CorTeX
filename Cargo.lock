@@ -7,7 +7,7 @@ dependencies = [
  "hyper 0.6.16 (registry+https://github.com/rust-lang/crates.io-index)",
  "libarchive-sys 0.0.1 (git+https://github.com/dginev/libarchive-sys.git)",
  "libc 0.1.12 (registry+https://github.com/rust-lang/crates.io-index)",
- "libxml 0.0.2 (git+https://github.com/dginev/rust-libxml.git)",
+ "libxml 0.0.3 (git+https://github.com/KWARC/rust-libxml.git)",
  "nickel 0.7.3 (git+https://github.com/nickel-org/nickel.rs.git)",
  "pericortex 0.1.0 (git+https://github.com/dginev/CorTeX-Peripherals.git)",
  "postgres 0.9.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -168,8 +168,8 @@ dependencies = [
 
 [[package]]
 name = "libxml"
-version = "0.0.2"
-source = "git+https://github.com/dginev/rust-libxml.git#759e9ad31f73a0faba8eae94264b6475d61096dc"
+version = "0.0.3"
+source = "git+https://github.com/KWARC/rust-libxml.git#42afd684ac7cd6d52da23f0876ad3fab66a796d6"
 dependencies = [
  "gcc 0.3.24 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.1.12 (registry+https://github.com/rust-lang/crates.io-index)",
