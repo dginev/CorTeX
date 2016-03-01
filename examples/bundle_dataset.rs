@@ -104,17 +104,21 @@ fn main() {
                     true
                   }
                   else {
+                    println!("-- Ill-formed XML: {:?}", entry);
                     false // ill-formed, do nothing
                   }
                 },
-                Err(_) => false
+                Err(_) => {
+                  println!("-- Ill-formed UTF8 archive data: {:?}", entry);
+                  false
+                }
               };
               if is_well_formed { match entry_name_regex.captures(&entry) {
                 Some(cap) => {
                   let month_dir = cap.at(1).unwrap_or("monthXX");
                   let paper_dir = cap.at(2).unwrap_or("paperXX");
                   let dataset_path = status.to_key() + "/" + month_dir + "/" + paper_dir + ".html";
-                  println!("Writing {:?} ...", dataset_path);
+                  println!("Writing: {:?} ", dataset_path);
                   total_dataset_entries += 1;
                   match archive_writer_new.write_header_new(&dataset_path, raw_entry_data.len() as i64) {
                     Ok(_) => {},
