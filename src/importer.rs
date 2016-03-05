@@ -61,7 +61,7 @@ impl Importer {
     try!(self.unpack_extend_arxiv_top());
     // We can reuse the monthly unpack, as it deletes all unpacked document archives
     // In other words, it always acts as a conservative extension
-    try!(self.unpack_arxiv_months()); 
+    try!(self.unpack_arxiv_months());
     Ok(())
   }
 
@@ -74,9 +74,9 @@ impl Importer {
       match entry {
         Ok(path) => {
           // let base_name = path.file_stem().unwrap().to_str().unwrap();
-          // If we wanted fine-grained control, we could infer the dir name:          
+          // If we wanted fine-grained control, we could infer the dir name:
           // let arxiv_name_re = Regex::new(r"arXiv_src_(\d+)_").unwrap();
-          // let captures = arxiv_name_re.captures(base_name).unwrap();            
+          // let captures = arxiv_name_re.captures(base_name).unwrap();
           // let unpack_dirname = match captures.at(1) {
           //   Some(month) => month,
           //   None => base_name
@@ -95,7 +95,7 @@ impl Importer {
                 match fs::metadata(full_extract_path.clone()) {
                   Ok(_) => println!("File {:?} exists, won't unpack.", e.pathname()),
                   Err(_) => {
-                    println!("To unpack: {:?}", full_extract_path); 
+                    println!("To unpack: {:?}", full_extract_path);
                     match e.extract_to(&full_extract_path, Vec::new()) {
                       Ok(_) => {},
                       _ => {
@@ -141,7 +141,7 @@ impl Importer {
                     match fs::metadata(dir_extract_path) {
                       Ok(_) => {},//println!("Directory for {:?} already exists, won't unpack.", e.pathname()),
                       Err(_) => {
-                        println!("To unpack: {:?}", full_extract_path); 
+                        println!("To unpack: {:?}", full_extract_path);
                         match e.extract_to(&full_extract_path, Vec::new()) {
                           Ok(_) => {},
                           _ => {
@@ -270,7 +270,7 @@ impl Importer {
     let mut walk_q : Vec<PathBuf> = vec![Path::new(&self.corpus.path).to_owned()];
     let mut import_q : Vec<Task> = Vec::new();
     let mut import_counter = 0;
-    while walk_q.len() > 0 { 
+    while walk_q.len() > 0 {
       let current_path = walk_q.pop().unwrap();
       // println!("-- current path {:?}", current_path);
       let current_metadata = try!(fs::metadata(current_path.clone()));
@@ -287,8 +287,8 @@ impl Importer {
             import_q.push(self.new_task(current_entry_path));
             if import_q.len() >= 1000 {
               // Flush the import queue to backend:
-              println!("Checkpoint backend writer: job {:?}", import_q.len());
-              self.backend.mark_imported(&import_q).unwrap(); // TODO: Proper Error-handling 
+              println!("Checkpoint backend writer: job {:?}", import_counter);
+              self.backend.mark_imported(&import_q).unwrap(); // TODO: Proper Error-handling
               import_q.clear();
             }
           },
@@ -318,7 +318,7 @@ impl Importer {
     } else {
       entry.clone()
     };
-    
+
     Task {id: None, entry : abs_entry, status : TaskStatus::NoProblem.raw(), corpusid : self.corpus.id.unwrap(), serviceid: 2}
   }
   /// Top-level import driver, performs an optional unpack, and then an import into the Task store
@@ -338,7 +338,7 @@ impl Importer {
     if self.corpus.complex { // Complex setup has an unpack step:
       try!(self.unpack_extend());
     }
-    // Use the regular walk_import, at the cost of more database work, 
+    // Use the regular walk_import, at the cost of more database work,
     // the "Backend::mark_imported" ORM method allows us to insert only if new
     try!(self.walk_import());
     Ok(())
