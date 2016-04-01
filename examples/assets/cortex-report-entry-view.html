@@ -163,13 +163,23 @@ $("#form-get-entry").submit(function(e) {
           var texjs_css = '<link media="all" rel="stylesheet" href="https://davidar.io/TeX.js/LaTeXML/ltx-article.css"></link>';
           var texjs_js = '<script src="https://davidar.io/TeX.js/load.js"></'+'script>'; // linter issues...
           var texjs_responsive = '<meta name="viewport" content="width=device-width, initial-scale=1"></meta>';
+          var fire_loaded = '<script> '+
+          ' var DOMContentLoaded_event = document.createEvent("Event"); '+
+          ' DOMContentLoaded_event.initEvent("DOMContentLoaded", true, true); '+
+          ' var fire_loaded = function(){ '+
+          '  window.document.dispatchEvent(DOMContentLoaded_event); ' +
+          ' }; '+
+          ' var fire_loaded_loop = window.setInterval(fire_loaded, 2000);' +
+          ' window.setTimeout(function(){clearInterval(fire_loaded_loop)}, 6000); '+
+          '</'+'script>';
           var texjs_sources = texjs_css + "\n" + texjs_responsive + "\n";
           main_content = main_content.replace(/<\/head>/, texjs_sources + "\n</head>");
-          // Temporary: override visibility='hidden' rule for body from TeX.js's main.css
-          main_content = main_content.replace(/<body/,"<body style=\"display: initial\" ");
-          main_content = main_content.replace(/<\/body>/,"\n" + texjs_js+"\n</body>");
+          main_content = main_content.replace(/<\/body>/, "\n"+texjs_js + "\n"+fire_loaded+"\n</body>");
         }
+        // var mainblob = new Blob([main_content], {type : 'text/html'});
+        // var main_object_url = window.URL.createObjectURL(mainblob);
         document.write(main_content);
+
       }
     }
   };
