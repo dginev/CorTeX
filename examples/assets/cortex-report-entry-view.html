@@ -169,17 +169,7 @@ $("#form-get-entry").submit(function(e) {
           main_content = main_content.replace(/<body/,"<body style=\"display: initial\" ");
           main_content = main_content.replace(/<\/body>/,"\n" + texjs_js+"\n</body>");
         }
-        var mainblob = new Blob([main_content], {type : 'text/html'});
-        var main_object_url = window.URL.createObjectURL(mainblob);
-        $("#iframe-preview-entry").remove();
-        var iframe = $(document.createElement('iframe'));
-        iframe.attr("id","iframe-preview-entry");
-        iframe.attr("style","width: 100%; height: 100%; padding: 0; margin: 0;");
-        iframe.attr("frameborder",0);
-        $("#modal-get-entry").modal("hide");
-        $("#modal-preview-entry").modal("show");
-        $("#modal-preview-body").append(iframe);
-        iframe.attr("src",main_object_url);
+        document.write(main_content);
       }
     }
   };
