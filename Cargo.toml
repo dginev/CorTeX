@@ -1,6 +1,6 @@
 [package]
 name = "cortex"
-version = "0.0.1"
+version = "0.1.0"
 authors = ["Deyan Ginev <d.ginev@jacobs-university.de>"]
 license = "MIT"
 repository = "https://github.com/dginev/CorTeX"
@@ -40,7 +40,7 @@ rustc-serialize = "0.3"
 postgres = "0.9"
 sys-info = "*"
 url = "*"
-hyper = "0.6.16"
+hyper = "0.8"
 glob = "*"
 rand = "*"
 tempfile = "*"
