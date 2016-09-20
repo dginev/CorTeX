@@ -450,14 +450,18 @@ impl Backend {
         match select_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1)]) {
           Ok(rows) => {
             for row in rows.iter() {
-              let status_code = TaskStatus::from_raw(row.get(0)).to_key();
+              let status = TaskStatus::from_raw(row.get(0));
+              let status_key = status.to_key();
               let count: i64 = row.get(1);
               {
-                let status_frequency = stats_hash.entry(status_code).or_insert(0.0);
+                let status_frequency = stats_hash.entry(status_key).or_insert(0.0);
                 *status_frequency += count as f64;
               }
-              let total_frequency = stats_hash.entry("total".to_string()).or_insert(0.0);
-              *total_frequency += count as f64;
+              if status != TaskStatus::Invalid {
+                // DIScount invalids from the total numbers
+                let total_frequency = stats_hash.entry("total".to_string()).or_insert(0.0);
+                *total_frequency += count as f64;
+              }
             }
           }
           _ => {}
@@ -504,10 +508,19 @@ impl Backend {
           }
         } else {
           let total_count_query = self.connection.prepare("select count(*) from tasks WHERE serviceid=$1 and corpusid=$2;").unwrap();
+          let invalid_count_query = self.connection
+                                        .prepare("select count(distinct(tasks.taskid)) from tasks,logs WHERE tasks.taskid = logs.taskid and serviceid=$1 and corpusid=$2 and severity='invalid';")
+                                        .unwrap();
+          let invalid_tasks: i64 = match invalid_count_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1)]) {
+            Err(_) => 0, // don't divide by 0
+            Ok(count) => count.get(0).get(0),
+          };
+          // The total tasks are All tasks MINUS Invalid tasks, as we don't want to dilute the service percentage with invalid jobs.
+          // For now the fastest way to obtain that number is using 2 queries for each and subtracting the numbers in Rust
           let total_tasks: i64 = match total_count_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1)]) {
             Err(_) => 1, // don't divide by 0
             Ok(count) => count.get(0).get(0),
-          };
+          } - invalid_tasks;
           match category {
             // using ::int4 since the rust postgresql wrapper can't map Numeric into Rust yet, but it is fine with bigint (as i64)
             None => {

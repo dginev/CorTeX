@@ -344,7 +344,7 @@ pub struct TaskMessage {
   pub details: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 /// An enumeration of the expected task statuses
 pub enum TaskStatus {
   /// currently queued for processing
