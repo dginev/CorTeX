@@ -28,19 +28,19 @@ fn get_dir_size(direntry: &DirEntry) -> u64 {
   // Initialize with the size of the current directory
   let mut size = direntry.metadata().unwrap().len();
   // Sum up the current file children
-  for subfile in get_subfiles(direntry).iter() {
+  for subfile in &get_subfiles(direntry) {
     let subfile_size = subfile.metadata().unwrap().len();
     size += subfile_size;
   }
   // And recurse into subdirectories
-  for subdir in get_subdirs(direntry).iter() {
+  for subdir in &get_subdirs(direntry) {
     size += get_dir_size(subdir); }
   size
 }
 
 fn is_dir(direntry : &DirEntry) -> bool {
   let metadata = direntry.metadata();
-  return match metadata {
+  match metadata {
     Err(_) => false,
     Ok(metadata) => metadata.is_dir()
   }
@@ -56,12 +56,12 @@ fn get_subfiles(direntry : &DirEntry) -> Vec<DirEntry> {
 fn get_path_subdirs(path : &Path) -> Vec<DirEntry> {
   let children = fs::read_dir(path).unwrap();
   let children_entries = children.map(|c| c.unwrap()).collect::<Vec<_>>();
-  children_entries.into_iter().filter(|c| is_dir(c)).collect::<Vec<_>>()  
+  children_entries.into_iter().filter(|c| is_dir(c)).collect::<Vec<_>>()
 }
 fn get_path_subfiles(path : &Path) -> Vec<DirEntry> {
   let children = fs::read_dir(path).unwrap();
   let children_entries = children.map(|c| c.unwrap()).collect::<Vec<_>>();
-  children_entries.into_iter().filter(|c| !is_dir(c)).collect::<Vec<_>>()  
+  children_entries.into_iter().filter(|c| !is_dir(c)).collect::<Vec<_>>()
 }
 
 fn write_stats<K: Hash + Eq + Encodable, V: Encodable>(name : &'static str, counts : &HashMap<K,V>) -> std::io::Result<()> {
@@ -83,14 +83,14 @@ fn main() {
   let mut arxiv_counts: HashMap<String, u64> = HashMap::new();
   let arxiv_month_dirs = get_path_subdirs(arxiv_root);
 
-  for month_dir in arxiv_month_dirs.iter() {
+  for month_dir in &arxiv_month_dirs {
     println!("-- Measuring {:?}", month_dir.file_name().to_str().unwrap());
     let mut monthly_size = 0;
     let month_papers = get_subdirs(month_dir);
     // Record how many papers were submitted in that month
     arxiv_counts.insert(month_dir.file_name().to_str().unwrap().to_string(), month_papers.len() as u64);
 
-    for paper_dir in month_papers.iter() {
+    for paper_dir in &month_papers {
       // Record the size of each paper directory
       let paper_size = get_dir_size(paper_dir) / 1024; // In KB
       if paper_size > max_size {
@@ -102,7 +102,7 @@ fn main() {
         min_path = paper_dir.path().to_str().unwrap().to_string();
       }
       monthly_size += paper_size;
-      
+
       let size_frequency = arxiv_size_frequencies.entry(paper_size).or_insert(0);
       *size_frequency += 1;
     }
@@ -144,7 +144,7 @@ fn main() {
     "9504", "9505", "9506", "9507", "9508", "9509", "9510", "9511", "9512", "9601", "9602", "9603", "9604", "9605", "9606",
     "9607", "9608", "9609", "9610", "9611", "9612", "9701", "9702", "9703", "9704", "9705", "9706", "9707", "9708", "9709",
     "9710", "9711", "9712", "9801", "9802", "9803", "9804", "9805", "9806", "9807", "9808", "9809", "9810", "9811", "9812",
-    "9901", "9902", "9903", "9904", "9905", "9906", "9907", "9908", "9909", "9910", "9911", "9912", "0001", "0002", "0003", 
+    "9901", "9902", "9903", "9904", "9905", "9906", "9907", "9908", "9909", "9910", "9911", "9912", "0001", "0002", "0003",
     "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0101", "0102", "0103", "0104", "0105", "0106",
     "0107", "0108", "0109", "0110", "0111", "0112", "0201", "0202", "0203", "0204", "0205", "0206", "0207", "0208", "0209",
     "0210", "0211", "0212", "0301", "0302", "0303", "0304", "0305", "0306", "0307", "0308", "0309", "0310", "0311", "0312",
@@ -161,7 +161,7 @@ fn main() {
 
   // Plot of paper counts by month:
   let zero = 0 as u64;
-  let ordered_counts = ordered_months.iter().map(|m| 
+  let ordered_counts = ordered_months.iter().map(|m|
     match arxiv_counts.get(&m.to_string()) {
         Some(counts) => counts,
         None => &zero
@@ -179,7 +179,7 @@ fn main() {
   fg.show();
 
   // Plot of submission counts by month:
-  let ordered_sizes = ordered_months.iter().map(|m| 
+  let ordered_sizes = ordered_months.iter().map(|m|
     match arxiv_monthly_sizes.get(&m.to_string()) {
         Some(&counts) => counts,
         None => zero
@@ -196,7 +196,7 @@ fn main() {
 
   // Plot average paper size in KB
   // Plot of submission size by month:
- 
+
   let freq_keys = arxiv_size_frequencies.clone().into_iter().map(|entry| entry.0);
   let freq_values = arxiv_size_frequencies.clone().into_iter().map(|entry| entry.1);
 

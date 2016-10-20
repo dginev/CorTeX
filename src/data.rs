@@ -20,7 +20,7 @@ use postgres::error::Error;
 
 use Archive::*;
 
-/// A minimalistic ORM trait for CorTeX data items
+/// A minimalistic ORM trait for `CorTeX` data items
 pub trait CortexORM {
   /// Select from Task store via the primary id
   fn select_by_id<'a>(&'a self, connection: &'a Connection) -> Result<Option<Self>, Error>
@@ -128,7 +128,7 @@ impl CortexORM for Task {
     try!(connection.execute("DELETE FROM tasks WHERE taskid = $1", &[&self.id]));
     Ok(())
   }
-  fn from_row<'a>(row: Row) -> Self {
+  fn from_row(row: Row) -> Self {
     let fix_width_entry: String = row.get(1);
     Task {
       id: Some(row.get(0)),
@@ -141,7 +141,7 @@ impl CortexORM for Task {
 }
 
 impl Task {
-  /// Generates a `TaskReport`, given the path to a result archive from a CorTeX processing job
+  /// Generates a `TaskReport`, given the path to a result archive from a `CorTeX` processing job
   /// Expects a "cortex.log" file in the archive, following the LaTeXML messaging conventions
   pub fn generate_report(&self, result: &Path) -> TaskReport {
     // println!("Preparing report for {:?}, result at {:?}",self.entry, result);
@@ -162,52 +162,44 @@ impl Task {
           println!("Error TODO: Couldn't open archive_reader: {:?}", e);
         }
         Ok(archive_reader) => {
-          loop {
-            match archive_reader.next_header() {
-              Ok(e) => {
-                let current_name = e.pathname();
-                if current_name != log_name {
-                  continue;
-                } else {
-                  // In a "raw" read, we don't know the data size in advance. So we bite the bullet and
-                  // read the usually manageable log file in memory
-                  let mut raw_log_data = Vec::new();
-                  loop {
-                    match archive_reader.read_data(10240) {
-                      Ok(chunk) => raw_log_data.extend(chunk.into_iter()),
-                      Err(_) => break,
-                    };
-                  }
-                  let log_string: String = match str::from_utf8(&raw_log_data) {
-                    Ok(some_utf_string) => some_utf_string.to_string(),
-                    Err(e) => "Fatal:cortex:unicode_parse_error ".to_string() + &e.to_string() + "\nStatus:conversion:3",
-                  };
-                  messages = self.parse_log(log_string);
-                  // Look for the special status message - Fatal otherwise!
-                  for m in messages.iter() {
-                    // Invalids are a bit of a workaround for now, they're fatal messages in latexml, but we want them separated out in cortex
-                    if m.severity == "invalid" {
-                      status = TaskStatus::Invalid;
-                      break;
-                    } else if (m.severity == "status") && (m.category == "conversion") && !(m.what.is_empty()) {
-                      // Adapt status to the CorTeX scheme: cortex_status = -(latexml_status+1)
-                      let latexml_scheme_status = match m.what.parse::<i32>() {
-                        Ok(num) => num,
-                        Err(e) => {
-                          println!("Error TODO: Failed to parse conversion status {:?}: {:?}",
-                                   m.what,
-                                   e);
-                          TaskStatus::Fatal.raw()
-                        }
-                      };
-                      let cortex_scheme_status = -(latexml_scheme_status + 1);
-                      status = TaskStatus::from_raw(cortex_scheme_status);
-                      break;
+          while let Ok(e) = archive_reader.next_header() {
+            let current_name = e.pathname();
+            if current_name != log_name {
+              continue;
+            } else {
+              // In a "raw" read, we don't know the data size in advance. So we bite the bullet and
+              // read the usually manageable log file in memory
+              let mut raw_log_data = Vec::new();
+              while let Ok(chunk) = archive_reader.read_data(10240) {
+                raw_log_data.extend(chunk.into_iter());
+              }
+              let log_string: String = match str::from_utf8(&raw_log_data) {
+                Ok(some_utf_string) => some_utf_string.to_string(),
+                Err(e) => "Fatal:cortex:unicode_parse_error ".to_string() + &e.to_string() + "\nStatus:conversion:3",
+              };
+              messages = self.parse_log(log_string);
+              // Look for the special status message - Fatal otherwise!
+              for m in &messages {
+                // Invalids are a bit of a workaround for now, they're fatal messages in latexml, but we want them separated out in cortex
+                if m.severity == "invalid" {
+                  status = TaskStatus::Invalid;
+                  break;
+                } else if (m.severity == "status") && (m.category == "conversion") && !(m.what.is_empty()) {
+                  // Adapt status to the CorTeX scheme: cortex_status = -(latexml_status+1)
+                  let latexml_scheme_status = match m.what.parse::<i32>() {
+                    Ok(num) => num,
+                    Err(e) => {
+                      println!("Error TODO: Failed to parse conversion status {:?}: {:?}",
+                               m.what,
+                               e);
+                      TaskStatus::Fatal.raw()
                     }
-                  }
+                  };
+                  let cortex_scheme_status = -(latexml_scheme_status + 1);
+                  status = TaskStatus::from_raw(cortex_scheme_status);
+                  break;
                 }
               }
-              Err(_) => break,
             }
           }
           drop(archive_reader);
@@ -230,7 +222,6 @@ impl Task {
 
     // regexes:
     let message_line_regex = Regex::new(r"^([^ :]+):([^ :]+):([^ ]+)(\s(.*))?$").unwrap();
-    let start_tab_regex = Regex::new(r"^\t").unwrap();
     for line in log.lines() {
       // Skip empty lines
       if line.is_empty() {
@@ -239,7 +230,7 @@ impl Task {
       // If we have found a message header and we're collecting details:
       if in_details_mode {
         // If the line starts with tab, we are indeed reading in details
-        if start_tab_regex.is_match(line) {
+        if line.starts_with('\t') {
           // Append details line to the last message
           let mut last_message = messages.pop().unwrap();
           let mut truncated_details = last_message.details + "\n" + line;
@@ -331,7 +322,7 @@ pub struct TaskReport {
 }
 
 #[derive(Clone)]
-/// A task processing message, as per the LaTeXML convention
+/// A task processing message, as per the `LaTeXML` convention
 pub struct TaskMessage {
   /// high level description
   /// ("fatal", "error", "warning" or "info")
@@ -388,28 +379,27 @@ impl fmt::Debug for TaskMessage {
 impl TaskStatus {
   /// Maps the enumeration into the raw ints for the Task store
   pub fn raw(&self) -> i32 {
-    match self {
-      &TaskStatus::TODO => 0,
-      &TaskStatus::NoProblem => -1,
-      &TaskStatus::Warning => -2,
-      &TaskStatus::Error => -3,
-      &TaskStatus::Fatal => -4,
-      &TaskStatus::Invalid => -5,
-      &TaskStatus::Blocked(x) => x,
-      &TaskStatus::Queued(x) => x,
+    match *self {
+      TaskStatus::TODO => 0,
+      TaskStatus::NoProblem => -1,
+      TaskStatus::Warning => -2,
+      TaskStatus::Error => -3,
+      TaskStatus::Fatal => -4,
+      TaskStatus::Invalid => -5,
+      TaskStatus::Blocked(x) | TaskStatus::Queued(x) => x,
     }
   }
   /// Maps the enumeration into the raw severity string for the Task store logs / frontend reports
   pub fn to_key(&self) -> String {
-    match self {
-      &TaskStatus::NoProblem => "no_problem",
-      &TaskStatus::Warning => "warning",
-      &TaskStatus::Error => "error",
-      &TaskStatus::Fatal => "fatal",
-      &TaskStatus::TODO => "todo",
-      &TaskStatus::Invalid => "invalid",
-      &TaskStatus::Blocked(_) => "blocked",
-      &TaskStatus::Queued(_) => "queued",
+    match *self {
+      TaskStatus::NoProblem => "no_problem",
+      TaskStatus::Warning => "warning",
+      TaskStatus::Error => "error",
+      TaskStatus::Fatal => "fatal",
+      TaskStatus::TODO => "todo",
+      TaskStatus::Invalid => "invalid",
+      TaskStatus::Blocked(_) => "blocked",
+      TaskStatus::Queued(_) => "queued",
     }
     .to_string()
   }
@@ -422,8 +412,8 @@ impl TaskStatus {
       -3 => TaskStatus::Error,
       -4 => TaskStatus::Fatal,
       -5 => TaskStatus::Invalid,
-      num if num < -5 => TaskStatus::Blocked(num.clone()),
-      _ => TaskStatus::Queued(num.clone()),
+      num if num < -5 => TaskStatus::Blocked(num),
+      _ => TaskStatus::Queued(num),
     }
   }
   /// Maps from the raw severity log values into the enumeration
@@ -432,12 +422,11 @@ impl TaskStatus {
       "no_problem" => TaskStatus::NoProblem,
       "warning" => TaskStatus::Warning,
       "error" => TaskStatus::Error,
-      "fatal" => TaskStatus::Fatal,
       "todo" => TaskStatus::TODO,
       "invalid" => TaskStatus::Invalid,
       "blocked" => TaskStatus::Blocked(-6),
       "queued" => TaskStatus::Queued(1),
-      _ => TaskStatus::Fatal,
+      "fatal" | _ => TaskStatus::Fatal,
     }
   }
   /// Returns all raw severity strings as a vector
@@ -540,19 +529,16 @@ impl Corpus {
                              version: 0.1,
                              inputformat: String::new(),
                            }
-                           .select_by_id(&connection);
-      match service_result {
-        Ok(service_select) => {
-          match service_select {
-            Some(service) => services.push(service),
-            _ => {}
-          }
+                           .select_by_id(connection);
+      if let Ok(service_select) = service_result {
+        if let Some(service) = service_select {
+          services.push(service);
         }
-        _ => {}
       }
     }
-    return Ok(services);
+    Ok(services)
   }
+
   /// Return a hash representation of the corpus, usually for frontend reports
   pub fn to_hash(&self) -> HashMap<String, String> {
     let mut hm = HashMap::new();
@@ -562,7 +548,7 @@ impl Corpus {
 }
 
 #[derive(Clone)]
-/// A CorTeX processing Service
+/// A `CorTeX` processing service
 pub struct Service {
   /// optional id (None for mock / yet-to-be-inserted rows)
   pub id: Option<i32>,
@@ -702,6 +688,6 @@ fn utf_truncate(input: &mut String, maxsize: usize) {
     } // Extra {} wrap to limit the immutable borrow of char_indices()
     input.truncate(utf_maxsize);
   }
-  let no_nulls_regex = Regex::new(r"\x00").unwrap();
-  *input = no_nulls_regex.replace_all(input, "");
+  // eliminate null characters if any
+  *input = input.replace("\x00", "");
 }

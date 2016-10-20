@@ -20,7 +20,7 @@ use std::io::Read;
 use cortex::backend::Backend;
 use cortex::data::{CortexORM, Corpus};
 
-/// Reads a lit of arXiv ids given on input, and packages the respective CorTeX entries into a new sandbox.
+/// Reads a lit of arXiv ids given on input, and packages the respective `CorTeX` entries into a new sandbox.
 fn main() {
   // Read input arguments
   let mut input_args = env::args();
@@ -90,7 +90,7 @@ fn main() {
             // Obtain new-style entry path
             let month = caps.at(1).unwrap();
             let paper = caps.at(0).unwrap();
-            Some(month.to_owned() + "/" + &paper + "/" + &paper + ".zip")
+            Some(month.to_owned() + "/" + paper + "/" + paper + ".zip")
           }
         }
       }
@@ -110,28 +110,25 @@ fn main() {
       Err(_) => println!("-- missing arXiv source for {:?}", id),
       Ok(mut entry_fh) => {
         let mut buffer = Vec::new();
-        match entry_fh.read_to_end(&mut buffer) {
-          Ok(_) => {
-            // Everything looks ok with this paper, adding it to the sandbox:
-            counter += 1;
-            match sandbox_writer.write_header_new(&relative_entry_path, buffer.len() as i64) {
-              Ok(_) => {}
-              Err(e) => {
-                println!("Couldn't write header {:?}: {:?}", relative_entry_path, e);
-                continue;
-              }
-            };
-            match sandbox_writer.write_data(buffer) {
-              Ok(_) => {}
-              Err(e) => {
-                println!("Failed to write data to {:?} because {:?}",
-                         relative_entry_path.clone(),
-                         e)
-              }
-            };
-          }
-          _ => {}
-        };
+        if let Ok(_) = entry_fh.read_to_end(&mut buffer) {
+          // Everything looks ok with this paper, adding it to the sandbox:
+          counter += 1;
+          match sandbox_writer.write_header_new(&relative_entry_path, buffer.len() as i64) {
+            Ok(_) => {}
+            Err(e) => {
+              println!("Couldn't write header {:?}: {:?}", relative_entry_path, e);
+              continue;
+            }
+          };
+          match sandbox_writer.write_data(buffer) {
+            Ok(_) => {}
+            Err(e) => {
+              println!("Failed to write data to {:?} because {:?}",
+                       relative_entry_path.clone(),
+                       e)
+            }
+          };
+        }
       }
     };
   }

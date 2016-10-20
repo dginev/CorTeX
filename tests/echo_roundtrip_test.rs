@@ -19,7 +19,7 @@ fn mock_round_trip() {
   let job_limit : Option<usize> = Some(1);
   let test_backend = Backend::testdb();
   assert!(test_backend.setup_task_tables().is_ok());
-  
+
   let mock_corpus = test_backend.add(
     Corpus {
       id : None,
@@ -28,7 +28,7 @@ fn mock_round_trip() {
       complex : true,
     }).unwrap();
   let echo_service = test_backend.add(
-    Service { 
+    Service {
       id : None,
       name : "echo_service".to_string(),
       version : 0.1,
@@ -45,18 +45,18 @@ fn mock_round_trip() {
       id : None,
       entry : abs_entry.clone(),
       serviceid : 2, // Import service always has id 2
-      corpusid : mock_corpus.id.unwrap().clone(),
+      corpusid : mock_corpus.id.unwrap(),
       status : TaskStatus::NoProblem.raw()
     }).unwrap();
   test_backend.add(
     Task {
       id : None,
       entry : abs_entry.clone(),
-      serviceid : echo_service.id.unwrap().clone(),
-      corpusid : mock_corpus.id.unwrap().clone(),
+      serviceid : echo_service.id.unwrap(),
+      corpusid : mock_corpus.id.unwrap(),
       status : TaskStatus::TODO.raw()
     }).unwrap();
-  
+
   // Start up a ventilator/sink pair
   let manager_thread = thread::spawn(move || {
     let manager = TaskManager {
@@ -64,14 +64,14 @@ fn mock_round_trip() {
       result_port : 5556,
       queue_size : 100000,
       message_size : 100,
-      backend_address : TEST_DB_ADDRESS.clone().to_string()
+      backend_address : TEST_DB_ADDRESS.to_string()
     };
     assert!(manager.start(job_limit).is_ok());
   });
 
   // Start up an echo worker
   let worker = EchoWorker::default();
-  // Perform a single echo task 
+  // Perform a single echo task
   assert!(worker.start(job_limit).is_ok());
   assert!(manager_thread.join().is_ok());
   // TODO: Check round-trip success

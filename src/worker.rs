@@ -5,7 +5,7 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Worker for performing corpus imports, when served as "init" tasks by the CorTeX dispatcher
+//! Worker for performing corpus imports, when served as "init" tasks by the `CorTeX` dispatcher
 
 extern crate pericortex;
 extern crate zmq;
@@ -22,7 +22,7 @@ use data::{Task, Corpus};
 use importer::Importer;
 use pericortex::worker::Worker;
 
-/// `Worker` for initializing/importing a new corpus into CorTeX
+/// `Worker` for initializing/importing a new corpus into `CorTeX`
 pub struct InitWorker {
   /// name of the service ("init")
   pub service: String,
@@ -61,7 +61,7 @@ impl Worker for InitWorker {
     self.sink.clone()
   }
   fn message_size(&self) -> usize {
-    self.message_size.clone()
+    self.message_size
   }
 
   fn convert(&self, path: &Path) -> Option<File> {
@@ -137,15 +137,12 @@ impl Worker for InitWorker {
       sink.send(&[], 0).unwrap();
 
       work_counter += 1;
-      match limit {
-        Some(upper_bound) => {
-          if work_counter >= upper_bound {
-            // Give enough time to complete the Final job.
-            thread::sleep(Duration::from_millis(500));
-            break;
-          }
+      if let Some(upper_bound) = limit {
+        if work_counter >= upper_bound {
+          // Give enough time to complete the Final job.
+          thread::sleep(Duration::from_millis(500));
+          break;
         }
-        None => {}
       };
     }
     Ok(())

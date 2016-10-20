@@ -14,22 +14,22 @@ use std::fs;
 // use std::io::{Error};
 
 fn assert_files(files:Vec<&str>) -> Result<(),std::io::Error> {
-  for file in files.iter() {
-    let meta = fs::metadata(file.clone());
+  for file in &files {
+    let meta = fs::metadata(file);
     assert!(meta.is_ok());
     assert!(meta.unwrap().is_file());
     // They're also temporary, so delete them
-    try!(fs::remove_file(file.clone())); 
+    try!(fs::remove_file(file));
   }
   Ok(()) }
 
 fn assert_dirs(dirs : Vec<&str>) -> Result<(),std::io::Error> {
-  for dir in dirs.iter() {
-    let meta = fs::metadata(dir.clone());
+  for dir in &dirs {
+    let meta = fs::metadata(dir);
     assert!(meta.is_ok());
     assert!(meta.unwrap().is_dir());
     // They're also temporary, so delete them
-    try!(fs::remove_dir(dir.clone())); 
+    try!(fs::remove_dir(dir));
   }
   Ok(()) }
 
@@ -45,7 +45,7 @@ fn can_import_simple() {
           complex : false }).unwrap(),
     backend: test_backend,
     cwd : Importer::cwd() };
-  
+
   println!("-- Testing simple import");
   assert!( importer.process().is_ok());
 }
@@ -63,7 +63,7 @@ fn can_import_complex() {
     backend: Backend::testdb(),
     cwd : Importer::cwd() };
 
-  
+
   println!("-- Testing complex import");
   assert!( importer.process().is_ok() );
 
@@ -77,7 +77,7 @@ fn can_import_complex() {
     backend: Backend::testdb(),
     cwd : Importer::cwd() };
 
-  
+
   println!("-- Testing repeated complex import (successful and no-op)");
   assert!( repeat_importer.process().is_ok());
 
@@ -92,5 +92,5 @@ fn can_import_complex() {
     "tests/data/9107"
   ]);
   assert!(dirs_removed_ok.is_ok());
-  
+
 }

@@ -29,11 +29,11 @@ pub struct Backend {
 
 /// By default, use a localhost-only cortex user/pass
 pub static DEFAULT_DB_ADDRESS: &'static str = "postgres://cortex:cortex@localhost/cortex";
-/// Similarly, use a cortex_tester user/pass for tests
+/// Similarly, use a `cortex_tester` user/pass for tests
 pub static TEST_DB_ADDRESS: &'static str = "postgres://cortex_tester:cortex_tester@localhost/cortex_tester";
 impl Default for Backend {
   fn default() -> Backend {
-    Backend { connection: Connection::connect(DEFAULT_DB_ADDRESS.clone(), &SslMode::None).unwrap() }
+    Backend { connection: Connection::connect(DEFAULT_DB_ADDRESS, &SslMode::None).unwrap() }
   }
 }
 
@@ -44,7 +44,7 @@ impl Backend {
   }
   /// Constructs the default Backend struct for testing
   pub fn testdb() -> Backend {
-    Backend { connection: Connection::connect(TEST_DB_ADDRESS.clone(), &SslMode::None).unwrap() }
+    Backend { connection: Connection::connect(TEST_DB_ADDRESS, &SslMode::None).unwrap() }
   }
 
   /// Instance methods
@@ -180,7 +180,7 @@ impl Backend {
 
   /// Insert a vector of new `Task` tasks into the Task store
   /// For example, on import, or when a new service is activated on a corpus
-  pub fn mark_imported(&self, tasks: &Vec<Task>) -> Result<(), Error> {
+  pub fn mark_imported(&self, tasks: &[Task]) -> Result<(), Error> {
     let trans = try!(self.connection.transaction());
     for task in tasks {
       // Insert, but only if the task is new (allow for extension calls with the same method)
@@ -194,7 +194,7 @@ impl Backend {
   }
 
   /// Insert a vector of `TaskReport` reports into the Task store, also marking their tasks as completed with the correct status code.
-  pub fn mark_done(&self, reports: &Vec<TaskReport>) -> Result<(), Error> {
+  pub fn mark_done(&self, reports: &[TaskReport]) -> Result<(), Error> {
     let trans = try!(self.connection.transaction());
     let insert_log_message = trans.prepare("INSERT INTO logs (taskid, severity, category, what, details) values($1,$2,$3,$4,$5)").unwrap();
     // let insert_log_message_details = trans.prepare("INSERT INTO logdetails (messageid, details) values(?,?)").unwrap();
@@ -225,7 +225,7 @@ impl Backend {
 
     let mut rng = thread_rng();
     let mark_rng: u16 = rng.gen();
-    let mark: i32 = -1 * (mark_rng as i32);
+    let mark: i32 = !(mark_rng as i32);
 
     // First, mark as blocked all of the tasks in the chosen scope, using a special mark
     match severity {
@@ -304,13 +304,11 @@ impl Backend {
   /// Note: Overwrites if the entry already existed.
   pub fn add<D: CortexORM + Clone>(&self, d: D) -> Result<D, Error> {
     let d_checked = try!(self.sync(&d));
-    match d_checked.get_id() {
-      Some(_) => {
-        // If this data item existed - delete any remnants of it
-        try!(self.delete(&d_checked));
-      }
-      None => {} // New, we can add it safely
-    };
+    if let Some(_) = d_checked.get_id() {
+      // If this data item existed - delete any remnants of it
+      try!(self.delete(&d_checked));
+    } // else New, we can add it safely
+
     // Add data item to the DB:
     try!(d.insert(&self.connection));
     let d_final = try!(self.sync(&d));
@@ -337,7 +335,7 @@ impl Backend {
         WHERE t.taskid=subt.taskid
         RETURNING t.taskid,t.entry,t.serviceid,t.corpusid,t.status;"));
     let rows = try!(stmt.query(&[&(mark as i32), &service.id.unwrap(), &TaskStatus::TODO.raw(), &(limit as i64)]));
-    Ok(rows.iter().map(|row| Task::from_row(row)).collect::<Vec<_>>())
+    Ok(rows.iter().map(Task::from_row).collect::<Vec<_>>())
   }
 
   /// Globally resets any "in progress" tasks back to "queued".
@@ -395,20 +393,14 @@ impl Backend {
   /// Returns a vector of currently available corpora in the Task store
   pub fn corpora(&self) -> Vec<Corpus> {
     let mut corpora = Vec::new();
-    match self.connection.prepare("SELECT corpusid,name,path,complex FROM corpora order by name") {
-      Ok(select_query) => {
-        match select_query.query(&[]) {
-          Ok(rows) => {
-            for row in rows.iter() {
-              corpora.push(Corpus::from_row(row));
-            }
-          }
-          _ => {}
+    if let Ok(select_query) = self.connection.prepare("SELECT corpusid,name,path,complex FROM corpora order by name") {
+      if let Ok(rows) = select_query.query(&[]) {
+        for row in rows.iter() {
+          corpora.push(Corpus::from_row(row));
         }
       }
-      _ => {}
     }
-    return corpora;
+    corpora
   }
 
   /// Returns a vector of tasks for a given Corpus, Service and status
@@ -439,35 +431,29 @@ impl Backend {
     }
   }
   /// Provides a progress report, grouped by severity, for a given `Corpus` and `Service` pair
-  pub fn progress_report<'report>(&self, c: &Corpus, s: &Service) -> HashMap<String, f64> {
+  pub fn progress_report(&self, c: &Corpus, s: &Service) -> HashMap<String, f64> {
     let mut stats_hash: HashMap<String, f64> = HashMap::new();
-    for status_key in TaskStatus::keys().into_iter() {
+    for status_key in TaskStatus::keys() {
       stats_hash.insert(status_key, 0.0);
     }
     stats_hash.insert("total".to_string(), 0.0);
-    match self.connection.prepare("select status,count(*) as status_count from tasks where serviceid=$1 and corpusid=$2 group by status order by status_count desc;") {
-      Ok(select_query) => {
-        match select_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1)]) {
-          Ok(rows) => {
-            for row in rows.iter() {
-              let status = TaskStatus::from_raw(row.get(0));
-              let status_key = status.to_key();
-              let count: i64 = row.get(1);
-              {
-                let status_frequency = stats_hash.entry(status_key).or_insert(0.0);
-                *status_frequency += count as f64;
-              }
-              if status != TaskStatus::Invalid {
-                // DIScount invalids from the total numbers
-                let total_frequency = stats_hash.entry("total".to_string()).or_insert(0.0);
-                *total_frequency += count as f64;
-              }
-            }
+    if let Ok(select_query) = self.connection.prepare("select status,count(*) as status_count from tasks where serviceid=$1 and corpusid=$2 group by status order by status_count desc;") {
+      if let Ok(rows) = select_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1)]) {
+        for row in rows.iter() {
+          let status = TaskStatus::from_raw(row.get(0));
+          let status_key = status.to_key();
+          let count: i64 = row.get(1);
+          {
+            let status_frequency = stats_hash.entry(status_key).or_insert(0.0);
+            *status_frequency += count as f64;
           }
-          _ => {}
+          if status != TaskStatus::Invalid {
+            // DIScount invalids from the total numbers
+            let total_frequency = stats_hash.entry("total".to_string()).or_insert(0.0);
+            *total_frequency += count as f64;
+          }
         }
       }
-      _ => {}
     }
     Backend::aux_stats_compute_percentages(&mut stats_hash, None);
     stats_hash
@@ -475,7 +461,7 @@ impl Backend {
 
   /// Given a complex selector, of a `Corpus`, `Service`, and the optional `severity`, `category` and `what`,
   /// Provide a progress report at the chosen granularity
-  pub fn task_report<'report>(&self, c: &Corpus, s: &Service, severity: Option<String>, category: Option<String>, what: Option<String>) -> Vec<HashMap<String, String>> {
+  pub fn task_report(&self, c: &Corpus, s: &Service, severity: Option<String>, category: Option<String>, what: Option<String>) -> Vec<HashMap<String, String>> {
     match severity {
       Some(severity_name) => {
         let raw_status = TaskStatus::from_key(&severity_name).raw();
@@ -686,7 +672,7 @@ impl Backend {
     let total: f64 = 1.0_f64.max(match total_given {
       None => {
         let total_entry = stats_hash.get_mut("total").unwrap();
-        (*total_entry).clone()
+        *total_entry
       }
       Some(total_num) => total_num,
     });

@@ -21,7 +21,7 @@ use std::io::Error;
 use backend::Backend;
 use data::{Task, TaskStatus, Corpus};
 
-/// Struct for performing corpus imports into CorTeX
+/// Struct for performing corpus imports into `CorTeX`
 pub struct Importer {
   /// a `Corpus` to be imported, containing all relevant metadata
   pub corpus: Corpus,
@@ -91,24 +91,19 @@ impl Importer {
                                  .support_format_all()
                                  .open_filename(path.to_str().unwrap(), 10240)
                                  .unwrap();
-          loop {
-            match archive_reader.next_header() {
-              Ok(e) => {
-                let full_extract_path = path_str.to_string() + &e.pathname();
-                match fs::metadata(full_extract_path.clone()) {
-                  Ok(_) => println!("File {:?} exists, won't unpack.", e.pathname()),
-                  Err(_) => {
-                    println!("To unpack: {:?}", full_extract_path);
-                    match e.extract_to(&full_extract_path, Vec::new()) {
-                      Ok(_) => {}
-                      _ => {
-                        println!("Failed to extract {:?}", full_extract_path);
-                      }
-                    }
+          while let Ok(e) = archive_reader.next_header() {
+            let full_extract_path = path_str.to_string() + &e.pathname();
+            match fs::metadata(full_extract_path.clone()) {
+              Ok(_) => println!("File {:?} exists, won't unpack.", e.pathname()),
+              Err(_) => {
+                println!("To unpack: {:?}", full_extract_path);
+                match e.extract_to(&full_extract_path, Vec::new()) {
+                  Ok(_) => {}
+                  _ => {
+                    println!("Failed to extract {:?}", full_extract_path);
                   }
                 }
               }
-              Err(_) => break,
             }
           }
         }
@@ -134,31 +129,26 @@ impl Importer {
                                  .support_format_all()
                                  .open_filename(path.to_str().unwrap(), 10240)
                                  .unwrap();
-          loop {
-            match archive_reader.next_header() {
-              Ok(e) => {
-                let full_extract_path = path_str.to_string() + &e.pathname();
-                match fs::metadata(full_extract_path.clone()) {
-                  Ok(_) => {}//println!("File {:?} exists, won't unpack.", e.pathname()),
+          while let Ok(e) = archive_reader.next_header() {
+            let full_extract_path = path_str.to_string() + &e.pathname();
+            match fs::metadata(full_extract_path.clone()) {
+              Ok(_) => {}//println!("File {:?} exists, won't unpack.", e.pathname()),
+              Err(_) => {
+                // Archive entries end in .gz, let's try that as well, to check if the directory is there
+                let dir_extract_path = &full_extract_path[0..full_extract_path.len() - 3];
+                match fs::metadata(dir_extract_path) {
+                  Ok(_) => {}//println!("Directory for {:?} already exists, won't unpack.", e.pathname()),
                   Err(_) => {
-                    // Archive entries end in .gz, let's try that as well, to check if the directory is there
-                    let dir_extract_path = &full_extract_path[0..full_extract_path.len() - 3];
-                    match fs::metadata(dir_extract_path) {
-                      Ok(_) => {}//println!("Directory for {:?} already exists, won't unpack.", e.pathname()),
-                      Err(_) => {
-                        println!("To unpack: {:?}", full_extract_path);
-                        match e.extract_to(&full_extract_path, Vec::new()) {
-                          Ok(_) => {}
-                          _ => {
-                            println!("Failed to extract {:?}", full_extract_path);
-                          }
-                        }
+                    println!("To unpack: {:?}", full_extract_path);
+                    match e.extract_to(&full_extract_path, Vec::new()) {
+                      Ok(_) => {}
+                      _ => {
+                        println!("Failed to extract {:?}", full_extract_path);
                       }
                     }
                   }
                 }
               }
-              Err(_) => break,
             }
           }
         }
@@ -244,28 +234,20 @@ impl Importer {
               }
             }
             Ok(archive_reader) => {
-              loop {
-                match archive_reader.next_header() {
-                  Ok(e) => {
-                    match archive_writer_new.write_header(e) {
-                      Ok(_) => {}
-                      _ => {} // TODO: If we need to print an error message, we can do so later.
-                    };
-                    loop {
-                      let entry_data = archive_reader.read_data(10240);
-                      match entry_data {
-                        Ok(chunk) => {
-                          archive_writer_new.write_data(chunk).unwrap();
-                        }
-                        Err(_) => {
-                          break;
-                        }
-                      };
+              while let Ok(e) = archive_reader.next_header() {
+                match archive_writer_new.write_header(e) {
+                  _ => {} // TODO: If we need to print an error message, we can do so later.
+                };
+                loop {
+                  let entry_data = archive_reader.read_data(10240);
+                  match entry_data {
+                    Ok(chunk) => {
+                      archive_writer_new.write_data(chunk).unwrap();
                     }
-                  }
-                  Err(_) => {
-                    break;
-                  }
+                    Err(_) => {
+                      break;
+                    }
+                  };
                 }
               }
             }
@@ -283,7 +265,7 @@ impl Importer {
   }
 
   /// Given a CorTeX-topology corpus, walk the file system and import it into the Task store
-  pub fn walk_import<'walk>(&self) -> Result<(), Error> {
+  pub fn walk_import(&self) -> Result<(), Error> {
     println!("-- Starting import walk");
     let import_extension = if self.corpus.complex {
       "zip"
@@ -293,7 +275,7 @@ impl Importer {
     let mut walk_q: Vec<PathBuf> = vec![Path::new(&self.corpus.path).to_owned()];
     let mut import_q: Vec<Task> = Vec::new();
     let mut import_counter = 0;
-    while walk_q.len() > 0 {
+    while !walk_q.is_empty() {
       let current_path = walk_q.pop().unwrap();
       // println!("-- current path {:?}", current_path);
       let current_metadata = try!(fs::metadata(current_path.clone()));

@@ -56,14 +56,14 @@ fn mock_tex_to_html() {
       id : None,
       entry : abs_entry.clone(),
       serviceid : 2, // Import service always has id 2
-      corpusid : mock_corpus.id.unwrap().clone(),
+      corpusid : mock_corpus.id.unwrap(),
       status : TaskStatus::NoProblem.raw()
     }).unwrap();
   let conversion_task = Task {
       id : None,
       entry : abs_entry.clone(),
-      serviceid : tex_to_html_service.id.unwrap().clone(),
-      corpusid : mock_corpus.id.unwrap().clone(),
+      serviceid : tex_to_html_service.id.unwrap(),
+      corpusid : mock_corpus.id.unwrap(),
       status : TaskStatus::TODO.raw()
     };
   test_backend.add(conversion_task.clone()).unwrap();
@@ -71,7 +71,7 @@ fn mock_tex_to_html() {
   // Start up a ventilator/sink pair
   let manager_thread = thread::spawn(move || {
     let manager = TaskManager {
-      backend_address : TEST_DB_ADDRESS.clone().to_string(),
+      backend_address : TEST_DB_ADDRESS.to_string(),
       ..TaskManager::default()
     };
     assert!(manager.start(job_limit).is_ok());

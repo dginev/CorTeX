@@ -11,7 +11,7 @@ extern crate time;
 use cortex::backend::{Backend};
 use cortex::importer::Importer;
 
-/// Extends all corpora registered with the CorTeX backend, with any new available sources
+/// Extends all corpora registered with the `CorTeX` backend, with any new available sources
 ///  (example usage: arXiv.org releases new source bundles every month, which warrant an update at the same frequency.)
 fn main() {
   // Note that we realize the initial import via a real cortex worker, but use a simply utility script for extensions.
@@ -23,9 +23,9 @@ fn main() {
       corpus: corpus.clone(),
       backend: Backend::default(),
       cwd : Importer::cwd() };
-    
+
     // Extend the already imported corpus. I prefer that method name to "update", as we won't yet implement
-    // downsizing on deletion. 
+    // downsizing on deletion.
     let extend_start = time::get_time();
     println!("-- Extending: {:?}", corpus.name);
     match importer.extend_corpus() {

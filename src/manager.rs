@@ -67,14 +67,14 @@ impl Default for TaskManager {
       result_port: 5556,
       queue_size: 100,
       message_size: 100000,
-      backend_address: DEFAULT_DB_ADDRESS.clone().to_string(),
+      backend_address: DEFAULT_DB_ADDRESS.to_string(),
     }
   }
 }
 
 impl TaskManager {
   /// Starts a new manager, spinning of dispatch/sink servers, listening on the specified ports
-  pub fn start<'manager>(&'manager self, job_limit: Option<usize>) -> Result<(), Error> {
+  pub fn start(&self, job_limit: Option<usize>) -> Result<(), Error> {
     // We'll use some local memoization shared between source and sink:
     let services: HashMap<String, Option<Service>> = HashMap::new();
     let progress_queue: HashMap<i64, TaskProgress> = HashMap::new();
@@ -85,9 +85,9 @@ impl TaskManager {
     let done_queue_arc = Arc::new(Mutex::new(done_queue));
 
     // First prepare the source ventilator
-    let source_port = self.source_port.clone();
-    let source_queue_size = self.queue_size.clone();
-    let source_message_size = self.message_size.clone();
+    let source_port = self.source_port;
+    let source_queue_size = self.queue_size;
+    let source_message_size = self.message_size;
     let source_backend_address = self.backend_address.clone();
 
     let vent_services_arc = services_arc.clone();
@@ -115,16 +115,13 @@ impl TaskManager {
       let finalize_backend = Backend::from_address(&finalize_backend_address);
       let mut finalize_jobs_count: usize = 0;
       // Persist every 1 second, if there is something to record
-      'markdonejob: loop {
-        match Server::mark_done_arc(&finalize_backend, &finalize_done_queue_arc) {
-          true => {
-            finalize_jobs_count += 1;
-            true;
-          } // we did some work, on to the next iteration
-          false => {
-            // If we have no reports to process, sleep for a second and recheck
-            thread::sleep(Duration::new(1, 0));
-          }
+      loop {
+        if Server::mark_done_arc(&finalize_backend, &finalize_done_queue_arc) {
+          // we did some work, on to the next iteration
+          finalize_jobs_count += 1;
+        } else {
+          // If we have no reports to process, sleep for a second and recheck
+          thread::sleep(Duration::new(1, 0));
         }
         if job_limit.is_some() && (finalize_jobs_count >= job_limit.unwrap()) {
           break;
@@ -133,9 +130,9 @@ impl TaskManager {
     });
 
     // Now prepare the results sink
-    let result_port = self.result_port.clone();
-    let result_queue_size = self.queue_size.clone();
-    let result_message_size = self.message_size.clone();
+    let result_port = self.result_port;
+    let result_queue_size = self.queue_size;
+    let result_message_size = self.message_size;
     let result_backend_address = self.backend_address.clone();
 
     let sink_services_arc = services_arc.clone();
@@ -196,7 +193,7 @@ impl Server {
     assert!(ventilator.bind(&address).is_ok());
     let mut source_job_count: usize = 0;
 
-    'ventjob: loop {
+    loop {
       let mut msg = zmq::Message::new().unwrap();
       let mut identity = zmq::Message::new().unwrap();
       ventilator.recv(&mut identity, 0).unwrap();
@@ -256,56 +253,53 @@ impl Server {
               }
             }
           }
-          match task_queue.pop() {
-            Some(current_task_progress) => {
-              dispatched_task = Some(current_task_progress.clone());
+          if let Some(current_task_progress) = task_queue.pop() {
+            dispatched_task = Some(current_task_progress.clone());
 
-              let current_task = current_task_progress.task;
-              let taskid = current_task.id.unwrap();
-              let serviceid = current_task.serviceid;
+            let current_task = current_task_progress.task;
+            let taskid = current_task.id.unwrap();
+            let serviceid = current_task.serviceid;
 
-              ventilator.send_msg(identity, SNDMORE).unwrap();
-              ventilator.send_str(&taskid.to_string(), SNDMORE).unwrap();
-              if serviceid == 1 {
-                // No payload needed for init
-                ventilator.send(&[], 0).unwrap();
-              } else {
-                // Regular services fetch the task payload and transfer it to the worker
-                let file_opt = current_task.prepare_input_stream();
-                if file_opt.is_ok() {
-                  let mut file = file_opt.unwrap();
-                  let mut total_outgoing: usize = 0;
-                  'streaminputjob: loop {
-                    // Stream input data via zmq
-                    let mut data = vec![0; self.message_size];
-                    let size = file.read(&mut data).unwrap();
-                    total_outgoing += size;
-                    data.truncate(size);
+            ventilator.send_msg(identity, SNDMORE).unwrap();
+            ventilator.send_str(&taskid.to_string(), SNDMORE).unwrap();
+            if serviceid == 1 {
+              // No payload needed for init
+              ventilator.send(&[], 0).unwrap();
+            } else {
+              // Regular services fetch the task payload and transfer it to the worker
+              let file_opt = current_task.prepare_input_stream();
+              if file_opt.is_ok() {
+                let mut file = file_opt.unwrap();
+                let mut total_outgoing: usize = 0;
+                loop {
+                  // Stream input data via zmq
+                  let mut data = vec![0; self.message_size];
+                  let size = file.read(&mut data).unwrap();
+                  total_outgoing += size;
+                  data.truncate(size);
 
-                    if size < self.message_size {
-                      // If exhausted, send the last frame
-                      ventilator.send(&data, 0).unwrap();
-                      // And terminate
-                      break;
-                    } else {
-                      // If more to go, send the frame and indicate there's more to come
-                      ventilator.send(&data, SNDMORE).unwrap();
-                    }
+                  if size < self.message_size {
+                    // If exhausted, send the last frame
+                    ventilator.send(&data, 0).unwrap();
+                    // And terminate
+                    break;
+                  } else {
+                    // If more to go, send the frame and indicate there's more to come
+                    ventilator.send(&data, SNDMORE).unwrap();
                   }
-                  let responded_time = time::get_time();
-                  let request_duration = (responded_time - request_time).num_milliseconds();
-                  println!("Source job {}, message size: {}, took {}ms.",
-                           source_job_count,
-                           total_outgoing,
-                           request_duration);
-                } else {
-                  // TODO: smart handling of failures
-                  ventilator.send(&[], 0).unwrap();
                 }
+                let responded_time = time::get_time();
+                let request_duration = (responded_time - request_time).num_milliseconds();
+                println!("Source job {}, message size: {}, took {}ms.",
+                         source_job_count,
+                         total_outgoing,
+                         request_duration);
+              } else {
+                // TODO: smart handling of failures
+                ventilator.send(&[], 0).unwrap();
               }
             }
-            None => {}
-          };
+          }
         }
       };
       // Record that a task has been dispatched in the progress queue
@@ -338,7 +332,7 @@ impl Server {
 
     let mut sink_job_count: usize = 0;
 
-    'sinkjob: loop {
+    loop {
       let mut recv_msg = zmq::Message::new().unwrap();
       let mut taskid_msg = zmq::Message::new().unwrap();
       let mut service_msg = zmq::Message::new().unwrap();
@@ -423,7 +417,7 @@ impl Server {
                                 continue;
                               }
                             };
-                            'recvsinkjob: loop {
+                            loop {
                               match sink.recv(&mut recv_msg, 0) {
                                 Ok(_) => {}
                                 Err(e) => {
@@ -460,7 +454,7 @@ impl Server {
 
               } else {
                 // Otherwise just discard the rest of the message
-                'discardjob: loop {
+                loop {
                   sink.recv(&mut recv_msg, 0).unwrap();
                   if !sink.get_rcvmore().unwrap() {
                     break;
@@ -486,10 +480,9 @@ impl Server {
 
   fn get_sync_service_record(&self, services_arc: &Arc<Mutex<HashMap<String, Option<Service>>>>, service_name: String) -> Option<Service> {
     let mut services = services_arc.lock().unwrap();
-    let service_record = services.entry(service_name.clone())
-                                 .or_insert(Service::from_name(&self.backend.connection, service_name.clone()).unwrap())
-                                 .clone();
-    service_record
+    services.entry(service_name.clone())
+                               .or_insert(Service::from_name(&self.backend.connection, service_name.clone()).unwrap())
+                               .clone()
   }
 
   fn get_service_record(services_arc: &Arc<Mutex<HashMap<String, Option<Service>>>>, service_name: String) -> Option<Service> {
@@ -503,7 +496,7 @@ impl Server {
   /// Persists a shared vector of reports to the Task store
   pub fn mark_done_arc(backend: &Backend, reports_arc: &Arc<Mutex<Vec<TaskReport>>>) -> bool {
     let reports = Server::fetch_shared_vec(reports_arc);
-    if reports.len() > 0 {
+    if !reports.is_empty() {
       let request_time = time::get_time();
       backend.mark_done(&reports).unwrap(); // TODO: error handling if DB fails
       let responded_time = time::get_time();
@@ -529,7 +522,7 @@ impl Server {
     let now = time::get_time().sec;
     let expired_keys = progress_queue.iter()
                                      .filter(|&(_, v)| v.expected_at() < now)
-                                     .map(|(k, _)| k.clone())
+                                     .map(|(k, _)| *k)
                                      .collect::<Vec<_>>();
     let mut expired_tasks = Vec::new();
     for key in expired_keys {
@@ -538,12 +531,14 @@ impl Server {
         Some(task_progress) => expired_tasks.push(task_progress),
       }
     }
-    return expired_tasks;
+    expired_tasks
   }
+
   fn pop_progress_task(progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>, taskid: i64) -> Option<TaskProgress> {
     let mut progress_queue = progress_queue_arc.lock().unwrap();
     progress_queue.remove(&taskid)
   }
+
   fn push_progress_task(progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>, progress_task: TaskProgress) {
     let mut progress_queue = progress_queue_arc.lock().unwrap();
     // NOTE: This constant should be adjusted if you expect a fringe of more than 10,000 jobs
@@ -552,12 +547,9 @@ impl Server {
       panic!("Progress queue is too large: {:?} tasks. Stop the ventilator!",
              progress_queue.len());
     }
-    match progress_task.task.id.clone() {
-      Some(id) => {
-        progress_queue.insert(id, progress_task);
-      }
-      None => {}
-    };
+    if let Some(id) = progress_task.task.id {
+      progress_queue.insert(id, progress_task);
+    }
   }
 
   fn fetch_shared_vec<T: Clone>(vec_arc: &Arc<Mutex<Vec<T>>>) -> Vec<T> {

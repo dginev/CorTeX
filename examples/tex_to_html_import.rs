@@ -59,7 +59,7 @@ fn main() {
       result_port : 5758,
       queue_size : 100000,
       message_size : 100,
-      backend_address : DEFAULT_DB_ADDRESS.clone().to_string()
+      backend_address : DEFAULT_DB_ADDRESS.to_string()
     };
     assert!(manager.start(job_limit).is_ok());
   });
@@ -73,9 +73,9 @@ fn main() {
     sink : "tcp://localhost:5758".to_string(),
     backend_address : DEFAULT_DB_ADDRESS.to_string()
   };
-  // Perform a single echo task 
+  // Perform a single echo task
   assert!(worker.start(job_limit).is_ok());
-  // Wait for the final finisher to persist to DB 
+  // Wait for the final finisher to persist to DB
   thread::sleep(Duration::new(2,0)); // TODO: Can this be deterministic? Join?
 
   // Then add a TeX-to-HTML service on this corpus.
