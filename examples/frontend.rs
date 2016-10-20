@@ -4,8 +4,8 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
-extern crate hyper;
 extern crate url;
+extern crate hyper;
 #[macro_use]
 extern crate nickel;
 extern crate cortex;
@@ -25,8 +25,8 @@ use std::thread;
 use std::time::Duration;
 use regex::Regex;
 use nickel::{Nickel, Mountable, StaticFilesHandler, HttpRouter, Request, Response, MiddlewareResult};
-use hyper::header::Location;
 use nickel::extensions::{Referer, Redirect};
+use hyper::header::Location;
 use hyper::Client;
 use nickel::status::StatusCode::{self, Forbidden};
 // use nickel::QueryString;
@@ -88,8 +88,7 @@ fn main() {
   server.get("/robots.txt",
              middleware! { |_, mut response|
     response.set(Location("/public/robots.txt".into()));
-    response.set(StatusCode::PermanentRedirect);
-    return response.send("")
+    StatusCode::PermanentRedirect
   });
 
   server.get("/",
@@ -207,8 +206,7 @@ fn main() {
     }
     // let message = "Error: Corpus ".to_string() + &corpus_name + " does not exist, aborting!";
     response.set(Location("/".into()));
-    response.set(StatusCode::TemporaryRedirect);
-    return response.send("")
+    StatusCode::TemporaryRedirect
   });
 
   server.get("/corpus/:corpus_name/:service_name",
@@ -329,7 +327,7 @@ fn main() {
     return serve_rerun(&rerun_config4, request, response)
   });
 
-  server.listen("127.0.0.1:6767");
+  server.listen("127.0.0.1:6767")
 }
 
 fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> MiddlewareResult<'a, D> {

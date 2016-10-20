@@ -12,26 +12,18 @@ A general purpose processing framework for corpora of scientific documents
 name = "cortex"
 crate-type = ["rlib", "dylib", "staticlib"]
 
-[dependencies.libxml]
-git = "https://github.com/KWARC/rust-libxml.git"
-
-[dependencies.gnuplot]
-git = "https://github.com/SiegeLord/RustGnuplot.git"
+[dependencies.hyper]
+version = "0.9"
+default-features = false
 
 [dependencies.libarchive-sys]
 git = "https://github.com/dginev/libarchive-sys.git"
-
-[dependencies.nickel]
-git = "https://github.com/nickel-org/nickel.rs.git"
 
 [dependencies.zmq]
 git = "https://github.com/erickt/rust-zmq.git"
 
 [dependencies.pericortex]
 git = "https://github.com/dginev/CorTeX-Peripherals.git"
-
-[dependencies.redis]
-git = "https://github.com/mitsuhiko/redis-rs.git"
 
 [dependencies]
 libc = "~0.1"
@@ -40,8 +32,11 @@ rustc-serialize = "0.3"
 postgres = "0.9"
 sys-info = "*"
 url = "*"
-hyper = "0.8"
 glob = "*"
 rand = "*"
 tempfile = "*"
 time = "*"
+libxml = "~0.0.61"
+redis = "~0.7.0"
+gnuplot = "~0.0.21"
+nickel = "~0.9.0"
