@@ -12,10 +12,6 @@ A general purpose processing framework for corpora of scientific documents
 name = "cortex"
 crate-type = ["rlib", "dylib", "staticlib"]
 
-[dependencies.hyper]
-version = "0.9"
-default-features = false
-
 [dependencies.libarchive-sys]
 git = "https://github.com/dginev/libarchive-sys.git"
 
@@ -39,4 +35,5 @@ time = "0.1.35"
 libxml = "0.0.61"
 redis = "0.7.0"
 gnuplot = "0.0.21"
+hyper = "0.9.0"
 nickel = "0.9.0"
