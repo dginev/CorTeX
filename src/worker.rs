@@ -91,14 +91,14 @@ impl Worker for InitWorker {
   fn start(&self, limit: Option<usize>) -> Result<(), Error> {
     let mut work_counter = 0;
     // Connect to a task ventilator
-    let context_source = Context::new();
+    let mut context_source = Context::new();
     let mut source = context_source.socket(zmq::DEALER).unwrap();
     let identity: String = (0..10).map(|_| rand::random::<u8>() as char).collect();
     source.set_identity(identity.as_bytes()).unwrap();
 
     assert!(source.connect(&self.source()).is_ok());
     // Connect to a task sink
-    let context_sink = Context::new();
+    let mut context_sink = Context::new();
     let mut sink = context_sink.socket(zmq::PUSH).unwrap();
     assert!(sink.connect(&self.sink()).is_ok());
     let backend = Backend::from_address(&self.backend_address);

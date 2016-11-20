@@ -19,7 +19,7 @@ dependencies = [
  "tempfile 2.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)",
  "url 1.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "zmq 0.8.0 (git+https://github.com/erickt/rust-zmq.git)",
+ "zmq 0.7.0 (git+https://github.com/erickt/rust-zmq.git?rev=87a6bd2a7ce09200b6f0a5bdc08ef684c4951f21)",
 ]
 
 [[package]]
@@ -308,7 +308,7 @@ dependencies = [
 [[package]]
 name = "pericortex"
 version = "0.1.0"
-source = "git+https://github.com/dginev/CorTeX-Peripherals.git#ac0106ba454eea61ccf0e543d75b9f248b284f9b"
+source = "git+https://github.com/dginev/CorTeX-Peripherals.git#d4d68d241b87f7ce4acc61055e7cf44088125a85"
 dependencies = [
  "libarchive-sys 0.0.1 (git+https://github.com/dginev/libarchive-sys.git)",
  "libc 0.2.17 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -316,7 +316,7 @@ dependencies = [
  "regex 0.1.80 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustc-serialize 0.3.21 (registry+https://github.com/rust-lang/crates.io-index)",
  "tempfile 2.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "zmq 0.8.0 (git+https://github.com/erickt/rust-zmq.git)",
+ "zmq 0.7.0 (git+https://github.com/erickt/rust-zmq.git?rev=87a6bd2a7ce09200b6f0a5bdc08ef684c4951f21)",
 ]
 
 [[package]]
@@ -593,21 +593,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "zmq"
-version = "0.8.0"
-source = "git+https://github.com/erickt/rust-zmq.git#fc85ad98de8748d9a6293a13ce735543bdb43da5"
+version = "0.7.0"
+source = "git+https://github.com/erickt/rust-zmq.git?rev=87a6bd2a7ce09200b6f0a5bdc08ef684c4951f21#87a6bd2a7ce09200b6f0a5bdc08ef684c4951f21"
 dependencies = [
  "libc 0.2.17 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "zmq-sys 0.8.0 (git+https://github.com/erickt/rust-zmq.git)",
+ "zmq-sys 0.7.0 (git+https://github.com/erickt/rust-zmq.git?rev=87a6bd2a7ce09200b6f0a5bdc08ef684c4951f21)",
 ]
 
 [[package]]
 name = "zmq-sys"
-version = "0.8.0"
-source = "git+https://github.com/erickt/rust-zmq.git#fc85ad98de8748d9a6293a13ce735543bdb43da5"
+version = "0.7.0"
+source = "git+https://github.com/erickt/rust-zmq.git?rev=87a6bd2a7ce09200b6f0a5bdc08ef684c4951f21#87a6bd2a7ce09200b6f0a5bdc08ef684c4951f21"
 dependencies = [
  "libc 0.2.17 (registry+https://github.com/rust-lang/crates.io-index)",
- "pkg-config 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [metadata]
@@ -684,5 +683,5 @@ dependencies = [
 "checksum utf8-ranges 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)" = "a1ca13c08c41c9c3e04224ed9ff80461d97e121589ff27c753a16cb10830ae0f"
 "checksum winapi 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)" = "167dc9d6949a9b857f3451275e911c3f44255842c1f7a76f33c55103a909087a"
 "checksum winapi-build 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "2d315eee3b34aca4797b2da6b13ed88266e6d612562a0c46390af8299fc699bc"
-"checksum zmq 0.8.0 (git+https://github.com/erickt/rust-zmq.git)" = "<none>"
-"checksum zmq-sys 0.8.0 (git+https://github.com/erickt/rust-zmq.git)" = "<none>"
+"checksum zmq 0.7.0 (git+https://github.com/erickt/rust-zmq.git?rev=87a6bd2a7ce09200b6f0a5bdc08ef684c4951f21)" = "<none>"
+"checksum zmq-sys 0.7.0 (git+https://github.com/erickt/rust-zmq.git?rev=87a6bd2a7ce09200b6f0a5bdc08ef684c4951f21)" = "<none>"

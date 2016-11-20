@@ -186,7 +186,7 @@ impl Server {
     // Assuming this is the only And tidy up the postgres tasks:
     self.backend.clear_limbo_tasks().unwrap();
     // Ok, let's bind to a port and start broadcasting
-    let context = zmq::Context::new();
+    let mut context = zmq::Context::new();
     let mut ventilator = context.socket(zmq::ROUTER).unwrap();
     let port_str = self.port.to_string();
     let address = "tcp://*:".to_string() + &port_str;
@@ -324,7 +324,7 @@ impl Server {
                     -> Result<(), Error> {
 
     // Ok, let's bind to a port and start broadcasting
-    let context = zmq::Context::new();
+    let mut context = zmq::Context::new();
     let mut sink = context.socket(zmq::PULL).unwrap();
     let port_str = self.port.to_string();
     let address = "tcp://*:".to_string() + &port_str;
