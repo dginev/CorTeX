@@ -1,5 +1,4 @@
 sudo: required
-
 language: rust
 rust: nightly
 
@@ -14,25 +13,17 @@ addons:
       - libdw-dev
       # optional: only required for the --verify flag of coveralls
       - binutils-dev
+  postgresql: "9.5"
+
+services:
+    - postgresql
 
 before_script:
-  - sudo /etc/init.d/postgresql stop
-  - sudo apt-get -y remove --purge postgresql-9.1
-  - sudo apt-get -y remove --purge postgresql-9.2
-  - sudo apt-get -y remove --purge postgresql-9.3
-  - sudo apt-get -y remove --purge postgresql-9.4
-  - sudo apt-get -y autoremove
-  - sudo apt-key adv --keyserver keys.gnupg.net --recv-keys 7FCC7D46ACCC4CF8
-  - sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt/ precise-pgdg main 9.5" >> /etc/apt/sources.list.d/postgresql.list'
-  - sudo apt-get update
-  - sudo apt-get -y install postgresql-9.5
-  - sudo sh -c 'echo "local all postgres trust" > /etc/postgresql/9.5/main/pg_hba.conf'
-  - sudo sh -c 'echo -n "host all all 127.0.0.1/32 trust" >> /etc/postgresql/9.5/main/pg_hba.conf'
-  - sudo /etc/init.d/postgresql restart
   - psql --version
   - psql -c 'create database cortex_tester;' -U postgres
   - psql -c "create user cortex_tester with password 'cortex_tester';" -U postgres
   - psql -c 'GRANT ALL PRIVILEGES ON DATABASE cortex_tester TO cortex_tester;' -U postgres
+  - export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 # load travis-cargo
   - |
       pip install 'travis-cargo<0.2' --user &&
