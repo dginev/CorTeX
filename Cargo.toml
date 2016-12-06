@@ -17,7 +17,6 @@ git = "https://github.com/dginev/libarchive-sys.git"
 
 [dependencies.zmq]
 git = "https://github.com/erickt/rust-zmq.git"
-rev = "87a6bd2a7ce09200b6f0a5bdc08ef684c4951f21"
 
 [dependencies.pericortex]
 git = "https://github.com/dginev/CorTeX-Peripherals.git"
