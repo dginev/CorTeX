@@ -194,8 +194,8 @@ impl Server {
     let mut source_job_count: usize = 0;
 
     loop {
-      let mut msg = zmq::Message::new().unwrap();
-      let mut identity = zmq::Message::new().unwrap();
+      let mut msg = zmq::Message::new();
+      let mut identity = zmq::Message::new();
       ventilator.recv(&mut identity, 0).unwrap();
       ventilator.recv(&mut msg, 0).unwrap();
       let service_name = msg.as_str().unwrap().to_string();
@@ -260,11 +260,11 @@ impl Server {
             let taskid = current_task.id.unwrap();
             let serviceid = current_task.serviceid;
 
-            ventilator.send_msg(identity, SNDMORE).unwrap();
-            ventilator.send_str(&taskid.to_string(), SNDMORE).unwrap();
+            ventilator.send(identity, SNDMORE).unwrap();
+            ventilator.send(&taskid.to_string(), SNDMORE).unwrap();
             if serviceid == 1 {
               // No payload needed for init
-              ventilator.send(&[], 0).unwrap();
+              ventilator.send(Vec::new(), 0).unwrap();
             } else {
               // Regular services fetch the task payload and transfer it to the worker
               let file_opt = current_task.prepare_input_stream();
@@ -296,7 +296,7 @@ impl Server {
                          request_duration);
               } else {
                 // TODO: smart handling of failures
-                ventilator.send(&[], 0).unwrap();
+                ventilator.send(Vec::new(), 0).unwrap();
               }
             }
           }
@@ -333,9 +333,9 @@ impl Server {
     let mut sink_job_count: usize = 0;
 
     loop {
-      let mut recv_msg = zmq::Message::new().unwrap();
-      let mut taskid_msg = zmq::Message::new().unwrap();
-      let mut service_msg = zmq::Message::new().unwrap();
+      let mut recv_msg = zmq::Message::new();
+      let mut taskid_msg = zmq::Message::new();
+      let mut service_msg = zmq::Message::new();
 
       sink.recv(&mut service_msg, 0).unwrap();
       let service_name = match service_msg.as_str() {
