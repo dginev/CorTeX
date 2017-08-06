@@ -8,6 +8,7 @@ addons:
   apt:
     packages:
       - libarchive-dev
+      - libsodium-dev
       - libzmq3-dev
       # necessary for `travis-cargo coveralls --no-sudo`
       - libcurl4-openssl-dev
