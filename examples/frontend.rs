@@ -15,7 +15,10 @@ extern crate url;
 use rocket::response::{NamedFile};
 use rocket_contrib::Template;
 
-extern crate rustc_serialize;
+extern crate rustc_serialize; // TODO: Migrate FULLY to serde
+extern crate serde_json;
+#[macro_use] extern crate serde_derive;
+
 extern crate cortex;
 extern crate time;
 extern crate regex;
@@ -23,8 +26,6 @@ extern crate redis;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-// use std::fs;
-// use std::str::*;
 use std::fs::File;
 use std::io::{Read};
 
@@ -46,6 +47,22 @@ struct CortexConfig {
   rerun_tokens: HashMap<String, String>,
 }
 
+#[derive(Serialize)]
+struct TemplateContext {
+  global: HashMap<String, String>,
+  data: HashMap<String, String>,
+  corpora: Option<Vec<HashMap<String,String>>>
+}
+impl Default for TemplateContext {
+  fn default() -> Self {
+    TemplateContext {
+      global: HashMap::new(),
+      data: HashMap::new(),
+      corpora: None,
+    }
+  }
+}
+
 fn aux_load_config() -> Result<CortexConfig, String> {
   let mut config_file = try!(File::open("examples/config.json").map_err(|e| e.to_string()));
   let mut config_buffer = String::new();
@@ -57,7 +74,7 @@ fn aux_load_config() -> Result<CortexConfig, String> {
 #[get("/")]
 fn root() -> Template {
 
-  let mut context = HashMap::new();
+  let mut context = TemplateContext::default();
   let mut global = HashMap::new();
   global.insert("title".to_string(), "Framework Overview".to_string());
   global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - overview.".to_string());
@@ -65,72 +82,30 @@ fn root() -> Template {
   let backend = Backend::default();
   let corpora = backend.corpora().iter().map(|c| c.to_hash()).collect::<Vec<_>>();
 
-  context.insert("global".to_string(),vec![global]);
-  context.insert("corpora".to_string(),corpora);
-  aux_decorate_uri_encodings(&mut context);
+  context.global = global;
+  context.corpora = Some(corpora);
+  // aux_decorate_uri_encodings(&mut context);
 
   Template::render("cortex-overview", context)
 }
 
-#[get("/<file..>")]
-fn files(file: PathBuf) -> Option<NamedFile> {
-  NamedFile::open(Path::new("public/").join(file)).ok()
-}
-
-fn rocket() -> rocket::Rocket {
-  rocket::ignite().mount("/", routes![root, files]).attach(Template::fairing())
-}
-
-fn main() {
-  let _ = thread::spawn(move || {
-    cache_worker();
-  });
-
-  // Any secrets reside in examples/config.json
-  let cortex_config = match aux_load_config() {
-    Ok(cfg) => cfg,
-    Err(_) => {
-      println!("You need a well-formed JSON examples/config.json file to run the frontend.");
-      return;
-    }
+// Admin interface
+#[get("/admin")]
+fn admin() -> Template {
+  let mut global = HashMap::new();
+  global.insert("title".to_string(), "Admin Interface".to_string());
+  global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - admin interface.".to_string());
+  match sysinfo::report(&mut global) {
+    Ok(_) => {},
+    Err(e) => println!("Sys report failed: {:?}", e)
   };
 
-  rocket().launch();
+  let context = TemplateContext {
+    global: global,
+    ..TemplateContext::default()
+  };
+  Template::render("cortex-admin", context)
 }
-
-  // // Fall-through behaviour, if StaticFilesHandler does not find a matching file,
-  // // the request uri must be reset so that it can be matched against other middleware.
-  // //
-  // server.mount("/public/", StaticFilesHandler::new("public/"));
-  // // middleware function logs each request to console
-  // server.utilize(middleware! { |request|
-  //     println!("{:?} {:?}", request.origin.method, request.origin.uri);
-  //     println!("    from {:?}", request.origin.remote_addr);
-  // });
-
-  // server.get("/robots.txt",
-  //            middleware! { |_, mut response|
-  //   response.set(Location("/public/robots.txt".into()));
-  //   StatusCode::PermanentRedirect
-  // });
-
-
-
-//   // Admin interface
-//   server.get("/admin",
-//              middleware! { |_, response|
-//     let mut data = HashMap::new();
-//     let mut global = HashMap::new();
-//     global.insert("title".to_string(), "Admin Interface".to_string());
-//     global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - admin interface.".to_string());
-//     match sysinfo::report(&mut global) {
-//       Ok(_) => {},
-//       Err(e) => println!("Sys report failed: {:?}", e)
-//     };
-//     data.insert("global".to_string(),vec![global]);
-//     aux_decorate_uri_encodings(&mut data);
-//     return response.render("examples/assets/cortex-admin.html", &data)
-//   });
 
 //   server.get("/corpus/:corpus_name",
 //              middleware! { |request, mut response|
@@ -288,6 +263,37 @@ fn main() {
 //   }
 //   return;
 // }
+
+
+
+#[get("/<file..>")]
+fn files(file: PathBuf) -> Option<NamedFile> {
+  NamedFile::open(Path::new("public/").join(file)).ok()
+}
+
+
+fn rocket() -> rocket::Rocket {
+  rocket::ignite().mount("/", routes![root, admin, files]).attach(Template::fairing())
+}
+
+fn main() {
+  let _ = thread::spawn(move || {
+    cache_worker();
+  });
+
+  // Any secrets reside in examples/config.json
+  let cortex_config = match aux_load_config() {
+    Ok(cfg) => cfg,
+    Err(_) => {
+      println!("You need a well-formed JSON examples/config.json file to run the frontend.");
+      return;
+    }
+  };
+
+  rocket().launch();
+}
+
+
 
 // fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> MiddlewareResult<'a, D> {
 //   let mut data = HashMap::new();

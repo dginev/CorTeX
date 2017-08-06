@@ -1,8 +1,8 @@
 {{> layout-cortex-pre }}
 <div class="center">
-  {{#global}}
+  {{#with global}}
   <h1>Services for {{corpus_name}}</h1>
-  {{/global}}
+  {{/with}}
   <br>
   <div class="col-md-4"></div>
   <div class="col-md-4">
@@ -17,8 +17,8 @@
     </tr>
   </thead>
   <tbody>
-    {{#global}}
-    {{#services}}
+    {{#with global}}
+    {{#with services}}
     <tr>
       <td class="left"><a href="/corpus/{{corpus_name_uri}}/{{name_uri}}">{{name}}</a></td>
       <td class="left">converter</td>
@@ -26,8 +26,8 @@
       <td class="left">{{outputformat}}</td>
       <td class="left">{{status}}</td>
     </tr>
-    {{/services}}
-    {{/global}}
+    {{/with}}
+    {{/with}}
   </tbody>
   </table>
   </div>

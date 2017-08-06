@@ -15,8 +15,8 @@
       </tr>
     </thead>
     <tbody>
-      {{#entries}}
-      {{#global}}
+      {{#with entries}}
+      {{#with global}}
       <tr class="{{highlight}} corpus-report-task-list">
         <td class="left">{{entry_name}}</td>
         <td class="left task-source">
@@ -30,8 +30,8 @@
         </td>
         <td class="left">{{details}}</td>
       </tr>
-      {{/global}}
-      {{/entries}}
+      {{/with}}
+      {{/with}}
     </tbody>
     </table>
   {{> cortex-report-entry-view }}

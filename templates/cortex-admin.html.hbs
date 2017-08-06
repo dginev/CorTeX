@@ -10,10 +10,10 @@
 <tr><td colspan="2"><input type="submit" value="Queue Corpus Import"></td></tr></table>
 </form>
 
-{{#global}}
 <h2>System Report</h2>
 <h3>Frontend Server</h3>
 <table class="system-report">
+{{#with global}}
 <tr><td>OS</td><td>{{ sys_os_type }}</td></tr>
 <tr><td>Release</td><td>{{ sys_os_release }}</td></tr>
 <tr><td>CPU</td><td>{{ sys_cpu }} cores</td></tr>
@@ -32,8 +32,7 @@
 <tr><td>Disk total</td><td>{{sys_disk_total}}</td></tr>
 <tr><td>Disk free</td><td>{{sys_disk_free}}</td></tr>
 <tr><td>Hostname</td><td>{{sys_hostname}}</td></tr>
-
+{{/with}}
 </table>
-{{/global}}
 
 {{> layout-cortex-post }}

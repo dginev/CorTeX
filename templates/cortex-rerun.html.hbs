@@ -1,4 +1,4 @@
-{{#global}}
+{{#with global}}
 <div id="modal-rerun" class="modal fade" tabindex="-1" role="dialog">
   <div class="modal-dialog">
   <div class="modal-content">
@@ -38,7 +38,7 @@ $("input#rerun-token").on('input', function() {
   if ($(this).val().length == 0) {
     $("#btn-rerun").addClass("disabled");
   } else {
-    $("#btn-rerun").removeClass("disabled");  
+    $("#btn-rerun").removeClass("disabled");
   }
 });
 
@@ -71,4 +71,4 @@ $("span.rerun-banner-segment:not(:empty)").each(function() {
   $(this).prepend('<i class="fa fa-chevron-right fa-lg"></i>&nbsp;&nbsp;' + segment);
 });
 </script>
-{{/global}}
+{{/with}}
