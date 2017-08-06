@@ -53,7 +53,7 @@ before_script:
       cd ..
       wget https://github.com/zeromq/zeromq3-x/releases/download/v3.2.5/zeromq-3.2.5.tar.gz
       tar zxf zeromq-3.2.5.tar.gz
-      cd zeromq-3.2.5.tar.gz
+      cd zeromq-3.2.5
       ./autogen.sh
       ./configure --prefix=$HOME --with-libsodium
       make
