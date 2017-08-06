@@ -13,6 +13,7 @@ extern crate rocket_contrib;
 extern crate url;
 
 use rocket::response::{NamedFile};
+use rocket::response::status::NotFound;
 use rocket_contrib::Template;
 
 extern crate rustc_serialize; // TODO: Migrate FULLY to serde
@@ -51,7 +52,8 @@ struct CortexConfig {
 struct TemplateContext {
   global: HashMap<String, String>,
   data: HashMap<String, String>,
-  corpora: Option<Vec<HashMap<String,String>>>
+  corpora: Option<Vec<HashMap<String,String>>>,
+  services: Option<Vec<HashMap<String,String>>>
 }
 impl Default for TemplateContext {
   fn default() -> Self {
@@ -59,6 +61,7 @@ impl Default for TemplateContext {
       global: HashMap::new(),
       data: HashMap::new(),
       corpora: None,
+      services: None,
     }
   }
 }
@@ -84,7 +87,7 @@ fn root() -> Template {
 
   context.global = global;
   context.corpora = Some(corpora);
-  // aux_decorate_uri_encodings(&mut context);
+  aux_decorate_uri_encodings(&mut context);
 
   Template::render("cortex-overview", context)
 }
@@ -107,37 +110,34 @@ fn admin() -> Template {
   Template::render("cortex-admin", context)
 }
 
-//   server.get("/corpus/:corpus_name",
-//              middleware! { |request, mut response|
-//     let mut data = HashMap::new();
-//     let mut global = HashMap::new();
-//     let backend = Backend::default();
-//     let corpus_name = aux_uri_unescape(request.param("corpus_name")).unwrap_or(UNKNOWN.to_string());
-//     let corpus_result = Corpus{id: None, name: corpus_name.to_string(), path : String::new(), complex : true}.select_by_key(&backend.connection);
-//     if let Ok(Some(corpus)) = corpus_result {
-//       global.insert("title".to_string(), "Registered services for ".to_string() + &corpus_name);
-//       global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - registered services for ".to_string()+ &corpus_name);
-//       global.insert("corpus_name".to_string(), corpus_name.to_string());
-//       data.insert("global".to_string(),vec![global]);
+#[get("/corpus/<corpus_name>")]
+fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
+    let backend = Backend::default();
+    let corpus_name = aux_uri_unescape(Some(&corpus_name)).unwrap_or(UNKNOWN.to_string());
+    let corpus_result = Corpus{id: None, name: corpus_name.to_string(), path : String::new(), complex : true}.select_by_key(&backend.connection);
+    if let Ok(Some(corpus)) = corpus_result {
+      let mut global = HashMap::new();
+      global.insert("title".to_string(), "Registered services for ".to_string() + &corpus_name);
+      global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - registered services for ".to_string()+ &corpus_name);
+      global.insert("corpus_name".to_string(), corpus_name.to_string());
+      let mut context = TemplateContext { global: global, ..TemplateContext::default()};
 
-//       let services_result = corpus.select_services(&backend.connection);
-//       if let Ok(backend_services) = services_result {
-//         let services = backend_services.iter()
-//                                        .map(|s| s.to_hash()).collect::<Vec<_>>();
-//         let mut service_reports = Vec::new();
-//         for mut service in services {
-//           service.insert("status".to_string(),"Running".to_string());
-//           service_reports.push(service);
-//         }
-//         data.insert("services".to_string(), service_reports);
-//       }
-//       aux_decorate_uri_encodings(&mut data);
-//       return response.render("examples/assets/cortex-services.html", &data);
-//     }
-//     // let message = "Error: Corpus ".to_string() + &corpus_name + " does not exist, aborting!";
-//     response.set(Location("/".into()));
-//     StatusCode::TemporaryRedirect
-//   });
+      let services_result = corpus.select_services(&backend.connection);
+      if let Ok(backend_services) = services_result {
+        let services = backend_services.iter()
+                                       .map(|s| s.to_hash()).collect::<Vec<_>>();
+        let mut service_reports = Vec::new();
+        for mut service in services {
+          service.insert("status".to_string(),"Running".to_string());
+          service_reports.push(service);
+        }
+        context.services = Some(service_reports);
+      }
+      aux_decorate_uri_encodings(&mut context);
+      return Ok(Template::render("cortex-services", context))
+    }
+  Err(NotFound(format!("Corpus {} is not registered", &corpus_name)))
+}
 
 //   server.get("/corpus/:corpus_name/:service_name",
 //              middleware! { |request, response|
@@ -221,6 +221,7 @@ fn admin() -> Template {
 //       entry: String::new(),
 //       corpusid : 0,
 //       serviceid : 0,
+
 //       status : 0
 //     };
 //     let backend = Backend::default();
@@ -266,14 +267,14 @@ fn admin() -> Template {
 
 
 
-#[get("/<file..>")]
-fn files(file: PathBuf) -> Option<NamedFile> {
-  NamedFile::open(Path::new("public/").join(file)).ok()
+#[get("/public/<file..>")]
+fn files(file: PathBuf) -> Result<NamedFile, NotFound<String>> {
+  let path = Path::new("public/").join(file);
+  NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {:?}", path)))
 }
 
-
 fn rocket() -> rocket::Rocket {
-  rocket::ignite().mount("/", routes![root, admin, files]).attach(Template::fairing())
+  rocket::ignite().mount("/", routes![root, admin, corpus, files]).attach(Template::fairing())
 }
 
 fn main() {
@@ -493,35 +494,35 @@ fn main() {
 //   }
 // }
 
-// fn aux_severity_highlight(severity: &str) -> &str {
-//   match severity {// Bootstrap highlight classes
-//     "no_problem" => "success",
-//     "warning" => "warning",
-//     "error" => "error",
-//     "fatal" => "danger",
-//     "invalid" => "info",
-//     _ => "unknown",
-//   }
-// }
-// fn aux_uri_unescape(param: Option<&str>) -> Option<String> {
-//   match param {
-//     None => None,
-//     Some(param_encoded) => {
-//       let mut param_decoded: String = param_encoded.to_owned();
-//       // TODO: This could/should be done faster by using lazy_static!
-//       for &(original, replacement) in &[("%3A", ":"),
-//                                       ("%2F", "/"),
-//                                       ("%24", "$"),
-//                                       ("%2E", "."),
-//                                       ("%21", "!"),
-//                                       ("%40", "@")]
-//       {
-//         param_decoded = param_decoded.replace(original, replacement);
-//       }
-//       Some(url::percent_encoding::percent_decode(param_decoded.as_bytes()).decode_utf8_lossy().into_owned())
-//     }
-//   }
-// }
+fn aux_severity_highlight(severity: &str) -> &str {
+  match severity {// Bootstrap highlight classes
+    "no_problem" => "success",
+    "warning" => "warning",
+    "error" => "error",
+    "fatal" => "danger",
+    "invalid" => "info",
+    _ => "unknown",
+  }
+}
+fn aux_uri_unescape(param: Option<&str>) -> Option<String> {
+  match param {
+    None => None,
+    Some(param_encoded) => {
+      let mut param_decoded: String = param_encoded.to_owned();
+      // TODO: This could/should be done faster by using lazy_static!
+      for &(original, replacement) in &[("%3A", ":"),
+                                      ("%2F", "/"),
+                                      ("%24", "$"),
+                                      ("%2E", "."),
+                                      ("%21", "!"),
+                                      ("%40", "@")]
+      {
+        param_decoded = param_decoded.replace(original, replacement);
+      }
+      Some(url::percent_encoding::percent_decode(param_decoded.as_bytes()).decode_utf8_lossy().into_owned())
+    }
+  }
+}
 fn aux_uri_escape(param: Option<String>) -> Option<String> {
   match param {
     None => None,
@@ -541,16 +542,18 @@ fn aux_uri_escape(param: Option<String>) -> Option<String> {
     }
   }
 }
-fn aux_decorate_uri_encodings(data: &mut HashMap<String, Vec<HashMap<String, String>>>) {
-  for inner_vec in data.values_mut() {
-    for mut subhash in inner_vec {
-      let mut uri_decorations = vec![];
-      for (subkey, subval) in subhash.iter() {
-        uri_decorations.push((subkey.to_string() + "_uri",
-                              aux_uri_escape(Some(subval.to_string())).unwrap()));
-      }
-      for (decoration_key, decoration_val) in uri_decorations {
-        subhash.insert(decoration_key, decoration_val);
+fn aux_decorate_uri_encodings(context: &mut TemplateContext) {
+  for inner_vec in &mut[&mut context.corpora, &mut context.services] {
+    if let &mut &mut Some(ref mut inner_vec_data) = inner_vec {
+      for mut subhash in inner_vec_data {
+        let mut uri_decorations = vec![];
+        for (subkey, subval) in subhash.iter() {
+          uri_decorations.push((subkey.to_string() + "_uri",
+                                aux_uri_escape(Some(subval.to_string())).unwrap()));
+        }
+        for (decoration_key, decoration_val) in uri_decorations {
+          subhash.insert(decoration_key, decoration_val);
+        }
       }
     }
   }
