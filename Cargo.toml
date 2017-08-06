@@ -21,6 +21,11 @@ git = "https://github.com/erickt/rust-zmq.git"
 [dependencies.pericortex]
 git = "https://github.com/dginev/CorTeX-Peripherals.git"
 
+[dependencies.rocket_contrib]
+version = "0.3.0"
+default-features = false
+features = ["handlebars_templates"]
+
 [dependencies]
 libc = "0.2.17"
 regex = "0.1.80"

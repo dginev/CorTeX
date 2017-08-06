@@ -9,8 +9,11 @@
 #![plugin(rocket_codegen)]
 
 extern crate rocket;
-use rocket::response::{content, Stream};
+extern crate rocket_contrib;
+extern crate url;
 
+use rocket::response::{NamedFile};
+use rocket_contrib::Template;
 
 extern crate rustc_serialize;
 extern crate cortex;
@@ -19,13 +22,12 @@ extern crate regex;
 extern crate redis;
 
 use std::collections::HashMap;
-// use std::path::Path;
+use std::path::{Path, PathBuf};
 // use std::fs;
-use std::str::*;
+// use std::str::*;
 use std::fs::File;
-use std::io::{self, repeat, Repeat, Read, Take};
+use std::io::{Read};
 
-use std::path::Path;
 use std::thread;
 use std::time::Duration;
 use regex::Regex;
@@ -44,13 +46,6 @@ struct CortexConfig {
   rerun_tokens: HashMap<String, String>,
 }
 
-// fn slurp_file (path : &'static str) -> Result<String, Error> {
-//   let mut f = try!(File::open(path));
-//   let mut content = String::new();
-//   try!(f.read_to_string(&mut content));
-//   Ok(content)
-// }
-
 fn aux_load_config() -> Result<CortexConfig, String> {
   let mut config_file = try!(File::open("examples/config.json").map_err(|e| e.to_string()));
   let mut config_buffer = String::new();
@@ -59,30 +54,31 @@ fn aux_load_config() -> Result<CortexConfig, String> {
   json::decode(&config_buffer).map_err(|e| e.to_string())
 }
 
-type LimitedRepeat = Take<Repeat>;
-
 #[get("/")]
-fn root() -> &'static str { "base test here"
+fn root() -> Template {
 
-  //   let mut data = HashMap::new();
-  //   let mut global = HashMap::new();
-  //   global.insert("title".to_string(), "Framework Overview".to_string());
-  //   global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - overview.".to_string());
+  let mut context = HashMap::new();
+  let mut global = HashMap::new();
+  global.insert("title".to_string(), "Framework Overview".to_string());
+  global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - overview.".to_string());
 
-  //   let backend = Backend::default();
-  //   let corpora = backend.corpora().iter().map(|c| c.to_hash()).collect::<Vec<_>>();
+  let backend = Backend::default();
+  let corpora = backend.corpora().iter().map(|c| c.to_hash()).collect::<Vec<_>>();
 
-  //   data.insert("global".to_string(),vec![global]);
-  //   data.insert("corpora".to_string(),corpora);
-  //   aux_decorate_uri_encodings(&mut data);
+  context.insert("global".to_string(),vec![global]);
+  context.insert("corpora".to_string(),corpora);
+  aux_decorate_uri_encodings(&mut context);
 
-  //   return response.render("examples/assets/cortex-overview.html", &data)
+  Template::render("cortex-overview", context)
+}
 
-
+#[get("/<file..>")]
+fn files(file: PathBuf) -> Option<NamedFile> {
+  NamedFile::open(Path::new("public/").join(file)).ok()
 }
 
 fn rocket() -> rocket::Rocket {
-    rocket::ignite().mount("/", routes![root])
+  rocket::ignite().mount("/", routes![root, files]).attach(Template::fairing())
 }
 
 fn main() {
@@ -520,39 +516,39 @@ fn main() {
 //     }
 //   }
 // }
-// fn aux_uri_escape(param: Option<String>) -> Option<String> {
-//   match param {
-//     None => None,
-//     Some(param_pure) => {
-//       let mut param_encoded: String = url::percent_encoding::utf8_percent_encode(&param_pure, url::percent_encoding::DEFAULT_ENCODE_SET).collect::<String>();
-//       // TODO: This could/should be done faster by using lazy_static!
-//       for &(original, replacement) in &[( ":", "%3A"),
-//                                       ("/", "%2F"),
-//                                       ("$", "%24"),
-//                                       (".", "%2E"),
-//                                       ("!", "%21"),
-//                                       ("@", "%40")]
-//       {
-//         param_encoded = param_encoded.replace(original, replacement);
-//       }
-//       Some(param_encoded)
-//     }
-//   }
-// }
-// fn aux_decorate_uri_encodings(data: &mut HashMap<String, Vec<HashMap<String, String>>>) {
-//   for inner_vec in data.values_mut() {
-//     for mut subhash in inner_vec {
-//       let mut uri_decorations = vec![];
-//       for (subkey, subval) in subhash.iter() {
-//         uri_decorations.push((subkey.to_string() + "_uri",
-//                               aux_uri_escape(Some(subval.to_string())).unwrap()));
-//       }
-//       for (decoration_key, decoration_val) in uri_decorations {
-//         subhash.insert(decoration_key, decoration_val);
-//       }
-//     }
-//   }
-// }
+fn aux_uri_escape(param: Option<String>) -> Option<String> {
+  match param {
+    None => None,
+    Some(param_pure) => {
+      let mut param_encoded: String = url::percent_encoding::utf8_percent_encode(&param_pure, url::percent_encoding::DEFAULT_ENCODE_SET).collect::<String>();
+      // TODO: This could/should be done faster by using lazy_static!
+      for &(original, replacement) in &[( ":", "%3A"),
+                                      ("/", "%2F"),
+                                      ("$", "%24"),
+                                      (".", "%2E"),
+                                      ("!", "%21"),
+                                      ("@", "%40")]
+      {
+        param_encoded = param_encoded.replace(original, replacement);
+      }
+      Some(param_encoded)
+    }
+  }
+}
+fn aux_decorate_uri_encodings(data: &mut HashMap<String, Vec<HashMap<String, String>>>) {
+  for inner_vec in data.values_mut() {
+    for mut subhash in inner_vec {
+      let mut uri_decorations = vec![];
+      for (subkey, subval) in subhash.iter() {
+        uri_decorations.push((subkey.to_string() + "_uri",
+                              aux_uri_escape(Some(subval.to_string())).unwrap()));
+      }
+      for (decoration_key, decoration_val) in uri_decorations {
+        subhash.insert(decoration_key, decoration_val);
+      }
+    }
+  }
+}
 
 // #[derive(RustcDecodable)]
 // struct IsSuccess {
