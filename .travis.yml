@@ -51,15 +51,14 @@ before_script:
       make
       make install
       cd ..
-      wget https://github.com/zeromq/zeromq3-x/releases/download/v3.2.5/zeromq-3.2.5.tar.gz
-      tar zxf zeromq-3.2.5.tar.gz
-      cd zeromq-3.2.5
+      wget https://github.com/zeromq/zeromq4-1/archive/v4.1.6.tar.gz
+      tar zxf v4.1.6.tar.gz
+      cd zeromq4-1-4.1.6
       ./autogen.sh
       ./configure --prefix=$HOME --with-libsodium
       make
       make install
       cd ..
-
 
 after_success:
   # upload the documentation from the build with nightly (automatically only actually
