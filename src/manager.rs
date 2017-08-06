@@ -124,6 +124,7 @@ impl TaskManager {
           thread::sleep(Duration::new(1, 0));
         }
         if job_limit.is_some() && (finalize_jobs_count >= job_limit.unwrap()) {
+          println!("Manager job limit of {:?} reached, terminating IO thread...", job_limit.unwrap());
           break;
         }
       }
@@ -194,8 +195,8 @@ impl Server {
     let mut source_job_count: usize = 0;
 
     loop {
-      let mut msg = zmq::Message::new();
-      let mut identity = zmq::Message::new();
+      let mut msg = zmq::Message::new().unwrap();
+      let mut identity = zmq::Message::new().unwrap();
       ventilator.recv(&mut identity, 0).unwrap();
       ventilator.recv(&mut msg, 0).unwrap();
       let service_name = msg.as_str().unwrap().to_string();
@@ -260,11 +261,11 @@ impl Server {
             let taskid = current_task.id.unwrap();
             let serviceid = current_task.serviceid;
 
-            ventilator.send(identity, SNDMORE).unwrap();
-            ventilator.send(&taskid.to_string(), SNDMORE).unwrap();
+            ventilator.send_msg(identity, SNDMORE).unwrap();
+            ventilator.send_str(&taskid.to_string(), SNDMORE).unwrap();
             if serviceid == 1 {
               // No payload needed for init
-              ventilator.send(Vec::new(), 0).unwrap();
+              ventilator.send(&[], 0).unwrap();
             } else {
               // Regular services fetch the task payload and transfer it to the worker
               let file_opt = current_task.prepare_input_stream();
@@ -296,7 +297,7 @@ impl Server {
                          request_duration);
               } else {
                 // TODO: smart handling of failures
-                ventilator.send(Vec::new(), 0).unwrap();
+                ventilator.send(&[], 0).unwrap();
               }
             }
           }
@@ -307,6 +308,7 @@ impl Server {
         Server::push_progress_task(&progress_queue_arc, dispatched_task.unwrap());
       }
       if job_limit.is_some() && (source_job_count >= job_limit.unwrap()) {
+        println!("Manager job limit of {:?} reached, terminating Ventilator thread...", job_limit.unwrap());
         break;
       }
     }
@@ -333,9 +335,9 @@ impl Server {
     let mut sink_job_count: usize = 0;
 
     loop {
-      let mut recv_msg = zmq::Message::new();
-      let mut taskid_msg = zmq::Message::new();
-      let mut service_msg = zmq::Message::new();
+      let mut recv_msg = zmq::Message::new().unwrap();
+      let mut taskid_msg = zmq::Message::new().unwrap();
+      let mut service_msg = zmq::Message::new().unwrap();
 
       sink.recv(&mut service_msg, 0).unwrap();
       let service_name = match service_msg.as_str() {
@@ -464,6 +466,7 @@ impl Server {
                total_incoming,
                request_duration);
       if job_limit.is_some() && (sink_job_count >= job_limit.unwrap()) {
+        println!("Manager job limit of {:?} reached, terminating Sink thread...", job_limit.unwrap());
         break;
       }
     }

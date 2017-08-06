@@ -104,10 +104,10 @@ impl Worker for InitWorker {
     let backend = Backend::from_address(&self.backend_address);
     // Work in perpetuity
     loop {
-      let mut taskid_msg = Message::new();
-      let mut recv_msg = Message::new();
+      let mut taskid_msg = Message::new().unwrap();
+      let mut recv_msg = Message::new().unwrap();
 
-      source.send(&self.service(), 0).unwrap();
+      source.send_str(&self.service(), 0).unwrap();
       source.recv(&mut taskid_msg, 0).unwrap();
       let taskid = taskid_msg.as_str().unwrap();
 
@@ -132,9 +132,9 @@ impl Worker for InitWorker {
 
       self.convert(Path::new(&task.entry));
 
-      sink.send(&self.service(), SNDMORE).unwrap();
-      sink.send(taskid, SNDMORE).unwrap();
-      sink.send(Vec::new(), 0).unwrap();
+      sink.send_str(&self.service(), SNDMORE).unwrap();
+      sink.send_str(taskid, SNDMORE).unwrap();
+      sink.send(&[], 0).unwrap();
 
       work_counter += 1;
       if let Some(upper_bound) = limit {
