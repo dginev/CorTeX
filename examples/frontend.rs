@@ -11,10 +11,10 @@
 extern crate rocket;
 extern crate rocket_contrib;
 extern crate url;
-
-use rocket::response::{NamedFile};
-use rocket::response::status::NotFound;
-use rocket_contrib::Template;
+extern crate futures;
+extern crate hyper;
+extern crate hyper_tls;
+extern crate tokio_core;
 
 extern crate rustc_serialize; // TODO: Migrate FULLY to serde
 extern crate serde_json;
@@ -25,10 +25,21 @@ extern crate time;
 extern crate regex;
 extern crate redis;
 
+use rocket::response::{NamedFile, Responder, Redirect};
+use rocket::response::status::NotFound;
+use rocket_contrib::Template;
+use futures::{Future, Stream};
+use tokio_core::reactor::Core;
+use hyper::Client;
+use hyper::{Method, Request};
+use hyper::header::{ContentLength, ContentType};
+use hyper_tls::HttpsConnector;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::fs::File;
 use std::io::{Read};
+use std::str;
 
 use std::thread;
 use std::time::Duration;
@@ -138,7 +149,6 @@ fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
         context.services = Some(service_reports);
       }
       aux_decorate_uri_encodings(&mut context);
-      println!("Decorated global: {:?}", context.global);
       return Ok(Template::render("cortex-services", context))
     }
   Err(NotFound(format!("Corpus {} is not registered", &corpus_name)))
@@ -162,86 +172,103 @@ fn what_service_report(corpus_name: String, service_name: String, severity: Stri
   serve_report(corpus_name, service_name, Some(severity), Some(category), Some(what))
 }
 
-//   let cortex_config2 = cortex_config.clone();
-//   server.post("/entry/:service_name/:entry",
-//               middleware! { |request, response|
-//     let mut body_bytes = vec![];
-//     request.origin.read_to_end(&mut body_bytes).unwrap_or(0);
-//     let g_recaptcha_response = if body_bytes.len() > 21 {
-//       from_utf8(&body_bytes[21..]).unwrap_or(&UNKNOWN)
-//     } else {
-//       UNKNOWN
-//     };
-//     // Check if we hve the g_recaptcha_response in Redis, then reuse
-//     let mut redis_opt = None;
-//     let quota : usize = match redis::Client::open("redis://127.0.0.1/") {
-//       Err(_) => 0,
-//       Ok(redis_client) => match redis_client.get_connection() {
-//         Err(_) => 0,
-//         Ok(redis_connection) => {
-//           let quota = redis_connection.get(g_recaptcha_response).unwrap_or(0);
-//           redis_opt = Some(redis_connection);
-//           quota
-//         }
-//       }
-//     };
-//     let captcha_verified = if quota > 0 {
-//       if quota == 1 {
-//         match &redis_opt {
-//           &Some(ref redis_connection) => {
-//             // Remove if last
-//             redis_connection.del(g_recaptcha_response).unwrap_or(());
-//             // We have quota available, decrement it
-//             redis_connection.set(g_recaptcha_response, quota-1).unwrap_or(());
-//           },
-//           &None => {} // compatibility mode: redis has ran away?
-//         };
-//       }
-//       // And allow operation
-//       true
-//     } else {
-//       let check_val = aux_check_captcha(g_recaptcha_response, &cortex_config2.captcha_secret);
-//       if check_val {
-//         match &redis_opt {
-//           &Some(ref redis_connection) => {
-//             // Add a reuse quota if things check out, 19 more downloads
-//             redis_connection.set(g_recaptcha_response, 19).unwrap_or(());
-//           },
-//           &None => {}
-//         };
-//       }
-//       check_val
-//     };
+// Note, the docs warn "data: Vec<u8>" is a DDoS vector - https://api.rocket.rs/rocket/data/trait.FromData.html
+// since this is a research-first implementation, i will abstain from doing this perfectly now and run with the slurp.
 
-//     // If you are not human, you have no business here.
-//     if !captcha_verified {
-//       let back = request.referer().unwrap_or("/");
-//       return response.redirect(back.to_string()+"?expire_quotas")
-//     }
-//     println!("-- serving verified human request for entry download");
+#[post("/entry/<service_name>/<entry_id>", data="<data>")]
+fn entry_fetch(service_name: String, entry_id: usize, data: Vec<u8>) -> Result<NamedFile, Redirect> {
+  // Any secrets reside in examples/config.json
+  let cortex_config = match aux_load_config() {
+    Ok(cfg) => cfg,
+    Err(_) => {
+      println!("You need a well-formed JSON examples/config.json file to run the frontend.");
+      return Err(Redirect::to("/"))
+      // TODO: Need to figure out how to do a Result return value that can be NotFound and Redirect
+      // NotFound(format!("Bad config, contact server administrator."))
+    }
+  };
 
-//     let service_name = aux_uri_unescape(request.param("service_name")).unwrap_or(UNKNOWN.to_string());
-//     let entry_taskid = aux_uri_unescape(request.param("entry")).unwrap_or(UNKNOWN.to_string());
-//     let placeholder_task = Task {
-//       id: Some(entry_taskid.parse::<i64>().unwrap_or(0)),
-//       entry: String::new(),
-//       corpusid : 0,
-//       serviceid : 0,
+  let g_recaptcha_response = if data.len() > 21 {
+    str::from_utf8(&data[21..]).unwrap_or(&UNKNOWN)
+  } else {
+    UNKNOWN
+  };
+  // Check if we hve the g_recaptcha_response in Redis, then reuse
+  let redis_opt;
+  let quota : usize = match redis::Client::open("redis://127.0.0.1/") {
+    Err(_) => {return Err(Redirect::to("/"))}// TODO: Err(NotFound(format!("redis unreachable")))},
+    Ok(redis_client) => match redis_client.get_connection() {
+      Err(_) => {return Err(Redirect::to("/"))}//TODO: Err(NotFound(format!("redis unreachable")))},
+      Ok(redis_connection) => {
+        let quota = redis_connection.get(g_recaptcha_response).unwrap_or(0);
+        redis_opt = Some(redis_connection);
+        quota
+      }
+    }
+  };
 
-//       status : 0
-//     };
-//     let backend = Backend::default();
-//     let task = backend.sync(&placeholder_task).unwrap_or(placeholder_task); // TODO: Error-reporting
-//     let entry = task.entry;
-//     let zip_path = match service_name.as_str() {
-//       "import" => entry,
-//       _ => {
-//         let strip_name_regex = Regex::new(r"/[^/]+$").unwrap();
-//         strip_name_regex.replace(&entry,"") + "/" + &service_name + ".zip"
-//       }
-//     };
-//     return response.send_file(Path::new(&zip_path))
-//   });
+  let captcha_verified = if quota > 0 {
+    if quota == 1 {
+      match &redis_opt {
+        &Some(ref redis_connection) => {
+          // Remove if last
+          redis_connection.del(g_recaptcha_response).unwrap_or(());
+          // We have quota available, decrement it
+          redis_connection.set(g_recaptcha_response, quota-1).unwrap_or(());
+        },
+        &None => {} // compatibility mode: redis has ran away?
+      };
+    }
+    // And allow operation
+    true
+  } else {
+    let check_val = aux_check_captcha(g_recaptcha_response, &cortex_config.captcha_secret);
+    if check_val {
+      match &redis_opt {
+        &Some(ref redis_connection) => {
+          // Add a reuse quota if things check out, 19 more downloads
+          redis_connection.set(g_recaptcha_response, 19).unwrap_or(());
+        },
+        &None => {}
+      };
+    }
+    check_val
+  };
+
+  // If you are not human, you have no business here.
+  if !captcha_verified {
+    return Err(Redirect::to(&format!("/entry/{:?}/{:?}?expire_quotas", service_name, entry_id)));
+  }
+  println!("-- serving verified human request for entry {:?} download", entry_id);
+
+  // let service_name = aux_uri_unescape(request.param("service_name")).unwrap_or(UNKNOWN.to_string());
+  // let entry_taskid = aux_uri_unescape(request.param("entry")).unwrap_or(UNKNOWN.to_string());
+  let placeholder_task = Task {
+    id: Some(entry_id as i64),
+    entry: String::new(),
+    corpusid : 0,
+    serviceid : 0,
+
+    status : 0
+  };
+  let backend = Backend::default();
+  let task = backend.sync(&placeholder_task).unwrap_or(placeholder_task); // TODO: Error-reporting
+
+  let entry = task.entry;
+  let zip_path = match service_name.as_str() {
+    "import" => entry,
+    _ => {
+      let strip_name_regex = Regex::new(r"/[^/]+$").unwrap();
+      strip_name_regex.replace(&entry,"") + "/" + &service_name + ".zip"
+    }
+  };
+  if zip_path.is_empty() {
+    Err(Redirect::to("/"))  // TODO : Err(NotFound(format!("Service {:?} does not have a result for entry {:?}", service_name, entry_id)))
+  } else {
+    NamedFile::open(&zip_path).map_err(|_| Redirect::to(&format!("/")))
+  }
+}
+
 
 //   //Rerun queries
 //   let rerun_config1 = cortex_config.clone();
@@ -280,22 +307,13 @@ fn files(file: PathBuf) -> Result<NamedFile, NotFound<String>> {
 }
 
 fn rocket() -> rocket::Rocket {
-  rocket::ignite().mount("/", routes![root, admin, corpus, files, top_service_report, severity_service_report, category_service_report, what_service_report]).attach(Template::fairing())
+  rocket::ignite().mount("/", routes![root, admin, corpus, files, top_service_report, severity_service_report, category_service_report, what_service_report, entry_fetch]).attach(Template::fairing())
 }
 
 fn main() {
   let _ = thread::spawn(move || {
     cache_worker();
   });
-
-  // Any secrets reside in examples/config.json
-  let cortex_config = match aux_load_config() {
-    Ok(cfg) => cfg,
-    Err(_) => {
-      println!("You need a well-formed JSON examples/config.json file to run the frontend.");
-      return;
-    }
-  };
 
   rocket().launch();
 }
@@ -581,30 +599,52 @@ fn aux_decorate_uri_encodings(context: &mut TemplateContext) {
   }
 }
 
-// #[derive(RustcDecodable)]
-// struct IsSuccess {
-//   success: bool,
-// }
+#[derive(RustcDecodable)]
+struct IsSuccess {
+  success: bool,
+}
 
-// fn aux_check_captcha(g_recaptcha_response: &str, captcha_secret: &str) -> bool {
-//   let client = Client::new();
-//   let mut verified = false;
-//   let url_with_query = "https://www.google.com/recaptcha/api/siteverify?secret=".to_string() + captcha_secret + "&response=" + g_recaptcha_response;
-//   let mut res = client.post(&url_with_query)
-//                       .send()
-//                       .unwrap();
+fn aux_check_captcha(g_recaptcha_response: &str, captcha_secret: &str) -> bool {
+  let mut core = match Core::new() {
+    Ok(c) => c,
+    _ => return false
+  };
+  let handle = core.handle();
+  let client = Client::configure()
+    .connector(HttpsConnector::new(4, &handle).unwrap())
+    .build(&handle);
 
-//   let mut buffer = String::new();
-//   if let Ok(_) = res.read_to_string(&mut buffer) {
-//     let json_decoded: Result<IsSuccess, _> = json::decode(&buffer);
-//     if let Ok(response_json) = json_decoded {
-//       if response_json.success {
-//         verified = true;
-//       }
-//     }
-//   }
-//   verified
-// }
+  let mut verified = false;
+  let url_with_query = "https://www.google.com/recaptcha/api/siteverify?secret=".to_string() + captcha_secret + "&response=" + g_recaptcha_response;
+  let json_str = format!("{{\"secret\":\"{:?}\",\"response\":\"{:?}\"}}", captcha_secret, g_recaptcha_response);
+  let req_url = match url_with_query.parse() {
+    Ok(parsed) => parsed,
+    _ => return false
+  };
+  let mut req = Request::new(Method::Post, req_url);
+  req.headers_mut().set(ContentType::json());
+  req.headers_mut().set(ContentLength(json_str.len() as u64));
+  req.set_body(json_str);
+
+  let post = client.request(req).and_then(|res| {
+      res.body().concat2()
+  });
+  let posted = match core.run(post) {
+    Ok(posted_data) => match str::from_utf8(&posted_data) {
+      Ok(posted_str) => posted_str.to_string(),
+      Err(e) => {println!("err: {}",e);return false}
+    }
+    Err(e) => {println!("err: {}",e);return false}
+  };
+  let json_decoded: Result<IsSuccess, _> = json::decode(&posted);
+  if let Ok(response_json) = json_decoded {
+    if response_json.success {
+      verified = true;
+    }
+  }
+
+  verified
+}
 
 fn aux_task_report(global: &mut HashMap<String, String>, corpus: &Corpus, service: &Service, severity: Option<String>, category: Option<String>, what: Option<String>) -> Vec<HashMap<String, String>> {
   let key_tail = match severity.clone() {
