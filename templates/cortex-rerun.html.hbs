@@ -49,7 +49,7 @@ $("#btn-rerun").click(function(e) {
   var xhr = new XMLHttpRequest();
   xhr.onreadystatechange = function(){
     if (this.readyState == 4) { // Only process when done.
-      if (this.status != 200) {
+      if (this.status != 200 && this.status != 202) {
         // Something went wrong, throw out the localStorage and re-auth (Redis could've fallen, etc)
         $("#btn-rerun").html('Failed, please retry.');
         $("#btn-rerun").attr("class","btn btn-danger disabled");

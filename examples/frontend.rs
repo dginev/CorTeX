@@ -25,8 +25,8 @@ extern crate time;
 extern crate regex;
 extern crate redis;
 
-use rocket::response::{NamedFile, Responder, Redirect};
-use rocket::response::status::NotFound;
+use rocket::response::{NamedFile, Redirect};
+use rocket::response::status::{Accepted,NotFound};
 use rocket_contrib::Template;
 use futures::{Future, Stream};
 use tokio_core::reactor::Core;
@@ -81,12 +81,21 @@ impl Default for TemplateContext {
   }
 }
 
-fn aux_load_config() -> Result<CortexConfig, String> {
-  let mut config_file = try!(File::open("examples/config.json").map_err(|e| e.to_string()));
+fn aux_load_config() -> CortexConfig {
+  let mut config_file = match File::open("examples/config.json") {
+    Ok(cfg) => cfg,
+    Err(e) => panic!("You need a well-formed JSON examples/config.json file to run the frontend. Error: {}", e)
+  };
   let mut config_buffer = String::new();
-  try!(config_file.read_to_string(&mut config_buffer).map_err(|e| e.to_string()));
+  match config_file.read_to_string(&mut config_buffer) {
+    Ok(_) => {},
+    Err(e) => panic!("You need a well-formed JSON examples/config.json file to run the frontend. Error: {}", e)
+  };
 
-  json::decode(&config_buffer).map_err(|e| e.to_string())
+  match json::decode(&config_buffer) {
+    Ok(decoded) => decoded,
+    Err(e) => panic!("You need a well-formed JSON examples/config.json file to run the frontend. Error: {}", e)
+  }
 }
 
 #[get("/")]
@@ -178,15 +187,7 @@ fn what_service_report(corpus_name: String, service_name: String, severity: Stri
 #[post("/entry/<service_name>/<entry_id>", data="<data>")]
 fn entry_fetch(service_name: String, entry_id: usize, data: Vec<u8>) -> Result<NamedFile, Redirect> {
   // Any secrets reside in examples/config.json
-  let cortex_config = match aux_load_config() {
-    Ok(cfg) => cfg,
-    Err(_) => {
-      println!("You need a well-formed JSON examples/config.json file to run the frontend.");
-      return Err(Redirect::to("/"))
-      // TODO: Need to figure out how to do a Result return value that can be NotFound and Redirect
-      // NotFound(format!("Bad config, contact server administrator."))
-    }
-  };
+  let cortex_config = aux_load_config();
 
   let g_recaptcha_response = if data.len() > 21 {
     str::from_utf8(&data[21..]).unwrap_or(&UNKNOWN)
@@ -270,35 +271,26 @@ fn entry_fetch(service_name: String, entry_id: usize, data: Vec<u8>) -> Result<N
 }
 
 
-//   //Rerun queries
-//   let rerun_config1 = cortex_config.clone();
-//   server.post("/rerun/:corpus_name/:service_name",
-//               middleware! { |request, response|
-//     return serve_rerun(&rerun_config1, request, response)
-//   });
-//   let rerun_config2 = cortex_config.clone();
-//   server.post("/rerun/:corpus_name/:service_name/:severity",
-//               middleware! { |request, response|
-//     return serve_rerun(&rerun_config2, request, response)
-//   });
-//   let rerun_config3 = cortex_config.clone();
-//   server.post("/rerun/:corpus_name/:service_name/:severity/:category",
-//               middleware! { |request, response|
-//     return serve_rerun(&rerun_config3, request, response)
-//   });
-//   let rerun_config4 = cortex_config.clone(); // TODO: There has to be a better way...
-//   server.post("/rerun/:corpus_name/:service_name/:severity/:category/:what",
-//               middleware! { |request, response|
-//     return serve_rerun(&rerun_config4, request, response)
-//   });
+  //Rerun queries
+  #[post("/rerun/<corpus_name>/<service_name>", data="<data>")]
+  fn rerun_corpus(corpus_name: String, service_name: String, data: Vec<u8>) -> Result<Accepted<String>, NotFound<String>> {
+    serve_rerun(corpus_name, service_name, None, None, None, data)
+  }
 
-//   if let Err(e) = server.listen("127.0.0.1:6767") {
-//     println!("Couldn't start server: {:?}", e);
-//   }
-//   return;
-// }
+  #[post("/rerun/<corpus_name>/<service_name>/<severity>", data="<data>")]
+  fn rerun_severity(corpus_name: String, service_name: String, severity: String, data: Vec<u8>) -> Result<Accepted<String>, NotFound<String>>{
+    serve_rerun(corpus_name, service_name, Some(severity), None, None, data)
+  }
 
+  #[post("/rerun/<corpus_name>/<service_name>/<severity>/<category>", data="<data>")]
+  fn rerun_category(corpus_name: String, service_name: String, severity: String, category: String, data: Vec<u8>) -> Result<Accepted<String>, NotFound<String>>{
+    serve_rerun(corpus_name, service_name, Some(severity), Some(category), None, data)
+  }
 
+  #[post("/rerun/<corpus_name>/<service_name>/<severity>/<category>/<what>", data="<data>")]
+  fn rerun_what(corpus_name: String, service_name: String, severity: String, category: String, what: String, data: Vec<u8>) -> Result<Accepted<String>, NotFound<String>>{
+    serve_rerun(corpus_name, service_name, Some(severity), Some(category), Some(what), data)
+  }
 
 #[get("/public/<file..>")]
 fn files(file: PathBuf) -> Result<NamedFile, NotFound<String>> {
@@ -307,7 +299,9 @@ fn files(file: PathBuf) -> Result<NamedFile, NotFound<String>> {
 }
 
 fn rocket() -> rocket::Rocket {
-  rocket::ignite().mount("/", routes![root, admin, corpus, files, top_service_report, severity_service_report, category_service_report, what_service_report, entry_fetch]).attach(Template::fairing())
+  rocket::ignite().mount("/", routes![root, admin, corpus, files,
+    top_service_report, severity_service_report, category_service_report, what_service_report, entry_fetch,
+    rerun_corpus, rerun_severity, rerun_category, rerun_what]).attach(Template::fairing())
 }
 
 fn main() {
@@ -446,78 +440,77 @@ fn serve_report(corpus_name: String, service_name: String, severity: Option<Stri
   }
 }
 
-// fn serve_rerun<'a, D>(config: &CortexConfig, request: &mut Request<D>, response: Response<'a, D>) -> MiddlewareResult<'a, D> {
+fn serve_rerun(corpus_name: String, service_name: String, severity: Option<String>, category: Option<String>, what: Option<String>, token_bytes: Vec<u8>) -> Result<Accepted<String>, NotFound<String>> {
+  let config = aux_load_config();
 //   let corpus_name = aux_uri_unescape(request.param("corpus_name")).unwrap_or(UNKNOWN.to_string());
 //   let service_name = aux_uri_unescape(request.param("service_name")).unwrap_or(UNKNOWN.to_string());
 //   let severity = aux_uri_unescape(request.param("severity"));
 //   let category = aux_uri_unescape(request.param("category"));
 //   let what = aux_uri_unescape(request.param("what"));
 
-//   // Ensure we're given a valid rerun token to rerun, or anyone can wipe the cortex results
-//   let mut body_bytes = vec![];
-//   request.origin.read_to_end(&mut body_bytes).unwrap_or(0);
-//   let token = from_utf8(&body_bytes).unwrap_or(UNKNOWN);
-//   let user_opt = config.rerun_tokens.get(token);
-//   let user = match user_opt {
-//     None => return response.error(Forbidden, "Access denied"),
-//     Some(user) => user,
-//   };
-//   println!("-- User {:?}: Mark for rerun on {:?}/{:?}/{:?}/{:?}/{:?}",
-//            user,
-//            corpus_name,
-//            service_name,
-//            severity,
-//            category,
-//            what);
+  // Ensure we're given a valid rerun token to rerun, or anyone can wipe the cortex results
+  let token = str::from_utf8(&token_bytes).unwrap_or(UNKNOWN);
+  let user_opt = config.rerun_tokens.get(token);
+  let user = match user_opt {
+    None => return Err(NotFound(format!("Access Denied"))), // TODO: response.error(Forbidden, "Access denied"),
+    Some(user) => user,
+  };
+  println!("-- User {:?}: Mark for rerun on {:?}/{:?}/{:?}/{:?}/{:?}",
+           user,
+           corpus_name,
+           service_name,
+           severity,
+           category,
+           what);
 
-//   // Run (and measure) the three rerun queries
-//   let report_start = time::get_time();
-//   let backend = Backend::default();
-//   // Build corpus and service objects
-//   let placeholder_corpus = Corpus {
-//     id: None,
-//     name: corpus_name.to_string(),
-//     path: String::new(),
-//     complex: true,
-//   };
-//   let corpus = match placeholder_corpus.select_by_key(&backend.connection) {
-//     Err(_) => return response.error(Forbidden, "Access denied"),
-//     Ok(corpus_opt) => {
-//       match corpus_opt {
-//         None => return response.error(Forbidden, "Access denied"),
-//         Some(corpus) => corpus,
-//       }
-//     }
-//   };
-//   let placeholder_service = Service {
-//     id: None,
-//     name: service_name.clone(),
-//     complex: true,
-//     version: 0.1,
-//     inputconverter: None,
-//     inputformat: String::new(),
-//     outputformat: String::new(),
-//   };
-//   let service = match placeholder_service.select_by_key(&backend.connection) {
-//     Err(_) => return response.error(Forbidden, "Access denied"),
-//     Ok(service_opt) => {
-//       match service_opt {
-//         None => return response.error(Forbidden, "Access denied"),
-//         Some(service) => service,
-//       }
-//     }
-//   };
-//   let rerun_result = backend.mark_rerun(&corpus, &service, severity, category, what);
-//   let report_end = time::get_time();
-//   let report_duration = (report_end - report_start).num_milliseconds();
-//   println!("-- User {:?}: Mark for rerun took {:?}ms",
-//            user,
-//            report_duration);
-//   match rerun_result {
-//     Err(_) => response.error(Forbidden, "Access denied"), // TODO: better error message?
-//     Ok(_) => response.send(""),
-//   }
-// }
+  // Run (and measure) the three rerun queries
+  let report_start = time::get_time();
+  let backend = Backend::default();
+  // Build corpus and service objects
+  let placeholder_corpus = Corpus {
+    id: None,
+    name: corpus_name.to_string(),
+    path: String::new(),
+    complex: true,
+  };
+  let corpus = match placeholder_corpus.select_by_key(&backend.connection) {
+    Err(_) => return Err(NotFound(format!("Access Denied"))), // TODO: response.error(Forbidden, "Access denied"),
+    Ok(corpus_opt) => {
+      match corpus_opt {
+        None => return Err(NotFound(format!("Access Denied"))), // TODO: response.error(Forbidden, "Access denied"),
+        Some(corpus) => corpus,
+      }
+    }
+  };
+  let placeholder_service = Service {
+    id: None,
+    name: service_name.clone(),
+    complex: true,
+    version: 0.1,
+    inputconverter: None,
+    inputformat: String::new(),
+    outputformat: String::new(),
+  };
+  let service = match placeholder_service.select_by_key(&backend.connection) {
+    Err(_) => return Err(NotFound(format!("Access Denied"))), // TODO: response.error(Forbidden, "Access denied"),
+    Ok(service_opt) => {
+      match service_opt {
+        None => return Err(NotFound(format!("Access Denied"))), // TODO: response.error(Forbidden, "Access denied"),
+        Some(service) => service,
+      }
+    }
+  };
+  let rerun_result = backend.mark_rerun(&corpus, &service, severity, category, what);
+  let report_end = time::get_time();
+  let report_duration = (report_end - report_start).num_milliseconds();
+  println!("-- User {:?}: Mark for rerun took {:?}ms",
+           user,
+           report_duration);
+  match rerun_result {
+    Err(_) => Err(NotFound(format!("Access Denied"))), // TODO: better error message?
+    Ok(_) => Ok(Accepted(None))
+  }
+}
 
 fn aux_severity_highlight(severity: &str) -> &str {
   match severity {// Bootstrap highlight classes
