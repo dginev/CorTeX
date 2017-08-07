@@ -134,6 +134,7 @@ fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
         context.services = Some(service_reports);
       }
       aux_decorate_uri_encodings(&mut context);
+      println!("Decorated global: {:?}", context.global);
       return Ok(Template::render("cortex-services", context))
     }
   Err(NotFound(format!("Corpus {} is not registered", &corpus_name)))
@@ -556,6 +557,15 @@ fn aux_decorate_uri_encodings(context: &mut TemplateContext) {
         }
       }
     }
+  }
+  // global is handled separately
+  let mut uri_decorations = vec![];
+  for (subkey, subval) in context.global.iter() {
+    uri_decorations.push((subkey.to_string() + "_uri",
+                          aux_uri_escape(Some(subval.to_string())).unwrap()));
+  }
+  for (decoration_key, decoration_val) in uri_decorations {
+    context.global.insert(decoration_key, decoration_val);
   }
 }
 

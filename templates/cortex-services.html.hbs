@@ -17,17 +17,15 @@
     </tr>
   </thead>
   <tbody>
-    {{#with global}}
-    {{#with services}}
+    {{#each services}}
     <tr>
-      <td class="left"><a href="/corpus/{{corpus_name_uri}}/{{name_uri}}">{{name}}</a></td>
+      <td class="left"><a href="/corpus/{{../global.corpus_name_uri}}/{{this.name_uri}}">{{this.name}}</a></td>
       <td class="left">converter</td>
-      <td class="left">{{inputformat}}</td>
-      <td class="left">{{outputformat}}</td>
-      <td class="left">{{status}}</td>
+      <td class="left">{{this.inputformat}}</td>
+      <td class="left">{{this.outputformat}}</td>
+      <td class="left">{{this.status}}</td>
     </tr>
-    {{/with}}
-    {{/with}}
+    {{/each}}
   </tbody>
   </table>
   </div>
