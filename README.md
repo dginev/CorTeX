@@ -15,6 +15,7 @@
  - [x] Supports multi-corpora multi-service installations
  - [x] Centralized storage, with distributed computing, motivated to enable collaborations across institutional and national borders.
  - [x] Routinely tested on 1 million scientific TeX papers from arXiv.org
+ - [x] Minimal dashboard frontend written in [Rocket](https://rocket.rs/)
 
 **History**:
  * Originally motivated by the desire to process any **Cor**-pus of **TeX** documents.
