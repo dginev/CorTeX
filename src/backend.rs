@@ -10,7 +10,7 @@ extern crate postgres;
 extern crate rustc_serialize;
 extern crate rand;
 
-use postgres::{Connection, SslMode};
+use postgres::{Connection, TlsMode};
 use postgres::error::Error;
 use postgres::rows::Rows;
 use std::clone::Clone;
@@ -33,18 +33,18 @@ pub static DEFAULT_DB_ADDRESS: &'static str = "postgres://cortex:cortex@localhos
 pub static TEST_DB_ADDRESS: &'static str = "postgres://cortex_tester:cortex_tester@localhost/cortex_tester";
 impl Default for Backend {
   fn default() -> Backend {
-    Backend { connection: Connection::connect(DEFAULT_DB_ADDRESS, &SslMode::None).unwrap() }
+    Backend { connection: Connection::connect(DEFAULT_DB_ADDRESS, TlsMode::None).unwrap() }
   }
 }
 
 impl Backend {
   /// Constructs a new Task store representation from a Postgres DB address
   pub fn from_address(address: &str) -> Backend {
-    Backend { connection: Connection::connect(address, &SslMode::None).unwrap() }
+    Backend { connection: Connection::connect(address, TlsMode::None).unwrap() }
   }
   /// Constructs the default Backend struct for testing
   pub fn testdb() -> Backend {
-    Backend { connection: Connection::connect(TEST_DB_ADDRESS, &SslMode::None).unwrap() }
+    Backend { connection: Connection::connect(TEST_DB_ADDRESS, TlsMode::None).unwrap() }
   }
 
   /// Instance methods
@@ -412,7 +412,7 @@ impl Backend {
           Ok(entry_rows) => {
             let entry_name_regex = Regex::new(r"^(.+)/[^/]+$").unwrap();
             let mut entries = Vec::new();
-            for row in entry_rows {
+            for row in entry_rows.iter() {
               let entry_fixedwidth: String = row.get(0);
               let entry = entry_fixedwidth.trim_right().to_string();
               if service.name == "import" {
@@ -472,7 +472,7 @@ impl Backend {
                 Ok(entry_rows) => {
                   let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
                   let mut entries = Vec::new();
-                  for row in entry_rows {
+                  for row in entry_rows.iter() {
                     let mut entry_map = HashMap::new();
                     let entry_fixedwidth: String = row.get(0);
                     let entry_taskid: i64 = row.get(1);
@@ -534,8 +534,8 @@ impl Backend {
                         Ok(total_query) => {
                           match total_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1), &raw_status, &severity_name]) {
                             Ok(total_rows) => {
-                              let severity_message_tasks: i64 = total_rows.get(0).get_opt(0).unwrap_or(0);
-                              let severity_messages: i64 = total_rows.get(0).get_opt(1).unwrap_or(0);
+                              let severity_message_tasks: i64 = total_rows.get(0).get_opt(0).unwrap_or(Ok(0)).unwrap_or(0);
+                              let severity_messages: i64 = total_rows.get(0).get_opt(1).unwrap_or(Ok(0)).unwrap_or(0);
                               let severity_silent_tasks = if severity_message_tasks >= severity_tasks {
                                 None
                               } else {
@@ -568,7 +568,7 @@ impl Backend {
                       Ok(entry_rows) => {
                         let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
                         let mut entries = Vec::new();
-                        for row in entry_rows {
+                        for row in entry_rows.iter() {
                           let mut entry_map = HashMap::new();
                           let entry_fixedwidth: String = row.get(0);
                           let entry_taskid: i64 = row.get(1);
@@ -636,7 +636,7 @@ impl Backend {
                           Ok(entry_rows) => {
                             let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
                             let mut entries = Vec::new();
-                            for row in entry_rows {
+                            for row in entry_rows.iter() {
                               let mut entry_map = HashMap::new();
                               let entry_taskid: i64 = row.get(0);
                               let entry_fixedwidth: String = row.get(1);

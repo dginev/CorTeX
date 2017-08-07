@@ -124,6 +124,7 @@ impl TaskManager {
           thread::sleep(Duration::new(1, 0));
         }
         if job_limit.is_some() && (finalize_jobs_count >= job_limit.unwrap()) {
+          println!("Manager job limit of {:?} reached, terminating IO thread...", job_limit.unwrap());
           break;
         }
       }
@@ -307,6 +308,7 @@ impl Server {
         Server::push_progress_task(&progress_queue_arc, dispatched_task.unwrap());
       }
       if job_limit.is_some() && (source_job_count >= job_limit.unwrap()) {
+        println!("Manager job limit of {:?} reached, terminating Ventilator thread...", job_limit.unwrap());
         break;
       }
     }
@@ -464,6 +466,7 @@ impl Server {
                total_incoming,
                request_duration);
       if job_limit.is_some() && (sink_job_count >= job_limit.unwrap()) {
+        println!("Manager job limit of {:?} reached, terminating Sink thread...", job_limit.unwrap());
         break;
       }
     }

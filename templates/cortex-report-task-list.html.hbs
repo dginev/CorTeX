@@ -15,23 +15,21 @@
       </tr>
     </thead>
     <tbody>
-      {{#entries}}
-      {{#global}}
-      <tr class="{{highlight}} corpus-report-task-list">
-        <td class="left">{{entry_name}}</td>
+      {{#each entries}}
+      <tr class="{{../global.highlight}} corpus-report-task-list">
+        <td class="left">{{this.entry_name}}</td>
         <td class="left task-source">
-          <a class="entry-submit" data-action="download" href="/entry/{{inputconverter_uri}}/{{entry_taskid}}">{{inputformat}}</a>
+          <a class="entry-submit" data-action="download" href="/entry/{{../global.inputconverter_uri}}/{{this.entry_taskid}}">{{../global.inputformat}}</a>
         </td>
         <td class="left task-result">
-          <a class="entry-submit" data-action="download" href="/entry/{{service_name_uri}}/{{entry_taskid}}">{{outputformat}}</a>
+          <a class="entry-submit" data-action="download" href="/entry/{{../global.service_name_uri}}/{{this.entry_taskid}}">{{../global.outputformat}}</a>
         </td>
         <td class="left task-preview">
-          <a class="entry-submit" data-action="preview" href="/entry/{{service_name_uri}}/{{entry_taskid}}">preview</a>
+          <a class="entry-submit" data-action="preview" href="/entry/{{../global.service_name_uri}}/{{this.entry_taskid}}">preview</a>
         </td>
-        <td class="left">{{details}}</td>
+        <td class="left">{{this.details}}</td>
       </tr>
-      {{/global}}
-      {{/entries}}
+      {{/each}}
     </tbody>
     </table>
   {{> cortex-report-entry-view }}

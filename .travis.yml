@@ -1,18 +1,33 @@
-sudo: required
+sudo: false
+dist: trusty
 language: rust
-rust: nightly
+rust:
+- nightly
 
 addons:
   apt:
     packages:
       - libarchive-dev
-      - libzmq3-dev
       # necessary for `travis-cargo coveralls --no-sudo`
+      # also for zmq from source, due to zmq_has dependency build error
       - libcurl4-openssl-dev
       - libelf-dev
       - libdw-dev
+      - make
+      - automake
+      - gcc
+      - build-essential
+      - g++
+      - cpp
+      - libc6-dev
+      - man-db
+      - autoconf
+      - pkg-config
+      - libtool
+      - git
       # optional: only required for the --verify flag of coveralls
       - binutils-dev
+
   postgresql: "9.5"
 
 services:
@@ -28,6 +43,22 @@ before_script:
   - |
       pip install 'travis-cargo<0.2' --user &&
       export PATH=$HOME/.local/bin:$PATH
+  - |
+      git clone --depth 1 -b stable https://github.com/jedisct1/libsodium.git
+      cd libsodium
+      ./autogen.sh
+      ./configure --prefix=$HOME
+      make
+      make install
+      cd ..
+      wget https://github.com/zeromq/zeromq4-1/archive/v4.1.6.tar.gz
+      tar zxf v4.1.6.tar.gz
+      cd zeromq4-1-4.1.6
+      ./autogen.sh
+      ./configure --prefix=$HOME --with-libsodium
+      make
+      make install
+      cd ..
 
 after_success:
   # upload the documentation from the build with nightly (automatically only actually
@@ -40,6 +71,10 @@ after_success:
 
 env:
   global:
+    # for zmq
+    - PATH=$HOME/.local/bin:$PATH
+    - LD_LIBRARY_PATH=$HOME/lib
+    - PKG_CONFIG_PATH=$HOME/lib/pkgconfig
     # override the default `--features unstable` used for the nightly branch
     - TRAVIS_CARGO_NIGHTLY_FEATURE=""
     # encrypted github token for doc upload

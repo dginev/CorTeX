@@ -4,33 +4,46 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
+
+#![feature(plugin)]
+#![plugin(rocket_codegen)]
+
+extern crate rocket;
+extern crate rocket_contrib;
 extern crate url;
+extern crate futures;
 extern crate hyper;
-#[macro_use]
-extern crate nickel;
+extern crate hyper_tls;
+extern crate tokio_core;
+
+extern crate rustc_serialize; // TODO: Migrate FULLY to serde
+extern crate serde_json;
+#[macro_use] extern crate serde_derive;
+
 extern crate cortex;
-extern crate rustc_serialize;
 extern crate time;
 extern crate regex;
 extern crate redis;
 
+use rocket::response::{NamedFile, Redirect};
+use rocket::response::status::{Accepted,NotFound};
+use rocket_contrib::Template;
+use futures::{Future, Stream};
+use tokio_core::reactor::Core;
+use hyper::Client;
+use hyper::{Method, Request};
+use hyper::header::{ContentLength, ContentType};
+use hyper_tls::HttpsConnector;
+
 use std::collections::HashMap;
-// use std::path::Path;
-// use std::fs;
-use std::str::*;
+use std::path::{Path, PathBuf};
 use std::fs::File;
-use std::io::Read;
-use std::path::Path;
+use std::io::{Read};
+use std::str;
+
 use std::thread;
 use std::time::Duration;
 use regex::Regex;
-use nickel::{Nickel, Mountable, StaticFilesHandler, HttpRouter, Request, Response, MiddlewareResult};
-use nickel::extensions::{Referer, Redirect};
-use hyper::header::Location;
-use hyper::Client;
-use nickel::status::StatusCode::{self, Forbidden};
-// use nickel::QueryString;
-// use nickel::status::StatusCode;
 use redis::Commands;
 
 use rustc_serialize::json;
@@ -46,96 +59,92 @@ struct CortexConfig {
   rerun_tokens: HashMap<String, String>,
 }
 
-// fn slurp_file (path : &'static str) -> Result<String, Error> {
-//   let mut f = try!(File::open(path));
-//   let mut content = String::new();
-//   try!(f.read_to_string(&mut content));
-//   Ok(content)
-// }
-
-fn aux_load_config() -> Result<CortexConfig, String> {
-  let mut config_file = try!(File::open("examples/config.json").map_err(|e| e.to_string()));
-  let mut config_buffer = String::new();
-  try!(config_file.read_to_string(&mut config_buffer).map_err(|e| e.to_string()));
-
-  json::decode(&config_buffer).map_err(|e| e.to_string())
+#[derive(Serialize)]
+struct TemplateContext {
+  global: HashMap<String, String>,
+  corpora: Option<Vec<HashMap<String,String>>>,
+  services: Option<Vec<HashMap<String,String>>>,
+  entries: Option<Vec<HashMap<String,String>>>,
+  categories: Option<Vec<HashMap<String,String>>>,
+  whats: Option<Vec<HashMap<String,String>>>,
+}
+impl Default for TemplateContext {
+  fn default() -> Self {
+    TemplateContext {
+      global: HashMap::new(),
+      corpora: None,
+      services: None,
+      entries: None,
+      categories: None,
+      whats: None
+    }
+  }
 }
 
-fn main() {
-  let _ = thread::spawn(move || {
-    cache_worker();
-  });
-
-  // Any secrets reside in examples/config.json
-  let cortex_config = match aux_load_config() {
+fn aux_load_config() -> CortexConfig {
+  let mut config_file = match File::open("examples/config.json") {
     Ok(cfg) => cfg,
-    Err(_) => {
-      println!("You need a well-formed JSON examples/config.json file to run the frontend.");
-      return;
-    }
+    Err(e) => panic!("You need a well-formed JSON examples/config.json file to run the frontend. Error: {}", e)
   };
-  let mut server = Nickel::new();
-  // Fall-through behaviour, if StaticFilesHandler does not find a matching file,
-  // the request uri must be reset so that it can be matched against other middleware.
-  //
-  server.mount("/public/", StaticFilesHandler::new("public/"));
-  // middleware function logs each request to console
-  server.utilize(middleware! { |request|
-      println!("{:?} {:?}", request.origin.method, request.origin.uri);
-      println!("    from {:?}", request.origin.remote_addr);
-  });
+  let mut config_buffer = String::new();
+  match config_file.read_to_string(&mut config_buffer) {
+    Ok(_) => {},
+    Err(e) => panic!("You need a well-formed JSON examples/config.json file to run the frontend. Error: {}", e)
+  };
 
-  server.get("/robots.txt",
-             middleware! { |_, mut response|
-    response.set(Location("/public/robots.txt".into()));
-    StatusCode::PermanentRedirect
-  });
+  match json::decode(&config_buffer) {
+    Ok(decoded) => decoded,
+    Err(e) => panic!("You need a well-formed JSON examples/config.json file to run the frontend. Error: {}", e)
+  }
+}
 
-  server.get("/",
-             middleware! { |_, response|
-    let mut data = HashMap::new();
-    let mut global = HashMap::new();
-    global.insert("title".to_string(), "Framework Overview".to_string());
-    global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - overview.".to_string());
+#[get("/")]
+fn root() -> Template {
 
+  let mut context = TemplateContext::default();
+  let mut global = HashMap::new();
+  global.insert("title".to_string(), "Framework Overview".to_string());
+  global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - overview.".to_string());
+
+  let backend = Backend::default();
+  let corpora = backend.corpora().iter().map(|c| c.to_hash()).collect::<Vec<_>>();
+
+  context.global = global;
+  context.corpora = Some(corpora);
+  aux_decorate_uri_encodings(&mut context);
+
+  Template::render("cortex-overview", context)
+}
+
+// Admin interface
+#[get("/admin")]
+fn admin() -> Template {
+  let mut global = HashMap::new();
+  global.insert("title".to_string(), "Admin Interface".to_string());
+  global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - admin interface.".to_string());
+  match sysinfo::report(&mut global) {
+    Ok(_) => {},
+    Err(e) => println!("Sys report failed: {:?}", e)
+  };
+
+  let context = TemplateContext {
+    global: global,
+    ..TemplateContext::default()
+  };
+  Template::render("cortex-admin", context)
+}
+
+#[get("/corpus/<corpus_name>")]
+fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
     let backend = Backend::default();
-    let corpora = backend.corpora().iter().map(|c| c.to_hash()).collect::<Vec<_>>();
-
-    data.insert("global".to_string(),vec![global]);
-    data.insert("corpora".to_string(),corpora);
-    aux_decorate_uri_encodings(&mut data);
-
-    return response.render("examples/assets/cortex-overview.html", &data)
-  });
-
-  // Admin interface
-  server.get("/admin",
-             middleware! { |_, response|
-    let mut data = HashMap::new();
-    let mut global = HashMap::new();
-    global.insert("title".to_string(), "Admin Interface".to_string());
-    global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - admin interface.".to_string());
-    match sysinfo::report(&mut global) {
-      Ok(_) => {},
-      Err(e) => println!("Sys report failed: {:?}", e)
-    };
-    data.insert("global".to_string(),vec![global]);
-    aux_decorate_uri_encodings(&mut data);
-    return response.render("examples/assets/cortex-admin.html", &data)
-  });
-
-  server.get("/corpus/:corpus_name",
-             middleware! { |request, mut response|
-    let mut data = HashMap::new();
-    let mut global = HashMap::new();
-    let backend = Backend::default();
-    let corpus_name = aux_uri_unescape(request.param("corpus_name")).unwrap_or(UNKNOWN.to_string());
+    let corpus_name = aux_uri_unescape(Some(&corpus_name)).unwrap_or(UNKNOWN.to_string());
     let corpus_result = Corpus{id: None, name: corpus_name.to_string(), path : String::new(), complex : true}.select_by_key(&backend.connection);
     if let Ok(Some(corpus)) = corpus_result {
+      let mut global = HashMap::new();
       global.insert("title".to_string(), "Registered services for ".to_string() + &corpus_name);
       global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - registered services for ".to_string()+ &corpus_name);
       global.insert("corpus_name".to_string(), corpus_name.to_string());
-      data.insert("global".to_string(),vec![global]);
+      let mut context = TemplateContext { global: global, ..TemplateContext::default()};
 
       let services_result = corpus.select_services(&backend.connection);
       if let Ok(backend_services) = services_result {
@@ -146,151 +155,175 @@ fn main() {
           service.insert("status".to_string(),"Running".to_string());
           service_reports.push(service);
         }
-        data.insert("services".to_string(), service_reports);
+        context.services = Some(service_reports);
       }
-      aux_decorate_uri_encodings(&mut data);
-      return response.render("examples/assets/cortex-services.html", &data);
+      aux_decorate_uri_encodings(&mut context);
+      return Ok(Template::render("cortex-services", context))
     }
-    // let message = "Error: Corpus ".to_string() + &corpus_name + " does not exist, aborting!";
-    response.set(Location("/".into()));
-    StatusCode::TemporaryRedirect
-  });
-
-  server.get("/corpus/:corpus_name/:service_name",
-             middleware! { |request, response|
-    return serve_report(request, response)
-  });
-  server.get("/corpus/:corpus_name/:service_name/:severity",
-             middleware! { |request, response|
-    return serve_report(request, response)
-  });
-  server.get("/corpus/:corpus_name/:service_name/:severity/:category",
-             middleware! { |request, response|
-    return serve_report(request, response)
-  });
-  server.get("/corpus/:corpus_name/:service_name/:severity/:category/:what",
-             middleware! { |request, response|
-    return serve_report(request, response)
-  });
-
-  let cortex_config2 = cortex_config.clone();
-  server.post("/entry/:service_name/:entry",
-              middleware! { |request, response|
-    let mut body_bytes = vec![];
-    request.origin.read_to_end(&mut body_bytes).unwrap_or(0);
-    let g_recaptcha_response = if body_bytes.len() > 21 {
-      from_utf8(&body_bytes[21..]).unwrap_or(&UNKNOWN)
-    } else {
-      UNKNOWN
-    };
-    // Check if we hve the g_recaptcha_response in Redis, then reuse
-    let mut redis_opt = None;
-    let quota : usize = match redis::Client::open("redis://127.0.0.1/") {
-      Err(_) => 0,
-      Ok(redis_client) => match redis_client.get_connection() {
-        Err(_) => 0,
-        Ok(redis_connection) => {
-          let quota = redis_connection.get(g_recaptcha_response).unwrap_or(0);
-          redis_opt = Some(redis_connection);
-          quota
-        }
-      }
-    };
-    let captcha_verified = if quota > 0 {
-      if quota == 1 {
-        match &redis_opt {
-          &Some(ref redis_connection) => {
-            // Remove if last
-            redis_connection.del(g_recaptcha_response).unwrap_or(());
-            // We have quota available, decrement it
-            redis_connection.set(g_recaptcha_response, quota-1).unwrap_or(());
-          },
-          &None => {} // compatibility mode: redis has ran away?
-        };
-      }
-      // And allow operation
-      true
-    } else {
-      let check_val = aux_check_captcha(g_recaptcha_response, &cortex_config2.captcha_secret);
-      if check_val {
-        match &redis_opt {
-          &Some(ref redis_connection) => {
-            // Add a reuse quota if things check out, 19 more downloads
-            redis_connection.set(g_recaptcha_response, 19).unwrap_or(());
-          },
-          &None => {}
-        };
-      }
-      check_val
-    };
-
-    // If you are not human, you have no business here.
-    if !captcha_verified {
-      let back = request.referer().unwrap_or("/");
-      return response.redirect(back.to_string()+"?expire_quotas")
-    }
-    println!("-- serving verified human request for entry download");
-
-    let service_name = aux_uri_unescape(request.param("service_name")).unwrap_or(UNKNOWN.to_string());
-    let entry_taskid = aux_uri_unescape(request.param("entry")).unwrap_or(UNKNOWN.to_string());
-    let placeholder_task = Task {
-      id: Some(entry_taskid.parse::<i64>().unwrap_or(0)),
-      entry: String::new(),
-      corpusid : 0,
-      serviceid : 0,
-      status : 0
-    };
-    let backend = Backend::default();
-    let task = backend.sync(&placeholder_task).unwrap_or(placeholder_task); // TODO: Error-reporting
-    let entry = task.entry;
-    let zip_path = match service_name.as_str() {
-      "import" => entry,
-      _ => {
-        let strip_name_regex = Regex::new(r"/[^/]+$").unwrap();
-        strip_name_regex.replace(&entry,"") + "/" + &service_name + ".zip"
-      }
-    };
-    return response.send_file(Path::new(&zip_path))
-  });
-
-  //Rerun queries
-  let rerun_config1 = cortex_config.clone();
-  server.post("/rerun/:corpus_name/:service_name",
-              middleware! { |request, response|
-    return serve_rerun(&rerun_config1, request, response)
-  });
-  let rerun_config2 = cortex_config.clone();
-  server.post("/rerun/:corpus_name/:service_name/:severity",
-              middleware! { |request, response|
-    return serve_rerun(&rerun_config2, request, response)
-  });
-  let rerun_config3 = cortex_config.clone();
-  server.post("/rerun/:corpus_name/:service_name/:severity/:category",
-              middleware! { |request, response|
-    return serve_rerun(&rerun_config3, request, response)
-  });
-  let rerun_config4 = cortex_config.clone(); // TODO: There has to be a better way...
-  server.post("/rerun/:corpus_name/:service_name/:severity/:category/:what",
-              middleware! { |request, response|
-    return serve_rerun(&rerun_config4, request, response)
-  });
-
-  if let Err(e) = server.listen("127.0.0.1:6767") {
-    println!("Couldn't start server: {:?}", e);
-  }
-  return;
+  Err(NotFound(format!("Corpus {} is not registered", &corpus_name)))
 }
 
-fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> MiddlewareResult<'a, D> {
-  let mut data = HashMap::new();
-  let mut global = HashMap::new();
-  let backend = Backend::default();
+#[get("/corpus/<corpus_name>/<service_name>")]
+fn top_service_report(corpus_name: String, service_name: String) -> Result<Template, NotFound<String>> {
+  serve_report(corpus_name, service_name, None, None, None)
+}
+#[get("/corpus/<corpus_name>/<service_name>/<severity>")]
+fn severity_service_report(corpus_name: String, service_name: String, severity: String) -> Result<Template, NotFound<String>> {
+  serve_report(corpus_name, service_name, Some(severity), None, None)
+}
+#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>")]
+fn category_service_report(corpus_name: String, service_name: String, severity: String, category: String) -> Result<Template, NotFound<String>> {
+  serve_report(corpus_name, service_name, Some(severity), Some(category), None)
+}
 
-  let corpus_name = aux_uri_unescape(request.param("corpus_name")).unwrap_or(UNKNOWN.to_string());
-  let service_name = aux_uri_unescape(request.param("service_name")).unwrap_or(UNKNOWN.to_string());
-  let severity = aux_uri_unescape(request.param("severity"));
-  let category = aux_uri_unescape(request.param("category"));
-  let what = aux_uri_unescape(request.param("what"));
+#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>/<what>")]
+fn what_service_report(corpus_name: String, service_name: String, severity: String, category: String, what: String) -> Result<Template, NotFound<String>> {
+  serve_report(corpus_name, service_name, Some(severity), Some(category), Some(what))
+}
+
+// Note, the docs warn "data: Vec<u8>" is a DDoS vector - https://api.rocket.rs/rocket/data/trait.FromData.html
+// since this is a research-first implementation, i will abstain from doing this perfectly now and run with the slurp.
+
+#[post("/entry/<service_name>/<entry_id>", data="<data>")]
+fn entry_fetch(service_name: String, entry_id: usize, data: Vec<u8>) -> Result<NamedFile, Redirect> {
+  // Any secrets reside in examples/config.json
+  let cortex_config = aux_load_config();
+
+  let g_recaptcha_response = if data.len() > 21 {
+    str::from_utf8(&data[21..]).unwrap_or(&UNKNOWN)
+  } else {
+    UNKNOWN
+  };
+  // Check if we hve the g_recaptcha_response in Redis, then reuse
+  let redis_opt;
+  let quota : usize = match redis::Client::open("redis://127.0.0.1/") {
+    Err(_) => {return Err(Redirect::to("/"))}// TODO: Err(NotFound(format!("redis unreachable")))},
+    Ok(redis_client) => match redis_client.get_connection() {
+      Err(_) => {return Err(Redirect::to("/"))}//TODO: Err(NotFound(format!("redis unreachable")))},
+      Ok(redis_connection) => {
+        let quota = redis_connection.get(g_recaptcha_response).unwrap_or(0);
+        redis_opt = Some(redis_connection);
+        quota
+      }
+    }
+  };
+
+  let captcha_verified = if quota > 0 {
+    if quota == 1 {
+      match &redis_opt {
+        &Some(ref redis_connection) => {
+          // Remove if last
+          redis_connection.del(g_recaptcha_response).unwrap_or(());
+          // We have quota available, decrement it
+          redis_connection.set(g_recaptcha_response, quota-1).unwrap_or(());
+        },
+        &None => {} // compatibility mode: redis has ran away?
+      };
+    }
+    // And allow operation
+    true
+  } else {
+    let check_val = aux_check_captcha(g_recaptcha_response, &cortex_config.captcha_secret);
+    if check_val {
+      match &redis_opt {
+        &Some(ref redis_connection) => {
+          // Add a reuse quota if things check out, 19 more downloads
+          redis_connection.set(g_recaptcha_response, 19).unwrap_or(());
+        },
+        &None => {}
+      };
+    }
+    check_val
+  };
+
+  // If you are not human, you have no business here.
+  if !captcha_verified {
+    return Err(Redirect::to(&format!("/entry/{:?}/{:?}?expire_quotas", service_name, entry_id)));
+  }
+  println!("-- serving verified human request for entry {:?} download", entry_id);
+
+  // let service_name = aux_uri_unescape(request.param("service_name")).unwrap_or(UNKNOWN.to_string());
+  // let entry_taskid = aux_uri_unescape(request.param("entry")).unwrap_or(UNKNOWN.to_string());
+  let placeholder_task = Task {
+    id: Some(entry_id as i64),
+    entry: String::new(),
+    corpusid : 0,
+    serviceid : 0,
+
+    status : 0
+  };
+  let backend = Backend::default();
+  let task = backend.sync(&placeholder_task).unwrap_or(placeholder_task); // TODO: Error-reporting
+
+  let entry = task.entry;
+  let zip_path = match service_name.as_str() {
+    "import" => entry,
+    _ => {
+      let strip_name_regex = Regex::new(r"/[^/]+$").unwrap();
+      strip_name_regex.replace(&entry,"") + "/" + &service_name + ".zip"
+    }
+  };
+  if zip_path.is_empty() {
+    Err(Redirect::to("/"))  // TODO : Err(NotFound(format!("Service {:?} does not have a result for entry {:?}", service_name, entry_id)))
+  } else {
+    NamedFile::open(&zip_path).map_err(|_| Redirect::to(&format!("/")))
+  }
+}
+
+
+  //Rerun queries
+  #[post("/rerun/<corpus_name>/<service_name>", data="<data>")]
+  fn rerun_corpus(corpus_name: String, service_name: String, data: Vec<u8>) -> Result<Accepted<String>, NotFound<String>> {
+    serve_rerun(corpus_name, service_name, None, None, None, data)
+  }
+
+  #[post("/rerun/<corpus_name>/<service_name>/<severity>", data="<data>")]
+  fn rerun_severity(corpus_name: String, service_name: String, severity: String, data: Vec<u8>) -> Result<Accepted<String>, NotFound<String>>{
+    serve_rerun(corpus_name, service_name, Some(severity), None, None, data)
+  }
+
+  #[post("/rerun/<corpus_name>/<service_name>/<severity>/<category>", data="<data>")]
+  fn rerun_category(corpus_name: String, service_name: String, severity: String, category: String, data: Vec<u8>) -> Result<Accepted<String>, NotFound<String>>{
+    serve_rerun(corpus_name, service_name, Some(severity), Some(category), None, data)
+  }
+
+  #[post("/rerun/<corpus_name>/<service_name>/<severity>/<category>/<what>", data="<data>")]
+  fn rerun_what(corpus_name: String, service_name: String, severity: String, category: String, what: String, data: Vec<u8>) -> Result<Accepted<String>, NotFound<String>>{
+    serve_rerun(corpus_name, service_name, Some(severity), Some(category), Some(what), data)
+  }
+
+#[get("/public/<file..>")]
+fn files(file: PathBuf) -> Result<NamedFile, NotFound<String>> {
+  let path = Path::new("public/").join(file);
+  NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {:?}", path)))
+}
+
+fn rocket() -> rocket::Rocket {
+  rocket::ignite().mount("/", routes![root, admin, corpus, files,
+    top_service_report, severity_service_report, category_service_report, what_service_report, entry_fetch,
+    rerun_corpus, rerun_severity, rerun_category, rerun_what]).attach(Template::fairing())
+}
+
+fn main() {
+  let _ = thread::spawn(move || {
+    cache_worker();
+  });
+
+  rocket().launch();
+}
+
+
+
+fn serve_report(corpus_name: String, service_name: String, severity: Option<String>, category: Option<String>, what: Option<String>) -> Result<Template, NotFound<String>> {
+   let mut context = TemplateContext::default();
+   let mut global = HashMap::new();
+   let backend = Backend::default();
+
+//   let corpus_name = aux_uri_unescape(request.param("corpus_name")).unwrap_or(UNKNOWN.to_string());
+//   let service_name = aux_uri_unescape(request.param("service_name")).unwrap_or(UNKNOWN.to_string());
+//   let severity = aux_uri_unescape(request.param("severity"));
+//   let category = aux_uri_unescape(request.param("category"));
+//   let what = aux_uri_unescape(request.param("what"));
 
   let corpus_result = Corpus {
                         id: None,
@@ -337,7 +370,7 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
           global.insert(key.clone(), val.to_string());
         }
         global.insert("report_time".to_string(), time::now().rfc822().to_string());
-        template = "examples/assets/cortex-report.html";
+        template = "cortex-report";
       } else if category.is_none() {
         // Severity-level report
         global.insert("severity".to_string(), severity.clone().unwrap());
@@ -346,15 +379,15 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
         template = if severity.is_some() && (severity.clone().unwrap() == "no_problem") {
           let entries = aux_task_report(&mut global, &corpus, &service, severity, None, None);
           // Record the report into "entries" vector
-          data.insert("entries".to_string(), entries);
+          context.entries = Some(entries);
           // And set the task list template
-          "examples/assets/cortex-report-task-list.html"
+          "cortex-report-task-list"
         } else {
           let categories = aux_task_report(&mut global, &corpus, &service, severity, None, None);
           // Record the report into "categories" vector
-          data.insert("categories".to_string(), categories);
+          context.categories = Some(categories);
           // And set the severity template
-          "examples/assets/cortex-report-severity.html"
+          "cortex-report-severity"
         };
       } else if what.is_none() {
         // Category-level report
@@ -365,15 +398,15 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
         if category.is_some() && (category.clone().unwrap() == "no_messages") {
           let entries = aux_task_report(&mut global, &corpus, &service, severity, category, None);
           // Record the report into "entries" vector
-          data.insert("entries".to_string(), entries);
+          context.entries = Some(entries);
           // And set the task list template
-          template = "examples/assets/cortex-report-task-list.html";
+          template = "cortex-report-task-list";
         } else {
           let whats = aux_task_report(&mut global, &corpus, &service, severity, category, None);
           // Record the report into "whats" vector
-          data.insert("whats".to_string(), whats);
+          context.whats = Some(whats);
           // And set the category template
-          template = "examples/assets/cortex-report-category.html";
+          template = "cortex-report-category";
         }
       } else {
         // What-level report
@@ -384,9 +417,9 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
         global.insert("what".to_string(), what.clone().unwrap());
         let entries = aux_task_report(&mut global, &corpus, &service, severity, category, what);
         // Record the report into "entries" vector
-        data.insert("entries".to_string(), entries);
+        context.entries = Some(entries);
         // And set the task list template
-        template = "examples/assets/cortex-report-task-list.html";
+        template = "cortex-report-task-list";
       }
 
       // Report also the query times
@@ -394,32 +427,32 @@ fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> M
       let report_duration = (report_end - report_start).num_milliseconds();
       global.insert("report_duration".to_string(), report_duration.to_string());
       // Pass the globals(reports+metadata) onto the stash
-      data.insert("global".to_string(), vec![global]);
+      context.global = global;
       // And pass the handy lambdas
       // And render the correct template
-      aux_decorate_uri_encodings(&mut data);
-      return response.render(template, &data);
+      aux_decorate_uri_encodings(&mut context);
+      Ok(Template::render(template, context))
+    } else {
+      Err(NotFound(format!("Service {} does not exist.", &service_name)))
     }
-  };
-
-  // let message = "Error: Corpus ".to_string() + &corpus_name + " does not exist, aborting!";
-  response.send("")
+  } else {
+    Err(NotFound(format!("Corpus {} does not exist.", &corpus_name)))
+  }
 }
 
-fn serve_rerun<'a, D>(config: &CortexConfig, request: &mut Request<D>, response: Response<'a, D>) -> MiddlewareResult<'a, D> {
-  let corpus_name = aux_uri_unescape(request.param("corpus_name")).unwrap_or(UNKNOWN.to_string());
-  let service_name = aux_uri_unescape(request.param("service_name")).unwrap_or(UNKNOWN.to_string());
-  let severity = aux_uri_unescape(request.param("severity"));
-  let category = aux_uri_unescape(request.param("category"));
-  let what = aux_uri_unescape(request.param("what"));
+fn serve_rerun(corpus_name: String, service_name: String, severity: Option<String>, category: Option<String>, what: Option<String>, token_bytes: Vec<u8>) -> Result<Accepted<String>, NotFound<String>> {
+  let config = aux_load_config();
+//   let corpus_name = aux_uri_unescape(request.param("corpus_name")).unwrap_or(UNKNOWN.to_string());
+//   let service_name = aux_uri_unescape(request.param("service_name")).unwrap_or(UNKNOWN.to_string());
+//   let severity = aux_uri_unescape(request.param("severity"));
+//   let category = aux_uri_unescape(request.param("category"));
+//   let what = aux_uri_unescape(request.param("what"));
 
   // Ensure we're given a valid rerun token to rerun, or anyone can wipe the cortex results
-  let mut body_bytes = vec![];
-  request.origin.read_to_end(&mut body_bytes).unwrap_or(0);
-  let token = from_utf8(&body_bytes).unwrap_or(UNKNOWN);
+  let token = str::from_utf8(&token_bytes).unwrap_or(UNKNOWN);
   let user_opt = config.rerun_tokens.get(token);
   let user = match user_opt {
-    None => return response.error(Forbidden, "Access denied"),
+    None => return Err(NotFound(format!("Access Denied"))), // TODO: response.error(Forbidden, "Access denied"),
     Some(user) => user,
   };
   println!("-- User {:?}: Mark for rerun on {:?}/{:?}/{:?}/{:?}/{:?}",
@@ -441,10 +474,10 @@ fn serve_rerun<'a, D>(config: &CortexConfig, request: &mut Request<D>, response:
     complex: true,
   };
   let corpus = match placeholder_corpus.select_by_key(&backend.connection) {
-    Err(_) => return response.error(Forbidden, "Access denied"),
+    Err(_) => return Err(NotFound(format!("Access Denied"))), // TODO: response.error(Forbidden, "Access denied"),
     Ok(corpus_opt) => {
       match corpus_opt {
-        None => return response.error(Forbidden, "Access denied"),
+        None => return Err(NotFound(format!("Access Denied"))), // TODO: response.error(Forbidden, "Access denied"),
         Some(corpus) => corpus,
       }
     }
@@ -459,10 +492,10 @@ fn serve_rerun<'a, D>(config: &CortexConfig, request: &mut Request<D>, response:
     outputformat: String::new(),
   };
   let service = match placeholder_service.select_by_key(&backend.connection) {
-    Err(_) => return response.error(Forbidden, "Access denied"),
+    Err(_) => return Err(NotFound(format!("Access Denied"))), // TODO: response.error(Forbidden, "Access denied"),
     Ok(service_opt) => {
       match service_opt {
-        None => return response.error(Forbidden, "Access denied"),
+        None => return Err(NotFound(format!("Access Denied"))), // TODO: response.error(Forbidden, "Access denied"),
         Some(service) => service,
       }
     }
@@ -474,8 +507,8 @@ fn serve_rerun<'a, D>(config: &CortexConfig, request: &mut Request<D>, response:
            user,
            report_duration);
   match rerun_result {
-    Err(_) => response.error(Forbidden, "Access denied"), // TODO: better error message?
-    Ok(_) => response.send(""),
+    Err(_) => Err(NotFound(format!("Access Denied"))), // TODO: better error message?
+    Ok(_) => Ok(Accepted(None))
   }
 }
 
@@ -516,6 +549,7 @@ fn aux_uri_escape(param: Option<String>) -> Option<String> {
       // TODO: This could/should be done faster by using lazy_static!
       for &(original, replacement) in &[( ":", "%3A"),
                                       ("/", "%2F"),
+                                      ("\\", "%5C"),
                                       ("$", "%24"),
                                       (".", "%2E"),
                                       ("!", "%21"),
@@ -523,22 +557,38 @@ fn aux_uri_escape(param: Option<String>) -> Option<String> {
       {
         param_encoded = param_encoded.replace(original, replacement);
       }
+      // if param_pure != param_encoded {
+      //   println!("Encoded {:?} to {:?}", param_pure, param_encoded);
+      // } else {
+      //   println!("No encoding needed: {:?}", param_pure);
+      // }
       Some(param_encoded)
     }
   }
 }
-fn aux_decorate_uri_encodings(data: &mut HashMap<String, Vec<HashMap<String, String>>>) {
-  for inner_vec in data.values_mut() {
-    for mut subhash in inner_vec {
-      let mut uri_decorations = vec![];
-      for (subkey, subval) in subhash.iter() {
-        uri_decorations.push((subkey.to_string() + "_uri",
-                              aux_uri_escape(Some(subval.to_string())).unwrap()));
-      }
-      for (decoration_key, decoration_val) in uri_decorations {
-        subhash.insert(decoration_key, decoration_val);
+fn aux_decorate_uri_encodings(context: &mut TemplateContext) {
+  for inner_vec in &mut[&mut context.corpora, &mut context.services, &mut context.entries, &mut context.categories, &mut context.whats] {
+    if let &mut &mut Some(ref mut inner_vec_data) = inner_vec {
+      for mut subhash in inner_vec_data {
+        let mut uri_decorations = vec![];
+        for (subkey, subval) in subhash.iter() {
+          uri_decorations.push((subkey.to_string() + "_uri",
+                                aux_uri_escape(Some(subval.to_string())).unwrap()));
+        }
+        for (decoration_key, decoration_val) in uri_decorations {
+          subhash.insert(decoration_key, decoration_val);
+        }
       }
     }
+  }
+  // global is handled separately
+  let mut uri_decorations = vec![];
+  for (subkey, subval) in context.global.iter() {
+    uri_decorations.push((subkey.to_string() + "_uri",
+                          aux_uri_escape(Some(subval.to_string())).unwrap()));
+  }
+  for (decoration_key, decoration_val) in uri_decorations {
+    context.global.insert(decoration_key, decoration_val);
   }
 }
 
@@ -548,22 +598,44 @@ struct IsSuccess {
 }
 
 fn aux_check_captcha(g_recaptcha_response: &str, captcha_secret: &str) -> bool {
-  let client = Client::new();
+  let mut core = match Core::new() {
+    Ok(c) => c,
+    _ => return false
+  };
+  let handle = core.handle();
+  let client = Client::configure()
+    .connector(HttpsConnector::new(4, &handle).unwrap())
+    .build(&handle);
+
   let mut verified = false;
   let url_with_query = "https://www.google.com/recaptcha/api/siteverify?secret=".to_string() + captcha_secret + "&response=" + g_recaptcha_response;
-  let mut res = client.post(&url_with_query)
-                      .send()
-                      .unwrap();
+  let json_str = format!("{{\"secret\":\"{:?}\",\"response\":\"{:?}\"}}", captcha_secret, g_recaptcha_response);
+  let req_url = match url_with_query.parse() {
+    Ok(parsed) => parsed,
+    _ => return false
+  };
+  let mut req = Request::new(Method::Post, req_url);
+  req.headers_mut().set(ContentType::json());
+  req.headers_mut().set(ContentLength(json_str.len() as u64));
+  req.set_body(json_str);
 
-  let mut buffer = String::new();
-  if let Ok(_) = res.read_to_string(&mut buffer) {
-    let json_decoded: Result<IsSuccess, _> = json::decode(&buffer);
-    if let Ok(response_json) = json_decoded {
-      if response_json.success {
-        verified = true;
-      }
+  let post = client.request(req).and_then(|res| {
+      res.body().concat2()
+  });
+  let posted = match core.run(post) {
+    Ok(posted_data) => match str::from_utf8(&posted_data) {
+      Ok(posted_str) => posted_str.to_string(),
+      Err(e) => {println!("err: {}",e);return false}
+    }
+    Err(e) => {println!("err: {}",e);return false}
+  };
+  let json_decoded: Result<IsSuccess, _> = json::decode(&posted);
+  if let Ok(response_json) = json_decoded {
+    if response_json.success {
+      verified = true;
     }
   }
+
   verified
 }
 

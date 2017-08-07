@@ -1,7 +1,6 @@
 {{> layout-cortex-pre }}
-{{#global}}
 <div class="center">
-  <h1>"{{category}}" classes</h1>
+  <h1>{{global.severity}} categories</h1>
   <br>
   <div class="row">
   <div class="col-md-3"></div>
@@ -9,7 +8,7 @@
   <table id="corpus-report" class="table">
   <thead>
     <tr>
-      <th class="left">What</th>
+      <th class="left">Category</th>
       <th class="right">Tasks %</th>
       <th class="right">Tasks</th>
       <th class="right">Messages %</th>
@@ -17,20 +16,19 @@
     </tr>
   </thead>
   <tbody>
-    {{#whats}}
-    <tr class="{{highlight}} corpus-report-{{category}}">
-      <td class="left"><a class="link-{{name}}" href="/corpus/{{corpus_name_uri}}/{{service_name_uri}}/{{severity}}/{{category_uri}}/{{name_uri}}">{{name}}</a></td>
+    {{#each categories}}
+    <tr class="{{../global.highlight}} corpus-report-{{../global.severity}}">
+      <td class="left"><a class="link-{{name}}" href="/corpus/{{../global.corpus_name_uri}}/{{../global.service_name_uri}}/{{../global.severity_uri}}/{{this.name_uri}}">{{this.name}}</a></td>
       <td class="right">{{tasks_percent}}%</td>
       <td class="right">{{tasks}}</td>
       <td class="right">{{messages_percent}}%</td>
       <td class="right">{{messages}}</td>
     </tr>
-    {{/whats}}
+    {{/each}}
   </tbody>
   </table>
   </div>
   <div class="col-md-3"></div>
   </div>
 </div>
-{{/global}}
 {{> layout-cortex-post }}

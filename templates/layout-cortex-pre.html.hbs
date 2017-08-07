@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
-  {{#global}}
   <head>
     <meta http-equiv="Content-Type" content="text/html"/>
     <meta charset="utf-8"/>
-    <title>{{ title }} | CorTeX</title>
-    
+    {{#with global}}
+    <title> {{title}} | CorTeX</title>
+
     <!-- Sprinkle some jQuery : -->
     <script src='https://code.jquery.com/jquery-2.1.4.min.js'></script>
     <!-- Bootstrap, the modern mother of all design: -->
@@ -19,17 +19,17 @@
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.4.0/css/font-awesome.min.css">
     <!-- Robot slab font: -->
     <link rel='stylesheet' type='text/css' href='http://fonts.googleapis.com/css?family=Roboto+Slab:400,700'>
-    
+
     <link rel="stylesheet" type='text/css' href='/public/css/cortex.css'>
 
     <meta name="language" content="English">
-    <meta name="description" content="{{ description }}">
+    <meta name="description" content="{{description}}">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   </head>
-  
+
   <body>
-    <header class="navbar navbar-default bs-docs-nav" role="banner">        
+    <header class="navbar navbar-default bs-docs-nav" role="banner">
       <div class="container">
         <div class="navbar-header">
             <button class="navbar-toggle" type="button" data-toggle="collapse" data-target=".bs-navbar-collapse">
@@ -67,4 +67,5 @@
 
     <div id="body" class="container">
       <div class="message">{{message}}</div>
-  {{/global}}
+
+    {{/with}}
