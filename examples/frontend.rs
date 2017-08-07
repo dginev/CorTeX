@@ -51,17 +51,21 @@ struct CortexConfig {
 #[derive(Serialize)]
 struct TemplateContext {
   global: HashMap<String, String>,
-  data: HashMap<String, String>,
   corpora: Option<Vec<HashMap<String,String>>>,
-  services: Option<Vec<HashMap<String,String>>>
+  services: Option<Vec<HashMap<String,String>>>,
+  entries: Option<Vec<HashMap<String,String>>>,
+  categories: Option<Vec<HashMap<String,String>>>,
+  whats: Option<Vec<HashMap<String,String>>>,
 }
 impl Default for TemplateContext {
   fn default() -> Self {
     TemplateContext {
       global: HashMap::new(),
-      data: HashMap::new(),
       corpora: None,
       services: None,
+      entries: None,
+      categories: None,
+      whats: None
     }
   }
 }
@@ -140,22 +144,23 @@ fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
   Err(NotFound(format!("Corpus {} is not registered", &corpus_name)))
 }
 
-//   server.get("/corpus/:corpus_name/:service_name",
-//              middleware! { |request, response|
-//     return serve_report(request, response)
-//   });
-//   server.get("/corpus/:corpus_name/:service_name/:severity",
-//              middleware! { |request, response|
-//     return serve_report(request, response)
-//   });
-//   server.get("/corpus/:corpus_name/:service_name/:severity/:category",
-//              middleware! { |request, response|
-//     return serve_report(request, response)
-//   });
-//   server.get("/corpus/:corpus_name/:service_name/:severity/:category/:what",
-//              middleware! { |request, response|
-//     return serve_report(request, response)
-//   });
+#[get("/corpus/<corpus_name>/<service_name>")]
+fn top_service_report(corpus_name: String, service_name: String) -> Result<Template, NotFound<String>> {
+  serve_report(corpus_name, service_name, None, None, None)
+}
+#[get("/corpus/<corpus_name>/<service_name>/<severity>")]
+fn severity_service_report(corpus_name: String, service_name: String, severity: String) -> Result<Template, NotFound<String>> {
+  serve_report(corpus_name, service_name, Some(severity), None, None)
+}
+#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>")]
+fn category_service_report(corpus_name: String, service_name: String, severity: String, category: String) -> Result<Template, NotFound<String>> {
+  serve_report(corpus_name, service_name, Some(severity), Some(category), None)
+}
+
+#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>/<what>")]
+fn what_service_report(corpus_name: String, service_name: String, severity: String, category: String, what: String) -> Result<Template, NotFound<String>> {
+  serve_report(corpus_name, service_name, Some(severity), Some(category), Some(what))
+}
 
 //   let cortex_config2 = cortex_config.clone();
 //   server.post("/entry/:service_name/:entry",
@@ -275,7 +280,7 @@ fn files(file: PathBuf) -> Result<NamedFile, NotFound<String>> {
 }
 
 fn rocket() -> rocket::Rocket {
-  rocket::ignite().mount("/", routes![root, admin, corpus, files]).attach(Template::fairing())
+  rocket::ignite().mount("/", routes![root, admin, corpus, files, top_service_report, severity_service_report, category_service_report, what_service_report]).attach(Template::fairing())
 }
 
 fn main() {
@@ -297,10 +302,10 @@ fn main() {
 
 
 
-// fn serve_report<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> MiddlewareResult<'a, D> {
-//   let mut data = HashMap::new();
-//   let mut global = HashMap::new();
-//   let backend = Backend::default();
+fn serve_report(corpus_name: String, service_name: String, severity: Option<String>, category: Option<String>, what: Option<String>) -> Result<Template, NotFound<String>> {
+   let mut context = TemplateContext::default();
+   let mut global = HashMap::new();
+   let backend = Backend::default();
 
 //   let corpus_name = aux_uri_unescape(request.param("corpus_name")).unwrap_or(UNKNOWN.to_string());
 //   let service_name = aux_uri_unescape(request.param("service_name")).unwrap_or(UNKNOWN.to_string());
@@ -308,119 +313,120 @@ fn main() {
 //   let category = aux_uri_unescape(request.param("category"));
 //   let what = aux_uri_unescape(request.param("what"));
 
-//   let corpus_result = Corpus {
-//                         id: None,
-//                         name: corpus_name.clone(),
-//                         path: String::new(),
-//                         complex: true,
-//                       }
-//                       .select_by_key(&backend.connection);
-//   if let Ok(Some(corpus)) = corpus_result {
-//     let service_result = Service {
-//                            id: None,
-//                            name: service_name.clone(),
-//                            complex: true,
-//                            version: 0.1,
-//                            inputconverter: None,
-//                            inputformat: String::new(),
-//                            outputformat: String::new(),
-//                          }
-//                          .select_by_key(&backend.connection);
-//     if let Ok(Some(service)) = service_result {
-//       // Metadata in all reports
-//       global.insert("title".to_string(),
-//                     "Corpus Report for ".to_string() + &corpus_name);
-//       global.insert("description".to_string(),
-//                     "An analysis framework for corpora of TeX/LaTeX documents - statistical reports for ".to_string() + &corpus_name);
-//       global.insert("corpus_name".to_string(), corpus_name.clone());
-//       global.insert("service_name".to_string(), service_name.clone());
-//       global.insert("type".to_string(), "Conversion".to_string());
-//       global.insert("inputformat".to_string(), service.inputformat.clone());
-//       global.insert("outputformat".to_string(), service.outputformat.clone());
-//       match service.inputconverter {
-//         Some(ref ic_service_name) => global.insert("inputconverter".to_string(), ic_service_name.clone()),
-//         None => global.insert("inputconverter".to_string(), "missing?".to_string()),
-//       };
+  let corpus_result = Corpus {
+                        id: None,
+                        name: corpus_name.clone(),
+                        path: String::new(),
+                        complex: true,
+                      }
+                      .select_by_key(&backend.connection);
+  if let Ok(Some(corpus)) = corpus_result {
+    let service_result = Service {
+                           id: None,
+                           name: service_name.clone(),
+                           complex: true,
+                           version: 0.1,
+                           inputconverter: None,
+                           inputformat: String::new(),
+                           outputformat: String::new(),
+                         }
+                         .select_by_key(&backend.connection);
+    if let Ok(Some(service)) = service_result {
+      // Metadata in all reports
+      global.insert("title".to_string(),
+                    "Corpus Report for ".to_string() + &corpus_name);
+      global.insert("description".to_string(),
+                    "An analysis framework for corpora of TeX/LaTeX documents - statistical reports for ".to_string() + &corpus_name);
+      global.insert("corpus_name".to_string(), corpus_name.clone());
+      global.insert("service_name".to_string(), service_name.clone());
+      global.insert("type".to_string(), "Conversion".to_string());
+      global.insert("inputformat".to_string(), service.inputformat.clone());
+      global.insert("outputformat".to_string(), service.outputformat.clone());
+      match service.inputconverter {
+        Some(ref ic_service_name) => global.insert("inputconverter".to_string(), ic_service_name.clone()),
+        None => global.insert("inputconverter".to_string(), "missing?".to_string()),
+      };
 
-//       let report;
-//       let template;
-//       let report_start = time::get_time();
-//       if severity.is_none() {
-//         // Top-level report
-//         report = backend.progress_report(&corpus, &service);
-//         // Record the report into the globals
-//         for (key, val) in report {
-//           global.insert(key.clone(), val.to_string());
-//         }
-//         global.insert("report_time".to_string(), time::now().rfc822().to_string());
-//         template = "examples/assets/cortex-report.html";
-//       } else if category.is_none() {
-//         // Severity-level report
-//         global.insert("severity".to_string(), severity.clone().unwrap());
-//         global.insert("highlight".to_string(),
-//                       aux_severity_highlight(&severity.clone().unwrap()).to_string());
-//         template = if severity.is_some() && (severity.clone().unwrap() == "no_problem") {
-//           let entries = aux_task_report(&mut global, &corpus, &service, severity, None, None);
-//           // Record the report into "entries" vector
-//           data.insert("entries".to_string(), entries);
-//           // And set the task list template
-//           "examples/assets/cortex-report-task-list.html"
-//         } else {
-//           let categories = aux_task_report(&mut global, &corpus, &service, severity, None, None);
-//           // Record the report into "categories" vector
-//           data.insert("categories".to_string(), categories);
-//           // And set the severity template
-//           "examples/assets/cortex-report-severity.html"
-//         };
-//       } else if what.is_none() {
-//         // Category-level report
-//         global.insert("severity".to_string(), severity.clone().unwrap());
-//         global.insert("highlight".to_string(),
-//                       aux_severity_highlight(&severity.clone().unwrap()).to_string());
-//         global.insert("category".to_string(), category.clone().unwrap());
-//         if category.is_some() && (category.clone().unwrap() == "no_messages") {
-//           let entries = aux_task_report(&mut global, &corpus, &service, severity, category, None);
-//           // Record the report into "entries" vector
-//           data.insert("entries".to_string(), entries);
-//           // And set the task list template
-//           template = "examples/assets/cortex-report-task-list.html";
-//         } else {
-//           let whats = aux_task_report(&mut global, &corpus, &service, severity, category, None);
-//           // Record the report into "whats" vector
-//           data.insert("whats".to_string(), whats);
-//           // And set the category template
-//           template = "examples/assets/cortex-report-category.html";
-//         }
-//       } else {
-//         // What-level report
-//         global.insert("severity".to_string(), severity.clone().unwrap());
-//         global.insert("highlight".to_string(),
-//                       aux_severity_highlight(&severity.clone().unwrap()).to_string());
-//         global.insert("category".to_string(), category.clone().unwrap());
-//         global.insert("what".to_string(), what.clone().unwrap());
-//         let entries = aux_task_report(&mut global, &corpus, &service, severity, category, what);
-//         // Record the report into "entries" vector
-//         data.insert("entries".to_string(), entries);
-//         // And set the task list template
-//         template = "examples/assets/cortex-report-task-list.html";
-//       }
+      let report;
+      let template;
+      let report_start = time::get_time();
+      if severity.is_none() {
+        // Top-level report
+        report = backend.progress_report(&corpus, &service);
+        // Record the report into the globals
+        for (key, val) in report {
+          global.insert(key.clone(), val.to_string());
+        }
+        global.insert("report_time".to_string(), time::now().rfc822().to_string());
+        template = "cortex-report";
+      } else if category.is_none() {
+        // Severity-level report
+        global.insert("severity".to_string(), severity.clone().unwrap());
+        global.insert("highlight".to_string(),
+                      aux_severity_highlight(&severity.clone().unwrap()).to_string());
+        template = if severity.is_some() && (severity.clone().unwrap() == "no_problem") {
+          let entries = aux_task_report(&mut global, &corpus, &service, severity, None, None);
+          // Record the report into "entries" vector
+          context.entries = Some(entries);
+          // And set the task list template
+          "cortex-report-task-list"
+        } else {
+          let categories = aux_task_report(&mut global, &corpus, &service, severity, None, None);
+          // Record the report into "categories" vector
+          context.categories = Some(categories);
+          // And set the severity template
+          "cortex-report-severity"
+        };
+      } else if what.is_none() {
+        // Category-level report
+        global.insert("severity".to_string(), severity.clone().unwrap());
+        global.insert("highlight".to_string(),
+                      aux_severity_highlight(&severity.clone().unwrap()).to_string());
+        global.insert("category".to_string(), category.clone().unwrap());
+        if category.is_some() && (category.clone().unwrap() == "no_messages") {
+          let entries = aux_task_report(&mut global, &corpus, &service, severity, category, None);
+          // Record the report into "entries" vector
+          context.entries = Some(entries);
+          // And set the task list template
+          template = "cortex-report-task-list";
+        } else {
+          let whats = aux_task_report(&mut global, &corpus, &service, severity, category, None);
+          // Record the report into "whats" vector
+          context.whats = Some(whats);
+          // And set the category template
+          template = "cortex-report-category";
+        }
+      } else {
+        // What-level report
+        global.insert("severity".to_string(), severity.clone().unwrap());
+        global.insert("highlight".to_string(),
+                      aux_severity_highlight(&severity.clone().unwrap()).to_string());
+        global.insert("category".to_string(), category.clone().unwrap());
+        global.insert("what".to_string(), what.clone().unwrap());
+        let entries = aux_task_report(&mut global, &corpus, &service, severity, category, what);
+        // Record the report into "entries" vector
+        context.entries = Some(entries);
+        // And set the task list template
+        template = "cortex-report-task-list";
+      }
 
-//       // Report also the query times
-//       let report_end = time::get_time();
-//       let report_duration = (report_end - report_start).num_milliseconds();
-//       global.insert("report_duration".to_string(), report_duration.to_string());
-//       // Pass the globals(reports+metadata) onto the stash
-//       data.insert("global".to_string(), vec![global]);
-//       // And pass the handy lambdas
-//       // And render the correct template
-//       aux_decorate_uri_encodings(&mut data);
-//       return response.render(template, &data);
-//     }
-//   };
-
-//   // let message = "Error: Corpus ".to_string() + &corpus_name + " does not exist, aborting!";
-//   response.send("")
-// }
+      // Report also the query times
+      let report_end = time::get_time();
+      let report_duration = (report_end - report_start).num_milliseconds();
+      global.insert("report_duration".to_string(), report_duration.to_string());
+      // Pass the globals(reports+metadata) onto the stash
+      context.global = global;
+      // And pass the handy lambdas
+      // And render the correct template
+      aux_decorate_uri_encodings(&mut context);
+      Ok(Template::render(template, context))
+    } else {
+      Err(NotFound(format!("Service {} does not exist.", &service_name)))
+    }
+  } else {
+    Err(NotFound(format!("Corpus {} does not exist.", &corpus_name)))
+  }
+}
 
 // fn serve_rerun<'a, D>(config: &CortexConfig, request: &mut Request<D>, response: Response<'a, D>) -> MiddlewareResult<'a, D> {
 //   let corpus_name = aux_uri_unescape(request.param("corpus_name")).unwrap_or(UNKNOWN.to_string());
@@ -532,6 +538,7 @@ fn aux_uri_escape(param: Option<String>) -> Option<String> {
       // TODO: This could/should be done faster by using lazy_static!
       for &(original, replacement) in &[( ":", "%3A"),
                                       ("/", "%2F"),
+                                      ("\\", "%5C"),
                                       ("$", "%24"),
                                       (".", "%2E"),
                                       ("!", "%21"),
@@ -539,12 +546,17 @@ fn aux_uri_escape(param: Option<String>) -> Option<String> {
       {
         param_encoded = param_encoded.replace(original, replacement);
       }
+      // if param_pure != param_encoded {
+      //   println!("Encoded {:?} to {:?}", param_pure, param_encoded);
+      // } else {
+      //   println!("No encoding needed: {:?}", param_pure);
+      // }
       Some(param_encoded)
     }
   }
 }
 fn aux_decorate_uri_encodings(context: &mut TemplateContext) {
-  for inner_vec in &mut[&mut context.corpora, &mut context.services] {
+  for inner_vec in &mut[&mut context.corpora, &mut context.services, &mut context.entries, &mut context.categories, &mut context.whats] {
     if let &mut &mut Some(ref mut inner_vec_data) = inner_vec {
       for mut subhash in inner_vec_data {
         let mut uri_decorations = vec![];
