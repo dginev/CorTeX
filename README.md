@@ -20,7 +20,7 @@
 **History**:
  * Originally motivated by the desire to process any **Cor**-pus of **TeX** documents.
  * Rust reimplementation of the original Perl [CorTeX](https://github.com/dginev/deprecated-CorTeX) stack.
- * Builds on the expertise developed during the [arXMLiv project](https://trac.kwarc.info/arXMLiv) at Jacobs University.
+ * Builds on the expertise developed during the [arXMLiv project](https://www.researchgate.net/profile/Deyan_Ginev/publication/216797030_Transforming_Large_Collections_of_Scientific_Publications_to_XML/links/0fcfd5061a2004a213000000.pdf) at Jacobs University.
  * In particular, CorTeX is a successor to the [build system](http://arxmliv.kwarc.info) originally developed by Heinrich Stamerjohanns.
  * The architecture tiered towards generic processing with conversion, analysis and aggregation services was motivated by the [LLaMaPUn](https://trac.kwarc.info/lamapun)
    project at Jacobs University.
