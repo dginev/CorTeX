@@ -490,7 +490,7 @@ impl Server {
   }
   /// Persists a shared vector of reports to the Task store
   pub fn mark_done_arc(backend: &Backend, reports_arc: &Arc<Mutex<Vec<TaskReport>>>) -> bool {
-    let reports = Server::fetch_shared_vec(reports_arc);
+    let reports = Server::drain_shared_vec(reports_arc);
     if !reports.is_empty() {
       let request_time = time::get_time();
       backend.mark_done(&reports).unwrap(); // TODO: error handling if DB fails
@@ -547,10 +547,9 @@ impl Server {
     }
   }
 
-  fn fetch_shared_vec<T: Clone>(vec_arc: &Arc<Mutex<Vec<T>>>) -> Vec<T> {
+  fn drain_shared_vec<T: Clone>(vec_arc: &Arc<Mutex<Vec<T>>>) -> Vec<T> {
     let mut vec_mutex_guard = vec_arc.lock().unwrap();
-    let fetched_vec: Vec<T> = (*vec_mutex_guard).clone();
-    vec_mutex_guard.clear();
+    let fetched_vec: Vec<T> = (*vec_mutex_guard).drain(..).collect();
     fetched_vec
   }
 }
