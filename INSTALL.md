@@ -31,7 +31,7 @@
 ### Setting up postgresql:
  This is not normative, but the simplest (insecure!) approach is just:
  ```
- sudo emacs /etc/postgresql/9.6/main/postgresql.conf
+ sudo emacs /etc/postgresql/9.6/main/pg_hba.conf
      change "local all all peer" to "local all all password"
 
  sudo -u postgres psql
