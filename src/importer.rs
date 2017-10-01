@@ -114,8 +114,6 @@ impl Importer {
   }
   /// Top-level extension unpacking for arxiv-topology corpora
   fn unpack_extend_arxiv_top(&self) -> Result<(), Error> {
-    // What I am trying to figure out right now is how to avoid a monstrous amount of code duplication
-    // I don't want to copy-paste all of unpack_arxiv_top in here ...
     println!("-- Starting top-level unpack-extend process");
     let path_str = self.corpus.path.clone();
     let tars_path = path_str.to_string() + "/*.tar";
