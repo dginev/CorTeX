@@ -10,6 +10,7 @@
 #![doc(html_root_url = "https://dginev.github.io/rust-cortex/")]
 #![doc(html_logo_url = "https://raw.githubusercontent.com/dginev/rust-cortex/master/public/img/logo.jpg")]
 #![deny(missing_docs)]
+#![recursion_limit="256"]
 
 extern crate glob;
 extern crate libxml;
@@ -24,7 +25,13 @@ extern crate rand;
 extern crate tempfile;
 extern crate pericortex;
 extern crate time;
+#[macro_use] extern crate diesel;
+#[macro_use] extern crate diesel_codegen;
+extern crate dotenv;
+extern crate r2d2;
+extern crate r2d2_diesel;
 
+pub mod schema;
 pub mod backend;
 pub mod importer;
 pub mod data;

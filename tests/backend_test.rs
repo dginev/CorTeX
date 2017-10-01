@@ -12,10 +12,11 @@ use cortex::backend::*;
 #[test]
 fn init_tables() {
   let backend = Backend::testdb();
-  assert!(backend.setup_task_tables().is_ok())
+  // Test table reset and basic getters?
 }
 
 #[test]
-fn import_mock_task() {
-  // backend = 
+fn connection_pool_availability() {
+  // Test connections are available
+  // Test going over the MAX pool limit of connections is sane
 }

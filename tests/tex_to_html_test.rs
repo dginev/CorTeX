@@ -29,7 +29,7 @@ fn mock_tex_to_html() {
   }
   // Initialize a corpus, import a single task, and enable a service on it
   let test_backend = Backend::testdb();
-  assert!(test_backend.setup_task_tables().is_ok());
+  // assert!(test_backend.setup_task_tables().is_ok());
 
   let mock_corpus = test_backend.add(
     Corpus {

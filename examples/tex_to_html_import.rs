@@ -39,7 +39,7 @@ fn main() {
   let backend = Backend::default();
   if backend.needs_init() {
     println!("-- Backend not initialized, seting up tables.");
-    backend.setup_task_tables().unwrap();
+    //backend.setup_task_tables().unwrap();
   }
 
   backend.add(
