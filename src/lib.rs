@@ -11,7 +11,8 @@
 #![doc(html_logo_url = "https://raw.githubusercontent.com/dginev/rust-cortex/master/public/img/logo.jpg")]
 #![deny(missing_docs)]
 #![recursion_limit="256"]
-
+#![feature(plugin)]
+#![plugin(dotenv_macros)]
 extern crate glob;
 extern crate libxml;
 extern crate zmq;
@@ -33,8 +34,8 @@ extern crate r2d2_diesel;
 
 pub mod schema;
 pub mod backend;
-pub mod importer;
+// pub mod importer;
 pub mod data;
-pub mod sysinfo;
-pub mod manager;
-pub mod worker;
+// pub mod sysinfo;
+// pub mod manager;
+// pub mod worker;

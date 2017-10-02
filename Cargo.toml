@@ -23,6 +23,14 @@ version = "0.3.0"
 default-features = false
 features = ["handlebars_templates"]
 
+[dependencies.diesel]
+git = "https://github.com/diesel-rs/diesel.git"
+features = ["postgres"]
+
+[dependencies.diesel_codegen]
+git = "https://github.com/diesel-rs/diesel.git"
+features = ["postgres"]
+
 [dependencies]
 libc = "0.2.17"
 regex = "0.1.80"
@@ -31,11 +39,10 @@ serde = "1.0"
 serde_json = "1.0"
 serde_derive = "1.0"
 postgres = "0.15.1"
-diesel = { version = "0.16.0", features = ["postgres"] }
-diesel_codegen = { version = "0.16.0", features = ["postgres"] }
 r2d2 = "0.7.4"
 r2d2-diesel = "0.16.0"
-dotenv = "0.9.0"
+dotenv = "0.10"
+dotenv_macros = "0.10"
 sys-info = "0.4.1"
 url = "1.2.3"
 glob = "0.2.11"

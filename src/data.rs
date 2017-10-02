@@ -41,19 +41,22 @@ pub trait CortexORM {
 
 // Tasks
 use std::fmt;
-#[derive(Clone)]
+use super::schema::tasks;
+
+#[derive(Insertable,Clone)]
+#[table_name="tasks"]
 /// Struct representation of a task store row
 pub struct Task {
   /// optional id (None for mock / yet-to-be-inserted rows)
   pub id: Option<i64>,
-  /// entry path on the file system
-  pub entry: String,
   /// id of the service owning this task
   pub serviceid: i32,
   /// id of the corpus hosting this task
   pub corpusid: i32,
   /// current processing status of this task
   pub status: i32,
+  /// entry path on the file system
+  pub entry: String,
 }
 impl fmt::Display for Task {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
