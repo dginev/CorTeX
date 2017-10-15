@@ -29,20 +29,25 @@
 ```
 
 ### Setting up postgresql:
- This is not normative, but the simplest (insecure!) approach is just:
+ This is not normative, but the simplest (insecure!) approach is just changing the contents of `/etc/postgresql/9.10/main/pg_hba.conf` to:
  ```
- sudo emacs /etc/postgresql/9.6/main/pg_hba.conf
-     change "local all all peer" to "local all all password"
+ 
+    local all postgres peer
+    local cortex cortex password
+    local cortex_tester cortex_tester password
+    host   all       all         127.0.0.1  255.255.255.255  trust
+ ```
 
- sudo -u postgres psql
-     create database cortex_tester;
-     create database cortex;
+ and then introducing the accounts and databases via `sudo -u postgres psql` by typing in:
+ ```
+    create database cortex_tester;
+    create database cortex;
 
-     create user cortex with password 'cortex';
-     create user cortex_tester with password 'cortex_tester';
+    create user cortex with password 'cortex';
+    create user cortex_tester with password 'cortex_tester';
 
-     grant all privileges on database cortex_tester to cortex_tester;
-     grant all privileges on database cortex to cortex;
+    grant all privileges on database cortex_tester to cortex_tester;
+    grant all privileges on database cortex to cortex;
  ```
 
  This should evolve as we get nearer to production deploys... Also, for now postgresql is expected on the default 5432 port.
