@@ -31,7 +31,6 @@
 ### Setting up postgresql:
  This is not normative, but the simplest (insecure!) approach is just changing the contents of `/etc/postgresql/9.10/main/pg_hba.conf` to:
  ```
- 
     local all postgres peer
     local cortex cortex password
     local cortex_tester cortex_tester password
@@ -52,6 +51,19 @@
 
  This should evolve as we get nearer to production deploys... Also, for now postgresql is expected on the default 5432 port.
  
+### Setting up cortex database tables
+ The `diesel` ORM allows us to run migrations to setup the database on a fresh installation. First, install the command-line tool:
+
+```
+   cargo install diesel_cli  --no-default-features --features postgres
+```
+
+Next, run the migrations:
+```
+   diesel migration run
+```
+
+### Optimized configuration for large datasets
  One of the problems that is experienced with arXiv, is that as we enter the tens-of-millions of rows for log messages, performance degrades very rapidly. One good solution to avoid that is to use a small threshold for VACUUM ANALYZE, given that the inserts are generally quick at the moment. [source of this trick](https://lob.com/blog/supercharge-your-postgresql-performance/) 
  ```
 ALTER TABLE logs  
