@@ -6,7 +6,7 @@
 // except according to those terms.
 extern crate cortex;
 use cortex::importer::*;
-use cortex::backend::Backend;
+use cortex::backend;
 use cortex::data::Corpus;
 
 use std::vec::Vec;
@@ -35,7 +35,7 @@ fn assert_dirs(dirs : Vec<&str>) -> Result<(),std::io::Error> {
 
 #[test]
 fn can_import_simple() {
-  let test_backend = Backend::testdb();
+  let test_backend = backend::testdb();
   let importer = Importer {
     corpus: test_backend.add(
         Corpus {
@@ -52,7 +52,7 @@ fn can_import_simple() {
 
 #[test]
 fn can_import_complex() {
-  let test_backend = Backend::testdb();
+  let test_backend = backend::testdb();
   let importer = Importer {
     corpus: test_backend.add(
       Corpus {
@@ -60,7 +60,7 @@ fn can_import_complex() {
         path : "tests/data/".to_string(),
         name : "complex import test".to_string(),
         complex : true }).unwrap(),
-    backend: Backend::testdb(),
+    backend: backend::testdb(),
     cwd : Importer::cwd() };
 
 
@@ -74,7 +74,7 @@ fn can_import_complex() {
         path : "tests/data/".to_string(),
         name : "complex import test".to_string(),
         complex : true }).unwrap(),
-    backend: Backend::testdb(),
+    backend: backend::testdb(),
     cwd : Importer::cwd() };
 
 

@@ -7,7 +7,8 @@
 extern crate cortex;
 extern crate pericortex;
 
-use cortex::backend::{Backend, TEST_DB_ADDRESS};
+use cortex::backend;
+use cortex::backend::TEST_DB_ADDRESS;
 use cortex::data::{Corpus,Service, Task, TaskStatus};
 use cortex::manager::{TaskManager};
 use pericortex::worker::{EchoWorker, Worker};
@@ -17,7 +18,7 @@ use std::thread;
 fn mock_round_trip() {
   // Initialize a corpus, import a single task, and enable a service on it
   let job_limit : Option<usize> = Some(1);
-  let test_backend = Backend::testdb();
+  let test_backend = backend::testdb();
   // assert!(test_backend.setup_task_tables().is_ok());
 
   let mock_corpus = test_backend.add(

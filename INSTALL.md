@@ -58,9 +58,10 @@
    cargo install diesel_cli  --no-default-features --features postgres
 ```
 
-Next, run the migrations:
+Next, run the migrations, for both production and test databases:
 ```
    diesel migration run
+   DATABASE_URL="postgres://cortex_tester:cortex_tester@localhost/cortex_tester" diesel migration run
 ```
 
 ### Optimized configuration for large datasets

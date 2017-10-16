@@ -7,7 +7,8 @@
 extern crate cortex;
 extern crate pericortex;
 
-use cortex::backend::{Backend, TEST_DB_ADDRESS};
+use cortex::backend;
+use cortex::backend::TEST_DB_ADDRESS;
 use cortex::data::{Corpus,Service, Task, TaskStatus};
 use cortex::manager::{TaskManager};
 use pericortex::worker::{TexToHtmlWorker, Worker};
@@ -28,7 +29,7 @@ fn mock_tex_to_html() {
     return assert!(true);
   }
   // Initialize a corpus, import a single task, and enable a service on it
-  let test_backend = Backend::testdb();
+  let test_backend = backend::testdb();
   // assert!(test_backend.setup_task_tables().is_ok());
 
   let mock_corpus = test_backend.add(

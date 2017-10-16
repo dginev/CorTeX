@@ -33,9 +33,12 @@ extern crate r2d2;
 extern crate r2d2_diesel;
 
 pub mod schema;
+pub mod concerns;
+pub mod models;
 pub mod backend;
+
 // pub mod importer;
-pub mod data;
+// pub mod data;
 // pub mod sysinfo;
 // pub mod manager;
 // pub mod worker;

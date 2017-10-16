@@ -13,7 +13,6 @@ extern crate dotenv;
 extern crate r2d2;
 
 use dotenv::dotenv;
-use std::error::Error;
 use std::thread;
 use std::clone::Clone;
 use std::collections::{HashMap, HashSet};
@@ -23,10 +22,17 @@ use diesel::{delete, insert_into};
 use diesel::prelude::*;
 use diesel::pg::PgConnection;
 use diesel::pg::upsert::*;
-use r2d2_diesel::{ConnectionManager};
+use diesel::result::Error;
 use schema::tasks::dsl::*;
 
-use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
+// use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
+use concerns::CortexInsertable;
+use models::{Task, NewTask};
+
+/// The production database postgresql address, set from the .env configuration file
+pub const DEFAULT_DB_ADDRESS : &'static str = dotenv!("DATABASE_URL");
+/// The test database postgresql address, set from the .env configuration file
+pub const TEST_DB_ADDRESS : &'static str  = dotenv!("TEST_DATABASE_URL");
 
 /// Provides an interface to the Postgres task store
 pub struct Backend {
@@ -35,7 +41,7 @@ pub struct Backend {
 impl Default for Backend {
   fn default() -> Self {
     dotenv().ok();
-    let connection = connection_at(dotenv!("DATABASE_URL"));
+    let connection = connection_at(DEFAULT_DB_ADDRESS);
 
     Backend {
       connection
@@ -51,14 +57,14 @@ pub fn connection_at(address: &str) -> PgConnection {
 /// Constructs the default Backend struct for testing
 pub fn testdb() -> Backend {
   dotenv().ok();
-  Backend{connection: connection_at(dotenv!("TEST_DATABASE_URL"))}
+  Backend{connection: connection_at(TEST_DB_ADDRESS)}
 }
 
 /// Instance methods
 impl Backend {
-  /// Insert a vector of new `Task` tasks into the Task store
+  /// Insert a vector of new `NewTask` tasks into the Task store
   /// For example, on import, or when a new service is activated on a corpus
-  pub fn mark_imported(&self, imported_tasks: &[Task]) -> Result<(), Box<Error>> {
+  pub fn mark_imported(&self, imported_tasks: &[NewTask]) -> Result<(), Box<Error>> {
     // Insert, but only if the task is new (allow for extension calls with the same method)
     insert_into(tasks).values(imported_tasks)
       .on_conflict_do_nothing()
@@ -146,19 +152,19 @@ impl Backend {
 //     Ok(())
 //   }
 
-//   /// Generic sync method, attempting to obtain the DB record for a given mock Task store datum
-//   /// applicable for any struct implementing the `CortexORM` trait
-//   /// (for example `Corpus`, `Service`, `Task`)
-//   pub fn sync<D: CortexORM + Clone>(&self, d: &D) -> Result<D, Error> {
-//     let synced = match d.get_id() {
-//       Some(_) => try!(d.select_by_id(&self.connection)),
-//       None => try!(d.select_by_key(&self.connection)),
-//     };
-//     match synced {
-//       Some(synced_d) => Ok(synced_d),
-//       None => Ok(d.clone()),
-//     }
-//   }
+  // /// Generic sync method, attempting to obtain the DB record for a given mock Task store datum
+  // /// applicable for any struct implementing the `CortexORM` trait
+  // /// (for example `Corpus`, `Service`, `Task`)
+  // pub fn sync<D: CortexORM + Clone>(&self, d: &D) -> Result<D, Box<Error>> {
+  //   let synced = match d.get_id() {
+  //     Some(_) => try!(d.select_by_id(&self.connection)),
+  //     None => try!(d.select_by_key(&self.connection)),
+  //   };
+  //   match synced {
+  //     Some(synced_d) => Ok(synced_d),
+  //     None => Ok(d.clone()),
+  //   }
+  // }
 
 //   /// Generic delete method, attempting to delete the DB record for a given Task store datum
 //   /// applicable for any struct implementing the `CortexORM` trait
@@ -171,23 +177,14 @@ impl Backend {
 //     }
 //   }
 
-//   /// Generic addition method, attempting to insert in the DB a Task store datum
-//   /// applicable for any struct implementing the `CortexORM` trait
-//   /// (for example `Corpus`, `Service`, `Task`)
-//   ///
-//   /// Note: Overwrites if the entry already existed.
-//   pub fn add<D: CortexORM + Clone>(&self, d: D) -> Result<D, Error> {
-//     let d_checked = try!(self.sync(&d));
-//     if let Some(_) = d_checked.get_id() {
-//       // If this data item existed - delete any remnants of it
-//       try!(self.delete(&d_checked));
-//     } // else New, we can add it safely
-
-//     // Add data item to the DB:
-//     try!(d.insert(&self.connection));
-//     let d_final = try!(self.sync(&d));
-//     Ok(d_final)
-//   }
+/// Generic addition method, attempting to insert in the DB a Task store datum
+/// applicable for any struct implementing the `CortexORM` trait
+/// (for example `Corpus`, `Service`, `Task`)
+///
+/// Note: Overwrites if the entry already existed.
+pub fn add<D: CortexInsertable>(&self, d: D) -> Result<usize, Error> {
+  d.create(&self.connection)
+}
 
 //   /// Fetches no more than `limit` queued tasks for a given `Service`
 //   pub fn fetch_tasks(&self, service: &Service, limit: usize) -> Result<Vec<Task>, Error> {

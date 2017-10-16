@@ -8,20 +8,11 @@ extern crate cortex;
 extern crate postgres;
 
 use cortex::backend;
-use cortex::models::NewTask;
 
 #[test]
-fn table_ops() {
+fn init_tables() {
   let backend = backend::testdb();
-  // Delete any mock tasks
-
-  // Add a mock task
-  let count_added = backend.add(NewTask{entry: "table_ops_mock_task", serviceid: 1, corpusid:1, status: -5});
-  assert_eq!(count_added, Ok(1)); // new task!
-  // Get the fields from the DB
-
-  // Delete again and verify deletion works
-
+  // Test table reset and basic getters?
 }
 
 #[test]
