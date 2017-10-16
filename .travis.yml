@@ -35,11 +35,15 @@ services:
 
 before_script:
   - psql --version
+  - psql -c 'create database cortex;' -U postgres
   - psql -c 'create database cortex_tester;' -U postgres
+  - psql -c "create user cortex with password 'cortex';" -U postgres
   - psql -c "create user cortex_tester with password 'cortex_tester';" -U postgres
+  - psql -c 'GRANT ALL PRIVILEGES ON DATABASE cortex TO cortex;' -U postgres
   - psql -c 'GRANT ALL PRIVILEGES ON DATABASE cortex_tester TO cortex_tester;' -U postgres
   - export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
   - cargo install diesel_cli  --no-default-features --features postgres
+  - diesel migration run
   - DATABASE_URL="postgres://cortex_tester:cortex_tester@localhost/cortex_tester" diesel migration run
 # load travis-cargo
   - |
