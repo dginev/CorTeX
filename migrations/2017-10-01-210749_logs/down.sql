@@ -1,4 +1,4 @@
-DROP TABLE logs_fatal;
-DROP TABLE logs_error;
-DROP TABLE logs_warning;
-DROP TABLE logs_invalid;
+DROP TABLE log_fatals;
+DROP TABLE log_errors;
+DROP TABLE log_warnings;
+DROP TABLE log_invalids;
