@@ -81,6 +81,26 @@ impl<'a> CortexInsertable for NewTask<'a> {
   }
 }
 
+impl CortexDeletable for Task {
+  fn delete_by(&self, connection: &PgConnection, field:&str) -> Result<usize, Error> {
+    match field {
+      "entry" => self.delete_by_entry(connection),
+      "id" => self.delete_by_id(connection),
+      _ => Err(Error::QueryBuilderError(format!("unknown Task model field: {}", field).into()))
+    }
+  }
+}
+impl Task {
+  fn delete_by_entry(&self, connection: &PgConnection) -> Result<usize, Error> {
+    use schema::tasks::dsl::entry;
+    delete(tasks::table.filter(entry.eq(&self.entry))).execute(connection)
+  }
+  fn delete_by_id(&self, connection: &PgConnection) -> Result<usize, Error> {
+    use schema::tasks::dsl::id;
+    delete(tasks::table.filter(id.eq(self.id))).execute(connection) 
+  }
+}
+
 impl<'a> CortexDeletable for NewTask<'a> {
   fn delete_by(&self, connection: &PgConnection, field:&str) -> Result<usize, Error> {
     match field {
@@ -93,6 +113,6 @@ impl<'a> CortexDeletable for NewTask<'a> {
 impl<'a> NewTask<'a> {
   fn delete_by_entry(&self, connection: &PgConnection) -> Result<usize, Error> {
     use schema::tasks::dsl::entry;
-    delete(tasks::table.filter(entry.eq(self.entry))).execute(connection)
+    delete(tasks::table.filter(entry.eq(&self.entry))).execute(connection)
   }
 }

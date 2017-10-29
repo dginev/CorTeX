@@ -166,30 +166,23 @@ impl Backend {
   //   }
   // }
 
-//   /// Generic delete method, attempting to delete the DB record for a given Task store datum
-//   /// applicable for any struct implementing the `CortexORM` trait
-//   /// (for example `Corpus`, `Service`, `Task`)
-//   pub fn delete<D: CortexORM + Clone>(&self, d: &D) -> Result<(), Error> {
-//     let d_checked = try!(self.sync(d));
-//     match d_checked.get_id() {
-//       Some(_) => d.delete(&self.connection),
-//       None => Ok(()), // No ID means we don't really know what to delete.
-//     }
-//   }
+/// Generic delete method, uses primary "id" field
+pub fn delete<Model: CortexDeletable>(&self, object: &Model) -> Result<usize, Error> {
+  object.delete_by(&self.connection, "id")
+}
+
+/// Delete all entries matching the "field" value of a given object
+pub fn delete_by<Model: CortexDeletable>(&self, object: &Model, field:&str) -> Result<usize, Error> {
+  object.delete_by(&self.connection, field)
+}
 
 /// Generic addition method, attempting to insert in the DB a Task store datum
 /// applicable for any struct implementing the `CortexORM` trait
 /// (for example `Corpus`, `Service`, `Task`)
-///
-/// Note: Overwrites if the entry already existed.
 pub fn add<Model: CortexInsertable>(&self, object: &Model) -> Result<usize, Error> {
   object.create(&self.connection)
 }
 
-/// Generic deletion method, deletes all matching, if any.
-pub fn delete_by<Model: CortexDeletable>(&self, object: &Model, field:&str) -> Result<usize, Error> {
-  object.delete_by(&self.connection, field)
-}
 
 //   /// Fetches no more than `limit` queued tasks for a given `Service`
 //   pub fn fetch_tasks(&self, service: &Service, limit: usize) -> Result<Vec<Task>, Error> {
