@@ -26,7 +26,7 @@ use diesel::result::Error;
 use schema::tasks::dsl::*;
 
 // use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
-use concerns::CortexInsertable;
+use concerns::{CortexInsertable, CortexDeletable};
 use models::{Task, NewTask};
 
 /// The production database postgresql address, set from the .env configuration file
@@ -182,8 +182,13 @@ impl Backend {
 /// (for example `Corpus`, `Service`, `Task`)
 ///
 /// Note: Overwrites if the entry already existed.
-pub fn add<D: CortexInsertable>(&self, d: D) -> Result<usize, Error> {
-  d.create(&self.connection)
+pub fn add<Model: CortexInsertable>(&self, object: &Model) -> Result<usize, Error> {
+  object.create(&self.connection)
+}
+
+/// Generic deletion method, deletes all matching, if any.
+pub fn delete_by<Model: CortexDeletable>(&self, object: &Model, field:&str) -> Result<usize, Error> {
+  object.delete_by(&self.connection, field)
 }
 
 //   /// Fetches no more than `limit` queued tasks for a given `Service`

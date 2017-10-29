@@ -13,7 +13,7 @@ use diesel::{delete, insert_into};
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use schema::tasks;
-use concerns::CortexInsertable;
+use concerns::{CortexInsertable, CortexDeletable};
 
 // Tasks
 
@@ -78,5 +78,21 @@ impl fmt::Debug for Task {
 impl<'a> CortexInsertable for NewTask<'a> {
   fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
     insert_into(tasks::table).values(self).execute(connection)
+  }
+}
+
+impl<'a> CortexDeletable for NewTask<'a> {
+  fn delete_by(&self, connection: &PgConnection, field:&str) -> Result<usize, Error> {
+    match field {
+      "entry" => self.delete_by_entry(connection),
+      _ => Err(Error::QueryBuilderError(format!("unknown Task model field: {}", field).into()))
+    }
+  }
+}
+
+impl<'a> NewTask<'a> {
+  fn delete_by_entry(&self, connection: &PgConnection) -> Result<usize, Error> {
+    use schema::tasks::dsl::entry;
+    delete(tasks::table.filter(entry.eq(self.entry))).execute(connection)
   }
 }

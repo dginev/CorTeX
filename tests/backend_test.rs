@@ -11,17 +11,21 @@ use cortex::backend;
 use cortex::models::NewTask;
 
 #[test]
-fn table_ops() {
+fn task_table_crud() {
   let backend = backend::testdb();
+  let test_task = NewTask{entry: "mock_task", serviceid: 1, corpusid:1, status: -5};
   // Delete any mock tasks
+  let cleanup = backend.delete_by(&test_task, "entry");
+  assert_eq!(cleanup, Ok(0));
 
   // Add a mock task
-  let count_added = backend.add(NewTask{entry: "table_ops_mock_task", serviceid: 1, corpusid:1, status: -5});
+  let count_added = backend.add(&test_task);
   assert_eq!(count_added, Ok(1)); // new task!
   // Get the fields from the DB
 
   // Delete again and verify deletion works
-
+  let cleanup = backend.delete_by(&test_task, "entry");
+  assert_eq!(cleanup, Ok(1));
 }
 
 #[test]
