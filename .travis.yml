@@ -8,6 +8,7 @@ addons:
   apt:
     packages:
       - libarchive-dev
+      - libpq-dev
       # necessary for `travis-cargo coveralls --no-sudo`
       # also for zmq from source, due to zmq_has dependency build error
       - libcurl4-openssl-dev

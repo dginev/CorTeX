@@ -1,17 +1,32 @@
 ### System-level prerequisites:
- * A Postgres installation
- ```
-   sudo apt-get install postgresql
- ```
+ * A Postgres installation, with the dev client-side bindings for diesel
+```
+  sudo apt-get install postgresql libpq-dev
+```
  * A ZeroMQ installation and bindings
- ```
-  sudo apt-get install libzmq3 libzmq3-dev
- ```
+```
+  cd /tmp
+  git clone --depth 1 -b stable https://github.com/jedisct1/libsodium.git
+  cd libsodium
+  ./autogen.sh
+  ./configure --prefix=$HOME
+  make
+  make install
+  cd ..
+  wget https://github.com/zeromq/zeromq4-1/archive/v4.1.6.tar.gz
+  tar zxf v4.1.6.tar.gz
+  cd zeromq4-1-4.1.6
+  ./autogen.sh
+  ./configure --prefix=$HOME --with-libsodium
+  make
+  make install
+cd ..
+```
 
  * GnuPlot for classic plotting:
- ```
+```
   sudo apt-get install libgd2-noxpm-dev libcairo2-dev gnuplot
- ```
+```
 
 * libarchive for dealing with complex directory jobs
 ```
