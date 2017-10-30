@@ -18,7 +18,7 @@ use std::clone::Clone;
 use std::collections::{HashMap, HashSet};
 use regex::Regex;
 use rand::{thread_rng, Rng};
-use diesel::{delete, insert_into};
+use diesel::{insert_into};
 use diesel::prelude::*;
 use diesel::pg::PgConnection;
 use diesel::pg::upsert::*;
@@ -27,7 +27,8 @@ use schema::tasks::dsl::*;
 
 // use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
 use concerns::{CortexInsertable, CortexDeletable};
-use models::{Task, NewTask};
+use models;
+use models::{Task, NewTask, Service};
 
 /// The production database postgresql address, set from the .env configuration file
 pub const DEFAULT_DB_ADDRESS : &'static str = dotenv!("DATABASE_URL");
@@ -66,9 +67,9 @@ impl Backend {
   /// For example, on import, or when a new service is activated on a corpus
   pub fn mark_imported(&self, imported_tasks: &[NewTask]) -> Result<(), Box<Error>> {
     // Insert, but only if the task is new (allow for extension calls with the same method)
-    insert_into(tasks).values(imported_tasks)
+    try!(insert_into(tasks).values(imported_tasks)
       .on_conflict_do_nothing()
-      .execute(&self.connection);
+      .execute(&self.connection));
 
     Ok(())
   }
@@ -166,54 +167,35 @@ impl Backend {
   //   }
   // }
 
-/// Generic delete method, uses primary "id" field
-pub fn delete<Model: CortexDeletable>(&self, object: &Model) -> Result<usize, Error> {
-  object.delete_by(&self.connection, "id")
-}
+  /// Generic delete method, uses primary "id" field
+  pub fn delete<Model: CortexDeletable>(&self, object: &Model) -> Result<usize, Error> {
+    object.delete_by(&self.connection, "id")
+  }
 
-/// Delete all entries matching the "field" value of a given object
-pub fn delete_by<Model: CortexDeletable>(&self, object: &Model, field:&str) -> Result<usize, Error> {
-  object.delete_by(&self.connection, field)
-}
+  /// Delete all entries matching the "field" value of a given object
+  pub fn delete_by<Model: CortexDeletable>(&self, object: &Model, field:&str) -> Result<usize, Error> {
+    object.delete_by(&self.connection, field)
+  }
 
-/// Generic addition method, attempting to insert in the DB a Task store datum
-/// applicable for any struct implementing the `CortexORM` trait
-/// (for example `Corpus`, `Service`, `Task`)
-pub fn add<Model: CortexInsertable>(&self, object: &Model) -> Result<usize, Error> {
-  object.create(&self.connection)
-}
+  /// Generic addition method, attempting to insert in the DB a Task store datum
+  /// applicable for any struct implementing the `CortexORM` trait
+  /// (for example `Corpus`, `Service`, `Task`)
+  pub fn add<Model: CortexInsertable>(&self, object: &Model) -> Result<usize, Error> {
+    object.create(&self.connection)
+  }
 
+  /// Fetches no more than `limit` queued tasks for a given `Service`
+  pub fn fetch_tasks(&self, service: &Service, limit: usize) -> Result<Vec<Task>, Error> {
+    models::fetch_tasks(service, limit, &self.connection)
+  }
 
-//   /// Fetches no more than `limit` queued tasks for a given `Service`
-//   pub fn fetch_tasks(&self, service: &Service, limit: usize) -> Result<Vec<Task>, Error> {
-//     match service.id {
-//       Some(_) => {}
-//       None => return Ok(Vec::new()),
-//     };
-//     let mut rng = thread_rng();
-//     let mark: u16 = rng.gen();
-
-//     // TODO: Concurrent use needs to add "and pg_try_advisory_xact_lock(taskid)" in the proper fashion
-//     //       But we need to be careful that the LIMIT takes place before the lock, which is why I removed it for now.
-//     let stmt = try!(self.connection.prepare("UPDATE tasks t SET status=$1 FROM (
-//           SELECT * FROM tasks WHERE serviceid=$2 and status=$3
-//           LIMIT $4
-//           FOR UPDATE
-//         ) \
-//                                              subt
-//         WHERE t.taskid=subt.taskid
-//         RETURNING t.taskid,t.entry,t.serviceid,t.corpusid,t.status;"));
-//     let rows = try!(stmt.query(&[&(mark as i32), &service.id.unwrap(), &TaskStatus::TODO.raw(), &(limit as i64)]));
-//     Ok(rows.iter().map(Task::from_row).collect::<Vec<_>>())
-//   }
-
-//   /// Globally resets any "in progress" tasks back to "queued".
-//   /// Particularly useful for dispatcher restarts, when all "in progress" tasks need to be invalidated
-//   pub fn clear_limbo_tasks(&self) -> Result<(), Error> {
-//     try!(self.connection.execute("UPDATE tasks SET status=$1 WHERE status > $2",
-//                                  &[&TaskStatus::TODO.raw(), &TaskStatus::NoProblem.raw()]));
-//     Ok(())
-//   }
+  // /// Globally resets any "in progress" tasks back to "queued".
+  // /// Particularly useful for dispatcher restarts, when all "in progress" tasks need to be invalidated
+  // pub fn clear_limbo_tasks(&self) -> Result<(), Error> {
+  //   try!(self.connection.execute("UPDATE tasks SET status=$1 WHERE status > $2",
+  //                                &[&TaskStatus::TODO.raw(), &TaskStatus::NoProblem.raw()]));
+  //   Ok(())
+  // }
 
 //   /// Activates an existing service on a given corpus (via NAME)
 //   /// if the service has previously been registered, this has "extend" semantics, without any "overwrite" or "reset"

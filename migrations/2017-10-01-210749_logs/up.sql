@@ -1,29 +1,29 @@
 CREATE TABLE log_fatals (
   messageid BIGSERIAL PRIMARY KEY,
   taskid BIGINT NOT NULL,
-  category char(50),
-  what char(50),
+  category varchar(50),
+  what varchar(50),
   details varchar(2000)
 );
 CREATE TABLE log_errors (
   messageid BIGSERIAL PRIMARY KEY,
   taskid BIGINT NOT NULL,
-  category char(50),
-  what char(50),
+  category varchar(50),
+  what varchar(50),
   details varchar(2000)
 );
 CREATE TABLE log_warnings (
   messageid BIGSERIAL PRIMARY KEY,
   taskid BIGINT NOT NULL,
-  category char(50),
-  what char(50),
+  category varchar(50),
+  what varchar(50),
   details varchar(2000)
 );
 CREATE TABLE log_invalids (
   messageid BIGSERIAL PRIMARY KEY,
   taskid BIGINT NOT NULL,
-  category char(50),
-  what char(50),
+  category varchar(50),
+  what varchar(50),
   details varchar(2000)
 );
 

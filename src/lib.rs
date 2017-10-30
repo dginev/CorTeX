@@ -35,6 +35,7 @@ extern crate r2d2_diesel;
 pub mod schema;
 pub mod concerns;
 pub mod models;
+pub mod helpers;
 pub mod backend;
 
 // pub mod importer;

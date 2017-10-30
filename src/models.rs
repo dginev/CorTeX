@@ -8,16 +8,20 @@
 //! Backend models and traits for the CorTeX "Task store"
 
 use std::fmt;
+use rand::{thread_rng, Rng};
+use helpers::TaskStatus;
+
 use diesel::result::Error;
-use diesel::{delete, insert_into};
+use diesel::{delete, insert_into, update};
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use schema::tasks;
 use concerns::{CortexInsertable, CortexDeletable};
 
+
 // Tasks
 
-#[derive(Queryable,Clone)]
+#[derive(Identifiable,Queryable,Clone)]
 /// A CorTeX task, for a given corpus-service pair
 pub struct Task {
   /// optional id (None for mock / yet-to-be-inserted rows)
@@ -115,4 +119,46 @@ impl<'a> NewTask<'a> {
     use schema::tasks::dsl::entry;
     delete(tasks::table.filter(entry.eq(&self.entry))).execute(connection)
   }
+}
+
+
+// Services
+#[derive(Clone)]
+/// A `CorTeX` processing service
+pub struct Service {
+  /// optional id (None for mock / yet-to-be-inserted rows)
+  pub id: i32,
+  /// a human-readable name for this service
+  pub name: String,
+  /// a floating-point number to mark the current version (e.g. 0.01)
+  pub version: f32,
+  /// the expected input format for this service (e.g. tex)
+  pub inputformat: String,
+  /// the produced output format by this service (e.g. html)
+  pub outputformat: String,
+  // pub xpath : String,
+  // pub resource : String,
+  /// prerequisite input conversion service, if any
+  pub inputconverter: Option<String>,
+  /// is this service requiring more than the main textual content of a document?
+  /// mark "true" if unsure
+  pub complex: bool,
+}
+
+// Aggregate methods, to be used by backend
+
+/// Fetch a batch of `queue_size` TODO tasks for a given `service`.
+pub fn fetch_tasks(service: &Service, queue_size: usize, connection: &PgConnection) -> Result<Vec<Task>, Error> {
+  use schema::tasks::dsl::{serviceid, status};
+  let mut rng = thread_rng();
+  let mark: u16 = rng.gen();
+
+  // TODO: Concurrent use needs to add "and pg_try_advisory_xact_lock(taskid)" in the proper fashion
+  //       But we need to be careful that the LIMIT takes place before the lock, which is why I removed it for now.
+  update(tasks::table
+    .filter(serviceid.eq(service.id))
+    .filter(status.eq(TaskStatus::TODO.raw()))
+    // .limit(queue_size)
+    ).set(status.eq(mark as i32))
+    .get_results(connection)
 }

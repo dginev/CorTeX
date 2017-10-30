@@ -4,7 +4,7 @@ CREATE TABLE tasks (
   serviceid INTEGER NOT NULL,
   corpusid INTEGER NOT NULL,
   status INTEGER NOT NULL,
-  entry char(200) NOT NULL,
+  entry varchar(200) NOT NULL,
   UNIQUE (entry, serviceid, corpusid)
 );
 -- TECHNICAL DEBT: I want to express the status codes via status=$1 arguments, such as &TaskStatus::NoProblem.raw(),

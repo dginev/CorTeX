@@ -8,28 +8,35 @@ extern crate cortex;
 extern crate postgres;
 
 use cortex::backend;
-use cortex::models::NewTask;
+use cortex::models::{Service,NewTask};
+use cortex::helpers::TaskStatus;
 
 #[test]
 fn task_table_crud() {
   let backend = backend::testdb();
-  let test_task = NewTask{entry: "mock_task", serviceid: 1, corpusid:1, status: -5};
+  let mock_service = Service{
+  	id: 1, name: String::from("mock_service"), complex: false, 
+  	inputconverter: None, inputformat: String::from("tex"), outputformat: String::from("tex"), version: 0.1};
+  let mock_task = NewTask{entry: "mock_task", serviceid: mock_service.id, corpusid:1, status: TaskStatus::TODO.raw()};
   // Delete any mock tasks
-  let cleanup = backend.delete_by(&test_task, "entry");
+  let cleanup = backend.delete_by(&mock_task, "entry");
   assert_eq!(cleanup, Ok(0));
 
   // Add a mock task
-  let count_added = backend.add(&test_task);
+  let count_added = backend.add(&mock_task);
   assert_eq!(count_added, Ok(1)); // new task!
-  // Get the fields from the DB
+
+  // We should be able to fetch it back
+  let fetched_tasks_result = backend.fetch_tasks(&mock_service, 2);
+  assert!(fetched_tasks_result.is_ok());
+  let fetched_tasks = fetched_tasks_result.unwrap();
+  println!("Fetched tasks: {:?}", fetched_tasks);
+  assert_eq!(fetched_tasks.len(), 1);
+  let fetched_task = fetched_tasks.first().unwrap();
+  assert!(fetched_task.id > 0);
+  assert_eq!(fetched_task.entry, mock_task.entry);
 
   // Delete again and verify deletion works
-  let cleanup = backend.delete_by(&test_task, "entry");
+  let cleanup = backend.delete_by(&mock_task, "entry");
   assert_eq!(cleanup, Ok(1));
-}
-
-#[test]
-fn connection_pool_availability() {
-  // Test connections are available
-  // Test going over the MAX pool limit of connections is sane
 }
