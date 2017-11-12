@@ -98,3 +98,30 @@ autovacuum_vacuum_threshold = 50);
 ```
 
 Also, ensure you have the Postgres data directory on a sufficiently large disk. You may want 250GB available at a minimum for a LaTeXML run over arXiv. (See [here](https://github.com/dginev/CorTeX/issues/10) for details). Another consideration is running a newer version of Postgres, which may not be available in the default source list of some Linux server environments. The mathweb.org deployment currently uses Postgres 9.5 and upgraded from 9.1 roughly following an adaptation of [these upgrade guidelines](https://gist.github.com/tamoyal/2ea1fcdf99c819b4e07d).
+
+### Development tips
+
+Maintainer config for VSCode:
+```
+{
+    "rust.rustup": {
+        "toolchain": "nightly-x86_64-unknown-linux-gnu",
+        "nightlyToolchain": "nightly-x86_64-unknown-linux-gnu"
+    },
+    "rust.mode": "rls",
+    "rust.rls": {
+        "useRustfmt": true
+    },
+    "rust.actionOnSave": "clippy",
+    "editor.formatOnSave": true,
+}
+```
+
+Recommended with `vscode-rust` plugin. Also for toolchain support, `clippy` and `rustfmt`. Also recommended RLS preview:
+```
+cargo install clippy
+cargo install rustfmt
+rustup component add rls-preview --toolchain nightly
+```
+
+Currently you need the nightly toolchain for developing with clippy and rls-preview, but we'll eventually port the repo to stable.
