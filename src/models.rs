@@ -21,7 +21,7 @@ use concerns::{CortexInsertable, CortexDeletable};
 
 // Tasks
 
-#[derive(Identifiable,Queryable,Clone)]
+#[derive(Identifiable, Queryable, AsChangeset, Clone)]
 /// A CorTeX task, for a given corpus-service pair
 pub struct Task {
   /// optional id (None for mock / yet-to-be-inserted rows)
@@ -33,11 +33,11 @@ pub struct Task {
   /// current processing status of this task
   pub status: i32,
   /// entry path on the file system
-  pub entry: String
+  pub entry: String,
 }
 
 #[derive(Insertable)]
-#[table_name="tasks"]
+#[table_name = "tasks"]
 /// A new task, to be inserted into CorTeX
 pub struct NewTask<'a> {
   /// id of the service owning this task
@@ -47,7 +47,7 @@ pub struct NewTask<'a> {
   /// current processing status of this task
   pub status: i32,
   /// entry path on the file system
-  pub entry: &'a str
+  pub entry: &'a str,
 }
 
 impl fmt::Display for Task {
@@ -55,13 +55,15 @@ impl fmt::Display for Task {
     // The `f` value implements the `Write` trait, which is what the
     // write! macro is expecting. Note that this formatting ignores the
     // various flags provided to format strings.
-    write!(f,
-           "(id: {}, entry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n",
-           self.id,
-           self.entry,
-           self.serviceid,
-           self.corpusid,
-           self.status)
+    write!(
+      f,
+      "(id: {}, entry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n",
+      self.id,
+      self.entry,
+      self.serviceid,
+      self.corpusid,
+      self.status
+    )
   }
 }
 impl fmt::Debug for Task {
@@ -69,13 +71,15 @@ impl fmt::Debug for Task {
     // The `f` value implements the `Write` trait, which is what the
     // write! macro is expecting. Note that this formatting ignores the
     // various flags provided to format strings.
-    write!(f,
-           "(id: {},\n\tentry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n",
-           self.id,
-           self.entry,
-           self.serviceid,
-           self.corpusid,
-           self.status)
+    write!(
+      f,
+      "(id: {},\n\tentry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n",
+      self.id,
+      self.entry,
+      self.serviceid,
+      self.corpusid,
+      self.status
+    )
   }
 }
 
@@ -86,11 +90,14 @@ impl<'a> CortexInsertable for NewTask<'a> {
 }
 
 impl CortexDeletable for Task {
-  fn delete_by(&self, connection: &PgConnection, field:&str) -> Result<usize, Error> {
+  fn delete_by(&self, connection: &PgConnection, field: &str) -> Result<usize, Error> {
     match field {
       "entry" => self.delete_by_entry(connection),
+      "serviceid" => self.delete_by_serviceid(connection),
       "id" => self.delete_by_id(connection),
-      _ => Err(Error::QueryBuilderError(format!("unknown Task model field: {}", field).into()))
+      _ => Err(Error::QueryBuilderError(
+        format!("unknown Task model field: {}", field).into(),
+      )),
     }
   }
 }
@@ -99,17 +106,24 @@ impl Task {
     use schema::tasks::dsl::entry;
     delete(tasks::table.filter(entry.eq(&self.entry))).execute(connection)
   }
+  fn delete_by_serviceid(&self, connection: &PgConnection) -> Result<usize, Error> {
+    use schema::tasks::dsl::serviceid;
+    delete(tasks::table.filter(serviceid.eq(&self.serviceid))).execute(connection)
+  }
   fn delete_by_id(&self, connection: &PgConnection) -> Result<usize, Error> {
     use schema::tasks::dsl::id;
-    delete(tasks::table.filter(id.eq(self.id))).execute(connection) 
+    delete(tasks::table.filter(id.eq(self.id))).execute(connection)
   }
 }
 
 impl<'a> CortexDeletable for NewTask<'a> {
-  fn delete_by(&self, connection: &PgConnection, field:&str) -> Result<usize, Error> {
+  fn delete_by(&self, connection: &PgConnection, field: &str) -> Result<usize, Error> {
     match field {
       "entry" => self.delete_by_entry(connection),
-      _ => Err(Error::QueryBuilderError(format!("unknown Task model field: {}", field).into()))
+      "serviceid" => self.delete_by_serviceid(connection),
+      _ => Err(Error::QueryBuilderError(
+        format!("unknown Task model field: {}", field).into(),
+      )),
     }
   }
 }
@@ -118,6 +132,10 @@ impl<'a> NewTask<'a> {
   fn delete_by_entry(&self, connection: &PgConnection) -> Result<usize, Error> {
     use schema::tasks::dsl::entry;
     delete(tasks::table.filter(entry.eq(&self.entry))).execute(connection)
+  }
+  fn delete_by_serviceid(&self, connection: &PgConnection) -> Result<usize, Error> {
+    use schema::tasks::dsl::serviceid;
+    delete(tasks::table.filter(serviceid.eq(&self.serviceid))).execute(connection)
   }
 }
 
@@ -148,17 +166,38 @@ pub struct Service {
 // Aggregate methods, to be used by backend
 
 /// Fetch a batch of `queue_size` TODO tasks for a given `service`.
-pub fn fetch_tasks(service: &Service, queue_size: usize, connection: &PgConnection) -> Result<Vec<Task>, Error> {
-  use schema::tasks::dsl::{serviceid, status};
+pub fn fetch_tasks(
+  service: &Service,
+  queue_size: usize,
+  connection: &PgConnection,
+) -> Result<Vec<Task>, Error> {
+  use schema::tasks::dsl::{id, serviceid, status};
   let mut rng = thread_rng();
   let mark: u16 = rng.gen();
 
   // TODO: Concurrent use needs to add "and pg_try_advisory_xact_lock(taskid)" in the proper fashion
   //       But we need to be careful that the LIMIT takes place before the lock, which is why I removed it for now.
-  update(tasks::table
-    .filter(serviceid.eq(service.id))
-    .filter(status.eq(TaskStatus::TODO.raw()))
-    // .limit(queue_size)
-    ).set(status.eq(mark as i32))
-    .get_results(connection)
+  let mut marked_tasks: Vec<Task> = Vec::new();
+  try!(connection.transaction::<(), Error, _>(|| {
+    let tasks_for_update = try!(
+      tasks::table
+        .for_update()
+        .filter(serviceid.eq(service.id))
+        .filter(status.eq(TaskStatus::TODO.raw()))
+        .limit(queue_size as i64)
+        .load(connection)
+    );
+    marked_tasks = tasks_for_update
+      .into_iter()
+      .map(|task| {
+        Task {
+          status: i32::from(mark),
+          ..task
+        }
+      })
+      .map(|task| task.save_changes(connection).unwrap())
+      .collect();
+    Ok(())
+  }));
+  Ok(marked_tasks)
 }

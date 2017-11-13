@@ -8,16 +8,27 @@ extern crate cortex;
 extern crate postgres;
 
 use cortex::backend;
-use cortex::models::{Service,NewTask};
+use cortex::models::{Service, NewTask};
 use cortex::helpers::TaskStatus;
 
 #[test]
 fn task_table_crud() {
   let backend = backend::testdb();
-  let mock_service = Service{
-  	id: 1, name: String::from("mock_service"), complex: false, 
-  	inputconverter: None, inputformat: String::from("tex"), outputformat: String::from("tex"), version: 0.1};
-  let mock_task = NewTask{entry: "mock_task", serviceid: mock_service.id, corpusid:1, status: TaskStatus::TODO.raw()};
+  let mock_service = Service {
+    id: 1,
+    name: String::from("mock_service"),
+    complex: false,
+    inputconverter: None,
+    inputformat: String::from("tex"),
+    outputformat: String::from("tex"),
+    version: 0.1,
+  };
+  let mock_task = NewTask {
+    entry: "mock_task",
+    serviceid: mock_service.id,
+    corpusid: 1,
+    status: TaskStatus::TODO.raw(),
+  };
   // Delete any mock tasks
   let cleanup = backend.delete_by(&mock_task, "entry");
   assert_eq!(cleanup, Ok(0));
@@ -39,4 +50,48 @@ fn task_table_crud() {
   // Delete again and verify deletion works
   let cleanup = backend.delete_by(&mock_task, "entry");
   assert_eq!(cleanup, Ok(1));
+}
+
+#[test]
+fn mark_tasks() {
+  let backend = backend::testdb();
+  // Add 100 tasks, out of which we will mark 17
+  let mock_service = Service {
+    id: 2,
+    name: String::from("mark_tasks"),
+    complex: false,
+    inputconverter: None,
+    inputformat: String::from("tex"),
+    outputformat: String::from("tex"),
+    version: 0.1,
+  };
+  let mock_task = NewTask {
+    entry: "mark_task",
+    serviceid: mock_service.id,
+    corpusid: 1,
+    status: TaskStatus::TODO.raw(),
+  };
+
+  let pre_cleanup = backend.delete_by(&mock_task, "serviceid");
+  assert_eq!(pre_cleanup, Ok(0));
+  // insert 100 tasks
+  for index in 1..101 {
+    let indexed_task = NewTask {
+      entry: &format!("{}{}", mock_task.entry, index.to_string()),
+      ..mock_task
+    };
+    assert!(backend.add(&indexed_task).is_ok());
+  }
+  // fetch 17 tasks for work
+  let fetched_tasks_result = backend.fetch_tasks(&mock_service, 17);
+  assert!(fetched_tasks_result.is_ok());
+  let fetched_tasks = fetched_tasks_result.unwrap();
+  assert_eq!(fetched_tasks.len(), 17);
+  let random_mark = fetched_tasks[0].status;
+  assert!(fetched_tasks.iter().all(|task| task.status == random_mark));
+
+  let post_cleanup = backend.delete_by(&mock_task, "serviceid");
+  assert_eq!(post_cleanup, Ok(100));
+
+
 }
