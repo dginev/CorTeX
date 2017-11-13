@@ -5,7 +5,7 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 extern crate cortex;
-extern crate postgres;
+extern crate diesel;
 
 use cortex::backend;
 use cortex::models::{Service, NewTask};
@@ -87,11 +87,20 @@ fn mark_tasks() {
   assert!(fetched_tasks_result.is_ok());
   let fetched_tasks = fetched_tasks_result.unwrap();
   assert_eq!(fetched_tasks.len(), 17);
+  // The entire fetched batch shares the random mark
   let random_mark = fetched_tasks[0].status;
   assert!(fetched_tasks.iter().all(|task| task.status == random_mark));
+  // Check that querying by the mark also gets us these 17 tasks,
+  // i.e. they are saved in the DB
+  use cortex::schema::tasks;
+  use cortex::schema::tasks::dsl::status;
+  use diesel::prelude::*;
+  let marked_in_db = tasks::table
+    .filter(status.eq(random_mark))
+    .count()
+    .get_result(&backend.connection);
+  assert_eq!(marked_in_db, Ok(17));
 
   let post_cleanup = backend.delete_by(&mock_task, "serviceid");
   assert_eq!(post_cleanup, Ok(100));
-
-
 }

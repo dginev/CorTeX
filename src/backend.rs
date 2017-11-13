@@ -37,7 +37,8 @@ pub const TEST_DB_ADDRESS: &str = dotenv!("TEST_DATABASE_URL");
 
 /// Provides an interface to the Postgres task store
 pub struct Backend {
-  connection: PgConnection,
+  /// The Diesel PgConnection object
+  pub connection: PgConnection,
 }
 impl Default for Backend {
   fn default() -> Self {
