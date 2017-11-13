@@ -53,7 +53,7 @@ fn task_table_crud() {
 }
 
 #[test]
-fn mark_tasks() {
+fn mark_tasks_and_clear() {
   let backend = backend::testdb();
   // Add 100 tasks, out of which we will mark 17
   let mock_service = Service {
@@ -100,6 +100,14 @@ fn mark_tasks() {
     .count()
     .get_result(&backend.connection);
   assert_eq!(marked_in_db, Ok(17));
+
+  let cleared_limbo_tasks = backend.clear_limbo_tasks();
+  assert_eq!(cleared_limbo_tasks, Ok(17));
+  let marked_in_db_2 = tasks::table
+    .filter(status.eq(random_mark))
+    .count()
+    .get_result(&backend.connection);
+  assert_eq!(marked_in_db_2, Ok(0));
 
   let post_cleanup = backend.delete_by(&mock_task, "serviceid");
   assert_eq!(post_cleanup, Ok(100));

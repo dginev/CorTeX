@@ -195,13 +195,12 @@ impl Backend {
     models::fetch_tasks(service, limit, &self.connection)
   }
 
-  // /// Globally resets any "in progress" tasks back to "queued".
-  // /// Particularly useful for dispatcher restarts, when all "in progress" tasks need to be invalidated
-  // pub fn clear_limbo_tasks(&self) -> Result<(), Error> {
-  //   try!(self.connection.execute("UPDATE tasks SET status=$1 WHERE status > $2",
-  //                                &[&TaskStatus::TODO.raw(), &TaskStatus::NoProblem.raw()]));
-  //   Ok(())
-  // }
+  /// Globally resets any "in progress" tasks back to "queued".
+  /// Particularly useful for dispatcher restarts, when all "in progress" tasks need to be invalidated
+  pub fn clear_limbo_tasks(&self) -> Result<usize, Error> {
+    models::clear_limbo_tasks(&self.connection)
+
+  }
 
   //   /// Activates an existing service on a given corpus (via NAME)
   //   /// if the service has previously been registered, this has "extend" semantics, without any "overwrite" or "reset"

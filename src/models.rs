@@ -171,12 +171,10 @@ pub fn fetch_tasks(
   queue_size: usize,
   connection: &PgConnection,
 ) -> Result<Vec<Task>, Error> {
-  use schema::tasks::dsl::{id, serviceid, status};
+  use schema::tasks::dsl::{serviceid, status};
   let mut rng = thread_rng();
-  let mark: u16 = rng.gen();
+  let mark: u16 = 1 + rng.gen::<u16>();
 
-  // TODO: Concurrent use needs to add "and pg_try_advisory_xact_lock(taskid)" in the proper fashion
-  //       But we need to be careful that the LIMIT takes place before the lock, which is why I removed it for now.
   let mut marked_tasks: Vec<Task> = Vec::new();
   try!(connection.transaction::<(), Error, _>(|| {
     let tasks_for_update = try!(
@@ -195,9 +193,19 @@ pub fn fetch_tasks(
           ..task
         }
       })
-      .map(|task| task.save_changes(connection).unwrap())
+      .map(|task| task.save_changes(connection))
+      .filter_map(|saved| saved.ok())
       .collect();
     Ok(())
   }));
   Ok(marked_tasks)
+}
+
+/// Mark all "limbo" (= "in progress", assumed disconnected) tasks as TODO
+pub fn clear_limbo_tasks(connection: &PgConnection) -> Result<usize, Error> {
+  use schema::tasks::dsl::status;
+  update(tasks::table)
+    .filter(status.gt(&TaskStatus::TODO.raw()))
+    .set(status.eq(&TaskStatus::TODO.raw()))
+    .execute(connection)
 }
