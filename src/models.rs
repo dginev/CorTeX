@@ -223,17 +223,17 @@ pub trait LogRecord {
     )
   }
 }
+impl fmt::Debug for LogRecord {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    self.debug(f)
+  }
+}
+impl fmt::Display for LogRecord {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    self.debug(f)
+  }
+}
 
-// impl fmt::Display for TaskMessage {
-//   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//     write!(f,
-//            "(severity: {}, category: {},\n\twhat: {},\n\tdetails: {})\n",
-//            self.severity,
-//            self.category,
-//            self.what,
-//            self.details)
-//   }
-// }
 impl LogRecord for LogInfo {
   fn category(&self) -> &str {
     &self.category
@@ -246,11 +246,6 @@ impl LogRecord for LogInfo {
   }
   fn severity(&self) -> &str {
     "Info"
-  }
-}
-impl fmt::Debug for LogInfo {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    self.debug(f)
   }
 }
 impl LogRecord for LogWarning {
@@ -267,11 +262,6 @@ impl LogRecord for LogWarning {
     "Warning"
   }
 }
-impl fmt::Debug for LogWarning {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    self.debug(f)
-  }
-}
 impl LogRecord for LogError {
   fn category(&self) -> &str {
     &self.category
@@ -284,11 +274,6 @@ impl LogRecord for LogError {
   }
   fn severity(&self) -> &str {
     "Error"
-  }
-}
-impl fmt::Debug for LogError {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    self.debug(f)
   }
 }
 impl LogRecord for LogFatal {
@@ -305,11 +290,6 @@ impl LogRecord for LogFatal {
     "Fatal"
   }
 }
-impl fmt::Debug for LogFatal {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    self.debug(f)
-  }
-}
 impl LogRecord for LogInvalid {
   fn category(&self) -> &str {
     &self.category
@@ -322,11 +302,6 @@ impl LogRecord for LogInvalid {
   }
   fn severity(&self) -> &str {
     "Invalid"
-  }
-}
-impl fmt::Debug for LogInvalid {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    self.debug(f)
   }
 }
 

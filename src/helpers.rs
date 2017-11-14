@@ -7,7 +7,7 @@
 
 //! Helper structures and methods for Task
 use std::fmt;
-use models::{Task, LogInvalid, LogInfo, LogWarning, LogError, LogFatal};
+use models::{Task, LogInvalid, LogInfo, LogWarning, LogError, LogFatal, LogRecord};
 
 #[derive(Clone, PartialEq, Eq)]
 /// An enumeration of the expected task statuses
@@ -72,6 +72,48 @@ pub enum TaskMessage {
   Fatal(LogFatal),
   /// Invalid tasks, work can not begin
   Invalid(LogInvalid),
+}
+impl LogRecord for TaskMessage {
+  fn category(&self) -> &str {
+    use helpers::TaskMessage::*;
+    match *self {
+      Info(ref record) => record.category(),
+      Warning(ref record) => record.category(),
+      Error(ref record) => record.category(),
+      Fatal(ref record) => record.category(),
+      Invalid(ref record) => record.category(),
+    }
+  }
+  fn what(&self) -> &str {
+    use helpers::TaskMessage::*;
+    match *self {
+      Info(ref record) => record.what(),
+      Warning(ref record) => record.what(),
+      Error(ref record) => record.what(),
+      Fatal(ref record) => record.what(),
+      Invalid(ref record) => record.what(),
+    }
+  }
+  fn details(&self) -> &str {
+    use helpers::TaskMessage::*;
+    match *self {
+      Info(ref record) => record.details(),
+      Warning(ref record) => record.details(),
+      Error(ref record) => record.details(),
+      Fatal(ref record) => record.details(),
+      Invalid(ref record) => record.details(),
+    }
+  }
+  fn severity(&self) -> &str {
+    use helpers::TaskMessage::*;
+    match *self {
+      Info(ref record) => record.severity(),
+      Warning(ref record) => record.severity(),
+      Error(ref record) => record.severity(),
+      Fatal(ref record) => record.severity(),
+      Invalid(ref record) => record.severity(),
+    }
+  }
 }
 
 impl TaskStatus {
