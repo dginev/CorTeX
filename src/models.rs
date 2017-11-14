@@ -245,7 +245,7 @@ impl LogRecord for LogInfo {
     &self.details
   }
   fn severity(&self) -> &str {
-    "Info"
+    "info"
   }
 }
 impl LogRecord for LogWarning {
@@ -259,7 +259,7 @@ impl LogRecord for LogWarning {
     &self.details
   }
   fn severity(&self) -> &str {
-    "Warning"
+    "warning"
   }
 }
 impl LogRecord for LogError {
@@ -273,7 +273,7 @@ impl LogRecord for LogError {
     &self.details
   }
   fn severity(&self) -> &str {
-    "Error"
+    "error"
   }
 }
 impl LogRecord for LogFatal {
@@ -287,7 +287,7 @@ impl LogRecord for LogFatal {
     &self.details
   }
   fn severity(&self) -> &str {
-    "Fatal"
+    "fatal"
   }
 }
 impl LogRecord for LogInvalid {
@@ -301,7 +301,7 @@ impl LogRecord for LogInvalid {
     &self.details
   }
   fn severity(&self) -> &str {
-    "Invalid"
+    "invalid"
   }
 }
 

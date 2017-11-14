@@ -18,17 +18,17 @@ use std::clone::Clone;
 use std::collections::{HashMap, HashSet};
 use regex::Regex;
 use rand::{thread_rng, Rng};
-use diesel::insert_into;
+use diesel::{update, delete, insert_into};
 use diesel::prelude::*;
 use diesel::pg::PgConnection;
 use diesel::pg::upsert::*;
 use diesel::result::Error;
-use schema::tasks::dsl::*;
+use schema::{tasks, log_infos, log_warnings, log_errors, log_fatals, log_invalids};
 
 // use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
 use concerns::{CortexInsertable, CortexDeletable};
 use models;
-use models::{Task, NewTask, Service};
+use models::{Task, NewTask, Service, LogRecord};
 use helpers::{TaskStatus, TaskReport};
 /// The production database postgresql address, set from the .env configuration file
 pub const DEFAULT_DB_ADDRESS: &str = dotenv!("DATABASE_URL");
@@ -67,7 +67,7 @@ impl Backend {
   pub fn mark_imported(&self, imported_tasks: &[NewTask]) -> Result<(), Box<Error>> {
     // Insert, but only if the task is new (allow for extension calls with the same method)
     try!(
-      insert_into(tasks)
+      insert_into(tasks::table)
         .values(imported_tasks)
         .on_conflict_do_nothing()
         .execute(&self.connection)
@@ -78,26 +78,53 @@ impl Backend {
 
   /// Insert a vector of `TaskReport` reports into the Task store, also marking their tasks as completed with the correct status code.
   pub fn mark_done(&self, reports: &[TaskReport]) -> Result<(), Error> {
+    use schema::tasks::dsl::{id, status};
+
     try!(self.connection.transaction::<(), Error, _>(|| {
-    //     let insert_log_message = trans.prepare("INSERT INTO logs (taskid, severity, category, what, details) values($1,$2,$3,$4,$5)").unwrap();
-    //     // let insert_log_message_details = trans.prepare("INSERT INTO logdetails (messageid, details) values(?,?)").unwrap();
-    //     for report in reports.iter() {
-    //       let taskid = report.task.id.unwrap();
-    //       trans.execute("UPDATE tasks SET status=$1 WHERE taskid=$2",
-    //                     &[&report.status.raw(), &taskid])
-    //            .unwrap();
-    //       for message in &report.messages {
-    //         if (message.severity == "info") || (message.severity == "status") {
-    //           continue; // Skip info and status information, keep the DB small
-    //         } else {
-    //           // Warnings, Errors and Fatals will get added:
-    //           insert_log_message.query(&[&taskid, &message.severity, &message.category, &message.what, &message.details])
-    //                             .unwrap();
-    //         }
-    //       }
-    //       // TODO: Update dependencies
-    //     }
-    
+      for report in reports.iter() {
+        // Update the status
+        try!(
+          update(tasks::table)
+            .filter(id.eq(report.task.id))
+            .set(status.eq(report.status.raw()))
+            .execute(&self.connection)
+        );
+        // Next, delete all previous log messages for this task.id
+        try!(
+          delete(log_infos::table)
+            .filter(log_infos::dsl::taskid.eq(report.task.id))
+            .execute(&self.connection)
+        );
+        try!(
+          delete(log_warnings::table)
+            .filter(log_warnings::dsl::taskid.eq(report.task.id))
+            .execute(&self.connection)
+        );
+        try!(
+          delete(log_errors::table)
+            .filter(log_errors::dsl::taskid.eq(report.task.id))
+            .execute(&self.connection)
+        );
+        try!(
+          delete(log_fatals::table)
+            .filter(log_fatals::dsl::taskid.eq(report.task.id))
+            .execute(&self.connection)
+        );
+        try!(
+          delete(log_invalids::table)
+            .filter(log_invalids::dsl::taskid.eq(report.task.id))
+            .execute(&self.connection)
+        );
+        // Clean slate, so proceed to add the new messages
+        for message in &report.messages {
+          if (message.severity() != "status") {
+            // Warnings, Errors and Fatals will get added:
+            // TODO: NEXT UP!
+            // message.create();
+          }
+        }
+        // TODO: Update dependenct services, when integrated in DB
+      }
       Ok(())
     }));
     Ok(())
