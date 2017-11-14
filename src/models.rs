@@ -152,6 +152,18 @@ pub struct LogInfo {
   /// technical details of the message (e.g. localization info)
   pub details: String,
 }
+#[derive(Insertable, Clone)]
+#[table_name = "log_infos"]
+/// A new, insertable, info/debug message
+pub struct NewLogInfo {
+  /// mid-level description (open set)
+  pub category: String,
+  /// low-level description (open set)
+  pub what: String,
+  /// technical details of the message (e.g. localization info)
+  pub details: String,
+}
+
 #[derive(Identifiable, Queryable, AsChangeset, Clone)]
 /// A warning message, as per the `LaTeXML` convention
 pub struct LogWarning {
@@ -164,6 +176,18 @@ pub struct LogWarning {
   /// technical details of the message (e.g. localization info)
   pub details: String,
 }
+#[derive(Insertable, Clone)]
+#[table_name = "log_warnings"]
+/// A new, insertable, warning message
+pub struct NewLogWarning {
+  /// mid-level description (open set)
+  pub category: String,
+  /// low-level description (open set)
+  pub what: String,
+  /// technical details of the message (e.g. localization info)
+  pub details: String,
+}
+
 #[derive(Identifiable, Queryable, AsChangeset, Clone)]
 /// An error message, as per the `LaTeXML` convention
 pub struct LogError {
@@ -176,6 +200,18 @@ pub struct LogError {
   /// technical details of the message (e.g. localization info)
   pub details: String,
 }
+#[derive(Insertable, Clone)]
+#[table_name = "log_errors"]
+/// A new, insertable, error message
+pub struct NewLogError {
+  /// mid-level description (open set)
+  pub category: String,
+  /// low-level description (open set)
+  pub what: String,
+  /// technical details of the message (e.g. localization info)
+  pub details: String,
+}
+
 #[derive(Identifiable, Queryable, AsChangeset, Clone)]
 /// A fatal message, as per the `LaTeXML` convention
 pub struct LogFatal {
@@ -188,11 +224,35 @@ pub struct LogFatal {
   /// technical details of the message (e.g. localization info)
   pub details: String,
 }
+#[derive(Insertable, Clone)]
+#[table_name = "log_fatals"]
+/// A new, insertable, fatal message
+pub struct NewLogFatal {
+  /// mid-level description (open set)
+  pub category: String,
+  /// low-level description (open set)
+  pub what: String,
+  /// technical details of the message (e.g. localization info)
+  pub details: String,
+}
+
+
 #[derive(Identifiable, Queryable, AsChangeset, Clone)]
 /// An invalid message, as per the `LaTeXML` convention
 pub struct LogInvalid {
   /// task primary key, auto-incremented by postgresql
   pub id: i64,
+  /// mid-level description (open set)
+  pub category: String,
+  /// low-level description (open set)
+  pub what: String,
+  /// technical details of the message (e.g. localization info)
+  pub details: String,
+}
+#[derive(Insertable, Clone)]
+#[table_name = "log_invalids"]
+/// A new, insertable, invalid message
+pub struct NewLogInvalid {
   /// mid-level description (open set)
   pub category: String,
   /// low-level description (open set)
@@ -209,6 +269,8 @@ pub trait LogRecord {
   fn what(&self) -> &str;
   /// Details accessor
   fn details(&self) -> &str;
+  /// Details setter
+  fn set_details(&mut self, new_details: String);
   /// Severity accessor
   fn severity(&self) -> &str;
   /// Implements the fmt::Debug fmt
@@ -244,6 +306,26 @@ impl LogRecord for LogInfo {
   fn details(&self) -> &str {
     &self.details
   }
+  fn set_details(&mut self, new_details: String) {
+    self.details = new_details;
+  }
+  fn severity(&self) -> &str {
+    "info"
+  }
+}
+impl LogRecord for NewLogInfo {
+  fn category(&self) -> &str {
+    &self.category
+  }
+  fn what(&self) -> &str {
+    &self.what
+  }
+  fn details(&self) -> &str {
+    &self.details
+  }
+  fn set_details(&mut self, new_details: String) {
+    self.details = new_details;
+  }
   fn severity(&self) -> &str {
     "info"
   }
@@ -257,6 +339,26 @@ impl LogRecord for LogWarning {
   }
   fn details(&self) -> &str {
     &self.details
+  }
+  fn set_details(&mut self, new_details: String) {
+    self.details = new_details;
+  }
+  fn severity(&self) -> &str {
+    "warning"
+  }
+}
+impl LogRecord for NewLogWarning {
+  fn category(&self) -> &str {
+    &self.category
+  }
+  fn what(&self) -> &str {
+    &self.what
+  }
+  fn details(&self) -> &str {
+    &self.details
+  }
+  fn set_details(&mut self, new_details: String) {
+    self.details = new_details;
   }
   fn severity(&self) -> &str {
     "warning"
@@ -272,6 +374,26 @@ impl LogRecord for LogError {
   fn details(&self) -> &str {
     &self.details
   }
+  fn set_details(&mut self, new_details: String) {
+    self.details = new_details;
+  }
+  fn severity(&self) -> &str {
+    "error"
+  }
+}
+impl LogRecord for NewLogError {
+  fn category(&self) -> &str {
+    &self.category
+  }
+  fn what(&self) -> &str {
+    &self.what
+  }
+  fn details(&self) -> &str {
+    &self.details
+  }
+  fn set_details(&mut self, new_details: String) {
+    self.details = new_details;
+  }
   fn severity(&self) -> &str {
     "error"
   }
@@ -285,6 +407,26 @@ impl LogRecord for LogFatal {
   }
   fn details(&self) -> &str {
     &self.details
+  }
+  fn set_details(&mut self, new_details: String) {
+    self.details = new_details;
+  }
+  fn severity(&self) -> &str {
+    "fatal"
+  }
+}
+impl LogRecord for NewLogFatal {
+  fn category(&self) -> &str {
+    &self.category
+  }
+  fn what(&self) -> &str {
+    &self.what
+  }
+  fn details(&self) -> &str {
+    &self.details
+  }
+  fn set_details(&mut self, new_details: String) {
+    self.details = new_details;
   }
   fn severity(&self) -> &str {
     "fatal"
@@ -300,11 +442,30 @@ impl LogRecord for LogInvalid {
   fn details(&self) -> &str {
     &self.details
   }
+  fn set_details(&mut self, new_details: String) {
+    self.details = new_details;
+  }
   fn severity(&self) -> &str {
     "invalid"
   }
 }
-
+impl LogRecord for NewLogInvalid {
+  fn category(&self) -> &str {
+    &self.category
+  }
+  fn what(&self) -> &str {
+    &self.what
+  }
+  fn details(&self) -> &str {
+    &self.details
+  }
+  fn set_details(&mut self, new_details: String) {
+    self.details = new_details;
+  }
+  fn severity(&self) -> &str {
+    "invalid"
+  }
+}
 // Services
 #[derive(Clone)]
 /// A `CorTeX` processing service

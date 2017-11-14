@@ -12,7 +12,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::path::Path;
 use std::str;
-use regex::Regex;
 
 use postgres::Connection;
 use postgres::rows::Row;
@@ -24,10 +23,12 @@ use Archive::*;
 pub trait CortexORM {
   /// Select from Task store via the primary id
   fn select_by_id<'a>(&'a self, connection: &'a Connection) -> Result<Option<Self>, Error>
-    where Self: Sized;
+  where
+    Self: Sized;
   /// Select from Task store via a struct-specific uniquely identifying key
   fn select_by_key<'a>(&'a self, connection: &'a Connection) -> Result<Option<Self>, Error>
-    where Self: Sized;
+  where
+    Self: Sized;
   /// Inser the row identified by this struct into the Task store (overwrite if present)
   fn insert(&self, connection: &Connection) -> Result<(), Error>;
   /// Delete the row identified by this struct from the Task store
@@ -43,8 +44,8 @@ pub trait CortexORM {
 use std::fmt;
 use super::schema::tasks;
 
-#[derive(Insertable,Clone)]
-#[table_name="tasks"]
+#[derive(Insertable, Clone)]
+#[table_name = "tasks"]
 /// Struct representation of a task store row
 pub struct Task {
   /// optional id (None for mock / yet-to-be-inserted rows)
@@ -67,13 +68,15 @@ impl fmt::Display for Task {
       Some(taskid) => taskid.to_string(),
       None => "None".to_string(),
     };
-    write!(f,
-           "(taskid: {}, entry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n",
-           taskid,
-           self.entry,
-           self.serviceid,
-           self.corpusid,
-           self.status)
+    write!(
+      f,
+      "(taskid: {}, entry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n",
+      taskid,
+      self.entry,
+      self.serviceid,
+      self.corpusid,
+      self.status
+    )
   }
 }
 impl fmt::Debug for Task {
@@ -85,13 +88,15 @@ impl fmt::Debug for Task {
       Some(taskid) => taskid.to_string(),
       None => "None".to_string(),
     };
-    write!(f,
-           "(taskid: {},\n\tentry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n",
-           taskid,
-           self.entry,
-           self.serviceid,
-           self.corpusid,
-           self.status)
+    write!(
+      f,
+      "(taskid: {},\n\tentry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n",
+      taskid,
+      self.entry,
+      self.serviceid,
+      self.corpusid,
+      self.status
+    )
   }
 }
 impl CortexORM for Task {
@@ -103,7 +108,9 @@ impl CortexORM for Task {
     }
   }
   fn select_by_id<'a>(&'a self, connection: &'a Connection) -> Result<Option<Task>, Error> {
-    let stmt = try!(connection.prepare("SELECT taskid,entry,serviceid,corpusid,status FROM tasks WHERE taskid = $1"));
+    let stmt = try!(connection.prepare(
+      "SELECT taskid,entry,serviceid,corpusid,status FROM tasks WHERE taskid = $1",
+    ));
     let rows = try!(stmt.query(&[&self.id]));
     if rows.len() > 0 {
       let row = rows.get(0);
@@ -128,7 +135,10 @@ impl CortexORM for Task {
     Ok(())
   }
   fn delete(&self, connection: &Connection) -> Result<(), Error> {
-    try!(connection.execute("DELETE FROM tasks WHERE taskid = $1", &[&self.id]));
+    try!(connection.execute(
+      "DELETE FROM tasks WHERE taskid = $1",
+      &[&self.id],
+    ));
     Ok(())
   }
   fn from_row(row: Row) -> Self {
@@ -156,10 +166,10 @@ impl Task {
       // Let's open the archive file and find the cortex.log file:
       let log_name = "cortex.log";
       match Reader::new()
-              .unwrap()
-              .support_filter_all()
-              .support_format_all()
-              .open_filename(result.to_str().unwrap(), 10240) {
+        .unwrap()
+        .support_filter_all()
+        .support_format_all()
+        .open_filename(result.to_str().unwrap(), 10240) {
 
         Err(e) => {
           println!("Error TODO: Couldn't open archive_reader: {:?}", e);
@@ -178,7 +188,10 @@ impl Task {
               }
               let log_string: String = match str::from_utf8(&raw_log_data) {
                 Ok(some_utf_string) => some_utf_string.to_string(),
-                Err(e) => "Fatal:cortex:unicode_parse_error ".to_string() + &e.to_string() + "\nStatus:conversion:3",
+                Err(e) => {
+                  "Fatal:cortex:unicode_parse_error ".to_string() + &e.to_string() +
+                    "\nStatus:conversion:3"
+                }
               };
               messages = self.parse_log(log_string);
               // Look for the special status message - Fatal otherwise!
@@ -187,14 +200,18 @@ impl Task {
                 if m.severity == "invalid" {
                   status = TaskStatus::Invalid;
                   break;
-                } else if (m.severity == "status") && (m.category == "conversion") && !(m.what.is_empty()) {
+                } else if (m.severity == "status") && (m.category == "conversion") &&
+                         !(m.what.is_empty())
+                {
                   // Adapt status to the CorTeX scheme: cortex_status = -(latexml_status+1)
                   let latexml_scheme_status = match m.what.parse::<i32>() {
                     Ok(num) => num,
                     Err(e) => {
-                      println!("Error TODO: Failed to parse conversion status {:?}: {:?}",
-                               m.what,
-                               e);
+                      println!(
+                        "Error TODO: Failed to parse conversion status {:?}: {:?}",
+                        m.what,
+                        e
+                      );
                       TaskStatus::Fatal.raw()
                     }
                   };
@@ -215,77 +232,6 @@ impl Task {
       status: status,
       messages: messages,
     }
-  }
-
-  /// Parses a log string which follows the LaTeXML convention
-  /// (described at http://dlmf.nist.gov/LaTeXML/manual/errorcodes/index.html)
-  pub fn parse_log(&self, log: String) -> Vec<TaskMessage> {
-    let mut messages: Vec<TaskMessage> = Vec::new();
-    let mut in_details_mode = false;
-
-    // regexes:
-    let message_line_regex = Regex::new(r"^([^ :]+):([^ :]+):([^ ]+)(\s(.*))?$").unwrap();
-    for line in log.lines() {
-      // Skip empty lines
-      if line.is_empty() {
-        continue;
-      }
-      // If we have found a message header and we're collecting details:
-      if in_details_mode {
-        // If the line starts with tab, we are indeed reading in details
-        if line.starts_with('\t') {
-          // Append details line to the last message
-          let mut last_message = messages.pop().unwrap();
-          let mut truncated_details = last_message.details + "\n" + line;
-          utf_truncate(&mut truncated_details, 2000);
-          last_message.details = truncated_details;
-          messages.push(last_message);
-          continue; // This line has been consumed, next
-        } else {
-          // Otherwise, no tab at the line beginning means last message has ended
-          in_details_mode = false;
-          if in_details_mode {} // hacky? disable "unused" warning
-        }
-      }
-      // Since this isn't a details line, check if it's a message line:
-      match message_line_regex.captures(line) {
-        Some(cap) => {
-          // Indeed a message, so record it
-          // We'll need to do some manual truncations, since the POSTGRESQL wrapper prefers
-          //   panicking to auto-truncating (would not have been the Perl way, but Rust is Rust)
-          let mut truncated_severity = cap.at(1).unwrap_or("").to_string().to_lowercase();
-          utf_truncate(&mut truncated_severity, 50);
-          let mut truncated_category = cap.at(2).unwrap_or("").to_string();
-          utf_truncate(&mut truncated_category, 50);
-          let mut truncated_what = cap.at(3).unwrap_or("").to_string();
-          utf_truncate(&mut truncated_what, 50);
-          let mut truncated_details = cap.at(5).unwrap_or("").to_string();
-          utf_truncate(&mut truncated_details, 2000);
-
-          if truncated_severity == "fatal" && truncated_category == "invalid" {
-            truncated_severity = "invalid".to_string();
-            truncated_category = truncated_what;
-            truncated_what = "all".to_string();
-          };
-
-          let message = TaskMessage {
-            severity: truncated_severity,
-            category: truncated_category,
-            what: truncated_what,
-            details: truncated_details,
-          };
-          // Prepare to record follow-up lines with the message details:
-          in_details_mode = true;
-          // Add to the array of parsed messages
-          messages.push(message);
-        }
-        None => {
-          // Otherwise line is just noise, continue...
-          in_details_mode = false;
-        }
-      };
-    }
-    messages
   }
 
   /// Returns an open file handle to the task's entry
@@ -336,7 +282,9 @@ impl CortexORM for Corpus {
     self.id
   }
   fn select_by_id<'a>(&'a self, connection: &'a Connection) -> Result<Option<Corpus>, Error> {
-    let stmt = try!(connection.prepare("SELECT corpusid,name,path,complex FROM corpora WHERE corpusid = $1"));
+    let stmt = try!(connection.prepare(
+      "SELECT corpusid,name,path,complex FROM corpora WHERE corpusid = $1",
+    ));
     let rows = try!(stmt.query(&[&self.id]));
     if rows.len() > 0 {
       let row = rows.get(0);
@@ -346,7 +294,9 @@ impl CortexORM for Corpus {
     }
   }
   fn select_by_key<'a>(&'a self, connection: &'a Connection) -> Result<Option<Corpus>, Error> {
-    let stmt = try!(connection.prepare("SELECT corpusid,name,path,complex FROM corpora WHERE name = $1"));
+    let stmt = try!(connection.prepare(
+      "SELECT corpusid,name,path,complex FROM corpora WHERE name = $1",
+    ));
     let rows = try!(stmt.query(&[&self.name]));
     if rows.len() > 0 {
       let row = rows.get(0);
@@ -356,13 +306,21 @@ impl CortexORM for Corpus {
     }
   }
   fn insert(&self, connection: &Connection) -> Result<(), Error> {
-    try!(connection.execute("INSERT INTO corpora (name, path, complex) values($1, $2, $3)",
-                            &[&self.name, &self.path, &self.complex]));
+    try!(connection.execute(
+      "INSERT INTO corpora (name, path, complex) values($1, $2, $3)",
+      &[&self.name, &self.path, &self.complex],
+    ));
     Ok(())
   }
   fn delete(&self, connection: &Connection) -> Result<(), Error> {
-    try!(connection.execute("DELETE FROM tasks WHERE corpusid = $1", &[&self.id]));
-    try!(connection.execute("DELETE FROM corpora WHERE corpusid = $1", &[&self.id]));
+    try!(connection.execute(
+      "DELETE FROM tasks WHERE corpusid = $1",
+      &[&self.id],
+    ));
+    try!(connection.execute(
+      "DELETE FROM corpora WHERE corpusid = $1",
+      &[&self.id],
+    ));
     Ok(())
   }
   fn from_row(row: Row) -> Self {
@@ -377,20 +335,21 @@ impl CortexORM for Corpus {
 impl Corpus {
   /// Return a vector of services currently activated on this corpus
   pub fn select_services<'a>(&'a self, connection: &'a Connection) -> Result<Vec<Service>, Error> {
-    let stmt = try!(connection.prepare("SELECT distinct(serviceid) FROM tasks WHERE corpusid = $1"));
+    let stmt = try!(connection.prepare(
+      "SELECT distinct(serviceid) FROM tasks WHERE corpusid = $1",
+    ));
     let rows = try!(stmt.query(&[&self.id]));
     let mut services = Vec::new();
     for row in rows.iter() {
       let service_result = Service {
-                             id: row.get(0),
-                             outputformat: String::new(),
-                             complex: true,
-                             inputconverter: None,
-                             name: String::new(),
-                             version: 0.1,
-                             inputformat: String::new(),
-                           }
-                           .select_by_id(connection);
+        id: row.get(0),
+        outputformat: String::new(),
+        complex: true,
+        inputconverter: None,
+        name: String::new(),
+        version: 0.1,
+        inputformat: String::new(),
+      }.select_by_id(connection);
       if let Ok(service_select) = service_result {
         if let Some(service) = service_select {
           services.push(service);
@@ -442,15 +401,17 @@ impl fmt::Debug for Service {
     if self.inputconverter.is_some() {
       ic = self.inputconverter.clone().unwrap();
     };
-    write!(f,
-           "(serviceid: {},\n\tname: {},\n\tversion: {},\n\tinputformat: {},\n\toutputformat: {},\n\tinputconverter: {},\n\tcomplex: {})\n",
-           serviceid,
-           self.name,
-           self.version,
-           self.inputformat,
-           self.outputformat,
-           ic,
-           self.complex)
+    write!(
+      f,
+      "(serviceid: {},\n\tname: {},\n\tversion: {},\n\tinputformat: {},\n\toutputformat: {},\n\tinputconverter: {},\n\tcomplex: {})\n",
+      serviceid,
+      self.name,
+      self.version,
+      self.inputformat,
+      self.outputformat,
+      ic,
+      self.complex
+    )
   }
 }
 
@@ -484,8 +445,14 @@ impl CortexORM for Service {
     Ok(())
   }
   fn delete(&self, connection: &Connection) -> Result<(), Error> {
-    try!(connection.execute("DELETE FROM tasks WHERE serviceid = $1", &[&self.id]));
-    try!(connection.execute("DELETE FROM services WHERE serviceid = $1", &[&self.id]));
+    try!(connection.execute(
+      "DELETE FROM tasks WHERE serviceid = $1",
+      &[&self.id],
+    ));
+    try!(connection.execute(
+      "DELETE FROM services WHERE serviceid = $1",
+      &[&self.id],
+    ));
     Ok(())
   }
   fn from_row(row: Row) -> Self {
@@ -515,40 +482,25 @@ impl Service {
   /// Returns a hash representation of the `Service`, usually for frontend reports
   pub fn to_hash(&self) -> HashMap<String, String> {
     let mut hm = HashMap::new();
-    hm.insert("id".to_string(),
-              match self.id {
-                Some(id) => id.to_string(),
-                None => "None".to_string(),
-              });
+    hm.insert(
+      "id".to_string(),
+      match self.id {
+        Some(id) => id.to_string(),
+        None => "None".to_string(),
+      },
+    );
     hm.insert("name".to_string(), self.name.clone());
     hm.insert("version".to_string(), self.version.to_string());
     hm.insert("inputformat".to_string(), self.inputformat.clone());
     hm.insert("outputformat".to_string(), self.outputformat.clone());
-    hm.insert("inputconverter".to_string(),
-              match self.inputconverter.clone() {
-                Some(ic) => ic,
-                None => "None".to_string(),
-              });
+    hm.insert(
+      "inputconverter".to_string(),
+      match self.inputconverter.clone() {
+        Some(ic) => ic,
+        None => "None".to_string(),
+      },
+    );
     hm.insert("complex".to_string(), self.complex.to_string());
     hm
   }
-}
-
-/// Utility functions, until they find a better place
-fn utf_truncate(input: &mut String, maxsize: usize) {
-  let mut utf_maxsize = input.len();
-  if utf_maxsize >= maxsize {
-    {
-      let mut char_iter = input.char_indices();
-      while utf_maxsize >= maxsize {
-        utf_maxsize = match char_iter.next_back() {
-          Some((index, _)) => index,
-          _ => 0,
-        };
-      }
-    } // Extra {} wrap to limit the immutable borrow of char_indices()
-    input.truncate(utf_maxsize);
-  }
-  // eliminate null characters if any
-  *input = input.replace("\x00", "");
 }

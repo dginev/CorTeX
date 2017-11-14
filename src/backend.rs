@@ -117,7 +117,7 @@ impl Backend {
         );
         // Clean slate, so proceed to add the new messages
         for message in &report.messages {
-          if (message.severity() != "status") {
+          if message.severity() != "status" {
             // Warnings, Errors and Fatals will get added:
             // TODO: NEXT UP!
             // message.create();

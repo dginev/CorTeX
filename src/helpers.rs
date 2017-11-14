@@ -7,7 +7,9 @@
 
 //! Helper structures and methods for Task
 use std::fmt;
-use models::{Task, LogInvalid, LogInfo, LogWarning, LogError, LogFatal, LogRecord};
+use regex::Regex;
+use models::{Task, LogInvalid, LogInfo, LogWarning, LogError, LogFatal, LogRecord, NewLogInvalid,
+             NewLogInfo, NewLogWarning, NewLogError, NewLogFatal};
 
 #[derive(Clone, PartialEq, Eq)]
 /// An enumeration of the expected task statuses
@@ -104,6 +106,16 @@ impl LogRecord for TaskMessage {
       Invalid(ref record) => record.details(),
     }
   }
+  fn set_details(&mut self, new_details: String) {
+    use helpers::TaskMessage::*;
+    match *self {
+      Info(ref mut record) => record.set_details(new_details),
+      Warning(ref mut record) => record.set_details(new_details),
+      Error(ref mut record) => record.set_details(new_details),
+      Fatal(ref mut record) => record.set_details(new_details),
+      Invalid(ref mut record) => record.set_details(new_details),
+    }
+  }
   fn severity(&self) -> &str {
     use helpers::TaskMessage::*;
     match *self {
@@ -184,4 +196,195 @@ impl TaskStatus {
       .map(|&x| x.to_string())
       .collect::<Vec<_>>()
   }
+}
+
+#[derive(Clone)]
+/// Enum for all types of reported messages for a given Task, as per the `LaTeXML` convention
+/// One of "invalid", "fatal", "error", "warning" or "info"
+pub enum NewTaskMessage {
+  /// Debug/low-priroity messages
+  Info(NewLogInfo),
+  /// Soft/resumable problem messages
+  Warning(NewLogWarning),
+  /// Hard/recoverable problem messages
+  Error(NewLogError),
+  /// Critical/unrecoverable problem messages
+  Fatal(NewLogFatal),
+  /// Invalid tasks, work can not begin
+  Invalid(NewLogInvalid),
+}
+impl LogRecord for NewTaskMessage {
+  fn category(&self) -> &str {
+    use helpers::NewTaskMessage::*;
+    match *self {
+      Info(ref record) => record.category(),
+      Warning(ref record) => record.category(),
+      Error(ref record) => record.category(),
+      Fatal(ref record) => record.category(),
+      Invalid(ref record) => record.category(),
+    }
+  }
+  fn what(&self) -> &str {
+    use helpers::NewTaskMessage::*;
+    match *self {
+      Info(ref record) => record.what(),
+      Warning(ref record) => record.what(),
+      Error(ref record) => record.what(),
+      Fatal(ref record) => record.what(),
+      Invalid(ref record) => record.what(),
+    }
+  }
+  fn details(&self) -> &str {
+    use helpers::NewTaskMessage::*;
+    match *self {
+      Info(ref record) => record.details(),
+      Warning(ref record) => record.details(),
+      Error(ref record) => record.details(),
+      Fatal(ref record) => record.details(),
+      Invalid(ref record) => record.details(),
+    }
+  }
+  fn set_details(&mut self, new_details: String) {
+    use helpers::NewTaskMessage::*;
+    match *self {
+      Info(ref mut record) => record.set_details(new_details),
+      Warning(ref mut record) => record.set_details(new_details),
+      Error(ref mut record) => record.set_details(new_details),
+      Fatal(ref mut record) => record.set_details(new_details),
+      Invalid(ref mut record) => record.set_details(new_details),
+    }
+  }
+
+  fn severity(&self) -> &str {
+    use helpers::NewTaskMessage::*;
+    match *self {
+      Info(ref record) => record.severity(),
+      Warning(ref record) => record.severity(),
+      Error(ref record) => record.severity(),
+      Fatal(ref record) => record.severity(),
+      Invalid(ref record) => record.severity(),
+    }
+  }
+}
+impl NewTaskMessage {
+  /// Instantiates an appropriate insertable LogRecord object based on the raw message components
+  pub fn new(severity: String, category: String, what: String, details: String) -> NewTaskMessage {
+    match severity.as_str() {
+      "info" => NewTaskMessage::Info(NewLogInfo {
+        category: category,
+        what: what,
+        details: details,
+      }),
+      "warning" => NewTaskMessage::Warning(NewLogWarning {
+        category: category,
+        what: what,
+        details: details,
+      }),
+      "error" => NewTaskMessage::Error(NewLogError {
+        category: category,
+        what: what,
+        details: details,
+      }),
+      "fatal" => NewTaskMessage::Fatal(NewLogFatal {
+        category: category,
+        what: what,
+        details: details,
+      }),
+      _ => NewTaskMessage::Info(NewLogInfo {
+        category: category,
+        what: what,
+        details: details,
+      }), // unknown severity will be treated as info
+    }
+  }
+}
+
+/// Parses a log string which follows the LaTeXML convention
+/// (described at http://dlmf.nist.gov/LaTeXML/manual/errorcodes/index.html)
+pub fn parse_log(log: String) -> Vec<NewTaskMessage> {
+  let mut messages: Vec<NewTaskMessage> = Vec::new();
+  let mut in_details_mode = false;
+
+  // regexes:
+  let message_line_regex = Regex::new(r"^([^ :]+):([^ :]+):([^ ]+)(\s(.*))?$").unwrap();
+  for line in log.lines() {
+    // Skip empty lines
+    if line.is_empty() {
+      continue;
+    }
+    // If we have found a message header and we're collecting details:
+    if in_details_mode {
+      // If the line starts with tab, we are indeed reading in details
+      if line.starts_with('\t') {
+        // Append details line to the last message
+        let mut last_message = messages.pop().unwrap();
+        let mut truncated_details = last_message.details().to_string() + "\n" + line;
+        utf_truncate(&mut truncated_details, 2000);
+        last_message.set_details(truncated_details);
+        messages.push(last_message);
+        continue; // This line has been consumed, next
+      } else {
+        // Otherwise, no tab at the line beginning means last message has ended
+        in_details_mode = false;
+        if in_details_mode {} // hacky? disable "unused" warning
+      }
+    }
+    // Since this isn't a details line, check if it's a message line:
+    match message_line_regex.captures(line) {
+      Some(cap) => {
+        // Indeed a message, so record it
+        // We'll need to do some manual truncations, since the POSTGRESQL wrapper prefers
+        //   panicking to auto-truncating (would not have been the Perl way, but Rust is Rust)
+        let mut truncated_severity = cap.at(1).unwrap_or("").to_string().to_lowercase();
+        utf_truncate(&mut truncated_severity, 50);
+        let mut truncated_category = cap.at(2).unwrap_or("").to_string();
+        utf_truncate(&mut truncated_category, 50);
+        let mut truncated_what = cap.at(3).unwrap_or("").to_string();
+        utf_truncate(&mut truncated_what, 50);
+        let mut truncated_details = cap.at(5).unwrap_or("").to_string();
+        utf_truncate(&mut truncated_details, 2000);
+
+        if truncated_severity == "fatal" && truncated_category == "invalid" {
+          truncated_severity = "invalid".to_string();
+          truncated_category = truncated_what;
+          truncated_what = "all".to_string();
+        };
+
+        let message = NewTaskMessage::new(
+          truncated_severity,
+          truncated_category,
+          truncated_what,
+          truncated_details,
+        );
+        // Prepare to record follow-up lines with the message details:
+        in_details_mode = true;
+        // Add to the array of parsed messages
+        messages.push(message);
+      }
+      None => {
+        // Otherwise line is just noise, continue...
+        in_details_mode = false;
+      }
+    };
+  }
+  messages
+}
+
+/// Utility functions, until they find a better place
+fn utf_truncate(input: &mut String, maxsize: usize) {
+  let mut utf_maxsize = input.len();
+  if utf_maxsize >= maxsize {
+    {
+      let mut char_iter = input.char_indices();
+      while utf_maxsize >= maxsize {
+        utf_maxsize = match char_iter.next_back() {
+          Some((index, _)) => index,
+          _ => 0,
+        };
+      }
+    } // Extra {} wrap to limit the immutable borrow of char_indices()
+    input.truncate(utf_maxsize);
+  }
+  // eliminate null characters if any
+  *input = input.replace("\x00", "");
 }
