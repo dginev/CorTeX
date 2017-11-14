@@ -5,9 +5,9 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Helper structures and methods for Task 
+//! Helper structures and methods for Task
 use std::fmt;
-use models::{Task};
+use models::{Task, LogInvalid, LogInfo, LogWarning, LogError, LogFatal};
 
 #[derive(Clone, PartialEq, Eq)]
 /// An enumeration of the expected task statuses
@@ -59,40 +59,21 @@ pub struct TaskReport {
 }
 
 #[derive(Clone)]
-/// A task processing message, as per the `LaTeXML` convention
-pub struct TaskMessage {
-  /// high level description
-  /// ("fatal", "error", "warning" or "info")
-  pub severity: String,
-  /// mid-level description (open set)
-  pub category: String,
-  /// low-level description (open set)
-  pub what: String,
-  /// technical details of the message (e.g. localization info)
-  pub details: String,
+/// Enum for all types of reported messages for a given Task, as per the `LaTeXML` convention
+/// One of "invalid", "fatal", "error", "warning" or "info"
+pub enum TaskMessage {
+  /// Debug/low-priroity messages
+  Info(LogInfo),
+  /// Soft/resumable problem messages
+  Warning(LogWarning),
+  /// Hard/recoverable problem messages
+  Error(LogError),
+  /// Critical/unrecoverable problem messages
+  Fatal(LogFatal),
+  /// Invalid tasks, work can not begin
+  Invalid(LogInvalid),
 }
 
-
-impl fmt::Display for TaskMessage {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f,
-           "(severity: {}, category: {},\n\twhat: {},\n\tdetails: {})\n",
-           self.severity,
-           self.category,
-           self.what,
-           self.details)
-  }
-}
-impl fmt::Debug for TaskMessage {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f,
-           "(severity: {}, category: {},\n\twhat: {},\n\tdetails: {})\n",
-           self.severity,
-           self.category,
-           self.what,
-           self.details)
-  }
-}
 impl TaskStatus {
   /// Maps the enumeration into the raw ints for the Task store
   pub fn raw(&self) -> i32 {
@@ -103,7 +84,8 @@ impl TaskStatus {
       TaskStatus::Error => -3,
       TaskStatus::Fatal => -4,
       TaskStatus::Invalid => -5,
-      TaskStatus::Blocked(x) | TaskStatus::Queued(x) => x,
+      TaskStatus::Blocked(x) |
+      TaskStatus::Queued(x) => x,
     }
   }
   /// Maps the enumeration into the raw severity string for the Task store logs / frontend reports
@@ -117,8 +99,7 @@ impl TaskStatus {
       TaskStatus::Invalid => "invalid",
       TaskStatus::Blocked(_) => "blocked",
       TaskStatus::Queued(_) => "queued",
-    }
-    .to_string()
+    }.to_string()
   }
   /// Maps from the raw Task store value into the enumeration
   pub fn from_raw(num: i32) -> Self {
@@ -148,6 +129,17 @@ impl TaskStatus {
   }
   /// Returns all raw severity strings as a vector
   pub fn keys() -> Vec<String> {
-    ["no_problem", "warning", "error", "fatal", "invalid", "todo", "blocked", "queued"].iter().map(|&x| x.to_string()).collect::<Vec<_>>()
+    [
+      "no_problem",
+      "warning",
+      "error",
+      "fatal",
+      "invalid",
+      "todo",
+      "blocked",
+      "queued",
+    ].iter()
+      .map(|&x| x.to_string())
+      .collect::<Vec<_>>()
   }
 }

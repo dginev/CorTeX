@@ -29,7 +29,7 @@ use schema::tasks::dsl::*;
 use concerns::{CortexInsertable, CortexDeletable};
 use models;
 use models::{Task, NewTask, Service};
-
+use helpers::{TaskStatus, TaskReport};
 /// The production database postgresql address, set from the .env configuration file
 pub const DEFAULT_DB_ADDRESS: &str = dotenv!("DATABASE_URL");
 /// The test database postgresql address, set from the .env configuration file
@@ -76,31 +76,32 @@ impl Backend {
     Ok(())
   }
 
-  //   /// Insert a vector of `TaskReport` reports into the Task store, also marking their tasks as completed with the correct status code.
-  //   pub fn mark_done(&self, reports: &[TaskReport]) -> Result<(), Error> {
-  //     let trans = try!(self.connection.transaction());
-  //     let insert_log_message = trans.prepare("INSERT INTO logs (taskid, severity, category, what, details) values($1,$2,$3,$4,$5)").unwrap();
-  //     // let insert_log_message_details = trans.prepare("INSERT INTO logdetails (messageid, details) values(?,?)").unwrap();
-  //     for report in reports.iter() {
-  //       let taskid = report.task.id.unwrap();
-  //       trans.execute("UPDATE tasks SET status=$1 WHERE taskid=$2",
-  //                     &[&report.status.raw(), &taskid])
-  //            .unwrap();
-  //       for message in &report.messages {
-  //         if (message.severity == "info") || (message.severity == "status") {
-  //           continue; // Skip info and status information, keep the DB small
-  //         } else {
-  //           // Warnings, Errors and Fatals will get added:
-  //           insert_log_message.query(&[&taskid, &message.severity, &message.category, &message.what, &message.details])
-  //                             .unwrap();
-  //         }
-  //       }
-  //       // TODO: Update dependencies
-  //     }
-  //     trans.set_commit();
-  //     try!(trans.finish());
-  //     Ok(())
-  //   }
+  /// Insert a vector of `TaskReport` reports into the Task store, also marking their tasks as completed with the correct status code.
+  pub fn mark_done(&self, reports: &[TaskReport]) -> Result<(), Error> {
+    try!(self.connection.transaction::<(), Error, _>(|| {
+    //     let insert_log_message = trans.prepare("INSERT INTO logs (taskid, severity, category, what, details) values($1,$2,$3,$4,$5)").unwrap();
+    //     // let insert_log_message_details = trans.prepare("INSERT INTO logdetails (messageid, details) values(?,?)").unwrap();
+    //     for report in reports.iter() {
+    //       let taskid = report.task.id.unwrap();
+    //       trans.execute("UPDATE tasks SET status=$1 WHERE taskid=$2",
+    //                     &[&report.status.raw(), &taskid])
+    //            .unwrap();
+    //       for message in &report.messages {
+    //         if (message.severity == "info") || (message.severity == "status") {
+    //           continue; // Skip info and status information, keep the DB small
+    //         } else {
+    //           // Warnings, Errors and Fatals will get added:
+    //           insert_log_message.query(&[&taskid, &message.severity, &message.category, &message.what, &message.details])
+    //                             .unwrap();
+    //         }
+    //       }
+    //       // TODO: Update dependencies
+    //     }
+    
+      Ok(())
+    }));
+    Ok(())
+  }
 
   //   /// Given a complex selector, of a `Corpus`, `Service`, and the optional `severity`, `category` and `what`
   //   /// mark all matching tasks to be rerun
@@ -199,7 +200,6 @@ impl Backend {
   /// Particularly useful for dispatcher restarts, when all "in progress" tasks need to be invalidated
   pub fn clear_limbo_tasks(&self) -> Result<usize, Error> {
     models::clear_limbo_tasks(&self.connection)
-
   }
 
   //   /// Activates an existing service on a given corpus (via NAME)

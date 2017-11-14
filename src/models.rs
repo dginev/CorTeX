@@ -16,6 +16,11 @@ use diesel::{delete, insert_into, update};
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use schema::tasks;
+use schema::log_infos;
+use schema::log_warnings;
+use schema::log_errors;
+use schema::log_fatals;
+use schema::log_invalids;
 use concerns::{CortexInsertable, CortexDeletable};
 
 
@@ -24,7 +29,7 @@ use concerns::{CortexInsertable, CortexDeletable};
 #[derive(Identifiable, Queryable, AsChangeset, Clone)]
 /// A CorTeX task, for a given corpus-service pair
 pub struct Task {
-  /// optional id (None for mock / yet-to-be-inserted rows)
+  /// task primary key, auto-incremented by postgresql
   pub id: i64,
   /// id of the service owning this task
   pub serviceid: i32,
@@ -138,6 +143,90 @@ impl<'a> NewTask<'a> {
     delete(tasks::table.filter(serviceid.eq(&self.serviceid))).execute(connection)
   }
 }
+
+// Log Messages
+
+#[derive(Identifiable, Queryable, AsChangeset, Clone)]
+/// An info/debug message, as per the `LaTeXML` convention
+pub struct LogInfo {
+  /// task primary key, auto-incremented by postgresql
+  pub id: i64,
+  /// mid-level description (open set)
+  pub category: String,
+  /// low-level description (open set)
+  pub what: String,
+  /// technical details of the message (e.g. localization info)
+  pub details: String,
+}
+#[derive(Identifiable, Queryable, AsChangeset, Clone)]
+/// A warning message, as per the `LaTeXML` convention
+pub struct LogWarning {
+  /// task primary key, auto-incremented by postgresql
+  pub id: i64,
+  /// mid-level description (open set)
+  pub category: String,
+  /// low-level description (open set)
+  pub what: String,
+  /// technical details of the message (e.g. localization info)
+  pub details: String,
+}
+#[derive(Identifiable, Queryable, AsChangeset, Clone)]
+/// An error message, as per the `LaTeXML` convention
+pub struct LogError {
+  /// task primary key, auto-incremented by postgresql
+  pub id: i64,
+  /// mid-level description (open set)
+  pub category: String,
+  /// low-level description (open set)
+  pub what: String,
+  /// technical details of the message (e.g. localization info)
+  pub details: String,
+}
+#[derive(Identifiable, Queryable, AsChangeset, Clone)]
+/// A fatal message, as per the `LaTeXML` convention
+pub struct LogFatal {
+  /// task primary key, auto-incremented by postgresql
+  pub id: i64,
+  /// mid-level description (open set)
+  pub category: String,
+  /// low-level description (open set)
+  pub what: String,
+  /// technical details of the message (e.g. localization info)
+  pub details: String,
+}
+#[derive(Identifiable, Queryable, AsChangeset, Clone)]
+/// An invalid message, as per the `LaTeXML` convention
+pub struct LogInvalid {
+  /// task primary key, auto-incremented by postgresql
+  pub id: i64,
+  /// mid-level description (open set)
+  pub category: String,
+  /// low-level description (open set)
+  pub what: String,
+  /// technical details of the message (e.g. localization info)
+  pub details: String,
+}
+
+// impl fmt::Display for TaskMessage {
+//   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//     write!(f,
+//            "(severity: {}, category: {},\n\twhat: {},\n\tdetails: {})\n",
+//            self.severity,
+//            self.category,
+//            self.what,
+//            self.details)
+//   }
+// }
+// impl fmt::Debug for TaskMessage {
+//   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//     write!(f,
+//            "(severity: {}, category: {},\n\twhat: {},\n\tdetails: {})\n",
+//            self.severity,
+//            self.category,
+//            self.what,
+//            self.details)
+//   }
+// }
 
 
 // Services
