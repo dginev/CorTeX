@@ -57,9 +57,6 @@ pub struct NewTask<'a> {
 
 impl fmt::Display for Task {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    // The `f` value implements the `Write` trait, which is what the
-    // write! macro is expecting. Note that this formatting ignores the
-    // various flags provided to format strings.
     write!(
       f,
       "(id: {}, entry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n",
@@ -73,9 +70,6 @@ impl fmt::Display for Task {
 }
 impl fmt::Debug for Task {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    // The `f` value implements the `Write` trait, which is what the
-    // write! macro is expecting. Note that this formatting ignores the
-    // various flags provided to format strings.
     write!(
       f,
       "(id: {},\n\tentry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n",
@@ -207,6 +201,29 @@ pub struct LogInvalid {
   pub details: String,
 }
 
+/// Log actor trait, assumes already Identifiable (for id())
+pub trait LogRecord {
+  /// Category accessor
+  fn category(&self) -> &str;
+  /// What accessor
+  fn what(&self) -> &str;
+  /// Details accessor
+  fn details(&self) -> &str;
+  /// Severity accessor
+  fn severity(&self) -> &str;
+  /// Implements the fmt::Debug fmt
+  fn debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(
+      f,
+      "{}(category: {},\n\twhat: {},\n\tdetails: {})\n",
+      self.severity(),
+      self.category(),
+      self.what(),
+      self.details()
+    )
+  }
+}
+
 // impl fmt::Display for TaskMessage {
 //   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 //     write!(f,
@@ -217,17 +234,101 @@ pub struct LogInvalid {
 //            self.details)
 //   }
 // }
-// impl fmt::Debug for TaskMessage {
-//   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//     write!(f,
-//            "(severity: {}, category: {},\n\twhat: {},\n\tdetails: {})\n",
-//            self.severity,
-//            self.category,
-//            self.what,
-//            self.details)
-//   }
-// }
-
+impl LogRecord for LogInfo {
+  fn category(&self) -> &str {
+    &self.category
+  }
+  fn what(&self) -> &str {
+    &self.what
+  }
+  fn details(&self) -> &str {
+    &self.details
+  }
+  fn severity(&self) -> &str {
+    "Info"
+  }
+}
+impl fmt::Debug for LogInfo {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    self.debug(f)
+  }
+}
+impl LogRecord for LogWarning {
+  fn category(&self) -> &str {
+    &self.category
+  }
+  fn what(&self) -> &str {
+    &self.what
+  }
+  fn details(&self) -> &str {
+    &self.details
+  }
+  fn severity(&self) -> &str {
+    "Warning"
+  }
+}
+impl fmt::Debug for LogWarning {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    self.debug(f)
+  }
+}
+impl LogRecord for LogError {
+  fn category(&self) -> &str {
+    &self.category
+  }
+  fn what(&self) -> &str {
+    &self.what
+  }
+  fn details(&self) -> &str {
+    &self.details
+  }
+  fn severity(&self) -> &str {
+    "Error"
+  }
+}
+impl fmt::Debug for LogError {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    self.debug(f)
+  }
+}
+impl LogRecord for LogFatal {
+  fn category(&self) -> &str {
+    &self.category
+  }
+  fn what(&self) -> &str {
+    &self.what
+  }
+  fn details(&self) -> &str {
+    &self.details
+  }
+  fn severity(&self) -> &str {
+    "Fatal"
+  }
+}
+impl fmt::Debug for LogFatal {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    self.debug(f)
+  }
+}
+impl LogRecord for LogInvalid {
+  fn category(&self) -> &str {
+    &self.category
+  }
+  fn what(&self) -> &str {
+    &self.what
+  }
+  fn details(&self) -> &str {
+    &self.details
+  }
+  fn severity(&self) -> &str {
+    "Invalid"
+  }
+}
+impl fmt::Debug for LogInvalid {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    self.debug(f)
+  }
+}
 
 // Services
 #[derive(Clone)]
