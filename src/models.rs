@@ -330,6 +330,13 @@ impl LogRecord for NewLogInfo {
     "info"
   }
 }
+impl CortexInsertable for NewLogInfo {
+  fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
+    insert_into(log_infos::table).values(self).execute(
+      connection,
+    )
+  }
+}
 impl LogRecord for LogWarning {
   fn category(&self) -> &str {
     &self.category
@@ -362,6 +369,13 @@ impl LogRecord for NewLogWarning {
   }
   fn severity(&self) -> &str {
     "warning"
+  }
+}
+impl CortexInsertable for NewLogWarning {
+  fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
+    insert_into(log_warnings::table).values(self).execute(
+      connection,
+    )
   }
 }
 impl LogRecord for LogError {
@@ -398,6 +412,13 @@ impl LogRecord for NewLogError {
     "error"
   }
 }
+impl CortexInsertable for NewLogError {
+  fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
+    insert_into(log_errors::table).values(self).execute(
+      connection,
+    )
+  }
+}
 impl LogRecord for LogFatal {
   fn category(&self) -> &str {
     &self.category
@@ -432,6 +453,13 @@ impl LogRecord for NewLogFatal {
     "fatal"
   }
 }
+impl CortexInsertable for NewLogFatal {
+  fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
+    insert_into(log_fatals::table).values(self).execute(
+      connection,
+    )
+  }
+}
 impl LogRecord for LogInvalid {
   fn category(&self) -> &str {
     &self.category
@@ -464,6 +492,13 @@ impl LogRecord for NewLogInvalid {
   }
   fn severity(&self) -> &str {
     "invalid"
+  }
+}
+impl CortexInsertable for NewLogInvalid {
+  fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
+    insert_into(log_invalids::table).values(self).execute(
+      connection,
+    )
   }
 }
 // Services

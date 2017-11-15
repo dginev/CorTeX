@@ -53,7 +53,7 @@ fn task_table_crud() {
 }
 
 #[test]
-fn mark_tasks_and_clear() {
+fn task_lifecycle_test() {
   let backend = backend::testdb();
   // Add 100 tasks, out of which we will mark 17
   let mock_service = Service {
@@ -72,8 +72,8 @@ fn mark_tasks_and_clear() {
     status: TaskStatus::TODO.raw(),
   };
 
-  let pre_cleanup = backend.delete_by(&mock_task, "serviceid");
-  assert_eq!(pre_cleanup, Ok(0));
+  assert!(backend.delete_by(&mock_task, "serviceid").is_ok());
+
   // insert 100 tasks
   for index in 1..101 {
     let indexed_task = NewTask {

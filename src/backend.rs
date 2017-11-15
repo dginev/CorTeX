@@ -14,7 +14,6 @@ extern crate r2d2;
 
 use dotenv::dotenv;
 use std::thread;
-use std::clone::Clone;
 use std::collections::{HashMap, HashSet};
 use regex::Regex;
 use rand::{thread_rng, Rng};
@@ -118,9 +117,7 @@ impl Backend {
         // Clean slate, so proceed to add the new messages
         for message in &report.messages {
           if message.severity() != "status" {
-            // Warnings, Errors and Fatals will get added:
-            // TODO: NEXT UP!
-            // message.create();
+            message.create(&self.connection);
           }
         }
         // TODO: Update dependenct services, when integrated in DB

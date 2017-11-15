@@ -6,10 +6,12 @@
 // except according to those terms.
 
 //! Helper structures and methods for Task
-use std::fmt;
 use regex::Regex;
 use models::{Task, LogInvalid, LogInfo, LogWarning, LogError, LogFatal, LogRecord, NewLogInvalid,
              NewLogInfo, NewLogWarning, NewLogError, NewLogFatal};
+use diesel::pg::PgConnection;
+use diesel::result::Error;
+use concerns::CortexInsertable;
 
 #[derive(Clone, PartialEq, Eq)]
 /// An enumeration of the expected task statuses
@@ -57,7 +59,7 @@ pub struct TaskReport {
   /// the reported processing status
   pub status: TaskStatus,
   /// a vector of `TaskMessage` log entries
-  pub messages: Vec<TaskMessage>,
+  pub messages: Vec<NewTaskMessage>,
 }
 
 #[derive(Clone)]
@@ -266,6 +268,19 @@ impl LogRecord for NewTaskMessage {
     }
   }
 }
+impl CortexInsertable for NewTaskMessage {
+  fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
+    use helpers::NewTaskMessage::*;
+    match *self {
+      Info(ref record) => record.create(connection),
+      Warning(ref record) => record.create(connection),
+      Error(ref record) => record.create(connection),
+      Fatal(ref record) => record.create(connection),
+      Invalid(ref record) => record.create(connection),
+    }
+  }
+}
+
 impl NewTaskMessage {
   /// Instantiates an appropriate insertable LogRecord object based on the raw message components
   pub fn new(severity: String, category: String, what: String, details: String) -> NewTaskMessage {
