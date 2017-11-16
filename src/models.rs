@@ -8,8 +8,10 @@
 //! Backend models and traits for the CorTeX "Task store"
 
 use std::fmt;
+use std::collections::{BTreeMap, HashMap};
 use rand::{thread_rng, Rng};
 use helpers::TaskStatus;
+use rustc_serialize::json::{Json, ToJson};
 
 use diesel::result::Error;
 use diesel::{delete, insert_into, update};
@@ -523,6 +525,42 @@ pub struct Service {
   /// mark "true" if unsure
   pub complex: bool,
 }
+
+#[derive(RustcDecodable, RustcEncodable, Clone, Debug)]
+/// A minimal description of a document collection. Defined by a name, path and simple/complex file system setup.
+pub struct Corpus {
+  /// optional id (None for mock / yet-to-be-inserted rows)
+  pub id: Option<i32>,
+  /// a human-readable name for this corpus
+  pub name: String,
+  /// file system path to corpus root
+  /// (a corpus is held in a single top-level directory)
+  pub path: String,
+  /// are we using multiple files to represent a document entry?
+  /// (if unsure, always use "true")
+  pub complex: bool,
+}
+impl Default for Corpus {
+  fn default() -> Self {
+    Corpus {
+      id: None,
+      name: "mock corpus".to_string(),
+      path: ".".to_string(),
+      complex: true,
+    }
+  }
+}
+impl ToJson for Corpus {
+  fn to_json(&self) -> Json {
+    let mut map = BTreeMap::new();
+    map.insert("id".to_string(), self.id.to_json());
+    map.insert("path".to_string(), self.path.to_json());
+    map.insert("name".to_string(), self.name.to_json());
+    map.insert("complex".to_string(), self.complex.to_json());
+    Json::Object(map)
+  }
+}
+
 
 // Aggregate methods, to be used by backend
 

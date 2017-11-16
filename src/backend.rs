@@ -27,8 +27,9 @@ use schema::{tasks, log_infos, log_warnings, log_errors, log_fatals, log_invalid
 // use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
 use concerns::{CortexInsertable, CortexDeletable};
 use models;
-use models::{Task, NewTask, Service, LogRecord};
+use models::{Task, NewTask, Service, Corpus, LogRecord};
 use helpers::{TaskStatus, TaskReport};
+
 /// The production database postgresql address, set from the .env configuration file
 pub const DEFAULT_DB_ADDRESS: &str = dotenv!("DATABASE_URL");
 /// The test database postgresql address, set from the .env configuration file
@@ -127,72 +128,65 @@ impl Backend {
     Ok(())
   }
 
-  //   /// Given a complex selector, of a `Corpus`, `Service`, and the optional `severity`, `category` and `what`
-  //   /// mark all matching tasks to be rerun
-  //   pub fn mark_rerun(&self, corpus: &Corpus, service: &Service, severity: Option<String>, category: Option<String>, what: Option<String>) -> Result<(), Error> {
+  /// Given a complex selector, of a `Corpus`, `Service`, and the optional `severity`, `category` and `what`
+  /// mark all matching tasks to be rerun
+  pub fn mark_rerun(
+    &self,
+    corpus: &Corpus,
+    service: &Service,
+    severity: Option<String>,
+    category: Option<String>,
+    what: Option<String>,
+  ) -> Result<(), Error> {
 
-  //     let mut rng = thread_rng();
-  //     let mark_rng: u16 = rng.gen();
-  //     let mark: i32 = !(mark_rng as i32);
+    // let mut rng = thread_rng();
+    // let mark_rng: u16 = rng.gen();
+    // let mark: i32 = !(mark_rng as i32);
 
-  //     // First, mark as blocked all of the tasks in the chosen scope, using a special mark
-  //     match severity {
-  //       Some(severity) => {
-  //         match category {
-  //           Some(category) => {
-  //             match what {
-  //               Some(what) => {
-  //                 // All tasks in a "what" class
-  //                 try!(self.connection
-  //                          .execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and taskid in (select distinct(taskid) from logs where severity=$4 and category=$5 and what=$6)",
-  //                                   &[&mark, &corpus.id.unwrap(), &service.id.unwrap(), &severity, &category, &what]));
-  //               }
-  //               None => {
-  //                 // All tasks in a category
-  //                 try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and taskid in (select distinct(taskid) from logs where severity=$4 and category=$5)",
-  //                                              &[&mark, &corpus.id.unwrap(), &service.id.unwrap(), &severity, &category]));
-  //               }
-  //             };
-  //           }
-  //           None => {
-  //             // All tasks in a certain status
-  //             let status: i32 = TaskStatus::from_key(&severity).raw();
-  //             try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and status=$4",
-  //                                          &[&mark, &corpus.id.unwrap(), &service.id.unwrap(), &status]));
-  //           }
-  //         }
-  //       }
-  //       None => {
-  //         // Entire corpus
-  //         try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3",
-  //                                      &[&mark, &corpus.id.unwrap(), &service.id.unwrap()]));
-  //       }
-  //     };
+    // // First, mark as blocked all of the tasks in the chosen scope, using a special mark
+    // match severity {
+    //   Some(severity) => {
+    //     match category {
+    //       Some(category) => {
+    //         match what {
+    //           Some(what) => {
+    //             // All tasks in a "what" class
+    //             try!(self.connection
+    //                       .execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and taskid in (select distinct(taskid) from logs where severity=$4 and category=$5 and what=$6)",
+    //                               &[&mark, &corpus.id.unwrap(), &service.id.unwrap(), &severity, &category, &what]));
+    //           }
+    //           None => {
+    //             // All tasks in a category
+    //             try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and taskid in (select distinct(taskid) from logs where severity=$4 and category=$5)",
+    //                                           &[&mark, &corpus.id.unwrap(), &service.id.unwrap(), &severity, &category]));
+    //           }
+    //         };
+    //       }
+    //       None => {
+    //         // All tasks in a certain status
+    //         let status: i32 = TaskStatus::from_key(&severity).raw();
+    //         try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and status=$4",
+    //                                       &[&mark, &corpus.id.unwrap(), &service.id.unwrap(), &status]));
+    //       }
+    //     }
+    //   }
+    //   None => {
+    //     // Entire corpus
+    //     try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3",
+    //                                   &[&mark, &corpus.id.unwrap(), &service.id.unwrap()]));
+    //   }
+    // };
 
-  //     // Next, delete all logs for the blocked tasks.
-  //     // Note that if we are using a negative blocking status, this query should get sped up via an "Index Scan using log_taskid on logs"
-  //     try!(self.connection.execute("DELETE from logs USING tasks WHERE logs.taskid=tasks.taskid and tasks.status=$1 and tasks.corpusid=$2 and tasks.serviceid=$3;",
-  //                                  &[&mark, &corpus.id.unwrap(), &service.id.unwrap()]));
+    // // Next, delete all logs for the blocked tasks.
+    // // Note that if we are using a negative blocking status, this query should get sped up via an "Index Scan using log_taskid on logs"
+    // try!(self.connection.execute("DELETE from logs USING tasks WHERE logs.taskid=tasks.taskid and tasks.status=$1 and tasks.corpusid=$2 and tasks.serviceid=$3;",
+    //                               &[&mark, &corpus.id.unwrap(), &service.id.unwrap()]));
 
-  //     // Lastly, switch all blocked tasks to "queued", and complete the rerun mark pass.
-  //     try!(self.connection.execute("UPDATE tasks set status=$1 where status=$2 and corpusid=$3 and serviceid=$4;",
-  //                                  &[&TaskStatus::TODO.raw(), &mark, &corpus.id.unwrap(), &service.id.unwrap()]));
-  //     Ok(())
-  //   }
-
-  // /// Generic sync method, attempting to obtain the DB record for a given mock Task store datum
-  // /// applicable for any struct implementing the `CortexORM` trait
-  // /// (for example `Corpus`, `Service`, `Task`)
-  // pub fn sync<D: CortexORM + Clone>(&self, d: &D) -> Result<D, Box<Error>> {
-  //   let synced = match d.get_id() {
-  //     Some(_) => try!(d.select_by_id(&self.connection)),
-  //     None => try!(d.select_by_key(&self.connection)),
-  //   };
-  //   match synced {
-  //     Some(synced_d) => Ok(synced_d),
-  //     None => Ok(d.clone()),
-  //   }
-  // }
+    // // Lastly, switch all blocked tasks to "queued", and complete the rerun mark pass.
+    // try!(self.connection.execute("UPDATE tasks set status=$1 where status=$2 and corpusid=$3 and serviceid=$4;",
+    //                               &[&TaskStatus::TODO.raw(), &mark, &corpus.id.unwrap(), &service.id.unwrap()]));
+    Ok(())
+  }
 
   /// Generic delete method, uses primary "id" field
   pub fn delete<Model: CortexDeletable>(&self, object: &Model) -> Result<usize, Error> {
