@@ -78,6 +78,16 @@ pub enum TaskMessage {
   Invalid(LogInvalid),
 }
 impl LogRecord for TaskMessage {
+  fn task_id(&self) -> i64 {
+    use helpers::TaskMessage::*;
+    match *self {
+      Info(ref record) => record.task_id(),
+      Warning(ref record) => record.task_id(),
+      Error(ref record) => record.task_id(),
+      Fatal(ref record) => record.task_id(),
+      Invalid(ref record) => record.task_id(),
+    }
+  }
   fn category(&self) -> &str {
     use helpers::TaskMessage::*;
     match *self {
@@ -216,6 +226,16 @@ pub enum NewTaskMessage {
   Invalid(NewLogInvalid),
 }
 impl LogRecord for NewTaskMessage {
+  fn task_id(&self) -> i64 {
+    use helpers::NewTaskMessage::*;
+    match *self {
+      Info(ref record) => record.task_id(),
+      Warning(ref record) => record.task_id(),
+      Error(ref record) => record.task_id(),
+      Fatal(ref record) => record.task_id(),
+      Invalid(ref record) => record.task_id(),
+    }
+  }
   fn category(&self) -> &str {
     use helpers::NewTaskMessage::*;
     match *self {
@@ -283,32 +303,43 @@ impl CortexInsertable for NewTaskMessage {
 
 impl NewTaskMessage {
   /// Instantiates an appropriate insertable LogRecord object based on the raw message components
-  pub fn new(severity: String, category: String, what: String, details: String) -> NewTaskMessage {
+  pub fn new(
+    task_id: i64,
+    severity: String,
+    category: String,
+    what: String,
+    details: String,
+  ) -> NewTaskMessage {
     match severity.as_str() {
       "info" => NewTaskMessage::Info(NewLogInfo {
-        category: category,
-        what: what,
-        details: details,
+        task_id,
+        category,
+        what,
+        details,
       }),
       "warning" => NewTaskMessage::Warning(NewLogWarning {
-        category: category,
-        what: what,
-        details: details,
+        task_id,
+        category,
+        what,
+        details,
       }),
       "error" => NewTaskMessage::Error(NewLogError {
-        category: category,
-        what: what,
-        details: details,
+        task_id,
+        category,
+        what,
+        details,
       }),
       "fatal" => NewTaskMessage::Fatal(NewLogFatal {
-        category: category,
-        what: what,
-        details: details,
+        task_id,
+        category,
+        what,
+        details,
       }),
       _ => NewTaskMessage::Info(NewLogInfo {
-        category: category,
-        what: what,
-        details: details,
+        task_id,
+        category,
+        what,
+        details,
       }), // unknown severity will be treated as info
     }
   }
@@ -316,7 +347,7 @@ impl NewTaskMessage {
 
 /// Parses a log string which follows the LaTeXML convention
 /// (described at http://dlmf.nist.gov/LaTeXML/manual/errorcodes/index.html)
-pub fn parse_log(log: String) -> Vec<NewTaskMessage> {
+pub fn parse_log(task_id: i64, log: String) -> Vec<NewTaskMessage> {
   let mut messages: Vec<NewTaskMessage> = Vec::new();
   let mut in_details_mode = false;
 
@@ -366,6 +397,7 @@ pub fn parse_log(log: String) -> Vec<NewTaskMessage> {
         };
 
         let message = NewTaskMessage::new(
+          task_id,
           truncated_severity,
           truncated_category,
           truncated_what,

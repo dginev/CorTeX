@@ -27,7 +27,7 @@ use schema::{tasks, log_infos, log_warnings, log_errors, log_fatals, log_invalid
 // use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
 use concerns::{CortexInsertable, CortexDeletable};
 use models;
-use models::{Task, NewTask, Service, Corpus, LogRecord};
+use models::{Task, NewTask, Service, NewService, Corpus, NewCorpus, LogRecord, LogInfo, MarkRerun};
 use helpers::{TaskStatus, TaskReport};
 
 /// The production database postgresql address, set from the .env configuration file
@@ -92,33 +92,33 @@ impl Backend {
         // Next, delete all previous log messages for this task.id
         try!(
           delete(log_infos::table)
-            .filter(log_infos::dsl::taskid.eq(report.task.id))
+            .filter(log_infos::dsl::task_id.eq(report.task.id))
             .execute(&self.connection)
         );
         try!(
           delete(log_warnings::table)
-            .filter(log_warnings::dsl::taskid.eq(report.task.id))
+            .filter(log_warnings::dsl::task_id.eq(report.task.id))
             .execute(&self.connection)
         );
         try!(
           delete(log_errors::table)
-            .filter(log_errors::dsl::taskid.eq(report.task.id))
+            .filter(log_errors::dsl::task_id.eq(report.task.id))
             .execute(&self.connection)
         );
         try!(
           delete(log_fatals::table)
-            .filter(log_fatals::dsl::taskid.eq(report.task.id))
+            .filter(log_fatals::dsl::task_id.eq(report.task.id))
             .execute(&self.connection)
         );
         try!(
           delete(log_invalids::table)
-            .filter(log_invalids::dsl::taskid.eq(report.task.id))
+            .filter(log_invalids::dsl::task_id.eq(report.task.id))
             .execute(&self.connection)
         );
         // Clean slate, so proceed to add the new messages
         for message in &report.messages {
           if message.severity() != "status" {
-            message.create(&self.connection);
+            try!(message.create(&self.connection));
           }
         }
         // TODO: Update dependenct services, when integrated in DB
@@ -139,43 +139,64 @@ impl Backend {
     what: Option<String>,
   ) -> Result<(), Error> {
 
-    // let mut rng = thread_rng();
-    // let mark_rng: u16 = rng.gen();
-    // let mark: i32 = !(mark_rng as i32);
+    let mut rng = thread_rng();
+    let mark_rng: u16 = rng.gen();
+    let mark: i32 = !(mark_rng as i32);
 
-    // // First, mark as blocked all of the tasks in the chosen scope, using a special mark
-    // match severity {
-    //   Some(severity) => {
-    //     match category {
-    //       Some(category) => {
-    //         match what {
-    //           Some(what) => {
-    //             // All tasks in a "what" class
-    //             try!(self.connection
-    //                       .execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and taskid in (select distinct(taskid) from logs where severity=$4 and category=$5 and what=$6)",
-    //                               &[&mark, &corpus.id.unwrap(), &service.id.unwrap(), &severity, &category, &what]));
-    //           }
-    //           None => {
-    //             // All tasks in a category
-    //             try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and taskid in (select distinct(taskid) from logs where severity=$4 and category=$5)",
-    //                                           &[&mark, &corpus.id.unwrap(), &service.id.unwrap(), &severity, &category]));
-    //           }
-    //         };
-    //       }
-    //       None => {
-    //         // All tasks in a certain status
-    //         let status: i32 = TaskStatus::from_key(&severity).raw();
-    //         try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and status=$4",
-    //                                       &[&mark, &corpus.id.unwrap(), &service.id.unwrap(), &status]));
-    //       }
-    //     }
-    //   }
-    //   None => {
-    //     // Entire corpus
-    //     try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3",
-    //                                   &[&mark, &corpus.id.unwrap(), &service.id.unwrap()]));
-    //   }
-    // };
+    // First, mark as blocked all of the tasks in the chosen scope, using a special mark
+    match severity {
+      Some(severity) => {
+        match category {
+          Some(category) => {
+            match what {
+              Some(what) => {
+                // All tasks in a "what" class
+                match severity.as_str() {
+                  // "warning" => {
+                  //   LogWarning::mark_rerun_by_what(mark, corpus.id, service.id, category, what)
+                  // }
+                  // "error" => {
+                  //   LogError::mark_rerun_by_what(mark, corpus.id, service.id, category, what)
+                  // }
+                  // "fatal" => {
+                  //   LogFatal::mark_rerun_by_what(mark, corpus.id, service.id, category, what)
+                  // }
+                  // "invalid" => {
+                  //   LogInvalid::mark_rerun_by_what(mark, corpus.id, service.id, category, what)
+                  // }
+                  _ => {
+                    LogInfo::mark_rerun_by_what(
+                      mark,
+                      corpus.id,
+                      service.id,
+                      &category,
+                      &what,
+                      &self.connection,
+                    );
+                  }
+                }
+              }
+              None => {
+                //             // All tasks in a category
+                //             try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and taskid in (select distinct(taskid) from logs where severity=$4 and category=$5)",
+                //                                           &[&mark, &corpus.id.unwrap(), &service.id.unwrap(), &severity, &category]));
+              }
+            };
+          }
+          None => {
+            // All tasks in a certain status
+            //         let status: i32 = TaskStatus::from_key(&severity).raw();
+            //         try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and status=$4",
+            //                                       &[&mark, &corpus.id.unwrap(), &service.id.unwrap(), &status]));
+          }
+        }
+      }
+      None => {
+        // Entire corpus
+        //     try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3",
+        //                                   &[&mark, &corpus.id.unwrap(), &service.id.unwrap()]));
+      }
+    };
 
     // // Next, delete all logs for the blocked tasks.
     // // Note that if we are using a negative blocking status, this query should get sped up via an "Index Scan using log_taskid on logs"

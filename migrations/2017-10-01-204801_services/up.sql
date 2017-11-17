@@ -1,5 +1,5 @@
 CREATE TABLE services (
-  serviceid SERIAL PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   name varchar(200) NOT NULL,
   version real NOT NULL,
   inputformat varchar(20) NOT NULL,

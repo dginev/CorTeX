@@ -25,8 +25,8 @@ fn task_table_crud() {
   };
   let mock_task = NewTask {
     entry: "mock_task",
-    serviceid: mock_service.id,
-    corpusid: 1,
+    service_id: mock_service.id,
+    corpus_id: 1,
     status: TaskStatus::TODO.raw(),
   };
   // Delete any mock tasks
@@ -67,12 +67,12 @@ fn task_lifecycle_test() {
   };
   let mock_task = NewTask {
     entry: "mark_task",
-    serviceid: mock_service.id,
-    corpusid: 1,
+    service_id: mock_service.id,
+    corpus_id: 1,
     status: TaskStatus::TODO.raw(),
   };
 
-  assert!(backend.delete_by(&mock_task, "serviceid").is_ok());
+  assert!(backend.delete_by(&mock_task, "service_id").is_ok());
 
   // insert 100 tasks
   for index in 1..101 {
@@ -109,6 +109,6 @@ fn task_lifecycle_test() {
     .get_result(&backend.connection);
   assert_eq!(marked_in_db_2, Ok(0));
 
-  let post_cleanup = backend.delete_by(&mock_task, "serviceid");
+  let post_cleanup = backend.delete_by(&mock_task, "service_id");
   assert_eq!(post_cleanup, Ok(100));
 }

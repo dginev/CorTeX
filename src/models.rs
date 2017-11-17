@@ -18,6 +18,8 @@ use diesel::{delete, insert_into, update};
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use schema::tasks;
+use schema::services;
+use schema::corpora;
 use schema::log_infos;
 use schema::log_warnings;
 use schema::log_errors;
@@ -28,60 +30,33 @@ use concerns::{CortexInsertable, CortexDeletable};
 
 // Tasks
 
-#[derive(Identifiable, Queryable, AsChangeset, Clone)]
+#[derive(Identifiable, Queryable, AsChangeset, Clone, Debug)]
 /// A CorTeX task, for a given corpus-service pair
 pub struct Task {
   /// task primary key, auto-incremented by postgresql
   pub id: i64,
   /// id of the service owning this task
-  pub serviceid: i32,
+  pub service_id: i32,
   /// id of the corpus hosting this task
-  pub corpusid: i32,
+  pub corpus_id: i32,
   /// current processing status of this task
   pub status: i32,
   /// entry path on the file system
   pub entry: String,
 }
 
-#[derive(Insertable)]
+#[derive(Insertable, Debug)]
 #[table_name = "tasks"]
 /// A new task, to be inserted into CorTeX
 pub struct NewTask<'a> {
   /// id of the service owning this task
-  pub serviceid: i32,
+  pub service_id: i32,
   /// id of the corpus hosting this task
-  pub corpusid: i32,
+  pub corpus_id: i32,
   /// current processing status of this task
   pub status: i32,
   /// entry path on the file system
   pub entry: &'a str,
-}
-
-impl fmt::Display for Task {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(
-      f,
-      "(id: {}, entry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n",
-      self.id,
-      self.entry,
-      self.serviceid,
-      self.corpusid,
-      self.status
-    )
-  }
-}
-impl fmt::Debug for Task {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(
-      f,
-      "(id: {},\n\tentry: {},\n\tserviceid: {},\n\tcorpusid: {},\n\t status: {})\n",
-      self.id,
-      self.entry,
-      self.serviceid,
-      self.corpusid,
-      self.status
-    )
-  }
 }
 
 impl<'a> CortexInsertable for NewTask<'a> {
@@ -94,7 +69,7 @@ impl CortexDeletable for Task {
   fn delete_by(&self, connection: &PgConnection, field: &str) -> Result<usize, Error> {
     match field {
       "entry" => self.delete_by_entry(connection),
-      "serviceid" => self.delete_by_serviceid(connection),
+      "service_id" => self.delete_by_service_id(connection),
       "id" => self.delete_by_id(connection),
       _ => Err(Error::QueryBuilderError(
         format!("unknown Task model field: {}", field).into(),
@@ -107,9 +82,9 @@ impl Task {
     use schema::tasks::dsl::entry;
     delete(tasks::table.filter(entry.eq(&self.entry))).execute(connection)
   }
-  fn delete_by_serviceid(&self, connection: &PgConnection) -> Result<usize, Error> {
-    use schema::tasks::dsl::serviceid;
-    delete(tasks::table.filter(serviceid.eq(&self.serviceid))).execute(connection)
+  fn delete_by_service_id(&self, connection: &PgConnection) -> Result<usize, Error> {
+    use schema::tasks::dsl::service_id;
+    delete(tasks::table.filter(service_id.eq(&self.service_id))).execute(connection)
   }
   fn delete_by_id(&self, connection: &PgConnection) -> Result<usize, Error> {
     use schema::tasks::dsl::id;
@@ -121,7 +96,7 @@ impl<'a> CortexDeletable for NewTask<'a> {
   fn delete_by(&self, connection: &PgConnection, field: &str) -> Result<usize, Error> {
     match field {
       "entry" => self.delete_by_entry(connection),
-      "serviceid" => self.delete_by_serviceid(connection),
+      "service_id" => self.delete_by_service_id(connection),
       _ => Err(Error::QueryBuilderError(
         format!("unknown Task model field: {}", field).into(),
       )),
@@ -134,19 +109,22 @@ impl<'a> NewTask<'a> {
     use schema::tasks::dsl::entry;
     delete(tasks::table.filter(entry.eq(&self.entry))).execute(connection)
   }
-  fn delete_by_serviceid(&self, connection: &PgConnection) -> Result<usize, Error> {
-    use schema::tasks::dsl::serviceid;
-    delete(tasks::table.filter(serviceid.eq(&self.serviceid))).execute(connection)
+  fn delete_by_service_id(&self, connection: &PgConnection) -> Result<usize, Error> {
+    use schema::tasks::dsl::service_id;
+    delete(tasks::table.filter(service_id.eq(&self.service_id))).execute(connection)
   }
 }
 
 // Log Messages
 
-#[derive(Identifiable, Queryable, AsChangeset, Clone)]
+#[derive(Identifiable, Queryable, AsChangeset, Associations, Clone)]
+#[belongs_to(Task)]
 /// An info/debug message, as per the `LaTeXML` convention
 pub struct LogInfo {
   /// task primary key, auto-incremented by postgresql
   pub id: i64,
+  /// owner task's id
+  pub task_id: i64,
   /// mid-level description (open set)
   pub category: String,
   /// low-level description (open set)
@@ -158,6 +136,8 @@ pub struct LogInfo {
 #[table_name = "log_infos"]
 /// A new, insertable, info/debug message
 pub struct NewLogInfo {
+  /// owner task's id
+  pub task_id: i64,
   /// mid-level description (open set)
   pub category: String,
   /// low-level description (open set)
@@ -171,6 +151,8 @@ pub struct NewLogInfo {
 pub struct LogWarning {
   /// task primary key, auto-incremented by postgresql
   pub id: i64,
+  /// owner task's id
+  pub task_id: i64,
   /// mid-level description (open set)
   pub category: String,
   /// low-level description (open set)
@@ -182,6 +164,8 @@ pub struct LogWarning {
 #[table_name = "log_warnings"]
 /// A new, insertable, warning message
 pub struct NewLogWarning {
+  /// owner task's id
+  pub task_id: i64,
   /// mid-level description (open set)
   pub category: String,
   /// low-level description (open set)
@@ -195,6 +179,8 @@ pub struct NewLogWarning {
 pub struct LogError {
   /// task primary key, auto-incremented by postgresql
   pub id: i64,
+  /// owner task's id
+  pub task_id: i64,
   /// mid-level description (open set)
   pub category: String,
   /// low-level description (open set)
@@ -206,6 +192,8 @@ pub struct LogError {
 #[table_name = "log_errors"]
 /// A new, insertable, error message
 pub struct NewLogError {
+  /// owner task's id
+  pub task_id: i64,
   /// mid-level description (open set)
   pub category: String,
   /// low-level description (open set)
@@ -219,6 +207,8 @@ pub struct NewLogError {
 pub struct LogFatal {
   /// task primary key, auto-incremented by postgresql
   pub id: i64,
+  /// owner task's id
+  pub task_id: i64,
   /// mid-level description (open set)
   pub category: String,
   /// low-level description (open set)
@@ -232,6 +222,8 @@ pub struct LogFatal {
 pub struct NewLogFatal {
   /// mid-level description (open set)
   pub category: String,
+  /// owner task's id
+  pub task_id: i64,
   /// low-level description (open set)
   pub what: String,
   /// technical details of the message (e.g. localization info)
@@ -244,6 +236,8 @@ pub struct NewLogFatal {
 pub struct LogInvalid {
   /// task primary key, auto-incremented by postgresql
   pub id: i64,
+  /// owner task's id
+  pub task_id: i64,
   /// mid-level description (open set)
   pub category: String,
   /// low-level description (open set)
@@ -255,6 +249,8 @@ pub struct LogInvalid {
 #[table_name = "log_invalids"]
 /// A new, insertable, invalid message
 pub struct NewLogInvalid {
+  /// owner task's id
+  pub task_id: i64,
   /// mid-level description (open set)
   pub category: String,
   /// low-level description (open set)
@@ -265,6 +261,8 @@ pub struct NewLogInvalid {
 
 /// Log actor trait, assumes already Identifiable (for id())
 pub trait LogRecord {
+  /// Owner Task's id accessor
+  fn task_id(&self) -> i64;
   /// Category accessor
   fn category(&self) -> &str;
   /// What accessor
@@ -299,6 +297,9 @@ impl fmt::Display for LogRecord {
 }
 
 impl LogRecord for LogInfo {
+  fn task_id(&self) -> i64 {
+    self.task_id
+  }
   fn category(&self) -> &str {
     &self.category
   }
@@ -316,6 +317,9 @@ impl LogRecord for LogInfo {
   }
 }
 impl LogRecord for NewLogInfo {
+  fn task_id(&self) -> i64 {
+    self.task_id
+  }
   fn category(&self) -> &str {
     &self.category
   }
@@ -340,6 +344,9 @@ impl CortexInsertable for NewLogInfo {
   }
 }
 impl LogRecord for LogWarning {
+  fn task_id(&self) -> i64 {
+    self.task_id
+  }
   fn category(&self) -> &str {
     &self.category
   }
@@ -357,6 +364,9 @@ impl LogRecord for LogWarning {
   }
 }
 impl LogRecord for NewLogWarning {
+  fn task_id(&self) -> i64 {
+    self.task_id
+  }
   fn category(&self) -> &str {
     &self.category
   }
@@ -381,6 +391,9 @@ impl CortexInsertable for NewLogWarning {
   }
 }
 impl LogRecord for LogError {
+  fn task_id(&self) -> i64 {
+    self.task_id
+  }
   fn category(&self) -> &str {
     &self.category
   }
@@ -398,6 +411,9 @@ impl LogRecord for LogError {
   }
 }
 impl LogRecord for NewLogError {
+  fn task_id(&self) -> i64 {
+    self.task_id
+  }
   fn category(&self) -> &str {
     &self.category
   }
@@ -422,6 +438,9 @@ impl CortexInsertable for NewLogError {
   }
 }
 impl LogRecord for LogFatal {
+  fn task_id(&self) -> i64 {
+    self.task_id
+  }
   fn category(&self) -> &str {
     &self.category
   }
@@ -439,6 +458,9 @@ impl LogRecord for LogFatal {
   }
 }
 impl LogRecord for NewLogFatal {
+  fn task_id(&self) -> i64 {
+    self.task_id
+  }
   fn category(&self) -> &str {
     &self.category
   }
@@ -463,6 +485,9 @@ impl CortexInsertable for NewLogFatal {
   }
 }
 impl LogRecord for LogInvalid {
+  fn task_id(&self) -> i64 {
+    self.task_id
+  }
   fn category(&self) -> &str {
     &self.category
   }
@@ -480,6 +505,9 @@ impl LogRecord for LogInvalid {
   }
 }
 impl LogRecord for NewLogInvalid {
+  fn task_id(&self) -> i64 {
+    self.task_id
+  }
   fn category(&self) -> &str {
     &self.category
   }
@@ -504,10 +532,10 @@ impl CortexInsertable for NewLogInvalid {
   }
 }
 // Services
-#[derive(Clone)]
+#[derive(Identifiable, Queryable, AsChangeset, Clone, Debug)]
 /// A `CorTeX` processing service
 pub struct Service {
-  /// optional id (None for mock / yet-to-be-inserted rows)
+  /// auto-incremented postgres id
   pub id: i32,
   /// a human-readable name for this service
   pub name: String,
@@ -525,12 +553,33 @@ pub struct Service {
   /// mark "true" if unsure
   pub complex: bool,
 }
+/// Insertable struct for `Service`
+#[derive(Insertable, Clone, Debug)]
+#[table_name = "services"]
+pub struct NewService {
+  /// a human-readable name for this service
+  pub name: String,
+  /// a floating-point number to mark the current version (e.g. 0.01)
+  pub version: f32,
+  /// the expected input format for this service (e.g. tex)
+  pub inputformat: String,
+  /// the produced output format by this service (e.g. html)
+  pub outputformat: String,
+  // pub xpath : String,
+  // pub resource : String,
+  /// prerequisite input conversion service, if any
+  pub inputconverter: Option<String>,
+  /// is this service requiring more than the main textual content of a document?
+  /// mark "true" if unsure
+  pub complex: bool,
+}
 
-#[derive(RustcDecodable, RustcEncodable, Clone, Debug)]
+#[derive(Identifiable, Queryable, AsChangeset, Clone, Debug)]
+#[table_name = "corpora"]
 /// A minimal description of a document collection. Defined by a name, path and simple/complex file system setup.
 pub struct Corpus {
-  /// optional id (None for mock / yet-to-be-inserted rows)
-  pub id: Option<i32>,
+  /// auto-incremented postgres id
+  pub id: i32,
   /// a human-readable name for this corpus
   pub name: String,
   /// file system path to corpus root
@@ -540,10 +589,22 @@ pub struct Corpus {
   /// (if unsure, always use "true")
   pub complex: bool,
 }
-impl Default for Corpus {
+/// Insertable `Corpus` struct
+#[derive(Insertable)]
+#[table_name = "corpora"]
+pub struct NewCorpus {
+  /// a human-readable name for this corpus
+  pub name: String,
+  /// file system path to corpus root
+  /// (a corpus is held in a single top-level directory)
+  pub path: String,
+  /// are we using multiple files to represent a document entry?
+  /// (if unsure, always use "true")
+  pub complex: bool,
+}
+impl Default for NewCorpus {
   fn default() -> Self {
-    Corpus {
-      id: None,
+    NewCorpus {
       name: "mock corpus".to_string(),
       path: ".".to_string(),
       complex: true,
@@ -570,7 +631,7 @@ pub fn fetch_tasks(
   queue_size: usize,
   connection: &PgConnection,
 ) -> Result<Vec<Task>, Error> {
-  use schema::tasks::dsl::{serviceid, status};
+  use schema::tasks::dsl::{service_id, status};
   let mut rng = thread_rng();
   let mark: u16 = 1 + rng.gen::<u16>();
 
@@ -579,7 +640,7 @@ pub fn fetch_tasks(
     let tasks_for_update = try!(
       tasks::table
         .for_update()
-        .filter(serviceid.eq(service.id))
+        .filter(service_id.eq(service.id))
         .filter(status.eq(TaskStatus::TODO.raw()))
         .limit(queue_size as i64)
         .load(connection)
@@ -607,4 +668,37 @@ pub fn clear_limbo_tasks(connection: &PgConnection) -> Result<usize, Error> {
     .filter(status.gt(&TaskStatus::TODO.raw()))
     .set(status.eq(&TaskStatus::TODO.raw()))
     .execute(connection)
+}
+
+/// Task reruns by a variety of selector granularity
+pub trait MarkRerun {
+  /// Most-specific rerun query, via both category and what filter
+  fn mark_rerun_by_what(
+    mark: i32,
+    corpus_id: i32,
+    service_id: i32,
+    category: &str,
+    what: &str,
+    connection: &PgConnection,
+  ) -> Result<usize, Error>;
+}
+impl MarkRerun for LogInfo {
+  fn mark_rerun_by_what(
+    mark: i32,
+    corpus_id: i32,
+    service_id: i32,
+    category: &str,
+    what: &str,
+    connection: &PgConnection,
+  ) -> Result<usize, Error> {
+    //   update(tasks::table.inner_join(log_infos::table))
+    //     .filter(corpus_id.eq(&corpus_id))
+    //     .filter(service_id.eq(&service_id))
+    //     .filter(log_infos::category.eq(category))
+    //     .filter(log_infos::what.eq(what))
+    //     .set(status.eq(mark))
+    //     .execute(connection)
+    // }
+    Ok(0)
+  }
 }
