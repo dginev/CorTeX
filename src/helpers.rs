@@ -306,18 +306,12 @@ impl NewTaskMessage {
   /// Instantiates an appropriate insertable LogRecord object based on the raw message components
   pub fn new(
     task_id: i64,
-    severity: String,
+    severity: &str,
     category: String,
     what: String,
     details: String,
   ) -> NewTaskMessage {
-    match severity.as_str() {
-      "info" => NewTaskMessage::Info(NewLogInfo {
-        task_id,
-        category,
-        what,
-        details,
-      }),
+    match severity.to_lowercase().as_str() {
       "warning" => NewTaskMessage::Warning(NewLogWarning {
         task_id,
         category,
@@ -346,9 +340,9 @@ impl NewTaskMessage {
   }
 }
 
-/// Parses a log string which follows the LaTeXML convention
-/// (described at http://dlmf.nist.gov/LaTeXML/manual/errorcodes/index.html)
-pub fn parse_log(task_id: i64, log: String) -> Vec<NewTaskMessage> {
+/// Parses a log string which follows the `LaTeXML` convention
+/// (described at [the Manual](http://dlmf.nist.gov/LaTeXML/manual/errorcodes/index.html))
+pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
   let mut messages: Vec<NewTaskMessage> = Vec::new();
   let mut in_details_mode = false;
 
@@ -399,7 +393,7 @@ pub fn parse_log(task_id: i64, log: String) -> Vec<NewTaskMessage> {
 
         let message = NewTaskMessage::new(
           task_id,
-          truncated_severity,
+          &truncated_severity,
           truncated_category,
           truncated_what,
           truncated_details,
@@ -441,7 +435,7 @@ fn utf_truncate(input: &mut String, maxsize: usize) {
 pub fn random_mark() -> i32 {
   let mut rng = thread_rng();
   let mark_rng: u16 = rng.gen();
-  mark_rng as i32
+  i32::from(mark_rng)
 }
 
 /// Helper for generating a random i32 in a range, to avoid loading the rng crate + boilerplate

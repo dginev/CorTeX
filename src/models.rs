@@ -5,7 +5,7 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Backend models and traits for the CorTeX "Task store"
+//! Backend models and traits for the `CorTeX` "Task store"
 
 use std::fmt;
 use std::collections::BTreeMap;
@@ -31,7 +31,7 @@ use concerns::{CortexInsertable, CortexDeletable};
 // Tasks
 
 #[derive(Identifiable, Queryable, AsChangeset, Clone, Debug)]
-/// A CorTeX task, for a given corpus-service pair
+/// A `CorTeX` task, for a given corpus-service pair
 pub struct Task {
   /// task primary key, auto-incremented by postgresql
   pub id: i64,
@@ -47,7 +47,7 @@ pub struct Task {
 
 #[derive(Insertable, Debug)]
 #[table_name = "tasks"]
-/// A new task, to be inserted into CorTeX
+/// A new task, to be inserted into `CorTeX`
 pub struct NewTask<'a> {
   /// id of the service owning this task
   pub service_id: i32,
