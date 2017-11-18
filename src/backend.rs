@@ -13,20 +13,20 @@ extern crate dotenv;
 extern crate r2d2;
 
 use dotenv::dotenv;
-use std::thread;
-use std::collections::{HashMap, HashSet};
-use regex::Regex;
+// use std::thread;
+// use std::collections::{HashMap, HashSet};
+// use regex::Regex;
 use diesel::{update, delete, insert_into};
 use diesel::prelude::*;
 use diesel::pg::PgConnection;
-use diesel::pg::upsert::*;
+// use diesel::pg::upsert::*;
 use diesel::result::Error;
 use schema::{tasks, log_infos, log_warnings, log_errors, log_fatals, log_invalids};
 
 // use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
 use concerns::{CortexInsertable, CortexDeletable};
 use models;
-use models::{Task, NewTask, Service, NewService, Corpus, NewCorpus, LogRecord, LogInfo,
+use models::{Task, NewTask, Service, Corpus, LogRecord, LogInfo,
              LogWarning, LogError, LogFatal, LogInvalid, MarkRerun};
 use helpers::{TaskStatus, TaskReport, random_mark};
 
@@ -139,7 +139,7 @@ impl Backend {
     let mark: i32 = random_mark();
 
     // First, mark as blocked all of the tasks in the chosen scope, using a special mark
-    let rerun_result = match severity_opt {
+    match severity_opt {
       Some(severity) => match category_opt {
         Some(category) => match what_opt {// All tasks in a "what" class
           Some(what) => {try!(match severity.to_lowercase().as_str() {

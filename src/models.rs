@@ -8,7 +8,7 @@
 //! Backend models and traits for the CorTeX "Task store"
 
 use std::fmt;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use rand::{thread_rng, Rng};
 use helpers::TaskStatus;
 use rustc_serialize::json::{Json, ToJson};
@@ -681,8 +681,8 @@ pub trait MarkRerun {
     mark: i32,
     corpus_id: i32,
     service_id: i32,
-    category: &str,
-    what: &str,
+    rerun_category: &str,
+    rerun_what: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error>;
   /// Mid-specificity `category`-filtered reruns
@@ -690,7 +690,7 @@ pub trait MarkRerun {
     mark: i32,
     corpus_id: i32,
     service_id: i32,
-    category: &str,
+    rerun_category: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error>;
 }
@@ -701,14 +701,14 @@ impl MarkRerun for LogInfo {
     mark: i32,
     corpus_id: i32,
     service_id: i32,
-    category: &str,
-    what: &str,
+    rerun_category: &str,
+    rerun_what: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
     use schema::log_infos::dsl::{log_infos, category, what, task_id};
     let task_ids_to_rerun = log_infos
-      .filter(category.eq(category))
-      .filter(what.eq(what))
+      .filter(category.eq(rerun_category))
+      .filter(what.eq(rerun_what))
       .select(task_id)
       .distinct();
 
@@ -724,12 +724,12 @@ impl MarkRerun for LogInfo {
     mark: i32,
     corpus_id: i32,
     service_id: i32,
-    category: &str,
+    rerun_category: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
-    use schema::log_infos::dsl::{log_infos, category, what, task_id};
+    use schema::log_infos::dsl::{log_infos, category, task_id};
     let task_ids_to_rerun = log_infos
-      .filter(category.eq(category))
+      .filter(category.eq(rerun_category))
       .select(task_id)
       .distinct();
 
@@ -748,14 +748,14 @@ impl MarkRerun for LogWarning {
     mark: i32,
     corpus_id: i32,
     service_id: i32,
-    category: &str,
-    what: &str,
+    rerun_category: &str,
+    rerun_what: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
     use schema::log_warnings::dsl::{log_warnings, category, what, task_id};
     let task_ids_to_rerun = log_warnings
-      .filter(category.eq(category))
-      .filter(what.eq(what))
+      .filter(category.eq(rerun_category))
+      .filter(what.eq(rerun_what))
       .select(task_id)
       .distinct();
 
@@ -771,12 +771,12 @@ impl MarkRerun for LogWarning {
     mark: i32,
     corpus_id: i32,
     service_id: i32,
-    category: &str,
+    rerun_category: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
-    use schema::log_warnings::dsl::{log_warnings, category, what, task_id};
+    use schema::log_warnings::dsl::{log_warnings, category, task_id};
     let task_ids_to_rerun = log_warnings
-      .filter(category.eq(category))
+      .filter(category.eq(rerun_category))
       .select(task_id)
       .distinct();
 
@@ -795,14 +795,14 @@ impl MarkRerun for LogError {
     mark: i32,
     corpus_id: i32,
     service_id: i32,
-    category: &str,
-    what: &str,
+    rerun_category: &str,
+    rerun_what: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
     use schema::log_errors::dsl::{log_errors, category, what, task_id};
     let task_ids_to_rerun = log_errors
-      .filter(category.eq(category))
-      .filter(what.eq(what))
+      .filter(category.eq(rerun_category))
+      .filter(what.eq(rerun_what))
       .select(task_id)
       .distinct();
 
@@ -818,12 +818,12 @@ impl MarkRerun for LogError {
     mark: i32,
     corpus_id: i32,
     service_id: i32,
-    category: &str,
+    rerun_category: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
-    use schema::log_errors::dsl::{log_errors, category, what, task_id};
+    use schema::log_errors::dsl::{log_errors, category, task_id};
     let task_ids_to_rerun = log_errors
-      .filter(category.eq(category))
+      .filter(category.eq(rerun_category))
       .select(task_id)
       .distinct();
 
@@ -841,14 +841,14 @@ impl MarkRerun for LogFatal {
     mark: i32,
     corpus_id: i32,
     service_id: i32,
-    category: &str,
-    what: &str,
+    rerun_category: &str,
+    rerun_what: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
     use schema::log_fatals::dsl::{log_fatals, category, what, task_id};
     let task_ids_to_rerun = log_fatals
-      .filter(category.eq(category))
-      .filter(what.eq(what))
+      .filter(category.eq(rerun_category))
+      .filter(what.eq(rerun_what))
       .select(task_id)
       .distinct();
 
@@ -864,12 +864,12 @@ impl MarkRerun for LogFatal {
     mark: i32,
     corpus_id: i32,
     service_id: i32,
-    category: &str,
+    rerun_category: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
-    use schema::log_fatals::dsl::{log_fatals, category, what, task_id};
+    use schema::log_fatals::dsl::{log_fatals, category, task_id};
     let task_ids_to_rerun = log_fatals
-      .filter(category.eq(category))
+      .filter(category.eq(rerun_category))
       .select(task_id)
       .distinct();
 
@@ -888,14 +888,14 @@ impl MarkRerun for LogInvalid {
     mark: i32,
     corpus_id: i32,
     service_id: i32,
-    category: &str,
-    what: &str,
+    rerun_category: &str,
+    rerun_what: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
     use schema::log_invalids::dsl::{log_invalids, category, what, task_id};
     let task_ids_to_rerun = log_invalids
-      .filter(category.eq(category))
-      .filter(what.eq(what))
+      .filter(category.eq(rerun_category))
+      .filter(what.eq(rerun_what))
       .select(task_id)
       .distinct();
 
@@ -911,12 +911,12 @@ impl MarkRerun for LogInvalid {
     mark: i32,
     corpus_id: i32,
     service_id: i32,
-    category: &str,
+    rerun_category: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
-    use schema::log_invalids::dsl::{log_invalids, category, what, task_id};
+    use schema::log_invalids::dsl::{log_invalids, category, task_id};
     let task_ids_to_rerun = log_invalids
-      .filter(category.eq(category))
+      .filter(category.eq(rerun_category))
       .select(task_id)
       .distinct();
 
