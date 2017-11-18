@@ -12,15 +12,16 @@ extern crate rand;
 extern crate dotenv;
 extern crate r2d2;
 
-use dotenv::dotenv;
+use std::collections::HashMap;
 // use std::thread;
-// use regex::Regex;
+use regex::Regex;
+use dotenv::dotenv;
 use diesel::{update, delete, insert_into};
 use diesel::prelude::*;
 use diesel::pg::PgConnection;
 // use diesel::pg::upsert::*;
 use diesel::result::Error;
-use schema::{tasks, log_infos, log_warnings, log_errors, log_fatals, log_invalids};
+use schema::{tasks, corpora, log_infos, log_warnings, log_errors, log_fatals, log_invalids};
 
 // use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
 use concerns::{CortexInsertable, CortexDeletable};
@@ -360,74 +361,55 @@ impl Backend {
       Ok(())
     }
 
-  //   /// Returns a vector of currently available corpora in the Task store
-  //   pub fn corpora(&self) -> Vec<Corpus> {
-  //     let mut corpora = Vec::new();
-  //     if let Ok(select_query) = self.connection.prepare("SELECT corpusid,name,path,complex FROM corpora order by name") {
-  //       if let Ok(rows) = select_query.query(&[]) {
-  //         for row in rows.iter() {
-  //           corpora.push(Corpus::from_row(row));
-  //         }
-  //       }
-  //     }
-  //     corpora
-  //   }
+    /// Returns a vector of currently available corpora in the Task store
+    pub fn corpora(&self) -> Vec<Corpus> {
+      corpora::table.order(corpora::name.asc()).load(&self.connection).unwrap_or(vec![])
+    }
 
-  //   /// Returns a vector of tasks for a given Corpus, Service and status
-  //   pub fn entries(&self, corpus: &Corpus, service: &Service, status: &TaskStatus) -> Vec<String> {
-  //     let raw_status = status.raw();
-  //     match self.connection.prepare("select entry from tasks where serviceid=$1 and corpusid=$2 and status=$3") {
-  //       Ok(select_query) => {
-  //         match select_query.query(&[&service.id.unwrap_or(-1), &corpus.id.unwrap_or(-1), &raw_status]) {
-  //           Ok(entry_rows) => {
-  //             let entry_name_regex = Regex::new(r"^(.+)/[^/]+$").unwrap();
-  //             let mut entries = Vec::new();
-  //             for row in entry_rows.iter() {
-  //               let entry_fixedwidth: String = row.get(0);
-  //               let entry = entry_fixedwidth.trim_right().to_string();
-  //               if service.name == "import" {
-  //                 entries.push(entry);
-  //               } else {
-  //                 let entry_service_result = entry_name_regex.replace(&entry, "$1") + "/" + &service.name + ".zip";
-  //                 entries.push(entry_service_result);
-  //               }
-  //             }
-  //             entries
-  //           }
-  //           _ => Vec::new(),
-  //         }
-  //       }
-  //       _ => Vec::new(),
-  //     }
-  //   }
-  //   /// Provides a progress report, grouped by severity, for a given `Corpus` and `Service` pair
-  //   pub fn progress_report(&self, c: &Corpus, s: &Service) -> HashMap<String, f64> {
-  //     let mut stats_hash: HashMap<String, f64> = HashMap::new();
-  //     for status_key in TaskStatus::keys() {
-  //       stats_hash.insert(status_key, 0.0);
-  //     }
-  //     stats_hash.insert("total".to_string(), 0.0);
-  //     if let Ok(select_query) = self.connection.prepare("select status,count(*) as status_count from tasks where serviceid=$1 and corpusid=$2 group by status order by status_count desc;") {
-  //       if let Ok(rows) = select_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1)]) {
-  //         for row in rows.iter() {
-  //           let status = TaskStatus::from_raw(row.get(0));
-  //           let status_key = status.to_key();
-  //           let count: i64 = row.get(1);
-  //           {
-  //             let status_frequency = stats_hash.entry(status_key).or_insert(0.0);
-  //             *status_frequency += count as f64;
-  //           }
-  //           if status != TaskStatus::Invalid {
-  //             // DIScount invalids from the total numbers
-  //             let total_frequency = stats_hash.entry("total".to_string()).or_insert(0.0);
-  //             *total_frequency += count as f64;
-  //           }
-  //         }
-  //       }
-  //     }
-  //     Backend::aux_stats_compute_percentages(&mut stats_hash, None);
-  //     stats_hash
-  //   }
+    /// Returns a vector of tasks for a given Corpus, Service and status
+    pub fn entries(&self, corpus: &Corpus, service: &Service, task_status: &TaskStatus) -> Vec<String> {
+      use schema::tasks::dsl::{service_id, corpus_id, status, entry};
+      let entries : Vec<String> = tasks::table.filter(service_id.eq(service.id)).filter(corpus_id.eq(corpus.id)).filter(status.eq(task_status.raw())).select(entry).load(&self.connection).unwrap_or(vec![]);
+      let entry_name_regex = Regex::new(r"^(.+)/[^/]+$").unwrap();
+      entries.into_iter().map(|db_entry_val| {
+        let trimmed_entry = db_entry_val.trim_right().to_string();
+        if service.name == "import" {
+          trimmed_entry
+        } else {
+          let entry_service_result = entry_name_regex.replace(&trimmed_entry, "$1") + "/" + &service.name + ".zip";
+          entry_service_result
+        }
+      }).collect()
+    }
+
+    /// Provides a progress report, grouped by severity, for a given `Corpus` and `Service` pair
+    pub fn progress_report(&self, corpus: &Corpus, service: &Service) -> HashMap<String, f64> {
+      let mut stats_hash: HashMap<String, f64> = HashMap::new();
+      for status_key in TaskStatus::keys() {
+        stats_hash.insert(status_key, 0.0);
+      }
+      stats_hash.insert("total".to_string(), 0.0);
+      // if let Ok(select_query) = self.connection.prepare("select status,count(*) as status_count from tasks where serviceid=$1 and corpusid=$2 group by status order by status_count desc;") {
+      //   if let Ok(rows) = select_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1)]) {
+      //     for row in rows.iter() {
+      //       let status = TaskStatus::from_raw(row.get(0));
+      //       let status_key = status.to_key();
+      //       let count: i64 = row.get(1);
+      //       {
+      //         let status_frequency = stats_hash.entry(status_key).or_insert(0.0);
+      //         *status_frequency += count as f64;
+      //       }
+      //       if status != TaskStatus::Invalid {
+      //         // DIScount invalids from the total numbers
+      //         let total_frequency = stats_hash.entry("total".to_string()).or_insert(0.0);
+      //         *total_frequency += count as f64;
+      //       }
+      //     }
+      //   }
+      // }
+      // Backend::aux_stats_compute_percentages(&mut stats_hash, None);
+      stats_hash
+    }
 
   //   /// Given a complex selector, of a `Corpus`, `Service`, and the optional `severity`, `category` and `what`,
   //   /// Provide a progress report at the chosen granularity
