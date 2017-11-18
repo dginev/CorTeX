@@ -73,7 +73,7 @@ impl Backend {
 
   /// Insert a vector of `TaskReport` reports into the Task store, also marking their tasks as completed with the correct status code.
   pub fn mark_done(&self, reports: &[TaskReport]) -> Result<(), Error> {
-    use schema::tasks::dsl::{id, status};
+    use schema::tasks::{id, status};
 
     try!(self.connection.transaction::<(), Error, _>(|| {
       for report in reports.iter() {
@@ -87,27 +87,27 @@ impl Backend {
         // Next, delete all previous log messages for this task.id
         try!(
           delete(log_infos::table)
-            .filter(log_infos::dsl::task_id.eq(report.task.id))
+            .filter(log_infos::task_id.eq(report.task.id))
             .execute(&self.connection)
         );
         try!(
           delete(log_warnings::table)
-            .filter(log_warnings::dsl::task_id.eq(report.task.id))
+            .filter(log_warnings::task_id.eq(report.task.id))
             .execute(&self.connection)
         );
         try!(
           delete(log_errors::table)
-            .filter(log_errors::dsl::task_id.eq(report.task.id))
+            .filter(log_errors::task_id.eq(report.task.id))
             .execute(&self.connection)
         );
         try!(
           delete(log_fatals::table)
-            .filter(log_fatals::dsl::task_id.eq(report.task.id))
+            .filter(log_fatals::task_id.eq(report.task.id))
             .execute(&self.connection)
         );
         try!(
           delete(log_invalids::table)
-            .filter(log_invalids::dsl::task_id.eq(report.task.id))
+            .filter(log_invalids::task_id.eq(report.task.id))
             .execute(&self.connection)
         );
         // Clean slate, so proceed to add the new messages
@@ -133,7 +133,7 @@ impl Backend {
     category: Option<String>,
     what: Option<String>,
   ) -> Result<(), Error> {
-    use schema::tasks::dsl::{service_id, corpus_id, status};
+    use schema::tasks::{service_id, corpus_id, status};
     // Rerun = set status to TODO for all tasks, deleting old logs
     let mark: i32 = TaskStatus::TODO.raw();
 
@@ -159,14 +159,14 @@ impl Backend {
                   //   LogInvalid::mark_rerun_by_what(mark, corpus.id, service.id, category, what)
                   // }
                   _ => {
-                    LogInfo::mark_rerun_by_what(
+                    try!(LogInfo::mark_rerun_by_what(
                       mark,
                       corpus.id,
                       service.id,
                       &category,
                       &what,
                       &self.connection,
-                    );
+                    ));
                   }
                 }
               }
@@ -187,19 +187,37 @@ impl Backend {
       }
       None => {
         // Entire corpus
-        update(tasks::table)
-          .filter(corpus_id.eq(corpus.id))
-          .filter(service_id.eq(service.id))
-          .filter(status.lt(0))
-          .set(status.eq(mark))
-          .execute(&self.connection);
+        try!(
+          update(tasks::table)
+            .filter(corpus_id.eq(corpus.id))
+            .filter(service_id.eq(service.id))
+            .filter(status.lt(0))
+            .set(status.eq(mark))
+            .execute(&self.connection)
+        );
       }
     };
 
-    // // Next, delete all logs for the blocked tasks.
-    // // Note that if we are using a negative blocking status, this query should get sped up via an "Index Scan using log_taskid on logs"
-    // try!(self.connection.execute("DELETE from logs USING tasks WHERE logs.taskid=tasks.taskid and tasks.status=$1 and tasks.corpusid=$2 and tasks.serviceid=$3;",
-    //                               &[&mark, &corpus.id.unwrap(), &service.id.unwrap()]));
+    // Next, delete all logs for the blocked tasks.
+    // Note that if we are using a negative blocking status, this query should get sped up via an "Index Scan using log_taskid on logs"
+    let affected_tasks = tasks::table
+      .filter(corpus_id.eq(corpus.id))
+      .filter(service_id.eq(service.id))
+      .filter(status.eq(mark))
+      .select(tasks::id);
+
+    let affected_log_infos = log_infos::table.filter(log_infos::task_id.eq_any(affected_tasks));
+    try!(delete(affected_log_infos).execute(&self.connection));
+    let affected_log_warnings =
+      log_warnings::table.filter(log_warnings::task_id.eq_any(affected_tasks));
+    try!(delete(affected_log_warnings).execute(&self.connection));
+    let affected_log_errors = log_errors::table.filter(log_errors::task_id.eq_any(affected_tasks));
+    try!(delete(affected_log_errors).execute(&self.connection));
+    let affected_log_fatals = log_fatals::table.filter(log_fatals::task_id.eq_any(affected_tasks));
+    try!(delete(affected_log_fatals).execute(&self.connection));
+    let affected_log_invalids =
+      log_invalids::table.filter(log_invalids::task_id.eq_any(affected_tasks));
+    try!(delete(affected_log_invalids).execute(&self.connection));
 
     // // Lastly, switch all blocked tasks to "queued", and complete the rerun mark pass.
     // try!(self.connection.execute("UPDATE tasks set status=$1 where status=$2 and corpusid=$3 and serviceid=$4;",

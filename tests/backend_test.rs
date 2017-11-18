@@ -10,8 +10,9 @@ extern crate diesel;
 use cortex::backend;
 use cortex::models::{Corpus, Service, NewTask, Task, NewLogInfo};
 use cortex::helpers::{TaskStatus, TaskReport, NewTaskMessage, random_mark, rand_in_range};
-use cortex::schema::tasks;
+use cortex::schema::{tasks, log_infos};
 use cortex::schema::tasks::dsl::{service_id, status};
+use cortex::schema::log_infos::dsl::task_id;
 use diesel::prelude::*;
 
 #[test]
@@ -198,12 +199,20 @@ fn batch_ops_test() {
     .filter(service_id.eq(mock_service.id))
     .filter(status.eq(TaskStatus::NoProblem.raw()))
     .get_results(&backend.connection);
+  // Are all tasks marked as NoProblem after?
   assert!(done_tasks_result.is_ok());
   let done_tasks = done_tasks_result.unwrap();
   assert_eq!(done_tasks.len(), mock_task_count);
-
+  let done_task_ids: Vec<i64> = done_tasks.into_iter().map(|task| task.id).collect();
+  // Does each done task have a LogInfo message present?
+  let done_logs_result: Result<i64, _> = log_infos::table
+    .filter(task_id.eq_any(&done_task_ids))
+    .count()
+    .get_result(&backend.connection);
+  assert_eq!(done_logs_result, Ok(mock_task_count as i64));
   // mark_rerun of all tasks
   let mark_rerun_result = backend.mark_rerun(&mock_corpus, &mock_service, None, None, None);
+  println!("debug : {:?}", mark_rerun_result);
   assert!(mark_rerun_result.is_ok());
 
   let post_rerun_todo_count: Result<i64, _> = tasks::table
@@ -211,7 +220,14 @@ fn batch_ops_test() {
     .filter(status.eq(TaskStatus::TODO.raw()))
     .count()
     .get_result(&backend.connection);
+  // are all tasks marked as TODO after the rerun?
   assert_eq!(post_rerun_todo_count, Ok(mock_task_count as i64));
+  // are all messages erased for those tasks?
+  let post_rerun_logs_result: Result<i64, _> = log_infos::table
+    .filter(task_id.eq_any(&done_task_ids))
+    .count()
+    .get_result(&backend.connection);
+  assert_eq!(post_rerun_logs_result, Ok(0));
 
   let post_rerun_done_count: Result<i64, _> = tasks::table
     .filter(service_id.eq(mock_service.id))
