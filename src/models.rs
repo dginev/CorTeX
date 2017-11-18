@@ -578,6 +578,18 @@ pub struct NewService {
   pub complex: bool,
 }
 
+impl Service {
+  /// ORM-like until diesel.rs introduces finders for more fields
+  pub fn find_by_name(name: &str, connection: &PgConnection) -> Result<Service, Error> {
+    services::table.filter(services::name.eq(name)).first(
+      connection,
+    )
+  }
+}
+
+
+// Corpora
+
 #[derive(Identifiable, Queryable, AsChangeset, Clone, Debug)]
 #[table_name = "corpora"]
 /// A minimal description of a document collection. Defined by a name, path and simple/complex file system setup.
@@ -625,7 +637,14 @@ impl ToJson for Corpus {
     Json::Object(map)
   }
 }
-
+impl Corpus {
+  /// ORM-like until diesel.rs introduces finders for more fields
+  pub fn find_by_name(name: &str, connection: &PgConnection) -> Result<Corpus, Error> {
+    corpora::table.filter(corpora::name.eq(name)).first(
+      connection,
+    )
+  }
+}
 
 // Aggregate methods, to be used by backend
 

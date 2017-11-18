@@ -14,7 +14,6 @@ extern crate r2d2;
 
 use dotenv::dotenv;
 // use std::thread;
-// use std::collections::{HashMap, HashSet};
 // use regex::Regex;
 use diesel::{update, delete, insert_into};
 use diesel::prelude::*;
@@ -331,49 +330,35 @@ impl Backend {
     models::clear_limbo_tasks(&self.connection)
   }
 
-  //   /// Activates an existing service on a given corpus (via NAME)
-  //   /// if the service has previously been registered, this has "extend" semantics, without any "overwrite" or "reset"
-  //   pub fn register_service(&self, service: Service, corpus_name: String) -> Result<(), Error> {
-  //     let corpus_placeholder = Corpus {
-  //       id: None,
-  //       path: String::new(),
-  //       name: corpus_name,
-  //       complex: true,
-  //     };
-  //     let corpus = self.sync(&corpus_placeholder).unwrap();
-  //     let corpusid = corpus.id.unwrap();
-  //     let serviceid = service.id.unwrap();
-  //     let todo_raw = TaskStatus::TODO.raw();
+    /// Activates an existing service on a given corpus (via NAME)
+    /// if the service has previously been registered, this has "extend" semantics, without any "overwrite" or "reset"
+    pub fn register_service(&self, service: Service, corpus_name: String) -> Result<(), Error> {
+      use schema::tasks::dsl::*;
+      let corpus = try!(Corpus::find_by_name(&corpus_name, &self.connection));
+      let todo_raw = TaskStatus::TODO.raw();
 
-  //     // If we wanted to erase old tasks for this service, we could do as follows, but there is a lot more logic missing
-  //     // - also erase log entries
-  //     // - update dependencies
-  //     // so instead, for now we'll just add new tasks, leaving existing ones as-is.
-  //     // try!(self.connection.execute("DELETE from tasks where serviceid=$1 AND corpusid=$2", &[&serviceid, &corpusid]));
-  //     let mut prior_set: HashSet<String> = HashSet::new();
-  //     let prior_entries_query = try!(self.connection.prepare("SELECT entry from tasks where serviceid=$1 AND corpusid=$2"));
-  //     let prior_entries = try!(prior_entries_query.query(&[&serviceid, &corpusid]));
-  //     for prior_entry in prior_entries.iter() {
-  //       let entry: String = prior_entry.get(0);
-  //       prior_set.insert(entry);
-  //     }
+      // First, delete existing tasks for this <service, corpus> pair.
+      try!(delete(tasks).filter(service_id.eq(service.id)).filter(corpus_id.eq(corpus.id)).execute(&self.connection));
+      // TODO: when we want to get completeness, also:
+      // - also erase log entries
+      // - update dependencies
+      let import_service = try!(Service::find_by_name("import", &self.connection));
+      let entries : Vec<String> = try!(tasks.filter(service_id.eq(import_service.id)).filter(corpus_id.eq(corpus.id)).select(entry).load(&self.connection));
+      try!(self.connection.transaction::<(), Error, _>(|| {
+        for imported_entry in entries.iter() {
+          let new_task = NewTask {
+            entry: imported_entry,
+            service_id: service.id,
+            corpus_id: corpus.id,
+            status: todo_raw
+          };
+          try!(new_task.create(&self.connection));
+        }
+        Ok(())
+      }));
 
-  //     let task_entries_query = try!(self.connection.prepare("SELECT entry from tasks where serviceid=2 AND corpusid=$1"));
-  //     let task_entries = try!(task_entries_query.query(&[&corpusid]));
-  //     let trans = try!(self.connection.transaction());
-  //     for task_entry in task_entries.iter() {
-  //       let entry: String = task_entry.get(0);
-  //       if prior_set.contains(&entry) {
-  //         continue;
-  //       }
-  //       trans.execute("INSERT INTO tasks (entry,serviceid,corpusid, status) VALUES($1,$2,$3,$4) ON CONFLICT(entry, serviceid, corpusid) DO NOTHING;",
-  //                     &[&entry, &serviceid, &corpusid, &todo_raw])
-  //            .unwrap();
-  //     }
-  //     trans.set_commit();
-  //     try!(trans.finish());
-  //     Ok(())
-  //   }
+      Ok(())
+    }
 
   //   /// Returns a vector of currently available corpora in the Task store
   //   pub fn corpora(&self) -> Vec<Corpus> {
