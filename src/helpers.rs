@@ -183,7 +183,7 @@ impl TaskStatus {
   }
   /// Maps from the raw severity log values into the enumeration
   pub fn from_key(key: &str) -> Self {
-    match key {
+    match key.to_lowercase().as_str() {
       "no_problem" => TaskStatus::NoProblem,
       "warning" => TaskStatus::Warning,
       "error" => TaskStatus::Error,

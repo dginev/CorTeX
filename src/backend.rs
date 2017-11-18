@@ -130,89 +130,127 @@ impl Backend {
     &self,
     corpus: &Corpus,
     service: &Service,
-    severity: Option<String>,
-    category: Option<String>,
-    what: Option<String>,
+    severity_opt: Option<String>,
+    category_opt: Option<String>,
+    what_opt: Option<String>,
   ) -> Result<(), Error> {
     use schema::tasks::{service_id, corpus_id, status};
     // Rerun = set status to TODO for all tasks, deleting old logs
     let mark: i32 = random_mark();
 
     // First, mark as blocked all of the tasks in the chosen scope, using a special mark
-    match severity {
-      Some(severity) => {
-        match category {
-          Some(category) => {
-            match what {// All tasks in a "what" class
-              Some(what) => {
-                try!(match severity.to_lowercase().as_str() {
-                  "warning" => {
-                    LogWarning::mark_rerun_by_what(
-                      mark,
-                      corpus.id,
-                      service.id,
-                      &category,
-                      &what,
-                      &self.connection,
-                    )
-                  }
-                  "error" => {
-                    LogError::mark_rerun_by_what(
-                      mark,
-                      corpus.id,
-                      service.id,
-                      &category,
-                      &what,
-                      &self.connection,
-                    )
-                  }
-                  "fatal" => {
-                    LogFatal::mark_rerun_by_what(
-                      mark,
-                      corpus.id,
-                      service.id,
-                      &category,
-                      &what,
-                      &self.connection,
-                    )
-                  }
-                  "invalid" => {
-                    LogInvalid::mark_rerun_by_what(
-                      mark,
-                      corpus.id,
-                      service.id,
-                      &category,
-                      &what,
-                      &self.connection,
-                    )
-                  }
-                  _ => {
-                    LogInfo::mark_rerun_by_what(
-                      mark,
-                      corpus.id,
-                      service.id,
-                      &category,
-                      &what,
-                      &self.connection,
-                    )
-                  }
-                })
-              }
-              None => {
-                //             // All tasks in a category
-                //             try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and taskid in (select distinct(taskid) from logs where severity=$4 and category=$5)",
-                //                                           &[&mark, &corpus.id.unwrap(), &service.id.unwrap(), &severity, &category]));
-                0
-              }
+    let rerun_result = match severity_opt {
+      Some(severity) => match category_opt {
+        Some(category) => match what_opt {// All tasks in a "what" class
+          Some(what) => {try!(match severity.to_lowercase().as_str() {
+            "warning" => {
+              LogWarning::mark_rerun_by_what(
+                mark,
+                corpus.id,
+                service.id,
+                &category,
+                &what,
+                &self.connection,
+              )
             }
-          }
-          None => {
-            // All tasks in a certain status
-            //         let status: i32 = TaskStatus::from_key(&severity).raw();
-            //         try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and status=$4",
-            //                                       &[&mark, &corpus.id.unwrap(), &service.id.unwrap(), &status]));
-            0
-          }
+            "error" => {
+              LogError::mark_rerun_by_what(
+                mark,
+                corpus.id,
+                service.id,
+                &category,
+                &what,
+                &self.connection,
+              )
+            }
+            "fatal" => {
+              LogFatal::mark_rerun_by_what(
+                mark,
+                corpus.id,
+                service.id,
+                &category,
+                &what,
+                &self.connection,
+              )
+            }
+            "invalid" => {
+              LogInvalid::mark_rerun_by_what(
+                mark,
+                corpus.id,
+                service.id,
+                &category,
+                &what,
+                &self.connection,
+              )
+            }
+            _ => {
+              LogInfo::mark_rerun_by_what(
+                mark,
+                corpus.id,
+                service.id,
+                &category,
+                &what,
+                &self.connection,
+              )
+            }
+          })}
+          // None: All tasks in a category
+          None => try!(match severity.to_lowercase().as_str() {
+            "warning" => {
+              LogWarning::mark_rerun_by_category(
+                mark,
+                corpus.id,
+                service.id,
+                &category,
+                &self.connection,
+              )
+            }
+            "error" => {
+              LogError::mark_rerun_by_category(
+                mark,
+                corpus.id,
+                service.id,
+                &category,
+                &self.connection,
+              )
+            }
+            "fatal" => {
+              LogFatal::mark_rerun_by_category(
+                mark,
+                corpus.id,
+                service.id,
+                &category,
+                &self.connection,
+              )
+            }
+            "invalid" => {
+              LogInvalid::mark_rerun_by_category(
+                mark,
+                corpus.id,
+                service.id,
+                &category,
+                &self.connection,
+              )
+            }
+            _ => {
+              LogInfo::mark_rerun_by_category(
+                mark,
+                corpus.id,
+                service.id,
+                &category,
+                &self.connection,
+              )
+            }
+          })
+        }
+        None => { // All tasks in a certain status/severity
+          let status_to_rerun: i32 = TaskStatus::from_key(&severity).raw();
+          try!(update(tasks::table)
+            .filter(corpus_id.eq(corpus.id))
+            .filter(service_id.eq(service.id))
+            .filter(status.eq(status_to_rerun))
+            .set(status.eq(mark))
+            .execute(&self.connection))
         }
       }
       None => {
