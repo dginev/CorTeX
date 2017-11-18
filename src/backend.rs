@@ -16,7 +16,6 @@ use dotenv::dotenv;
 use std::thread;
 use std::collections::{HashMap, HashSet};
 use regex::Regex;
-use rand::{thread_rng, Rng};
 use diesel::{update, delete, insert_into};
 use diesel::prelude::*;
 use diesel::pg::PgConnection;
@@ -28,7 +27,7 @@ use schema::{tasks, log_infos, log_warnings, log_errors, log_fatals, log_invalid
 use concerns::{CortexInsertable, CortexDeletable};
 use models;
 use models::{Task, NewTask, Service, NewService, Corpus, NewCorpus, LogRecord, LogInfo, MarkRerun};
-use helpers::{TaskStatus, TaskReport};
+use helpers::{TaskStatus, TaskReport, random_mark};
 
 /// The production database postgresql address, set from the .env configuration file
 pub const DEFAULT_DB_ADDRESS: &str = dotenv!("DATABASE_URL");
@@ -64,16 +63,12 @@ pub fn testdb() -> Backend {
 impl Backend {
   /// Insert a vector of new `NewTask` tasks into the Task store
   /// For example, on import, or when a new service is activated on a corpus
-  pub fn mark_imported(&self, imported_tasks: &[NewTask]) -> Result<(), Box<Error>> {
+  pub fn mark_imported(&self, imported_tasks: &[NewTask]) -> Result<usize, Error> {
     // Insert, but only if the task is new (allow for extension calls with the same method)
-    try!(
-      insert_into(tasks::table)
-        .values(imported_tasks)
-        .on_conflict_do_nothing()
-        .execute(&self.connection)
-    );
-
-    Ok(())
+    insert_into(tasks::table)
+      .values(imported_tasks)
+      .on_conflict_do_nothing()
+      .execute(&self.connection)
   }
 
   /// Insert a vector of `TaskReport` reports into the Task store, also marking their tasks as completed with the correct status code.
@@ -139,9 +134,7 @@ impl Backend {
     what: Option<String>,
   ) -> Result<(), Error> {
 
-    let mut rng = thread_rng();
-    let mark_rng: u16 = rng.gen();
-    let mark: i32 = !(mark_rng as i32);
+    let mark: i32 = random_mark();
 
     // First, mark as blocked all of the tasks in the chosen scope, using a special mark
     match severity {

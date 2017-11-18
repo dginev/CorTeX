@@ -12,6 +12,7 @@ use models::{Task, LogInvalid, LogInfo, LogWarning, LogError, LogFatal, LogRecor
 use diesel::pg::PgConnection;
 use diesel::result::Error;
 use concerns::CortexInsertable;
+use rand::{thread_rng, Rng};
 
 #[derive(Clone, PartialEq, Eq)]
 /// An enumeration of the expected task statuses
@@ -434,4 +435,11 @@ fn utf_truncate(input: &mut String, maxsize: usize) {
   }
   // eliminate null characters if any
   *input = input.replace("\x00", "");
+}
+
+/// Generate a random integer useful for temporary DB marks
+pub fn random_mark() -> i32 {
+  let mut rng = thread_rng();
+  let mark_rng: u16 = rng.gen();
+  mark_rng as i32
 }

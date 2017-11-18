@@ -9,13 +9,14 @@ extern crate diesel;
 
 use cortex::backend;
 use cortex::models::{Service, NewTask};
-use cortex::helpers::TaskStatus;
+use cortex::helpers::{TaskStatus, random_mark};
 
 #[test]
 fn task_table_crud() {
   let backend = backend::testdb();
+  let mock_service_id = random_mark();
   let mock_service = Service {
-    id: 1,
+    id: mock_service_id,
     name: String::from("mock_service"),
     complex: false,
     inputconverter: None,
@@ -56,8 +57,9 @@ fn task_table_crud() {
 fn task_lifecycle_test() {
   let backend = backend::testdb();
   // Add 100 tasks, out of which we will mark 17
+  let mock_service_id = random_mark();
   let mock_service = Service {
-    id: 2,
+    id: mock_service_id,
     name: String::from("mark_tasks"),
     complex: false,
     inputconverter: None,
@@ -110,5 +112,39 @@ fn task_lifecycle_test() {
   assert_eq!(marked_in_db_2, Ok(0));
 
   let post_cleanup = backend.delete_by(&mock_task, "service_id");
+  assert_eq!(post_cleanup, Ok(100));
+}
+
+#[test]
+fn batch_ops_test() {
+  let backend = backend::testdb();
+  let mock_new_task = NewTask {
+    entry: "mock_task",
+    service_id: 2,
+    corpus_id: 1,
+    status: TaskStatus::TODO.raw(),
+  };
+  // mark_imported
+  // insert 100 tasks
+  let names: Vec<String> = (1..101)
+    .map(|index| {
+      format!("{}{}", mock_new_task.entry, index.to_string())
+    })
+    .collect();
+  let new_tasks: Vec<NewTask> = (0..100)
+    .map(|index| {
+      NewTask {
+        entry: &names[index],
+        ..mock_new_task
+      }
+    })
+    .collect();
+  let imported_count = backend.mark_imported(&new_tasks);
+  assert_eq!(imported_count, Ok(100));
+  // mark_done
+  // mark_rerun
+
+  // cleanup!
+  let post_cleanup = backend.delete_by(&mock_new_task, "service_id");
   assert_eq!(post_cleanup, Ok(100));
 }
