@@ -26,7 +26,8 @@ use schema::{tasks, log_infos, log_warnings, log_errors, log_fatals, log_invalid
 // use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
 use concerns::{CortexInsertable, CortexDeletable};
 use models;
-use models::{Task, NewTask, Service, NewService, Corpus, NewCorpus, LogRecord, LogInfo, MarkRerun};
+use models::{Task, NewTask, Service, NewService, Corpus, NewCorpus, LogRecord, LogInfo,
+             LogWarning, LogError, LogFatal, LogInvalid, MarkRerun};
 use helpers::{TaskStatus, TaskReport, random_mark};
 
 /// The production database postgresql address, set from the .env configuration file
@@ -135,53 +136,82 @@ impl Backend {
   ) -> Result<(), Error> {
     use schema::tasks::{service_id, corpus_id, status};
     // Rerun = set status to TODO for all tasks, deleting old logs
-    let mark: i32 = TaskStatus::TODO.raw();
+    let mark: i32 = random_mark();
 
     // First, mark as blocked all of the tasks in the chosen scope, using a special mark
     match severity {
       Some(severity) => {
         match category {
           Some(category) => {
-            match what {
+            match what {// All tasks in a "what" class
               Some(what) => {
-                // All tasks in a "what" class
-                match severity.as_str() {
-                  // "warning" => {
-                  //   LogWarning::mark_rerun_by_what(mark, corpus.id, service.id, category, what)
-                  // }
-                  // "error" => {
-                  //   LogError::mark_rerun_by_what(mark, corpus.id, service.id, category, what)
-                  // }
-                  // "fatal" => {
-                  //   LogFatal::mark_rerun_by_what(mark, corpus.id, service.id, category, what)
-                  // }
-                  // "invalid" => {
-                  //   LogInvalid::mark_rerun_by_what(mark, corpus.id, service.id, category, what)
-                  // }
-                  _ => {
-                    try!(LogInfo::mark_rerun_by_what(
+                try!(match severity.to_lowercase().as_str() {
+                  "warning" => {
+                    LogWarning::mark_rerun_by_what(
                       mark,
                       corpus.id,
                       service.id,
                       &category,
                       &what,
                       &self.connection,
-                    ));
+                    )
                   }
-                }
+                  "error" => {
+                    LogError::mark_rerun_by_what(
+                      mark,
+                      corpus.id,
+                      service.id,
+                      &category,
+                      &what,
+                      &self.connection,
+                    )
+                  }
+                  "fatal" => {
+                    LogFatal::mark_rerun_by_what(
+                      mark,
+                      corpus.id,
+                      service.id,
+                      &category,
+                      &what,
+                      &self.connection,
+                    )
+                  }
+                  "invalid" => {
+                    LogInvalid::mark_rerun_by_what(
+                      mark,
+                      corpus.id,
+                      service.id,
+                      &category,
+                      &what,
+                      &self.connection,
+                    )
+                  }
+                  _ => {
+                    LogInfo::mark_rerun_by_what(
+                      mark,
+                      corpus.id,
+                      service.id,
+                      &category,
+                      &what,
+                      &self.connection,
+                    )
+                  }
+                })
               }
               None => {
                 //             // All tasks in a category
                 //             try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and taskid in (select distinct(taskid) from logs where severity=$4 and category=$5)",
                 //                                           &[&mark, &corpus.id.unwrap(), &service.id.unwrap(), &severity, &category]));
+                0
               }
-            };
+            }
           }
           None => {
             // All tasks in a certain status
             //         let status: i32 = TaskStatus::from_key(&severity).raw();
             //         try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3 and status=$4",
             //                                       &[&mark, &corpus.id.unwrap(), &service.id.unwrap(), &status]));
+            0
           }
         }
       }
@@ -194,7 +224,7 @@ impl Backend {
             .filter(status.lt(0))
             .set(status.eq(mark))
             .execute(&self.connection)
-        );
+        )
       }
     };
 
@@ -203,25 +233,31 @@ impl Backend {
     let affected_tasks = tasks::table
       .filter(corpus_id.eq(corpus.id))
       .filter(service_id.eq(service.id))
-      .filter(status.eq(mark))
-      .select(tasks::id);
+      .filter(status.eq(mark));
+    let affected_tasks_ids = affected_tasks.select(tasks::id);
 
-    let affected_log_infos = log_infos::table.filter(log_infos::task_id.eq_any(affected_tasks));
+    let affected_log_infos = log_infos::table.filter(log_infos::task_id.eq_any(affected_tasks_ids));
     try!(delete(affected_log_infos).execute(&self.connection));
     let affected_log_warnings =
-      log_warnings::table.filter(log_warnings::task_id.eq_any(affected_tasks));
+      log_warnings::table.filter(log_warnings::task_id.eq_any(affected_tasks_ids));
     try!(delete(affected_log_warnings).execute(&self.connection));
-    let affected_log_errors = log_errors::table.filter(log_errors::task_id.eq_any(affected_tasks));
+    let affected_log_errors =
+      log_errors::table.filter(log_errors::task_id.eq_any(affected_tasks_ids));
     try!(delete(affected_log_errors).execute(&self.connection));
-    let affected_log_fatals = log_fatals::table.filter(log_fatals::task_id.eq_any(affected_tasks));
+    let affected_log_fatals =
+      log_fatals::table.filter(log_fatals::task_id.eq_any(affected_tasks_ids));
     try!(delete(affected_log_fatals).execute(&self.connection));
     let affected_log_invalids =
-      log_invalids::table.filter(log_invalids::task_id.eq_any(affected_tasks));
+      log_invalids::table.filter(log_invalids::task_id.eq_any(affected_tasks_ids));
     try!(delete(affected_log_invalids).execute(&self.connection));
 
-    // // Lastly, switch all blocked tasks to "queued", and complete the rerun mark pass.
-    // try!(self.connection.execute("UPDATE tasks set status=$1 where status=$2 and corpusid=$3 and serviceid=$4;",
-    //                               &[&TaskStatus::TODO.raw(), &mark, &corpus.id.unwrap(), &service.id.unwrap()]));
+    // Lastly, switch all blocked tasks to TODO, and complete the rerun mark pass.
+    try!(
+      update(affected_tasks)
+        .set(status.eq(TaskStatus::TODO.raw()))
+        .execute(&self.connection)
+    );
+
     Ok(())
   }
 

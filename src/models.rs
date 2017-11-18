@@ -146,7 +146,8 @@ pub struct NewLogInfo {
   pub details: String,
 }
 
-#[derive(Identifiable, Queryable, AsChangeset, Clone)]
+#[derive(Identifiable, Queryable, AsChangeset, Associations, Clone)]
+#[belongs_to(Task)]
 /// A warning message, as per the `LaTeXML` convention
 pub struct LogWarning {
   /// task primary key, auto-incremented by postgresql
@@ -174,7 +175,8 @@ pub struct NewLogWarning {
   pub details: String,
 }
 
-#[derive(Identifiable, Queryable, AsChangeset, Clone)]
+#[derive(Identifiable, Queryable, AsChangeset, Associations, Clone)]
+#[belongs_to(Task)]
 /// An error message, as per the `LaTeXML` convention
 pub struct LogError {
   /// task primary key, auto-incremented by postgresql
@@ -202,7 +204,8 @@ pub struct NewLogError {
   pub details: String,
 }
 
-#[derive(Identifiable, Queryable, AsChangeset, Clone)]
+#[derive(Identifiable, Queryable, AsChangeset, Associations, Clone)]
+#[belongs_to(Task)]
 /// A fatal message, as per the `LaTeXML` convention
 pub struct LogFatal {
   /// task primary key, auto-incremented by postgresql
@@ -231,7 +234,8 @@ pub struct NewLogFatal {
 }
 
 
-#[derive(Identifiable, Queryable, AsChangeset, Clone)]
+#[derive(Identifiable, Queryable, AsChangeset, Clone, Associations)]
+#[belongs_to(Task)]
 /// An invalid message, as per the `LaTeXML` convention
 pub struct LogInvalid {
   /// task primary key, auto-incremented by postgresql
@@ -691,14 +695,114 @@ impl MarkRerun for LogInfo {
     what: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
-    //   update(tasks::table.inner_join(log_infos::table))
-    //     .filter(corpus_id.eq(&corpus_id))
-    //     .filter(service_id.eq(&service_id))
-    //     .filter(log_infos::category.eq(category))
-    //     .filter(log_infos::what.eq(what))
-    //     .set(status.eq(mark))
-    //     .execute(connection)
-    // }
-    Ok(0)
+    use schema::log_infos::dsl::{log_infos, category, what, task_id};
+    let task_ids_to_rerun = log_infos
+      .filter(category.eq(category))
+      .filter(what.eq(what))
+      .select(task_id)
+      .distinct();
+
+    update(tasks::table)
+      .filter(tasks::corpus_id.eq(&corpus_id))
+      .filter(tasks::service_id.eq(&service_id))
+      .filter(tasks::id.eq_any(task_ids_to_rerun))
+      .set(tasks::status.eq(mark))
+      .execute(connection)
+  }
+}
+impl MarkRerun for LogWarning {
+  fn mark_rerun_by_what(
+    mark: i32,
+    corpus_id: i32,
+    service_id: i32,
+    category: &str,
+    what: &str,
+    connection: &PgConnection,
+  ) -> Result<usize, Error> {
+    use schema::log_warnings::dsl::{log_warnings, category, what, task_id};
+    let task_ids_to_rerun = log_warnings
+      .filter(category.eq(category))
+      .filter(what.eq(what))
+      .select(task_id)
+      .distinct();
+
+    update(tasks::table)
+      .filter(tasks::corpus_id.eq(&corpus_id))
+      .filter(tasks::service_id.eq(&service_id))
+      .filter(tasks::id.eq_any(task_ids_to_rerun))
+      .set(tasks::status.eq(mark))
+      .execute(connection)
+  }
+}
+impl MarkRerun for LogError {
+  fn mark_rerun_by_what(
+    mark: i32,
+    corpus_id: i32,
+    service_id: i32,
+    category: &str,
+    what: &str,
+    connection: &PgConnection,
+  ) -> Result<usize, Error> {
+    use schema::log_errors::dsl::{log_errors, category, what, task_id};
+    let task_ids_to_rerun = log_errors
+      .filter(category.eq(category))
+      .filter(what.eq(what))
+      .select(task_id)
+      .distinct();
+
+    update(tasks::table)
+      .filter(tasks::corpus_id.eq(&corpus_id))
+      .filter(tasks::service_id.eq(&service_id))
+      .filter(tasks::id.eq_any(task_ids_to_rerun))
+      .set(tasks::status.eq(mark))
+      .execute(connection)
+  }
+}
+impl MarkRerun for LogFatal {
+  fn mark_rerun_by_what(
+    mark: i32,
+    corpus_id: i32,
+    service_id: i32,
+    category: &str,
+    what: &str,
+    connection: &PgConnection,
+  ) -> Result<usize, Error> {
+    use schema::log_fatals::dsl::{log_fatals, category, what, task_id};
+    let task_ids_to_rerun = log_fatals
+      .filter(category.eq(category))
+      .filter(what.eq(what))
+      .select(task_id)
+      .distinct();
+
+    update(tasks::table)
+      .filter(tasks::corpus_id.eq(&corpus_id))
+      .filter(tasks::service_id.eq(&service_id))
+      .filter(tasks::id.eq_any(task_ids_to_rerun))
+      .set(tasks::status.eq(mark))
+      .execute(connection)
+  }
+}
+impl MarkRerun for LogInvalid {
+  fn mark_rerun_by_what(
+    mark: i32,
+    corpus_id: i32,
+    service_id: i32,
+    category: &str,
+    what: &str,
+    connection: &PgConnection,
+  ) -> Result<usize, Error> {
+    use schema::log_invalids::dsl::{log_invalids, category, what, task_id};
+    let task_ids_to_rerun = log_invalids
+      .filter(category.eq(category))
+      .filter(what.eq(what))
+      .select(task_id)
+      .distinct();
+
+    update(tasks::table)
+      .filter(tasks::corpus_id.eq(&corpus_id))
+      .filter(tasks::service_id.eq(&service_id))
+      .filter(tasks::id.eq_any(task_ids_to_rerun))
+      .set(tasks::status.eq(mark))
+      .execute(connection)
   }
 }

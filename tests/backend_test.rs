@@ -210,6 +210,13 @@ fn batch_ops_test() {
     .count()
     .get_result(&backend.connection);
   assert_eq!(done_logs_result, Ok(mock_task_count as i64));
+  // There should be no TODO tasks left for this service
+  let pre_rerun_todo_count = tasks::table
+    .filter(service_id.eq(mock_service.id))
+    .filter(status.eq(TaskStatus::TODO.raw()))
+    .count()
+    .get_result(&backend.connection);
+  assert_eq!(pre_rerun_todo_count, Ok(0));
   // mark_rerun of all tasks
   let mark_rerun_result = backend.mark_rerun(&mock_corpus, &mock_service, None, None, None);
   println!("debug : {:?}", mark_rerun_result);
