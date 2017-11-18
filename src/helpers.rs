@@ -443,3 +443,10 @@ pub fn random_mark() -> i32 {
   let mark_rng: u16 = rng.gen();
   mark_rng as i32
 }
+
+/// Helper for generating a random i32 in a range, to avoid loading the rng crate + boilerplate
+pub fn rand_in_range(from: u16, to: u16) -> u16 {
+  let mut rng = thread_rng();
+  let mark_rng: u16 = rng.gen_range(from, to);
+  mark_rng
+}

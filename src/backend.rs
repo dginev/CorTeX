@@ -133,8 +133,9 @@ impl Backend {
     category: Option<String>,
     what: Option<String>,
   ) -> Result<(), Error> {
-
-    let mark: i32 = random_mark();
+    use schema::tasks::dsl::{service_id, corpus_id, status};
+    // Rerun = set status to TODO for all tasks, deleting old logs
+    let mark: i32 = TaskStatus::TODO.raw();
 
     // First, mark as blocked all of the tasks in the chosen scope, using a special mark
     match severity {
@@ -186,8 +187,12 @@ impl Backend {
       }
       None => {
         // Entire corpus
-        //     try!(self.connection.execute("UPDATE tasks SET status=$1 where corpusid=$2 and serviceid=$3",
-        //                                   &[&mark, &corpus.id.unwrap(), &service.id.unwrap()]));
+        update(tasks::table)
+          .filter(corpus_id.eq(corpus.id))
+          .filter(service_id.eq(service.id))
+          .filter(status.lt(0))
+          .set(status.eq(mark))
+          .execute(&self.connection);
       }
     };
 
