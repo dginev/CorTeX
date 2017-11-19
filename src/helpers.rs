@@ -6,9 +6,11 @@
 // except according to those terms.
 
 //! Helper structures and methods for Task
+#![warn(missing_docs)]
 use regex::Regex;
 use models::{Task, LogInvalid, LogInfo, LogWarning, LogError, LogFatal, LogRecord, NewLogInvalid,
              NewLogInfo, NewLogWarning, NewLogError, NewLogFatal};
+use diesel::*;
 use diesel::pg::PgConnection;
 use diesel::result::Error;
 use concerns::CortexInsertable;
@@ -166,6 +168,16 @@ impl TaskStatus {
       TaskStatus::Invalid => "invalid",
       TaskStatus::Blocked(_) => "blocked",
       TaskStatus::Queued(_) => "queued",
+    }.to_string()
+  }
+  /// Maps the enumeration into the Postgresql table name expected to hold messages for this status
+  pub fn to_table(&self) -> String {
+    match *self {
+      TaskStatus::Warning => "log_warnings",
+      TaskStatus::Error => "log_errors",
+      TaskStatus::Fatal => "log_fatals",
+      TaskStatus::Invalid => "log_invalids",
+      _ => "log_infos",
     }.to_string()
   }
   /// Maps from the raw Task store value into the enumeration
@@ -411,6 +423,41 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
   }
   messages
 }
+
+/// Table declaration for category report return type
+table! {
+  category_reports (category) {
+    category -> ::diesel::types::Text,
+    task_count -> ::diesel::types::BigInt,
+    message_count -> ::diesel::types::BigInt,
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, QueryableByName)]
+/// The return struct of the reports for a service's category summary (for a given severity)
+pub struct CategoryReport {
+  pub category: String,
+  pub task_count: i64,
+  pub message_count: i64,
+}
+
+/// Table declaration for status report return type
+table! {
+  status_reports (status) {
+    status -> ::diesel::types::BigInt,
+    task_count -> ::diesel::types::BigInt,
+    message_count -> ::diesel::types::BigInt,
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, QueryableByName)]
+/// The return struct of the reports for a service's category summary (for a given severity)
+pub struct StatusReport {
+  pub status: i64,
+  pub task_count: i64,
+  pub message_count: i64,
+}
+
 
 /// Utility functions, until they find a better place
 fn utf_truncate(input: &mut String, maxsize: usize) {

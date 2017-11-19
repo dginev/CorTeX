@@ -15,7 +15,7 @@ use std::collections::HashMap;
 // use std::thread;
 use regex::Regex;
 use dotenv::dotenv;
-use diesel::{update, delete, insert_into, sql_query};
+use diesel::*;
 use diesel::prelude::*;
 use diesel::pg::PgConnection;
 // use diesel::pg::upsert::*;
@@ -28,7 +28,7 @@ use concerns::{CortexInsertable, CortexDeletable};
 use models;
 use models::{Task, NewTask, Service, Corpus, LogRecord, LogInfo,
              LogWarning, LogError, LogFatal, LogInvalid, MarkRerun};
-use helpers::{TaskStatus, TaskReport, random_mark};
+use helpers::{TaskStatus, TaskReport, CategoryReport, StatusReport, random_mark};
 
 /// The production database postgresql address, set from the .env configuration file
 pub const DEFAULT_DB_ADDRESS: &str = dotenv!("DATABASE_URL");
@@ -459,45 +459,46 @@ impl Backend {
 
         match category_opt {
           None => {
-            let category_report_query =
-            sql_query("SELECT category, count(*) as task_count, sum(total_counts::int4) FROM (
-                        SELECT logs.category, logs.taskid, count(*) as total_counts FROM \
-                          tasks LEFT OUTER JOIN logs ON (tasks.taskid=logs.taskid) WHERE serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 \
-                            GROUP BY logs.category, logs.taskid) as tmp \
-                       GROUP BY category ORDER BY task_count desc");
+            use diesel::types::BigInt;
+            let log_table = task_status.to_table();
+            // Bad news, query is close to line noise
+            // Good news, we avoid the boilerplate of dispatching to 4 distinct log tables for now
+            let category_report_string =
+              "SELECT category, count(*) as task_count, sum(total_counts) as message_count FROM (".to_string()+
+                "SELECT "+&log_table+".category, "+&log_table+".task_id, count(*) as total_counts FROM "+
+                  "tasks LEFT OUTER JOIN "+&log_table+" ON (tasks.id="+&log_table+".task_id) WHERE service_id=$1 and corpus_id=$2 and status=$3 "+
+                    "GROUP BY "+&log_table+".category, "+&log_table+".task_id) as tmp "+
+              "GROUP BY category ORDER BY task_count desc";
+            let category_report_query = sql_query(category_report_string);
+            let category_report_rows: Vec<CategoryReport> = category_report_query
+              .bind::<BigInt, i64>(service.id as i64)
+              .bind::<BigInt, i64>(corpus.id as i64)
+              .bind::<BigInt, i64>(task_status.raw() as i64)
+              .load(&self.connection).unwrap_or_default();
+            // How many tasks total in this severity-status?
+            let severity_tasks: i64 = tasks::table
+              .filter(service_id.eq(service.id)).filter(corpus_id.eq(corpus.id)).filter(status.eq(task_status.raw()))
+              .count().get_result(&self.connection).unwrap_or(-1);
+            let status_report_string =
+            "SELECT status, count(*) as task_count, sum(inner_message_count) as message_count FROM ( ".to_string()+
+              "SELECT tasks.id, count(*) as inner_message_count FROM "+
+              "tasks, "+&log_table+" where tasks.id="+&log_table+".task_id and "+
+              "service_id=$1 and corpus_id=$2 and status=$3 group by tasks.id) as tmp";
+            let status_report_query = sql_query(status_report_string);
+            let status_report_rows : StatusReport = status_report_query
+              .bind::<BigInt, i64>(service.id as i64)
+              .bind::<BigInt, i64>(corpus.id as i64)
+              .bind::<BigInt, i64>(task_status.raw() as i64)
+              .get_result(&self.connection).unwrap();
 
-//               match self.connection.prepare("select category, count(*) as task_count, sum(total_counts::int4) from (
-//               select logs.category, logs.taskid, count(*) as total_counts from \
-//                                              tasks LEFT OUTER JOIN logs ON (tasks.taskid=logs.taskid) WHERE serviceid=$1 and corpusid=$2 and status=$3 and severity=$4
-//                group by \
-//                                              logs.category, logs.taskid) as tmp GROUP BY category ORDER BY task_count desc;") {
-//                 Ok(select_query) => {
-//                   match select_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1), &raw_status, &severity_name]) {
-//                     Ok(category_rows) => {
-//                       // How many tasks total in this severity?
-//                       let severity_tasks: i64 = match self.connection.prepare("select count(*) from tasks where serviceid=$1 and corpusid=$2 and status=$3;") {
-//                         Ok(total_severity_query) => {
-//                           match total_severity_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1), &raw_status]) {
-//                             Ok(total_severity_rows) => total_severity_rows.get(0).get(0),
-//                             _ => -1,
-//                           }
-//                         }
-//                         _ => -1,
-//                       };
-//                       match self.connection
-//                                 .prepare("select count(*), sum(message_count::int4) from (select tasks.taskid, count(*) as message_count from tasks, logs where tasks.taskid=logs.taskid and \
-//                                           serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 group by tasks.taskid) as tmp;") {
-//                         Ok(total_query) => {
-//                           match total_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1), &raw_status, &severity_name]) {
-//                             Ok(total_rows) => {
-//                               let severity_message_tasks: i64 = total_rows.get(0).get_opt(0).unwrap_or(Ok(0)).unwrap_or(0);
-//                               let severity_messages: i64 = total_rows.get(0).get_opt(1).unwrap_or(Ok(0)).unwrap_or(0);
-//                               let severity_silent_tasks = if severity_message_tasks >= severity_tasks {
-//                                 None
-//                               } else {
-//                                 Some(severity_tasks - severity_message_tasks)
-//                               };
-//                               Backend::aux_task_rows_stats(category_rows,
+            let logged_task_count: i64 = status_report_rows.task_count;
+            let logged_message_count: i64 = status_report_rows.message_count;
+            let silent_task_count = if logged_task_count >= severity_tasks {
+              None
+            } else {
+              Some(severity_tasks - logged_task_count)
+            };
+//                               Backend::aux_task_rows_stats(category_report_rows,
 //                                                            total_tasks,
 //                                                            severity_tasks,
 //                                                            severity_messages,
