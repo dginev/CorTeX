@@ -21,6 +21,7 @@ use diesel::prelude::*;
 use diesel::pg::PgConnection;
 // use diesel::pg::upsert::*;
 use diesel::result::Error;
+use diesel::dsl::sql;
 use schema::{tasks, corpora, log_infos, log_warnings, log_errors, log_fatals, log_invalids};
 
 // use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
@@ -333,9 +334,9 @@ impl Backend {
 
     /// Activates an existing service on a given corpus (via NAME)
     /// if the service has previously been registered, this has "extend" semantics, without any "overwrite" or "reset"
-    pub fn register_service(&self, service: Service, corpus_name: String) -> Result<(), Error> {
+    pub fn register_service(&self, service: &Service, corpus_name: &str) -> Result<(), Error> {
       use schema::tasks::dsl::*;
-      let corpus = try!(Corpus::find_by_name(&corpus_name, &self.connection));
+      let corpus = try!(Corpus::find_by_name(corpus_name, &self.connection));
       let todo_raw = TaskStatus::TODO.raw();
 
       // First, delete existing tasks for this <service, corpus> pair.
@@ -346,7 +347,7 @@ impl Backend {
       let import_service = try!(Service::find_by_name("import", &self.connection));
       let entries : Vec<String> = try!(tasks.filter(service_id.eq(import_service.id)).filter(corpus_id.eq(corpus.id)).select(entry).load(&self.connection));
       try!(self.connection.transaction::<(), Error, _>(|| {
-        for imported_entry in entries.iter() {
+        for imported_entry in &entries {
           let new_task = NewTask {
             entry: imported_entry,
             service_id: service.id,
@@ -363,51 +364,51 @@ impl Backend {
 
     /// Returns a vector of currently available corpora in the Task store
     pub fn corpora(&self) -> Vec<Corpus> {
-      corpora::table.order(corpora::name.asc()).load(&self.connection).unwrap_or(vec![])
+      corpora::table.order(corpora::name.asc()).load(&self.connection).unwrap_or_default()
     }
 
     /// Returns a vector of tasks for a given Corpus, Service and status
     pub fn entries(&self, corpus: &Corpus, service: &Service, task_status: &TaskStatus) -> Vec<String> {
       use schema::tasks::dsl::{service_id, corpus_id, status, entry};
-      let entries : Vec<String> = tasks::table.filter(service_id.eq(service.id)).filter(corpus_id.eq(corpus.id)).filter(status.eq(task_status.raw())).select(entry).load(&self.connection).unwrap_or(vec![]);
+      let entries : Vec<String> = tasks::table.filter(service_id.eq(service.id)).filter(corpus_id.eq(corpus.id)).filter(status.eq(task_status.raw())).select(entry).load(&self.connection).unwrap_or_default();
       let entry_name_regex = Regex::new(r"^(.+)/[^/]+$").unwrap();
       entries.into_iter().map(|db_entry_val| {
         let trimmed_entry = db_entry_val.trim_right().to_string();
         if service.name == "import" {
           trimmed_entry
         } else {
-          let entry_service_result = entry_name_regex.replace(&trimmed_entry, "$1") + "/" + &service.name + ".zip";
-          entry_service_result
+          entry_name_regex.replace(&trimmed_entry, "$1") + "/" + &service.name + ".zip"
         }
       }).collect()
     }
 
     /// Provides a progress report, grouped by severity, for a given `Corpus` and `Service` pair
     pub fn progress_report(&self, corpus: &Corpus, service: &Service) -> HashMap<String, f64> {
+      use schema::tasks::{service_id, corpus_id, status};
+      use diesel::types::BigInt;
+
       let mut stats_hash: HashMap<String, f64> = HashMap::new();
       for status_key in TaskStatus::keys() {
         stats_hash.insert(status_key, 0.0);
       }
       stats_hash.insert("total".to_string(), 0.0);
-      // if let Ok(select_query) = self.connection.prepare("select status,count(*) as status_count from tasks where serviceid=$1 and corpusid=$2 group by status order by status_count desc;") {
-      //   if let Ok(rows) = select_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1)]) {
-      //     for row in rows.iter() {
-      //       let status = TaskStatus::from_raw(row.get(0));
-      //       let status_key = status.to_key();
-      //       let count: i64 = row.get(1);
-      //       {
-      //         let status_frequency = stats_hash.entry(status_key).or_insert(0.0);
-      //         *status_frequency += count as f64;
-      //       }
-      //       if status != TaskStatus::Invalid {
-      //         // DIScount invalids from the total numbers
-      //         let total_frequency = stats_hash.entry("total".to_string()).or_insert(0.0);
-      //         *total_frequency += count as f64;
-      //       }
-      //     }
-      //   }
-      // }
-      // Backend::aux_stats_compute_percentages(&mut stats_hash, None);
+      let rows : Vec<(i32, i64)> = tasks::table.select((status, sql::<BigInt>("count(*) AS status_count")))
+        .filter(service_id.eq(service.id)).filter(corpus_id.eq(corpus.id)).group_by(tasks::status)
+        .order(sql::<BigInt>("status_count").desc()).load(&self.connection).unwrap_or_default();
+      for &(raw_status, count) in &rows {
+        let task_status = TaskStatus::from_raw(raw_status);
+        let status_key = task_status.to_key();
+        {
+          let status_frequency = stats_hash.entry(status_key).or_insert(0.0);
+          *status_frequency += count as f64;
+        }
+        if task_status != TaskStatus::Invalid {
+          // DIScount invalids from the total numbers
+          let total_frequency = stats_hash.entry("total".to_string()).or_insert(0.0);
+          *total_frequency += count as f64;
+        }
+      }
+      Backend::aux_stats_compute_percentages(&mut stats_hash, None);
       stats_hash
     }
 
@@ -619,25 +620,25 @@ impl Backend {
   //       None => Vec::new(),
   //     }
   //   }
-  //   fn aux_stats_compute_percentages(stats_hash: &mut HashMap<String, f64>, total_given: Option<f64>) {
-  //     // Compute percentages, now that we have a total
-  //     let total: f64 = 1.0_f64.max(match total_given {
-  //       None => {
-  //         let total_entry = stats_hash.get_mut("total").unwrap();
-  //         *total_entry
-  //       }
-  //       Some(total_num) => total_num,
-  //     });
-  //     let stats_keys = stats_hash.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>();
-  //     for stats_key in stats_keys {
-  //       {
-  //         let key_percent_value: f64 = 100.0 * (*stats_hash.get_mut(&stats_key).unwrap() as f64 / total as f64);
-  //         let key_percent_rounded: f64 = (key_percent_value * 100.0).round() as f64 / 100.0;
-  //         let key_percent_name = stats_key + "_percent";
-  //         stats_hash.insert(key_percent_name, key_percent_rounded);
-  //       }
-  //     }
-  //   }
+    fn aux_stats_compute_percentages(stats_hash: &mut HashMap<String, f64>, total_given: Option<f64>) {
+      // Compute percentages, now that we have a total
+      let total: f64 = 1.0_f64.max(match total_given {
+        None => {
+          let total_entry = stats_hash.get_mut("total").unwrap();
+          *total_entry
+        }
+        Some(total_num) => total_num,
+      });
+      let stats_keys = stats_hash.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>();
+      for stats_key in stats_keys {
+        {
+          let key_percent_value: f64 = 100.0 * (*stats_hash.get_mut(&stats_key).unwrap() as f64 / total as f64);
+          let key_percent_rounded: f64 = (key_percent_value * 100.0).round() as f64 / 100.0;
+          let key_percent_name = stats_key + "_percent";
+          stats_hash.insert(key_percent_name, key_percent_rounded);
+        }
+      }
+    }
   //   fn aux_task_rows_stats(rows: Rows, total_tasks: i64, these_tasks: i64, these_messages: i64, these_silent: Option<i64>) -> Vec<HashMap<String, String>> {
   //     let mut report = Vec::new();
 
