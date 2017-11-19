@@ -16,7 +16,6 @@ use std::collections::HashMap;
 use regex::Regex;
 use dotenv::dotenv;
 use diesel::*;
-use diesel::prelude::*;
 use diesel::pg::PgConnection;
 // use diesel::pg::upsert::*;
 use diesel::result::Error;
@@ -471,9 +470,9 @@ impl Backend {
               "GROUP BY category ORDER BY task_count desc";
             let category_report_query = sql_query(category_report_string);
             let category_report_rows: Vec<CategoryReport> = category_report_query
-              .bind::<BigInt, i64>(service.id as i64)
-              .bind::<BigInt, i64>(corpus.id as i64)
-              .bind::<BigInt, i64>(task_status.raw() as i64)
+              .bind::<BigInt, i64>(i64::from(service.id))
+              .bind::<BigInt, i64>(i64::from(corpus.id))
+              .bind::<BigInt, i64>(i64::from(task_status.raw()))
               .load(&self.connection).unwrap_or_default();
             // How many tasks total in this severity-status?
             let severity_tasks: i64 = tasks::table
@@ -486,9 +485,9 @@ impl Backend {
               "service_id=$1 and corpus_id=$2 and status=$3 group by tasks.id) as tmp";
             let status_report_query = sql_query(status_report_string);
             let status_report_rows : StatusReport = status_report_query
-              .bind::<BigInt, i64>(service.id as i64)
-              .bind::<BigInt, i64>(corpus.id as i64)
-              .bind::<BigInt, i64>(task_status.raw() as i64)
+              .bind::<BigInt, i64>(i64::from(service.id))
+              .bind::<BigInt, i64>(i64::from(corpus.id))
+              .bind::<BigInt, i64>(i64::from(task_status.raw()))
               .get_result(&self.connection).unwrap();
 
             let logged_task_count: i64 = status_report_rows.task_count;

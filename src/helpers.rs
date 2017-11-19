@@ -10,7 +10,6 @@
 use regex::Regex;
 use models::{Task, LogInvalid, LogInfo, LogWarning, LogError, LogFatal, LogRecord, NewLogInvalid,
              NewLogInfo, NewLogWarning, NewLogError, NewLogFatal};
-use diesel::*;
 use diesel::pg::PgConnection;
 use diesel::result::Error;
 use concerns::CortexInsertable;
@@ -436,8 +435,11 @@ table! {
 #[derive(Debug, Clone, PartialEq, Eq, QueryableByName)]
 /// The return struct of the reports for a service's category summary (for a given severity)
 pub struct CategoryReport {
+  /// the category, per `LaTeXML` convention
   pub category: String,
+  /// number of tasks with messages under this category (in implied severity - strictly)
   pub task_count: i64,
+  /// number of messages under this category (in implied severity - strictly)
   pub message_count: i64,
 }
 
@@ -453,8 +455,11 @@ table! {
 #[derive(Debug, Clone, PartialEq, Eq, QueryableByName)]
 /// The return struct of the reports for a service's category summary (for a given severity)
 pub struct StatusReport {
+  /// the severity, per `LaTeXML` convention, using `CorTeX`s raw numeric representation
   pub status: i64,
+  /// number of tasks with messages under this status
   pub task_count: i64,
+  /// number of tasks with messages under this status (in the respective severity log table only)
   pub message_count: i64,
 }
 
