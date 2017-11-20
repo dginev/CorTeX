@@ -6,7 +6,6 @@
 // except according to those terms.
 
 //! ORM-like capabilities for high- and mid-level operations on the Task store
-extern crate postgres;
 extern crate rustc_serialize;
 extern crate rand;
 extern crate dotenv;
@@ -27,7 +26,7 @@ use concerns::{CortexInsertable, CortexDeletable};
 use models;
 use models::{Task, NewTask, Service, Corpus, LogRecord, LogInfo,
              LogWarning, LogError, LogFatal, LogInvalid, MarkRerun};
-use helpers::{TaskStatus, TaskReport, CategoryReport, StatusReport, random_mark};
+use helpers::{TaskStatus, TaskReport, AggregateReport, TaskDetailReport, random_mark};
 
 /// The production database postgresql address, set from the .env configuration file
 pub const DEFAULT_DB_ADDRESS: &str = dotenv!("DATABASE_URL");
@@ -386,7 +385,7 @@ impl Backend {
   /// Provides a progress report, grouped by severity, for a given `Corpus` and `Service` pair
   pub fn progress_report(&self, corpus: &Corpus, service: &Service) -> HashMap<String, f64> {
     use schema::tasks::{service_id, corpus_id, status};
-    use diesel::types::BigInt;
+    use diesel::types::{BigInt,Text};
 
     let mut stats_hash: HashMap<String, f64> = HashMap::new();
     for status_key in TaskStatus::keys() {
@@ -418,6 +417,7 @@ impl Backend {
   pub fn task_report(&self, corpus: &Corpus, service: &Service,
                       severity_opt: Option<String>, category_opt: Option<String>, what_opt: Option<String>) -> Vec<HashMap<String, String>> {
     use schema::tasks::dsl::{status, service_id, corpus_id};
+    use diesel::types::{BigInt,Text};
     let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
 
     // The final report, populated based on the specific selectors
@@ -456,10 +456,9 @@ impl Backend {
           .execute(&self.connection).unwrap_or_default();
         let total_valid_count = total_count - invalid_count;
 
+        let log_table = task_status.to_table();
         match category_opt {
           None => {
-            use diesel::types::BigInt;
-            let log_table = task_status.to_table();
             // Bad news, query is close to line noise
             // Good news, we avoid the boilerplate of dispatching to 4 distinct log tables for now
             let category_report_string =
@@ -469,7 +468,7 @@ impl Backend {
                     "GROUP BY "+&log_table+".category, "+&log_table+".task_id) as tmp "+
               "GROUP BY category ORDER BY task_count desc";
             let category_report_query = sql_query(category_report_string);
-            let category_report_rows: Vec<CategoryReport> = category_report_query
+            let category_report_rows: Vec<AggregateReport> = category_report_query
               .bind::<BigInt, i64>(i64::from(service.id))
               .bind::<BigInt, i64>(i64::from(corpus.id))
               .bind::<BigInt, i64>(i64::from(task_status.raw()))
@@ -478,17 +477,16 @@ impl Backend {
             let severity_tasks: i64 = tasks::table
               .filter(service_id.eq(service.id)).filter(corpus_id.eq(corpus.id)).filter(status.eq(task_status.raw()))
               .count().get_result(&self.connection).unwrap_or(-1);
-            let status_report_string =
+            let status_report_query_string =
             "SELECT status, count(*) as task_count, sum(inner_message_count) as message_count FROM ( ".to_string()+
               "SELECT tasks.id, count(*) as inner_message_count FROM "+
               "tasks, "+&log_table+" where tasks.id="+&log_table+".task_id and "+
               "service_id=$1 and corpus_id=$2 and status=$3 group by tasks.id) as tmp";
-            let status_report_query = sql_query(status_report_string);
-            let status_report_rows : StatusReport = status_report_query
+            let status_report_query = sql_query(status_report_query_string)
               .bind::<BigInt, i64>(i64::from(service.id))
               .bind::<BigInt, i64>(i64::from(corpus.id))
-              .bind::<BigInt, i64>(i64::from(task_status.raw()))
-              .get_result(&self.connection).unwrap();
+              .bind::<BigInt, i64>(i64::from(task_status.raw()));
+            let status_report_rows : AggregateReport = status_report_query.get_result(&self.connection).unwrap();
 
             let logged_task_count: i64 = status_report_rows.task_count;
             let logged_message_count: i64 = status_report_rows.message_count;
@@ -497,114 +495,91 @@ impl Backend {
             } else {
               Some(severity_tasks - logged_task_count)
             };
-//                               Backend::aux_task_rows_stats(category_report_rows,
-//                                                            total_tasks,
-//                                                            severity_tasks,
-//                                                            severity_messages,
-//                                                            severity_silent_tasks)
+            report = Backend::aux_task_rows_stats(category_report_rows,
+                                          total_valid_count as i64,
+                                          severity_tasks,
+                                          logged_message_count,
+                                          silent_task_count)
           }
-          Some(category_name) => {
-//               if category_name == "no_messages" {
-//                 match self.connection
-//                           .prepare("select entry,taskid from tasks t where serviceid=$1 and corpusid=$2 and status=$3 and not exists (select null from logs where logs.taskid=t.taskid) limit 100;") {
-//                   Ok(select_query) => {
-//                     match select_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1), &raw_status]) {
-//                       Ok(entry_rows) => {
-//                         let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
-//                         let mut entries = Vec::new();
-//                         for row in entry_rows.iter() {
-//                           let mut entry_map = HashMap::new();
-//                           let entry_fixedwidth: String = row.get(0);
-//                           let entry_taskid: i64 = row.get(1);
-//                           let entry = entry_fixedwidth.trim_right().to_string();
-//                           let entry_name = entry_name_regex.replace(&entry, "$1");
+          Some(category_name) => if category_name == "no_messages" {
+            let no_messages_query_string = "SELECT * FROM tasks t WHERE ".to_string()+
+              "service_id=$1 and corpus_id=$2 and status=$3 and "+
+              "NOT EXISTS (SELECT null FROM "+&log_table+" where "+&log_table+".task_id=t.id) limit 100";
+            let no_messages_query = sql_query(no_messages_query_string)
+              .bind::<BigInt, i64>(i64::from(service.id))
+              .bind::<BigInt, i64>(i64::from(corpus.id))
+              .bind::<BigInt, i64>(i64::from(task_status.raw()));
+            let no_message_tasks : Vec<Task> = no_messages_query.get_results(&self.connection).unwrap_or_default();
+            let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
+            for task in &no_message_tasks {
+              let mut entry_map = HashMap::new();
+              let entry = task.entry.trim_right().to_string();
+              let entry_name = entry_name_regex.replace(&entry, "$1");
 
-//                           entry_map.insert("entry".to_string(), entry);
-//                           entry_map.insert("entry_name".to_string(), entry_name);
-//                           entry_map.insert("entry_taskid".to_string(), entry_taskid.to_string());
-//                           entry_map.insert("details".to_string(), "OK".to_string());
-//                           entries.push(entry_map);
-//                         }
-//                         entries
-//                       }
-//                       _ => Vec::new(),
-//                     }
-//                   }
-//                   _ => Vec::new(),
-//                 }
-//               } else {
-//                 match what {
-//                   // using ::int4 since the rust postgresql wrapper can't map Numeric into Rust yet, but it is fine with bigint (as i64)
-//                   None => {
-//                     match self.connection.prepare("select what, count(*) as task_count, sum(total_counts::int4) from (
-//                 select logs.what, logs.taskid, count(*) as total_counts from \
-//                                                    tasks LEFT OUTER JOIN logs ON (tasks.taskid=logs.taskid)
-//                 WHERE serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and \
-//                                                    category=$5
-//                 GROUP BY logs.what, logs.taskid) as tmp GROUP BY what ORDER BY task_count desc;") {
-//                       Ok(select_query) => {
-//                         match select_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1), &raw_status, &severity_name, &category_name]) {
-//                           Ok(what_rows) => {
-//                             // How many tasks and messages total in this category?
-//                             match self.connection
-//                                       .prepare("select count(*), sum(message_count::int4) from (select tasks.taskid, count(*) as message_count from tasks, logs where tasks.taskid=logs.taskid and \
-//                                                 serviceid=$1 and corpusid=$2 and status=$3 and severity=$4 and category=$5 group by tasks.taskid) as tmp;") {
-//                               Ok(total_query) => {
-//                                 match total_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1), &raw_status, &severity_name, &category_name]) {
-//                                   Ok(total_rows) => {
-//                                     let category_tasks: i64 = total_rows.get(0).get(0);
-//                                     let category_messages: i64 = total_rows.get(0).get(1);
-//                                     Backend::aux_task_rows_stats(what_rows,
-//                                                                  total_tasks,
-//                                                                  category_tasks,
-//                                                                  category_messages,
-//                                                                  None)
-//                                   }
-//                                   _ => Vec::new(),
-//                                 }
-//                               }
-//                               _ => Vec::new(),
-//                             }
-//                           }
-//                           _ => Vec::new(),
-//                         }
-//                       }
-//                       _ => Vec::new(),
-//                     }
-//                   }
-//                   Some(what_name) => {
-//                     match self.connection.prepare("select tasks.taskid, tasks.entry, logs.details from tasks, logs where tasks.taskid=logs.taskid and serviceid=$1 and corpusid=$2 and status=$3 \
-//                                                    and severity=$4 and category=$5 and what=$6 limit 100;") {
-//                       Ok(select_query) => {
-//                         match select_query.query(&[&s.id.unwrap_or(-1), &c.id.unwrap_or(-1), &raw_status, &severity_name, &category_name, &what_name]) {
-//                           Ok(entry_rows) => {
-//                             let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
-//                             let mut entries = Vec::new();
-//                             for row in entry_rows.iter() {
-//                               let mut entry_map = HashMap::new();
-//                               let entry_taskid: i64 = row.get(0);
-//                               let entry_fixedwidth: String = row.get(1);
-//                               let details: String = row.get(2);
-//                               let entry = entry_fixedwidth.trim_right().to_string();
-//                               let entry_name = entry_name_regex.replace(&entry, "$1");
-//                               // TODO: Also use url-escape
-//                               entry_map.insert("entry".to_string(), entry);
-//                               entry_map.insert("entry_name".to_string(), entry_name);
-//                               entry_map.insert("entry_taskid".to_string(), entry_taskid.to_string());
-//                               entry_map.insert("details".to_string(), details);
-//                               entries.push(entry_map);
-//                             }
-//                             entries
-//                           }
-//                           _ => Vec::new(),
-//                         }
-//                       }
-//                       _ => Vec::new(),
-//                     }
-//                   }
-//                 }
-//               }
-          }
+              entry_map.insert("entry".to_string(), entry);
+              entry_map.insert("entry_name".to_string(), entry_name);
+              entry_map.insert("entry_taskid".to_string(), task.id.to_string());
+              entry_map.insert("details".to_string(), "OK".to_string());
+              report.push(entry_map);
+            }
+          } else { match what_opt {
+            None => {
+              let what_report_query_string =
+              "SELECT what, count(*) as task_count, sum(total_counts) as message_count FROM ( ".to_string() +
+                "SELECT "+&log_table+".what, "+&log_table+".task_id, count(*) as total_counts FROM "+
+                  "tasks LEFT OUTER JOIN "+&log_table+" ON (tasks.id="+&log_table+".task_id) "+
+                  "WHERE service_id=$1 and corpus_id=$2 and status=$3 and category=$4 "+
+                  "GROUP BY "+&log_table+".what, "+&log_table+".task_id) as tmp GROUP BY what ORDER BY task_count desc";
+              let what_report_query = sql_query(what_report_query_string)
+                .bind::<BigInt, i64>(i64::from(service.id))
+                .bind::<BigInt, i64>(i64::from(corpus.id))
+                .bind::<BigInt, i64>(i64::from(task_status.raw()))
+                .bind::<Text, _>(category_name.clone());
+              let what_report : Vec<AggregateReport> = what_report_query.get_results(&self.connection).unwrap_or_default();
+              // How many tasks and messages total in this category?
+              let this_category_report_query_string = 
+              "SELECT category, count(*), sum(message_count) FROM (SELECT tasks.id, count(*) as message_count ".to_string()+
+                "FROM tasks, "+&log_table+" WHERE tasks.id="+&log_table+".task_id and "+
+                  "service_id=$1 and corpus_id=$2 and status=$3 and category=$4 group by tasks.id) as tmp";
+              let this_category_report_query = sql_query(this_category_report_query_string)
+                .bind::<BigInt, i64>(i64::from(service.id))
+                .bind::<BigInt, i64>(i64::from(corpus.id))
+                .bind::<BigInt, i64>(i64::from(task_status.raw()))
+                .bind::<Text, _>(category_name);
+              let this_category_report : AggregateReport = this_category_report_query.get_result(&self.connection).unwrap();
+
+              report = Backend::aux_task_rows_stats(what_report,
+                                            total_valid_count as i64,
+                                            this_category_report.task_count,
+                                            this_category_report.message_count,
+                                            None)
+            }
+            Some(what_name) => {
+              let details_report_query_string = 
+              "SELECT tasks.id, tasks.entry, ".to_string()+&log_table+".details from tasks, "+&log_table+
+              " WHERE tasks.id="+&log_table+".task_id and service_id=$1 and corpus_id=$2 and status=$3 "+
+                "and category=$4 and what=$5 limit 100";
+              let details_report_query = sql_query(details_report_query_string)
+                .bind::<BigInt, i64>(i64::from(service.id))
+                .bind::<BigInt, i64>(i64::from(corpus.id))
+                .bind::<BigInt, i64>(i64::from(task_status.raw()))
+                .bind::<Text, _>(category_name)
+                .bind::<Text, _>(what_name);
+              let details_report : Vec<TaskDetailReport> = details_report_query.get_results(&self.connection).unwrap_or_default();
+              let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
+              for details_row in details_report.into_iter() {
+                let mut entry_map = HashMap::new();
+                let entry = details_row.entry.trim_right().to_string();
+                let entry_name = entry_name_regex.replace(&entry, "$1");
+                // TODO: Also use url-escape
+                entry_map.insert("entry".to_string(), entry);
+                entry_map.insert("entry_name".to_string(), entry_name);
+                entry_map.insert("entry_taskid".to_string(), details_row.id.to_string());
+                entry_map.insert("details".to_string(), details_row.details);
+                report.push(entry_map);
+              }
+            }
+          }}
         }
       }
     }
@@ -631,58 +606,64 @@ impl Backend {
     }
   }
 
-  //   fn aux_task_rows_stats(rows: Rows, total_tasks: i64, these_tasks: i64, these_messages: i64, these_silent: Option<i64>) -> Vec<HashMap<String, String>> {
-  //     let mut report = Vec::new();
+    fn aux_task_rows_stats(report_rows: Vec<AggregateReport>, mut total_valid_tasks: i64, these_tasks: i64, mut these_messages: i64, these_silent: Option<i64>) -> Vec<HashMap<String, String>> {
+      let mut report = Vec::new();
+      // Guard against dividing by 0
+      if total_valid_tasks <= 0 {
+        total_valid_tasks = 1;
+      }
+      if these_messages <= 0 {
+        these_messages = 1;
+      }
 
-  //     for row in rows.iter() {
-  //       let stat_type_fixedwidth: String = row.get(0);
-  //       let stat_type: String = stat_type_fixedwidth.trim_right().to_string();
-  //       let stat_tasks: i64 = row.get(1);
-  //       let stat_messages: i64 = row.get(2);
-  //       let mut stats_hash: HashMap<String, String> = HashMap::new();
-  //       stats_hash.insert("name".to_string(), stat_type);
-  //       stats_hash.insert("tasks".to_string(), stat_tasks.to_string());
-  //       stats_hash.insert("messages".to_string(), stat_messages.to_string());
+      for row in report_rows.iter() {
+        let stat_type: String = row.report_name.trim_right().to_string();
+        let stat_tasks: i64 = row.task_count;
+        let stat_messages: i64 = row.message_count;
+        let mut stats_hash: HashMap<String, String> = HashMap::new();
+        stats_hash.insert("name".to_string(), stat_type);
+        stats_hash.insert("tasks".to_string(), stat_tasks.to_string());
+        stats_hash.insert("messages".to_string(), stat_messages.to_string());
 
-  //       let tasks_percent_value: f64 = 100.0 * (stat_tasks as f64 / total_tasks as f64);
-  //       let tasks_percent_rounded: f64 = (tasks_percent_value * 100.0).round() as f64 / 100.0;
-  //       stats_hash.insert("tasks_percent".to_string(),
-  //                         tasks_percent_rounded.to_string());
-  //       let messages_percent_value: f64 = 100.0 * (stat_messages as f64 / these_messages as f64);
-  //       let messages_percent_rounded: f64 = (messages_percent_value * 100.0).round() as f64 / 100.0;
-  //       stats_hash.insert("messages_percent".to_string(),
-  //                         messages_percent_rounded.to_string());
+        let tasks_percent_value: f64 = 100.0 * (stat_tasks as f64 / total_valid_tasks as f64);
+        let tasks_percent_rounded: f64 = (tasks_percent_value * 100.0).round() as f64 / 100.0;
+        stats_hash.insert("tasks_percent".to_string(),
+                          tasks_percent_rounded.to_string());
+        let messages_percent_value: f64 = 100.0 * (stat_messages as f64 / these_messages as f64);
+        let messages_percent_rounded: f64 = (messages_percent_value * 100.0).round() as f64 / 100.0;
+        stats_hash.insert("messages_percent".to_string(),
+                          messages_percent_rounded.to_string());
 
-  //       report.push(stats_hash);
-  //     }
-  //     let these_tasks_percent_value: f64 = 100.0 * (these_tasks as f64 / total_tasks as f64);
-  //     let these_tasks_percent_rounded: f64 = (these_tasks_percent_value * 100.0).round() as f64 / 100.0;
-  //     // Append the total to the end of the report:
-  //     let mut total_hash = HashMap::new();
-  //     total_hash.insert("name".to_string(), "total".to_string());
-  //     match these_silent {
-  //       None => {}
-  //       Some(silent_count) => {
-  //         let mut no_messages_hash: HashMap<String, String> = HashMap::new();
-  //         no_messages_hash.insert("name".to_string(), "no_messages".to_string());
-  //         no_messages_hash.insert("tasks".to_string(), silent_count.to_string());
-  //         let silent_tasks_percent_value: f64 = 100.0 * (silent_count as f64 / total_tasks as f64);
-  //         let silent_tasks_percent_rounded: f64 = (silent_tasks_percent_value * 100.0).round() as f64 / 100.0;
-  //         no_messages_hash.insert("tasks_percent".to_string(),
-  //                                 silent_tasks_percent_rounded.to_string());
-  //         no_messages_hash.insert("messages".to_string(), "0".to_string());
-  //         no_messages_hash.insert("messages_percent".to_string(), "0".to_string());
-  //         report.push(no_messages_hash);
-  //       }
-  //     };
-  //     total_hash.insert("tasks".to_string(), these_tasks.to_string());
-  //     total_hash.insert("tasks_percent".to_string(),
-  //                       these_tasks_percent_rounded.to_string());
-  //     total_hash.insert("messages".to_string(), these_messages.to_string());
-  //     total_hash.insert("messages_percent".to_string(), "100".to_string());
-  //     report.push(total_hash);
+        report.push(stats_hash);
+      }
 
+      let these_tasks_percent_value: f64 = 100.0 * (these_tasks as f64 / total_valid_tasks as f64);
+      let these_tasks_percent_rounded: f64 = (these_tasks_percent_value * 100.0).round() as f64 / 100.0;
+      // Append the total to the end of the report:
+      let mut total_hash = HashMap::new();
+      total_hash.insert("name".to_string(), "total".to_string());
+      match these_silent {
+        None => {}
+        Some(silent_count) => {
+          let mut no_messages_hash: HashMap<String, String> = HashMap::new();
+          no_messages_hash.insert("name".to_string(), "no_messages".to_string());
+          no_messages_hash.insert("tasks".to_string(), silent_count.to_string());
+          let silent_tasks_percent_value: f64 = 100.0 * (silent_count as f64 / total_valid_tasks as f64);
+          let silent_tasks_percent_rounded: f64 = (silent_tasks_percent_value * 100.0).round() as f64 / 100.0;
+          no_messages_hash.insert("tasks_percent".to_string(),
+                                  silent_tasks_percent_rounded.to_string());
+          no_messages_hash.insert("messages".to_string(), "0".to_string());
+          no_messages_hash.insert("messages_percent".to_string(), "0".to_string());
+          report.push(no_messages_hash);
+        }
+      };
+      total_hash.insert("tasks".to_string(), these_tasks.to_string());
+      total_hash.insert("tasks_percent".to_string(),
+                        these_tasks_percent_rounded.to_string());
+      total_hash.insert("messages".to_string(), these_messages.to_string());
+      total_hash.insert("messages_percent".to_string(), "100".to_string());
+      report.push(total_hash);
 
-  //     report
-  //   }
+      report
+    }
 }

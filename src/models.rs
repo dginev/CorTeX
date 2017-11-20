@@ -30,7 +30,7 @@ use concerns::{CortexInsertable, CortexDeletable};
 
 // Tasks
 
-#[derive(Identifiable, Queryable, AsChangeset, Clone, Debug)]
+#[derive(Identifiable, Queryable, AsChangeset, Clone, Debug, PartialEq, Eq, QueryableByName)]
 /// A `CorTeX` task, for a given corpus-service pair
 pub struct Task {
   /// task primary key, auto-incremented by postgresql
