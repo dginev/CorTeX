@@ -6,7 +6,6 @@
 // except according to those terms.
 
 //! Helper structures and methods for Task
-#![warn(missing_docs)]
 use regex::Regex;
 use models::{Task, LogInvalid, LogInfo, LogWarning, LogError, LogFatal, LogRecord, NewLogInvalid,
              NewLogInfo, NewLogWarning, NewLogError, NewLogFatal};
@@ -421,46 +420,6 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
     };
   }
   messages
-}
-
-/// Table declaration for the return type for aggregate report queries
-table! {
-  aggregate_reports (report_name) {
-    report_name -> ::diesel::types::Text,
-    task_count -> ::diesel::types::BigInt,
-    message_count -> ::diesel::types::BigInt,
-  }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, QueryableByName)]
-/// The return struct of aggregate reports targeting task and log message counts
-pub struct AggregateReport {
-  /// the category, per `LaTeXML` convention
-  pub report_name: String,
-  /// number of tasks with messages under this category (in implied severity - strictly)
-  pub task_count: i64,
-  /// number of messages under this category (in implied severity - strictly)
-  pub message_count: i64,
-}
-
-/// Table declaration of the return type for "task details" report queries
-table! {
-  task_detail_reports (id) {
-    id -> ::diesel::types::BigInt,
-    entry -> ::diesel::types::Text,
-    details -> ::diesel::types::Text,
-  }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, QueryableByName)]
-/// The return struct of "task details" reports
-pub struct TaskDetailReport {
-  /// the task id
-  pub id: i64,
-  /// the task entry path
-  pub entry: String,
-  /// the details for the queried log (severity, category,what) selection
-  pub details: String,
 }
 
 /// Utility functions, until they find a better place

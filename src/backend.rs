@@ -13,7 +13,7 @@ extern crate dotenv;
 use std::collections::HashMap;
 // use std::thread;
 use regex::Regex;
-use dotenv::dotenv;
+use dotenv::dotenv; 
 use diesel::*;
 use diesel::pg::PgConnection;
 // use diesel::pg::upsert::*;
@@ -26,7 +26,8 @@ use concerns::{CortexInsertable, CortexDeletable};
 use models;
 use models::{Task, NewTask, Service, Corpus, LogRecord, LogInfo,
              LogWarning, LogError, LogFatal, LogInvalid, MarkRerun};
-use helpers::{TaskStatus, TaskReport, AggregateReport, TaskDetailReport, random_mark};
+use helpers::{TaskStatus, TaskReport, random_mark};
+use reports::{AggregateReport, TaskDetailReport};
 
 /// The production database postgresql address, set from the .env configuration file
 pub const DEFAULT_DB_ADDRESS: &str = dotenv!("DATABASE_URL");
@@ -381,11 +382,11 @@ impl Backend {
       }
     }).collect()
   }
-
+ 
   /// Provides a progress report, grouped by severity, for a given `Corpus` and `Service` pair
   pub fn progress_report(&self, corpus: &Corpus, service: &Service) -> HashMap<String, f64> {
     use schema::tasks::{service_id, corpus_id, status};
-    use diesel::types::{BigInt,Text};
+    use diesel::types::{BigInt};
 
     let mut stats_hash: HashMap<String, f64> = HashMap::new();
     for status_key in TaskStatus::keys() {
@@ -495,7 +496,7 @@ impl Backend {
             } else {
               Some(severity_tasks - logged_task_count)
             };
-            report = Backend::aux_task_rows_stats(category_report_rows,
+            report = Backend::aux_task_rows_stats(&category_report_rows,
                                           total_valid_count as i64,
                                           severity_tasks,
                                           logged_message_count,
@@ -548,7 +549,7 @@ impl Backend {
                 .bind::<Text, _>(category_name);
               let this_category_report : AggregateReport = this_category_report_query.get_result(&self.connection).unwrap();
 
-              report = Backend::aux_task_rows_stats(what_report,
+              report = Backend::aux_task_rows_stats(&what_report,
                                             total_valid_count as i64,
                                             this_category_report.task_count,
                                             this_category_report.message_count,
@@ -567,7 +568,7 @@ impl Backend {
                 .bind::<Text, _>(what_name);
               let details_report : Vec<TaskDetailReport> = details_report_query.get_results(&self.connection).unwrap_or_default();
               let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
-              for details_row in details_report.into_iter() {
+              for details_row in details_report {
                 let mut entry_map = HashMap::new();
                 let entry = details_row.entry.trim_right().to_string();
                 let entry_name = entry_name_regex.replace(&entry, "$1");
@@ -606,7 +607,7 @@ impl Backend {
     }
   }
 
-    fn aux_task_rows_stats(report_rows: Vec<AggregateReport>, mut total_valid_tasks: i64, these_tasks: i64, mut these_messages: i64, these_silent: Option<i64>) -> Vec<HashMap<String, String>> {
+    fn aux_task_rows_stats(report_rows: &[AggregateReport], mut total_valid_tasks: i64, these_tasks: i64, mut these_messages: i64, these_silent: Option<i64>) -> Vec<HashMap<String, String>> {
       let mut report = Vec::new();
       // Guard against dividing by 0
       if total_valid_tasks <= 0 {
@@ -616,13 +617,13 @@ impl Backend {
         these_messages = 1;
       }
 
-      for row in report_rows.iter() {
+      for row in report_rows {
         let stat_type: String = row.report_name.trim_right().to_string();
         let stat_tasks: i64 = row.task_count;
-        let stat_messages: i64 = row.message_count;
+        let stat_messages: i64 = row.message_count; 
         let mut stats_hash: HashMap<String, String> = HashMap::new();
         stats_hash.insert("name".to_string(), stat_type);
-        stats_hash.insert("tasks".to_string(), stat_tasks.to_string());
+        stats_hash.insert("tasks".to_string(), stat_tasks.to_string()); 
         stats_hash.insert("messages".to_string(), stat_messages.to_string());
 
         let tasks_percent_value: f64 = 100.0 * (stat_tasks as f64 / total_valid_tasks as f64);

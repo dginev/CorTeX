@@ -34,6 +34,7 @@ pub mod schema;
 pub mod concerns;
 pub mod models;
 pub mod helpers;
+pub mod reports;
 pub mod backend;
 
 // pub mod importer;
