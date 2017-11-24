@@ -8,7 +8,7 @@
 //! Backend models and traits for the `CorTeX` "Task store"
 
 use std::fmt;
-use std::collections::BTreeMap;
+use std::collections::{HashMap, BTreeMap};
 use rand::{thread_rng, Rng};
 use helpers::TaskStatus;
 use rustc_serialize::json::{Json, ToJson};
@@ -585,6 +585,25 @@ impl Service {
       connection,
     )
   }
+
+  /// Returns a hash representation of the `Service`, usually for frontend reports
+  pub fn to_hash(&self) -> HashMap<String, String> {
+    let mut hm = HashMap::new();
+    hm.insert("id".to_string(), self.id.to_string());
+    hm.insert("name".to_string(), self.name.clone());
+    hm.insert("version".to_string(), self.version.to_string());
+    hm.insert("inputformat".to_string(), self.inputformat.clone());
+    hm.insert("outputformat".to_string(), self.outputformat.clone());
+    hm.insert(
+      "inputconverter".to_string(),
+      match self.inputconverter.clone() {
+        Some(ic) => ic,
+        None => "None".to_string(),
+      },
+    );
+    hm.insert("complex".to_string(), self.complex.to_string());
+    hm
+  }
 }
 
 
@@ -643,6 +662,25 @@ impl Corpus {
     corpora::table.filter(corpora::name.eq(name)).first(
       connection,
     )
+  }
+  /// Return a hash representation of the corpus, usually for frontend reports
+  pub fn to_hash(&self) -> HashMap<String, String> {
+    let mut hm = HashMap::new();
+    hm.insert("name".to_string(), self.name.clone());
+    hm
+  }
+
+  /// Return a vector of services currently activated on this corpus
+  pub fn select_services(&self, connection: &PgConnection) -> Result<Vec<Service>, Error> {
+    use schema::tasks::dsl::{corpus_id, service_id};
+    let corpus_service_ids_query = tasks::table.select(service_id).distinct().filter(
+      corpus_id.eq(
+        self.id,
+      ),
+    );
+    let services_query = services::table.filter(services::id.eq_any(corpus_service_ids_query));
+    let services: Vec<Service> = services_query.get_results(connection).unwrap_or_default();
+    Ok(services)
   }
 }
 

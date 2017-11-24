@@ -6,13 +6,20 @@
 // except according to those terms.
 
 //! Helper structures and methods for Task
+use std::fs::File;
+use std::str;
+use std::io;
+use std::path::Path;
 use regex::Regex;
-use models::{Task, LogInvalid, LogInfo, LogWarning, LogError, LogFatal, LogRecord, NewLogInvalid,
-             NewLogInfo, NewLogWarning, NewLogError, NewLogFatal};
+use Archive::*;
+use rand::{thread_rng, Rng};
+
 use diesel::pg::PgConnection;
 use diesel::result::Error;
+
+use models::{Task, LogInvalid, LogInfo, LogWarning, LogError, LogFatal, LogRecord, NewLogInvalid,
+             NewLogInfo, NewLogWarning, NewLogError, NewLogFatal};
 use concerns::CortexInsertable;
-use rand::{thread_rng, Rng};
 
 #[derive(Clone, PartialEq, Eq)]
 /// An enumeration of the expected task statuses
@@ -420,6 +427,96 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
     };
   }
   messages
+}
+
+/// Generates a `TaskReport`, given the path to a result archive from a `CorTeX` processing job
+/// Expects a "cortex.log" file in the archive, following the LaTeXML messaging conventions
+pub fn generate_report(task: Task, result: &Path) -> TaskReport {
+  // println!("Preparing report for {:?}, result at {:?}",self.entry, result);
+  let mut messages = Vec::new();
+  let mut status = TaskStatus::Fatal; // Fatal by default
+  {
+    // -- Archive::Reader, trying to localize (to .drop asap)
+    // Let's open the archive file and find the cortex.log file:
+    let log_name = "cortex.log";
+    match Reader::new()
+      .unwrap()
+      .support_filter_all()
+      .support_format_all()
+      .open_filename(result.to_str().unwrap(), 10240) {
+
+      Err(e) => {
+        println!("Error TODO: Couldn't open archive_reader: {:?}", e);
+      }
+      Ok(archive_reader) => {
+        while let Ok(e) = archive_reader.next_header() {
+          let current_name = e.pathname();
+          if current_name != log_name {
+            continue;
+          } else {
+            // In a "raw" read, we don't know the data size in advance. So we bite the bullet and
+            // read the usually manageable log file in memory
+            let mut raw_log_data = Vec::new();
+            while let Ok(chunk) = archive_reader.read_data(10240) {
+              raw_log_data.extend(chunk.into_iter());
+            }
+            let log_string: String = match str::from_utf8(&raw_log_data) {
+              Ok(some_utf_string) => some_utf_string.to_string(),
+              Err(e) => {
+                "Fatal:cortex:unicode_parse_error ".to_string() + &e.to_string() +
+                  "\nStatus:conversion:3"
+              }
+            };
+            messages = parse_log(task.id, &log_string);
+            // Look for the special status message - Fatal otherwise!
+            for message in &messages {
+              // Invalids are a bit of a workaround for now, they're fatal messages in latexml, but we want them separated out in cortex
+              match message {
+                &NewTaskMessage::Invalid(ref _log_invalid) => {
+                  status = TaskStatus::Invalid;
+                  break;
+                }
+                &NewTaskMessage::Info(ref _log_info) => {
+                  let message_what = message.what();
+                  if message.category() == "conversion" && !message_what.is_empty() {
+                    // Adapt status to the CorTeX scheme: cortex_status = -(latexml_status+1)
+                    let latexml_scheme_status = match message_what.parse::<i32>() {
+                      Ok(num) => num,
+                      Err(e) => {
+                        println!(
+                          "Error TODO: Failed to parse conversion status {:?}: {:?}",
+                          message_what,
+                          e
+                        );
+                        TaskStatus::Fatal.raw()
+                      }
+                    };
+                    let cortex_scheme_status = -(latexml_scheme_status + 1);
+                    status = TaskStatus::from_raw(cortex_scheme_status);
+                    break;
+                  }
+                }
+                _ => {}
+              }
+            }
+          }
+        }
+        drop(archive_reader);
+      }
+    }
+  } // -- END: Archive::Reader, trying to localize (to .drop asap)
+
+  TaskReport {
+    task,
+    status,
+    messages,
+  }
+}
+
+/// Returns an open file handle to the task's entry
+pub fn prepare_input_stream(task: &Task) -> Result<File, io::Error> {
+  let entry_path = Path::new(&task.entry);
+  File::open(entry_path)
 }
 
 /// Utility functions, until they find a better place
