@@ -30,4 +30,9 @@ For more details, consult the [Installation](INSTALL.md) instructions and the [M
 
 ---
 
-**Disclaimer**: This repository has recently undergone first stability runs. We have converted ~1 million articles from arXiv.org with this implementation, and consider the CorTeX job manager largely stable. The backend can still benefit of using an ORM such as [diesel.rs](http://diesel.rs/), and the setup of the various framework tasks still requires (imperfectly documented) manual intervention, so I would not advise deploying the repository for third-party use just yet. However, both bug reports and pull requests with enhancements are most welcome and encouraged!
+**Disclaimer**: 
+ - The CorTeX framework is recurringly converting >1 million articles from arXiv.org.
+ - We consider the CorTeX job manager largely stable.
+ - The backend has recently been rewritten in [diesel.rs](http://diesel.rs/), and the frontend has recently been rewritten in rocket.rs. Both are being retested in production in the last days of 2017.
+ - The setup of the various framework tasks still requires (imperfectly documented) manual intervention, so I would not advise deploying the repository for third-party use just yet.
+ - However, both bug reports and pull requests with enhancements are most welcome and encouraged!
