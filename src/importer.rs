@@ -19,7 +19,7 @@ use std::fs;
 use std::env;
 use std::io::Error;
 use backend::Backend;
-use models::{Task, NewTask, Corpus, NewCorpus};
+use models::{NewTask, Corpus, NewCorpus};
 use helpers::TaskStatus;
 
 /// Struct for performing corpus imports into `CorTeX`

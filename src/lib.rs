@@ -39,5 +39,5 @@ pub mod backend;
 
 pub mod importer;
 pub mod sysinfo;
-// pub mod manager;
+pub mod manager;
 pub mod worker;
