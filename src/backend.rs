@@ -59,6 +59,11 @@ pub fn testdb() -> Backend {
   Backend { connection: connection_at(TEST_DB_ADDRESS) }
 }
 
+/// Constructs a Backend at a given address
+pub fn from_address(address: &str) -> Backend {
+  Backend { connection: connection_at(address) }
+}
+
 /// Instance methods
 impl Backend {
   /// Insert a vector of new `NewTask` tasks into the Task store

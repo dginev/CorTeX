@@ -78,17 +78,27 @@ impl CortexDeletable for Task {
   }
 }
 impl Task {
-  fn delete_by_entry(&self, connection: &PgConnection) -> Result<usize, Error> {
+  /// Delete task by entry
+  pub fn delete_by_entry(&self, connection: &PgConnection) -> Result<usize, Error> {
     use schema::tasks::dsl::entry;
     delete(tasks::table.filter(entry.eq(&self.entry))).execute(connection)
   }
-  fn delete_by_service_id(&self, connection: &PgConnection) -> Result<usize, Error> {
+
+  /// Delete all tasks matching this task's service id
+  pub fn delete_by_service_id(&self, connection: &PgConnection) -> Result<usize, Error> {
     use schema::tasks::dsl::service_id;
     delete(tasks::table.filter(service_id.eq(&self.service_id))).execute(connection)
   }
-  fn delete_by_id(&self, connection: &PgConnection) -> Result<usize, Error> {
+
+  /// Delete task by id
+  pub fn delete_by_id(&self, connection: &PgConnection) -> Result<usize, Error> {
     use schema::tasks::dsl::id;
     delete(tasks::table.filter(id.eq(self.id))).execute(connection)
+  }
+
+  /// Find task by id, error if none
+  pub fn find(taskid: i64, connection: &PgConnection) -> Result<Task, Error> {
+    tasks::table.find(taskid).first(connection)
   }
 }
 
