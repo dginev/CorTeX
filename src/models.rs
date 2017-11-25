@@ -587,6 +587,14 @@ pub struct NewService {
   /// mark "true" if unsure
   pub complex: bool,
 }
+impl CortexInsertable for NewService {
+  fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
+    insert_into(services::table).values(self).execute(
+      connection,
+    )
+  }
+}
+
 
 impl Service {
   /// ORM-like until diesel.rs introduces finders for more fields
