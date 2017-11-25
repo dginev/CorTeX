@@ -37,8 +37,7 @@ pub mod helpers;
 pub mod reports;
 pub mod backend;
 
-// pub mod importer;
-// pub mod data;
-// pub mod sysinfo;
+pub mod importer;
+pub mod sysinfo;
 // pub mod manager;
 // pub mod worker;

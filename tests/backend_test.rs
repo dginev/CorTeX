@@ -30,7 +30,7 @@ fn task_table_crud() {
     version: 0.1,
   };
   let mock_task = NewTask {
-    entry: "mock_task",
+    entry: String::from("mock_task"),
     service_id: mock_service.id,
     corpus_id: mock_corpus_id,
     status: TaskStatus::TODO.raw(),
@@ -73,7 +73,7 @@ fn task_lifecycle_test() {
     version: 0.1,
   };
   let mock_task = NewTask {
-    entry: "mark_task",
+    entry: String::from("mark_task"),
     service_id: mock_service.id,
     corpus_id: mock_corpus_id,
     status: TaskStatus::TODO.raw(),
@@ -84,7 +84,7 @@ fn task_lifecycle_test() {
   // insert 100 tasks
   for index in 1..101 {
     let indexed_task = NewTask {
-      entry: &format!("{}{}", mock_task.entry, index.to_string()),
+      entry: format!("{}{}", mock_task.entry, index.to_string()),
       ..mock_task
     };
     assert!(backend.add(&indexed_task).is_ok());
@@ -143,7 +143,7 @@ fn batch_ops_test() {
 
   let mock_task_count = rand_in_range(10, 100) as usize;
   let mock_new_task = NewTask {
-    entry: "mock_task",
+    entry: String::from("mock_task"),
     service_id: mock_service.id,
     corpus_id: mock_corpus_id,
     status: TaskStatus::TODO.raw(),
@@ -157,7 +157,7 @@ fn batch_ops_test() {
   let new_tasks: Vec<NewTask> = (0..mock_task_count)
     .map(|index| {
       NewTask {
-        entry: &names[index],
+        entry: names[index].clone(),
         ..mock_new_task
       }
     })

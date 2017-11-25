@@ -48,7 +48,7 @@ pub struct Task {
 #[derive(Insertable, Debug)]
 #[table_name = "tasks"]
 /// A new task, to be inserted into `CorTeX`
-pub struct NewTask<'a> {
+pub struct NewTask {
   /// id of the service owning this task
   pub service_id: i32,
   /// id of the corpus hosting this task
@@ -56,10 +56,10 @@ pub struct NewTask<'a> {
   /// current processing status of this task
   pub status: i32,
   /// entry path on the file system
-  pub entry: &'a str,
+  pub entry: String,
 }
 
-impl<'a> CortexInsertable for NewTask<'a> {
+impl CortexInsertable for NewTask {
   fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
     insert_into(tasks::table).values(self).execute(connection)
   }
@@ -92,7 +92,7 @@ impl Task {
   }
 }
 
-impl<'a> CortexDeletable for NewTask<'a> {
+impl CortexDeletable for NewTask {
   fn delete_by(&self, connection: &PgConnection, field: &str) -> Result<usize, Error> {
     match field {
       "entry" => self.delete_by_entry(connection),
@@ -104,7 +104,7 @@ impl<'a> CortexDeletable for NewTask<'a> {
   }
 }
 
-impl<'a> NewTask<'a> {
+impl NewTask {
   fn delete_by_entry(&self, connection: &PgConnection) -> Result<usize, Error> {
     use schema::tasks::dsl::entry;
     delete(tasks::table.filter(entry.eq(&self.entry))).execute(connection)
@@ -624,28 +624,6 @@ pub struct Corpus {
   /// (if unsure, always use "true")
   pub complex: bool,
 }
-/// Insertable `Corpus` struct
-#[derive(Insertable)]
-#[table_name = "corpora"]
-pub struct NewCorpus {
-  /// a human-readable name for this corpus
-  pub name: String,
-  /// file system path to corpus root
-  /// (a corpus is held in a single top-level directory)
-  pub path: String,
-  /// are we using multiple files to represent a document entry?
-  /// (if unsure, always use "true")
-  pub complex: bool,
-}
-impl Default for NewCorpus {
-  fn default() -> Self {
-    NewCorpus {
-      name: "mock corpus".to_string(),
-      path: ".".to_string(),
-      complex: true,
-    }
-  }
-}
 impl ToJson for Corpus {
   fn to_json(&self) -> Json {
     let mut map = BTreeMap::new();
@@ -681,6 +659,38 @@ impl Corpus {
     let services_query = services::table.filter(services::id.eq_any(corpus_service_ids_query));
     let services: Vec<Service> = services_query.get_results(connection).unwrap_or_default();
     Ok(services)
+  }
+}
+
+
+/// Insertable `Corpus` struct
+#[derive(Insertable)]
+#[table_name = "corpora"]
+pub struct NewCorpus {
+  /// a human-readable name for this corpus
+  pub name: String,
+  /// file system path to corpus root
+  /// (a corpus is held in a single top-level directory)
+  pub path: String,
+  /// are we using multiple files to represent a document entry?
+  /// (if unsure, always use "true")
+  pub complex: bool,
+}
+impl Default for NewCorpus {
+  fn default() -> Self {
+    NewCorpus {
+      name: "mock corpus".to_string(),
+      path: ".".to_string(),
+      complex: true,
+    }
+  }
+}
+impl CortexInsertable for NewCorpus {
+  fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
+    insert_into(corpora::table)
+      .values(self)
+      .on_conflict_do_nothing()
+      .execute(connection)
   }
 }
 

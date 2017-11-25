@@ -345,7 +345,7 @@ impl Backend {
     let import_service = try!(Service::find_by_name("import", &self.connection));
     let entries : Vec<String> = try!(tasks.filter(service_id.eq(import_service.id)).filter(corpus_id.eq(corpus.id)).select(entry).load(&self.connection));
     try!(self.connection.transaction::<(), Error, _>(|| {
-      for imported_entry in &entries {
+      for imported_entry in entries {
         let new_task = NewTask {
           entry: imported_entry,
           service_id: service.id,
