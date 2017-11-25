@@ -590,8 +590,9 @@ pub struct NewService {
 
 impl Service {
   /// ORM-like until diesel.rs introduces finders for more fields
-  pub fn find_by_name(name: &str, connection: &PgConnection) -> Result<Service, Error> {
-    services::table.filter(services::name.eq(name)).first(
+  pub fn find_by_name(name_query: &str, connection: &PgConnection) -> Result<Service, Error> {
+    use schema::services::name;
+    services::table.filter(name.eq(name_query)).get_result(
       connection,
     )
   }
@@ -625,11 +626,11 @@ impl Service {
 pub struct Corpus {
   /// auto-incremented postgres id
   pub id: i32,
-  /// a human-readable name for this corpus
-  pub name: String,
   /// file system path to corpus root
   /// (a corpus is held in a single top-level directory)
   pub path: String,
+  /// a human-readable name for this corpus
+  pub name: String,
   /// are we using multiple files to represent a document entry?
   /// (if unsure, always use "true")
   pub complex: bool,
@@ -646,10 +647,9 @@ impl ToJson for Corpus {
 }
 impl Corpus {
   /// ORM-like until diesel.rs introduces finders for more fields
-  pub fn find_by_name(name: &str, connection: &PgConnection) -> Result<Corpus, Error> {
-    corpora::table.filter(corpora::name.eq(name)).first(
-      connection,
-    )
+  pub fn find_by_name(name_query: &str, connection: &PgConnection) -> Result<Corpus, Error> {
+    use schema::corpora::name;
+    corpora::table.filter(name.eq(name_query)).first(connection)
   }
   /// Return a hash representation of the corpus, usually for frontend reports
   pub fn to_hash(&self) -> HashMap<String, String> {
@@ -697,10 +697,7 @@ impl Default for NewCorpus {
 }
 impl CortexInsertable for NewCorpus {
   fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
-    insert_into(corpora::table)
-      .values(self)
-      .on_conflict_do_nothing()
-      .execute(connection)
+    insert_into(corpora::table).values(self).execute(connection)
   }
 }
 

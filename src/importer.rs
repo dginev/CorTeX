@@ -285,7 +285,7 @@ impl Importer {
     let mut import_counter = 0;
     while !walk_q.is_empty() {
       let current_path = walk_q.pop().unwrap();
-      // println!("-- current path {:?}", current_path);
+      println!("-- current path {:?}", current_path);
       let current_metadata = try!(fs::metadata(current_path.clone()));
       if current_metadata.is_dir() {
         // Ignore files
@@ -297,7 +297,7 @@ impl Importer {
         match fs::metadata(current_entry_path.clone()) {
           Ok(_) => {
             // Found the expected file, import this entry:
-            // println!("Found entry: {:?}", current_entry_path);
+            println!("Found entry: {:?}", current_entry_path);
             import_counter += 1;
             import_q.push(self.new_task(current_entry_path));
             if import_q.len() >= 1000 {

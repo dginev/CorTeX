@@ -5,4 +5,4 @@ CREATE TABLE corpora (
   complex boolean NOT NULL
 );
 
-create index corpusnameidx on corpora(name);
+create unique index corpusnameidx on corpora(name);
