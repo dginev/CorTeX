@@ -49,7 +49,7 @@ use redis::Commands;
 use rustc_serialize::json;
 use cortex::sysinfo;
 use cortex::backend::Backend;
-use cortex::data::{Corpus, CortexORM, Service, Task};
+use cortex::models::{Corpus, Service, Task};
 
 static UNKNOWN: &'static str = "_unknown_";
 
@@ -138,8 +138,8 @@ fn admin() -> Template {
 fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
     let backend = Backend::default();
     let corpus_name = aux_uri_unescape(Some(&corpus_name)).unwrap_or(UNKNOWN.to_string());
-    let corpus_result = Corpus{id: None, name: corpus_name.to_string(), path : String::new(), complex : true}.select_by_key(&backend.connection);
-    if let Ok(Some(corpus)) = corpus_result {
+    let corpus_result = Corpus::find_by_name(&corpus_name, &backend.connection);
+    if let Ok(corpus) = corpus_result {
       let mut global = HashMap::new();
       global.insert("title".to_string(), "Registered services for ".to_string() + &corpus_name);
       global.insert("description".to_string(), "An analysis framework for corpora of TeX/LaTeX documents - registered services for ".to_string()+ &corpus_name);
@@ -242,18 +242,8 @@ fn entry_fetch(service_name: String, entry_id: usize, data: Vec<u8>) -> Result<N
   }
   println!("-- serving verified human request for entry {:?} download", entry_id);
 
-  // let service_name = aux_uri_unescape(request.param("service_name")).unwrap_or(UNKNOWN.to_string());
-  // let entry_taskid = aux_uri_unescape(request.param("entry")).unwrap_or(UNKNOWN.to_string());
-  let placeholder_task = Task {
-    id: Some(entry_id as i64),
-    entry: String::new(),
-    corpusid : 0,
-    serviceid : 0,
-
-    status : 0
-  };
   let backend = Backend::default();
-  let task = backend.sync(&placeholder_task).unwrap_or(placeholder_task); // TODO: Error-reporting
+  let task = Task::find(entry_id as i64, &backend.connection).unwrap();
 
   let entry = task.entry;
   let zip_path = match service_name.as_str() {
@@ -325,25 +315,10 @@ fn serve_report(corpus_name: String, service_name: String, severity: Option<Stri
 //   let category = aux_uri_unescape(request.param("category"));
 //   let what = aux_uri_unescape(request.param("what"));
 
-  let corpus_result = Corpus {
-                        id: None,
-                        name: corpus_name.clone(),
-                        path: String::new(),
-                        complex: true,
-                      }
-                      .select_by_key(&backend.connection);
-  if let Ok(Some(corpus)) = corpus_result {
-    let service_result = Service {
-                           id: None,
-                           name: service_name.clone(),
-                           complex: true,
-                           version: 0.1,
-                           inputconverter: None,
-                           inputformat: String::new(),
-                           outputformat: String::new(),
-                         }
-                         .select_by_key(&backend.connection);
-    if let Ok(Some(service)) = service_result {
+  let corpus_result = Corpus::find_by_name(&corpus_name, &backend.connection);
+  if let Ok(corpus) = corpus_result {
+    let service_result = Service::find_by_name(&service_name, &backend.connection);
+    if let Ok(service) = service_result {
       // Metadata in all reports
       global.insert("title".to_string(),
                     "Corpus Report for ".to_string() + &corpus_name);
@@ -467,38 +442,14 @@ fn serve_rerun(corpus_name: String, service_name: String, severity: Option<Strin
   let report_start = time::get_time();
   let backend = Backend::default();
   // Build corpus and service objects
-  let placeholder_corpus = Corpus {
-    id: None,
-    name: corpus_name.to_string(),
-    path: String::new(),
-    complex: true,
-  };
-  let corpus = match placeholder_corpus.select_by_key(&backend.connection) {
+  let corpus = match Corpus::find_by_name(&corpus_name, &backend.connection) {
     Err(_) => return Err(NotFound(format!("Access Denied"))), // TODO: response.error(Forbidden, "Access denied"),
-    Ok(corpus_opt) => {
-      match corpus_opt {
-        None => return Err(NotFound(format!("Access Denied"))), // TODO: response.error(Forbidden, "Access denied"),
-        Some(corpus) => corpus,
-      }
-    }
+    Ok(corpus) => corpus,
   };
-  let placeholder_service = Service {
-    id: None,
-    name: service_name.clone(),
-    complex: true,
-    version: 0.1,
-    inputconverter: None,
-    inputformat: String::new(),
-    outputformat: String::new(),
-  };
-  let service = match placeholder_service.select_by_key(&backend.connection) {
+
+  let service = match Service::find_by_name(&service_name, &backend.connection) {
     Err(_) => return Err(NotFound(format!("Access Denied"))), // TODO: response.error(Forbidden, "Access denied"),
-    Ok(service_opt) => {
-      match service_opt {
-        None => return Err(NotFound(format!("Access Denied"))), // TODO: response.error(Forbidden, "Access denied"),
-        Some(service) => service,
-      }
-    }
+    Ok(service) => service
   };
   let rerun_result = backend.mark_rerun(&corpus, &service, severity, category, what);
   let report_end = time::get_time();
@@ -656,7 +607,7 @@ fn aux_task_report(global: &mut HashMap<String, String>, corpus: &Corpus, servic
     }
     None => String::new(),
   };
-  let cache_key: String = corpus.id.unwrap().to_string() + "_" + &service.id.unwrap().to_string() + &key_tail;
+  let cache_key: String = corpus.id.to_string() + "_" + &service.id.to_string() + &key_tail;
   let cache_key_time = cache_key.clone() + "_time";
   let redis_client = redis::Client::open("redis://127.0.0.1/").unwrap(); // TODO: Better error handling
   let redis_connection = redis_client.get_connection().unwrap();
@@ -725,7 +676,7 @@ fn cache_worker() {
         Err(_) => {}
         Ok(services) => {
           for service in &services {
-            if service.name == "import" {
+            if service.name == "import" { 
               continue;
             }
             println!("[cache worker] Examining corpus {:?}, service {:?}",
@@ -737,13 +688,13 @@ fn cache_worker() {
             let huge: usize = 999999;
             let queued_count_f64: f64 = report.get("queued").unwrap_or(&zero) + report.get("todo").unwrap_or(&zero);
             let queued_count: usize = queued_count_f64 as usize;
-            let key_base: String = corpus.id.unwrap_or(0).to_string() + "_" + &service.id.unwrap_or(0).to_string();
+            let key_base: String = corpus.id.to_string() + "_" + &service.id.to_string();
             // Only recompute the inner pages if we are seeing a change / first visit, on the top corpus+service level
             if *queued_cache.get(&key_base).unwrap_or(&huge) != queued_count {
               println!("[cache worker] state changed, invalidating ...");
               // first cache the count for the next check:
               queued_cache.insert(key_base.clone(), queued_count);
-              // each reported severity (fatal, warning, error)
+              // each reported severity (fatal, warning, error) 
               for severity in &["invalid", "fatal", "error", "warning", "no_problem"] {
                 // most importantly, DEL the key from Redis!
                 let key_severity = key_base.clone() + "_" + severity;

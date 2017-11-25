@@ -17,7 +17,8 @@ use regex::Regex;
 use Archive::*;
 use libxml::parser::Parser;
 use cortex::backend::Backend;
-use cortex::data::{Corpus, Service, TaskStatus};
+use cortex::models::{Corpus, Service};
+use cortex::helpers::TaskStatus;
 
 /// Extends all corpora registered with the `CorTeX` backend, with any new available sources
 ///  (example usage: arXiv.org releases new source bundles every month, which warrant an update at the same frequency.)
@@ -39,29 +40,14 @@ fn main() {
     Some(path) => path,
     None => "./dataset.zip".to_string(),
   };
-  let corpus_placeholder = Corpus {
-    id: None,
-    name: corpus_name,
-    path: String::new(),
-    complex: true,
-  };
-  let corpus = match backend.sync(&corpus_placeholder) {
+  let corpus = match Corpus::find_by_name(&corpus_name, &backend.connection) {
     Ok(c) => c,
     Err(e) => {
       println!("Failed to load corpus: {:?}", e);
       return;
     }
   };
-  let service_placeholder = Service {
-    id: None,
-    name: service_name,
-    version: 0.1,
-    inputformat: String::new(),
-    outputformat: String::new(),
-    inputconverter: None,
-    complex: true,
-  };
-  let service = match backend.sync(&service_placeholder) {
+  let service = match Service::find_by_name(&service_name, &backend.connection) {
     Ok(s) => s,
     Err(e) => {
       println!("Failed to load service: {:?}", e);
@@ -77,20 +63,31 @@ fn main() {
   let mut archive_writer_new = Writer::new().unwrap()
     .set_compression(ArchiveFilter::None) // could be imporoved later (libarchive-sys needs an upgrade ?)
     .set_format(ArchiveFormat::Zip);
-  archive_writer_new.open_filename(&dataset_path.clone()).unwrap();
+  archive_writer_new
+    .open_filename(&dataset_path.clone())
+    .unwrap();
   // Bundle each usable status code:
-  for status in vec![TaskStatus::NoProblem, TaskStatus::Warning, TaskStatus::Error] {
+  for status in vec![
+    TaskStatus::NoProblem,
+    TaskStatus::Warning,
+    TaskStatus::Error,
+  ]
+  {
     let entries = backend.entries(&corpus, &service, &status);
-    println!("Entries found for severity {:?}: {:?}",
-             status.to_key(),
-             entries.len());
+    println!(
+      "Entries found for severity {:?}: {:?}",
+      status.to_key(),
+      entries.len()
+    );
     for entry in entries {
       // Let's open the zip file and grab the result from it
-      if let Ok(archive_reader) = Reader::new()
-              .unwrap()
-              .support_filter_all()
-              .support_format_all()
-              .open_filename(&entry, 10240) {
+      if let Ok(archive_reader) =
+        Reader::new()
+          .unwrap()
+          .support_filter_all()
+          .support_format_all()
+          .open_filename(&entry, 10240)
+      {
         while let Ok(e) = archive_reader.next_header() {
           // Which file are we looking at?
           let pathname = e.pathname();
@@ -124,7 +121,10 @@ fn main() {
               let dataset_path = status.to_key() + "/" + month_dir + "/" + paper_dir + ".html";
               println!("Writing: {:?} ", dataset_path);
               total_dataset_entries += 1;
-              match archive_writer_new.write_header_new(&dataset_path, raw_entry_data.len() as i64) {
+              match archive_writer_new.write_header_new(
+                &dataset_path,
+                raw_entry_data.len() as i64,
+              ) {
                 Ok(_) => {}
                 Err(e) => {
                   println!("Couldn't write header: {:?}", e);
@@ -134,9 +134,11 @@ fn main() {
               match archive_writer_new.write_data(raw_entry_data) {
                 Ok(_) => {}
                 Err(e) => {
-                  println!("Failed to write data to {:?} because {:?}",
-                           dataset_path.clone(),
-                           e)
+                  println!(
+                    "Failed to write data to {:?} because {:?}",
+                    dataset_path.clone(),
+                    e
+                  )
                 }
               };
             }
@@ -149,9 +151,11 @@ fn main() {
   let end_bundle = time::get_time();
 
   let bundle_duration = (end_bundle - start_bundle).num_milliseconds();
-  println!("-- Dataset bundler for corpus {:?} and service {:?} took {:?}ms",
-           corpus.name,
-           service.name,
-           bundle_duration);
+  println!(
+    "-- Dataset bundler for corpus {:?} and service {:?} took {:?}ms",
+    corpus.name,
+    service.name,
+    bundle_duration
+  );
   println!("-- Bundled {:?} dataset entries.", total_dataset_entries);
 }
