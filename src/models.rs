@@ -45,7 +45,7 @@ pub struct Task {
   pub entry: String,
 }
 
-#[derive(Insertable, Debug)]
+#[derive(Insertable, Debug, Clone)]
 #[table_name = "tasks"]
 /// A new task, to be inserted into `CorTeX`
 pub struct NewTask {
@@ -99,6 +99,13 @@ impl Task {
   /// Find task by id, error if none
   pub fn find(taskid: i64, connection: &PgConnection) -> Result<Task, Error> {
     tasks::table.find(taskid).first(connection)
+  }
+
+  /// Find task by entry, error if none
+  pub fn find_by_entry(entry: &str, connection: &PgConnection) -> Result<Task, Error> {
+    tasks::table.filter(tasks::entry.eq(entry)).first(
+      connection,
+    )
   }
 }
 
