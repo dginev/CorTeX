@@ -4,6 +4,10 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
+
+///! Import a new corpus into `CorTeX` from the command line.
+///! Example run: $ ./target/release/examples/tex_to_html_import /data/arxmliv/ arXMLiv
+
 extern crate cortex;
 extern crate pericortex;
 extern crate rustc_serialize;
@@ -28,19 +32,17 @@ fn main() {
   let job_limit: Option<usize> = Some(1);
   let mut input_args = env::args();
   let _ = input_args.next();
-  let corpus_path = match input_args.next() {
+  let mut corpus_path = match input_args.next() {
     Some(path) => path,
-    None => "/arXMLiv/modern/".to_string(),
+    None => "/arXMLiv/modern".to_string(),
   };
-  let corpus_name = match input_args.next() {
-    Some(name) => name,
-    None => "arXMLiv".to_string(),
-  };
-  println!(
-    "-- Importing {:?} at {:?} ...",
-    corpus_name,
-    corpus_path.clone()
-  );
+  if let Some(c) = corpus_path.pop() {
+    if c != '/' {
+      corpus_path.push(c);
+    }
+  }
+  corpus_path.push('/');
+  println!("-- Importing corpus at {:?} ...", &corpus_path);
   let backend = Backend::default();
 
   backend
@@ -89,14 +91,14 @@ fn main() {
     inputconverter: Some("import".to_string()),
     complex: true,
   };
-  backend.add(&new_tex_to_html_service);
+  assert!(backend.add(&new_tex_to_html_service).is_ok());
   let service_registered_result = Service::find_by_name(service_name, &backend.connection);
   assert!(service_registered_result.is_ok());
   let service_registered = service_registered_result.unwrap();
 
   assert!(
     backend
-      .register_service(&service_registered, &corpus_name)
+      .register_service(&service_registered, &corpus_path)
       .is_ok()
   );
 }

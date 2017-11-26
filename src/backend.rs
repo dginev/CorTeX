@@ -335,11 +335,11 @@ impl Backend {
     models::clear_limbo_tasks(&self.connection)
   }
 
-  /// Activates an existing service on a given corpus (via NAME)
+  /// Activates an existing service on a given corpus (via PATH)
   /// if the service has previously been registered, this has "extend" semantics, without any "overwrite" or "reset"
-  pub fn register_service(&self, service: &Service, corpus_name: &str) -> Result<(), Error> {
+  pub fn register_service(&self, service: &Service, corpus_path: &str) -> Result<(), Error> {
     use schema::tasks::dsl::*;
-    let corpus = try!(Corpus::find_by_name(corpus_name, &self.connection));
+    let corpus = try!(Corpus::find_by_path(corpus_path, &self.connection));
     let todo_raw = TaskStatus::TODO.raw();
 
     // First, delete existing tasks for this <service, corpus> pair.

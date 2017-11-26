@@ -671,70 +671,67 @@ fn cache_worker() {
     let mut global_stub: HashMap<String, String> = HashMap::new();
     // each corpus+service (non-import)
     for corpus in &backend.corpora(){
-      let services_result = corpus.select_services(&backend.connection);
-      match services_result {
-        Err(_) => {}
-        Ok(services) => {
-          for service in &services {
-            if service.name == "import" { 
-              continue;
-            }
-            println!("[cache worker] Examining corpus {:?}, service {:?}",
-                     corpus.name,
-                     service.name);
-            // Pages we'll cache:
-            let report = backend.progress_report(corpus, service);
-            let zero: f64 = 0.0;
-            let huge: usize = 999999;
-            let queued_count_f64: f64 = report.get("queued").unwrap_or(&zero) + report.get("todo").unwrap_or(&zero);
-            let queued_count: usize = queued_count_f64 as usize;
-            let key_base: String = corpus.id.to_string() + "_" + &service.id.to_string();
-            // Only recompute the inner pages if we are seeing a change / first visit, on the top corpus+service level
-            if *queued_cache.get(&key_base).unwrap_or(&huge) != queued_count {
-              println!("[cache worker] state changed, invalidating ...");
-              // first cache the count for the next check:
-              queued_cache.insert(key_base.clone(), queued_count);
-              // each reported severity (fatal, warning, error) 
-              for severity in &["invalid", "fatal", "error", "warning", "no_problem"] {
-                // most importantly, DEL the key from Redis!
-                let key_severity = key_base.clone() + "_" + severity;
-                println!("[cache worker] DEL {:?}", key_severity);
-                redis_connection.del(key_severity.clone()).unwrap_or(());
-                if *report.get(*severity).unwrap_or(&zero) > 0.0 {
-                  // cache category page
-                  thread::sleep(Duration::new(1, 0)); // Courtesy sleep of 1 second.
-                  let category_report = aux_task_report(&mut global_stub,
-                                                        corpus,
-                                                        service,
-                                                        Some(severity.to_string()),
-                                                        None,
-                                                        None);
-                  // for each category, cache the what page
-                  for cat_hash in &category_report {
-                    let string_empty = String::new();
-                    let category = cat_hash.get("name").unwrap_or(&string_empty);
-                    if category.is_empty() || (category == "total") {
-                      continue;
-                    }
-                    let key_category = key_severity.clone() + "_" + category;
-                    println!("[cache worker] DEL {:?}", key_category);
-                    redis_connection.del(key_category.clone()).unwrap_or(());
-                    let _ = aux_task_report(&mut global_stub,
-                                            corpus,
-                                            service,
-                                            Some(severity.to_string()),
-                                            Some(category.to_string()),
-                                            None);
-                    // for each what, cache the "task list" page
-                    // for what_hash in what_report.iter() {
-                    //   let what = what_hash.get("name").unwrap_or(&string_empty);
-                    //   if what.is_empty() || (what == "total") {continue;}
-                    //   let key_what = key_category.clone() + "_" + what;
-                    //   println!("[cache worker] DEL {:?}", key_what);
-                    //   redis_connection.del(key_what).unwrap_or(());
-                    //   let _entries = aux_task_report(&mut global_stub, &corpus, &service, Some(severity.to_string()), Some(category.to_string()), Some(what.to_string()));
-                    // }
+      if let Ok(services) = corpus.select_services(&backend.connection) {
+
+        for service in &services {
+          if service.name == "import" { 
+            continue;
+          }
+          println!("[cache worker] Examining corpus {:?}, service {:?}",
+                  corpus.name,
+                  service.name);
+          // Pages we'll cache:
+          let report = backend.progress_report(corpus, service);
+          let zero: f64 = 0.0;
+          let huge: usize = 999999;
+          let queued_count_f64: f64 = report.get("queued").unwrap_or(&zero) + report.get("todo").unwrap_or(&zero);
+          let queued_count: usize = queued_count_f64 as usize;
+          let key_base: String = corpus.id.to_string() + "_" + &service.id.to_string();
+          // Only recompute the inner pages if we are seeing a change / first visit, on the top corpus+service level
+          if *queued_cache.get(&key_base).unwrap_or(&huge) != queued_count {
+            println!("[cache worker] state changed, invalidating ...");
+            // first cache the count for the next check:
+            queued_cache.insert(key_base.clone(), queued_count);
+            // each reported severity (fatal, warning, error) 
+            for severity in &["invalid", "fatal", "error", "warning", "no_problem"] {
+              // most importantly, DEL the key from Redis!
+              let key_severity = key_base.clone() + "_" + severity;
+              println!("[cache worker] DEL {:?}", key_severity);
+              redis_connection.del(key_severity.clone()).unwrap_or(());
+              if *report.get(*severity).unwrap_or(&zero) > 0.0 {
+                // cache category page
+                thread::sleep(Duration::new(1, 0)); // Courtesy sleep of 1 second.
+                let category_report = aux_task_report(&mut global_stub,
+                                                      corpus,
+                                                      service,
+                                                      Some(severity.to_string()),
+                                                      None,
+                                                      None);
+                // for each category, cache the what page
+                for cat_hash in &category_report {
+                  let string_empty = String::new();
+                  let category = cat_hash.get("name").unwrap_or(&string_empty);
+                  if category.is_empty() || (category == "total") {
+                    continue;
                   }
+                  let key_category = key_severity.clone() + "_" + category;
+                  println!("[cache worker] DEL {:?}", key_category);
+                  redis_connection.del(key_category.clone()).unwrap_or(());
+                  let _ = aux_task_report(&mut global_stub,
+                                          corpus,
+                                          service,
+                                          Some(severity.to_string()),
+                                          Some(category.to_string()),
+                                          None);
+                  // for each what, cache the "task list" page
+                  // for what_hash in what_report.iter() {
+                  //   let what = what_hash.get("name").unwrap_or(&string_empty);
+                  //   if what.is_empty() || (what == "total") {continue;}
+                  //   let key_what = key_category.clone() + "_" + what;
+                  //   println!("[cache worker] DEL {:?}", key_what);
+                  //   redis_connection.del(key_what).unwrap_or(());
+                  //   let _entries = aux_task_report(&mut global_stub, &corpus, &service, Some(severity.to_string()), Some(category.to_string()), Some(what.to_string()));
+                  // }
                 }
               }
             }

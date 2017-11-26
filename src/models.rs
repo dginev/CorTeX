@@ -666,6 +666,11 @@ impl Corpus {
     use schema::corpora::name;
     corpora::table.filter(name.eq(name_query)).first(connection)
   }
+  /// ORM-like until diesel.rs introduces finders for more fields
+  pub fn find_by_path(path_query: &str, connection: &PgConnection) -> Result<Corpus, Error> {
+    use schema::corpora::path;
+    corpora::table.filter(path.eq(path_query)).first(connection)
+  }
   /// Return a hash representation of the corpus, usually for frontend reports
   pub fn to_hash(&self) -> HashMap<String, String> {
     let mut hm = HashMap::new();

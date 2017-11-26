@@ -57,7 +57,7 @@ fn main() {
               service.name,
               corpus.name
             );
-            backend.register_service(&service, &corpus.name).unwrap();
+            backend.register_service(&service, &corpus.path).unwrap();
           }
         }
       }
