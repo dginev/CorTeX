@@ -18,7 +18,6 @@ extern crate libxml;
 extern crate zmq;
 extern crate libc;
 extern crate regex;
-extern crate postgres;
 extern crate sys_info;
 extern crate Archive;
 extern crate rustc_serialize;
