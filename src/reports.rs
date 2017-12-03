@@ -11,9 +11,9 @@
 /// Table declaration for the return type for aggregate report queries
 table! {
   aggregate_reports (report_name) {
-    report_name -> ::diesel::types::Text,
-    task_count -> ::diesel::types::BigInt,
-    message_count -> ::diesel::types::BigInt,
+    report_name -> Nullable<Text>,
+    task_count -> BigInt,
+    message_count -> BigInt,
   }
 }
 
@@ -21,7 +21,7 @@ table! {
 /// The return struct of aggregate reports targeting task and log message counts
 pub struct AggregateReport {
   /// the category, per `LaTeXML` convention
-  pub report_name: String,
+  pub report_name: Option<String>,
   /// number of tasks with messages under this category (in implied severity - strictly)
   pub task_count: i64,
   /// number of messages under this category (in implied severity - strictly)
@@ -31,9 +31,9 @@ pub struct AggregateReport {
 /// Table declaration of the return type for "task details" report queries
 table! {
   task_detail_reports (id) {
-    id -> ::diesel::types::BigInt,
-    entry -> ::diesel::types::Text,
-    details -> ::diesel::types::Text,
+    id -> BigInt,
+    entry -> Text,
+    details -> Text,
   }
 }
 

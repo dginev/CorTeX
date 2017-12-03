@@ -468,7 +468,7 @@ impl Backend {
             // Bad news, query is close to line noise
             // Good news, we avoid the boilerplate of dispatching to 4 distinct log tables for now
             let category_report_string =
-              "SELECT category, count(*) as task_count, sum(total_counts) as message_count FROM (".to_string()+
+              "SELECT category as report_name, count(*) as task_count, COALESCE(SUM(total_counts),0) as message_count FROM (".to_string()+
                 "SELECT "+&log_table+".category, "+&log_table+".task_id, count(*) as total_counts FROM "+
                   "tasks LEFT OUTER JOIN "+&log_table+" ON (tasks.id="+&log_table+".task_id) WHERE service_id=$1 and corpus_id=$2 and status=$3 "+
                     "GROUP BY "+&log_table+".category, "+&log_table+".task_id) as tmp "+
@@ -484,15 +484,16 @@ impl Backend {
               .filter(service_id.eq(service.id)).filter(corpus_id.eq(corpus.id)).filter(status.eq(task_status.raw()))
               .count().get_result(&self.connection).unwrap_or(-1);
             let status_report_query_string =
-            "SELECT status, count(*) as task_count, sum(inner_message_count) as message_count FROM ( ".to_string()+
-              "SELECT status, tasks.id, count(*) as inner_message_count FROM "+
+            "SELECT NULL as report_name, count(*) as task_count, COALESCE(SUM(inner_message_count),0) as message_count FROM ( ".to_string()+
+              "SELECT tasks.id, count(*) as inner_message_count FROM "+
               "tasks, "+&log_table+" where tasks.id="+&log_table+".task_id and "+
               "service_id=$1 and corpus_id=$2 and status=$3 group by tasks.id) as tmp";
             let status_report_query = sql_query(status_report_query_string)
               .bind::<BigInt, i64>(i64::from(service.id))
               .bind::<BigInt, i64>(i64::from(corpus.id))
               .bind::<BigInt, i64>(i64::from(task_status.raw()));
-            let status_report_rows : AggregateReport = status_report_query.get_result(&self.connection).unwrap();
+            let status_report_rows_result = status_report_query.get_result(&self.connection);
+            let status_report_rows : AggregateReport = status_report_rows_result.unwrap();
 
             let logged_task_count: i64 = status_report_rows.task_count;
             let logged_message_count: i64 = status_report_rows.message_count;
@@ -531,7 +532,7 @@ impl Backend {
           } else { match what_opt {
             None => {
               let what_report_query_string =
-              "SELECT what, count(*) as task_count, sum(total_counts) as message_count FROM ( ".to_string() +
+              "SELECT what as report_name, count(*) as task_count, COALESCE(SUM(total_counts),0) as message_count FROM ( ".to_string() +
                 "SELECT "+&log_table+".what, "+&log_table+".task_id, count(*) as total_counts FROM "+
                   "tasks LEFT OUTER JOIN "+&log_table+" ON (tasks.id="+&log_table+".task_id) "+
                   "WHERE service_id=$1 and corpus_id=$2 and status=$3 and category=$4 "+
@@ -544,7 +545,7 @@ impl Backend {
               let what_report : Vec<AggregateReport> = what_report_query.get_results(&self.connection).unwrap_or_default();
               // How many tasks and messages total in this category?
               let this_category_report_query_string = 
-              "SELECT category, count(*), sum(message_count) FROM (SELECT tasks.id, count(*) as message_count ".to_string()+
+              "SELECT category, count(*), COALESCE(SUM(message_count),0) FROM (SELECT tasks.id, count(*) as message_count ".to_string()+
                 "FROM tasks, "+&log_table+" WHERE tasks.id="+&log_table+".task_id and "+
                   "service_id=$1 and corpus_id=$2 and status=$3 and category=$4 group by tasks.id) as tmp";
               let this_category_report_query = sql_query(this_category_report_query_string)
@@ -623,7 +624,10 @@ impl Backend {
       }
 
       for row in report_rows {
-        let stat_type: String = row.report_name.trim_right().to_string();
+        let stat_type: String = match row.report_name {
+          Some(ref name) => name.trim_right().to_string(),
+          None => String::new()
+        };
         let stat_tasks: i64 = row.task_count;
         let stat_messages: i64 = row.message_count; 
         let mut stats_hash: HashMap<String, String> = HashMap::new();
