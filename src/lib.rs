@@ -26,7 +26,7 @@ extern crate tempfile;
 extern crate pericortex;
 extern crate time;
 #[macro_use] extern crate diesel;
-#[macro_use] extern crate diesel_codegen;
+#[macro_use] extern crate diesel_infer_schema;
 extern crate dotenv;
 
 pub mod schema;
