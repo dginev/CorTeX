@@ -628,6 +628,7 @@ impl Backend {
           Some(ref name) => name.trim_right().to_string(),
           None => String::new()
         };
+        if stat_type.is_empty() { continue; } // skip, empty
         let stat_tasks: i64 = row.task_count;
         let stat_messages: i64 = row.message_count; 
         let mut stats_hash: HashMap<String, String> = HashMap::new();
