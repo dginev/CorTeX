@@ -451,15 +451,15 @@ impl Backend {
         // The "total tasks" used in the divison denominators for computing the percentage distributions
         //  are all valid tasks (total - invalid), as we don't want to dilute the service percentage with jobs that were never processed.
         // For now the fastest way to obtain that number is using 2 queries for each and subtracting the numbers in Rust
-        let total_count = tasks::table
+        let total_count : i64 = tasks::table
           .filter(service_id.eq(service.id)).filter(corpus_id.eq(corpus.id))
           .count()
-          .execute(&self.connection).unwrap_or_default();
-        let invalid_count = tasks::table
+          .get_result(&self.connection).unwrap();
+        let invalid_count : i64 = tasks::table
           .filter(service_id.eq(service.id)).filter(corpus_id.eq(corpus.id))
           .filter(status.eq(TaskStatus::Invalid.raw()))
           .count()
-          .execute(&self.connection).unwrap_or_default();
+          .get_result(&self.connection).unwrap();
         let total_valid_count = total_count - invalid_count;
 
         let log_table = task_status.to_table();
@@ -468,7 +468,7 @@ impl Backend {
             // Bad news, query is close to line noise
             // Good news, we avoid the boilerplate of dispatching to 4 distinct log tables for now
             let category_report_string =
-              "SELECT category as report_name, count(*) as task_count, COALESCE(SUM(total_counts),0) as message_count FROM (".to_string()+
+              "SELECT category as report_name, count(*) as task_count, COALESCE(SUM(total_counts::integer),0) as message_count FROM (".to_string()+
                 "SELECT "+&log_table+".category, "+&log_table+".task_id, count(*) as total_counts FROM "+
                   "tasks LEFT OUTER JOIN "+&log_table+" ON (tasks.id="+&log_table+".task_id) WHERE service_id=$1 and corpus_id=$2 and status=$3 "+
                     "GROUP BY "+&log_table+".category, "+&log_table+".task_id) as tmp "+
@@ -479,12 +479,13 @@ impl Backend {
               .bind::<BigInt, i64>(i64::from(corpus.id))
               .bind::<BigInt, i64>(i64::from(task_status.raw()))
               .load(&self.connection).unwrap_or_default();
+            println!("Category report rows: {:?}", category_report_rows);
             // How many tasks total in this severity-status?
             let severity_tasks: i64 = tasks::table
               .filter(service_id.eq(service.id)).filter(corpus_id.eq(corpus.id)).filter(status.eq(task_status.raw()))
               .count().get_result(&self.connection).unwrap_or(-1);
             let status_report_query_string =
-            "SELECT NULL as report_name, count(*) as task_count, COALESCE(SUM(inner_message_count),0) as message_count FROM ( ".to_string()+
+            "SELECT NULL as report_name, count(*) as task_count, COALESCE(SUM(inner_message_count::integer),0) as message_count FROM ( ".to_string()+
               "SELECT tasks.id, count(*) as inner_message_count FROM "+
               "tasks, "+&log_table+" where tasks.id="+&log_table+".task_id and "+
               "service_id=$1 and corpus_id=$2 and status=$3 group by tasks.id) as tmp";
@@ -494,7 +495,7 @@ impl Backend {
               .bind::<BigInt, i64>(i64::from(task_status.raw()));
             let status_report_rows_result = status_report_query.get_result(&self.connection);
             let status_report_rows : AggregateReport = status_report_rows_result.unwrap();
-
+            println!("status report : {:?}", status_report_rows);
             let logged_task_count: i64 = status_report_rows.task_count;
             let logged_message_count: i64 = status_report_rows.message_count;
             let silent_task_count = if logged_task_count >= severity_tasks {
@@ -503,7 +504,7 @@ impl Backend {
               Some(severity_tasks - logged_task_count)
             };
             report = Backend::aux_task_rows_stats(&category_report_rows,
-                                          total_valid_count as i64,
+                                          total_valid_count,
                                           severity_tasks,
                                           logged_message_count,
                                           silent_task_count)
@@ -532,7 +533,7 @@ impl Backend {
           } else { match what_opt {
             None => {
               let what_report_query_string =
-              "SELECT what as report_name, count(*) as task_count, COALESCE(SUM(total_counts),0) as message_count FROM ( ".to_string() +
+              "SELECT what as report_name, count(*) as task_count, COALESCE(SUM(total_counts::integer),0) as message_count FROM ( ".to_string() +
                 "SELECT "+&log_table+".what, "+&log_table+".task_id, count(*) as total_counts FROM "+
                   "tasks LEFT OUTER JOIN "+&log_table+" ON (tasks.id="+&log_table+".task_id) "+
                   "WHERE service_id=$1 and corpus_id=$2 and status=$3 and category=$4 "+
@@ -545,7 +546,7 @@ impl Backend {
               let what_report : Vec<AggregateReport> = what_report_query.get_results(&self.connection).unwrap_or_default();
               // How many tasks and messages total in this category?
               let this_category_report_query_string = 
-              "SELECT category, count(*), COALESCE(SUM(message_count),0) FROM (SELECT tasks.id, count(*) as message_count ".to_string()+
+              "SELECT NULL as report_name, count(*) as task_count, COALESCE(SUM(inner_message_count::integer),0) as message_count FROM (SELECT tasks.id, count(*) as inner_message_count ".to_string()+
                 "FROM tasks, "+&log_table+" WHERE tasks.id="+&log_table+".task_id and "+
                   "service_id=$1 and corpus_id=$2 and status=$3 and category=$4 group by tasks.id) as tmp";
               let this_category_report_query = sql_query(this_category_report_query_string)
@@ -556,7 +557,7 @@ impl Backend {
               let this_category_report : AggregateReport = this_category_report_query.get_result(&self.connection).unwrap();
 
               report = Backend::aux_task_rows_stats(&what_report,
-                                            total_valid_count as i64,
+                                            total_valid_count,
                                             this_category_report.task_count,
                                             this_category_report.message_count,
                                             None)
@@ -674,7 +675,6 @@ impl Backend {
       total_hash.insert("messages".to_string(), these_messages.to_string());
       total_hash.insert("messages_percent".to_string(), "100".to_string());
       report.push(total_hash);
-
       report
     }
 }
