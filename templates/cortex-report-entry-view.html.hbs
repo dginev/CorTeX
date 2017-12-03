@@ -110,8 +110,8 @@
             if (matches != null && matches[1]) filename = matches[1].replace(/['"]/g, '');
           } else {
             var form_url = $form.attr('action');
-            var matches = /\/(\d+)$/.exec(form_url);
-            if (matches != null && matches[1]) filename = "task_" + matches[1] + ".zip";
+            var matches = /([^\/]+)\/(\d+)$/.exec(form_url);
+            if (matches != null && matches[1]) filename = matches[1] + "_" + matches[2] + ".zip";
           }
           var type = xhr.getResponseHeader('Content-Type');
           // Default to ZIP, and also default the name to the id
