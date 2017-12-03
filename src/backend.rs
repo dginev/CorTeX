@@ -479,7 +479,7 @@ impl Backend {
               .bind::<BigInt, i64>(i64::from(corpus.id))
               .bind::<BigInt, i64>(i64::from(task_status.raw()))
               .load(&self.connection).unwrap_or_default();
-            println!("Category report rows: {:?}", category_report_rows);
+
             // How many tasks total in this severity-status?
             let severity_tasks: i64 = tasks::table
               .filter(service_id.eq(service.id)).filter(corpus_id.eq(corpus.id)).filter(status.eq(task_status.raw()))
@@ -495,7 +495,7 @@ impl Backend {
               .bind::<BigInt, i64>(i64::from(task_status.raw()));
             let status_report_rows_result = status_report_query.get_result(&self.connection);
             let status_report_rows : AggregateReport = status_report_rows_result.unwrap();
-            println!("status report : {:?}", status_report_rows);
+
             let logged_task_count: i64 = status_report_rows.task_count;
             let logged_message_count: i64 = status_report_rows.message_count;
             let silent_task_count = if logged_task_count >= severity_tasks {
