@@ -5,6 +5,7 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 extern crate cortex;
+extern crate diesel;
 extern crate pericortex;
 
 use cortex::backend;
@@ -12,12 +13,15 @@ use cortex::backend::TEST_DB_ADDRESS;
 use cortex::models::{NewCorpus, Corpus, NewService, Service, NewTask, Task};
 use cortex::helpers::TaskStatus;
 use cortex::manager::TaskManager;
-use pericortex::worker::{TexToHtmlWorker, Worker};
+use cortex::schema::{services, corpora, tasks};
 use cortex::importer::Importer;
+use pericortex::worker::{TexToHtmlWorker, Worker};
 use std::thread;
 use std::time::Duration;
 use std::str;
 use std::process::Command;
+use diesel::prelude::*;
+use diesel::delete;
 
 #[test]
 fn mock_tex_to_html() {
@@ -37,6 +41,26 @@ fn mock_tex_to_html() {
   let test_backend = backend::testdb();
   // assert!(test_backend.setup_task_tables().is_ok());
   let corpus_name = "tex_to_html_test corpus";
+  let service_name = "tex_to_html";
+
+  let mut abs_path = Importer::cwd();
+  abs_path.push("tests/data/cond-mat9912403/cond-mat9912403.zip");
+  let abs_entry = abs_path.to_str().unwrap().to_string();
+
+  // Clean slate
+  let clean_slate_result = delete(corpora::table)
+    .filter(corpora::name.eq(corpus_name))
+    .execute(&test_backend.connection);
+  assert!(clean_slate_result.is_ok());
+  let service_clean_slate_result = delete(services::table)
+    .filter(services::name.eq(service_name))
+    .execute(&test_backend.connection);
+  assert!(service_clean_slate_result.is_ok());
+  let task_clean_slate_result = delete(tasks::table)
+    .filter(tasks::entry.eq(&abs_entry))
+    .execute(&test_backend.connection);
+  assert!(task_clean_slate_result.is_ok());
+
   let add_corpus_result = test_backend.add(&NewCorpus {
     name: corpus_name.to_string(),
     path: "tests/data/".to_string(),
@@ -47,8 +71,6 @@ fn mock_tex_to_html() {
   assert!(corpus_result.is_ok());
   let registered_corpus = corpus_result.unwrap();
 
-
-  let service_name = "tex_to_html";
   let add_service_result = test_backend.add(&NewService {
     name: service_name.to_string(),
     version: 0.1,
@@ -60,17 +82,7 @@ fn mock_tex_to_html() {
   assert!(add_service_result.is_ok());
   let service_result = Service::find_by_name(service_name, &test_backend.connection);
   let tex_to_html_service = service_result.unwrap();
-  let mut abs_path = Importer::cwd();
-  abs_path.push("tests/data/1508.01222/1508.01222.zip");
-  let abs_entry = abs_path.to_str().unwrap().to_string();
-  test_backend
-    .add(&NewTask {
-      entry: abs_entry.clone(),
-      service_id: 2, // Import service always has id 2
-      corpus_id: registered_corpus.id,
-      status: TaskStatus::NoProblem.raw(),
-    })
-    .unwrap();
+
   let conversion_task = NewTask {
     entry: abs_entry.clone(),
     service_id: tex_to_html_service.id,

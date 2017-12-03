@@ -134,7 +134,7 @@ impl NewTask {
 
 // Log Messages
 
-#[derive(Identifiable, Queryable, AsChangeset, Associations, Clone)]
+#[derive(Identifiable, Queryable, AsChangeset, Associations, Clone, Debug)]
 #[belongs_to(Task)]
 /// An info/debug message, as per the `LaTeXML` convention
 pub struct LogInfo {
@@ -149,7 +149,7 @@ pub struct LogInfo {
   /// technical details of the message (e.g. localization info)
   pub details: String,
 }
-#[derive(Insertable, Clone)]
+#[derive(Insertable, Clone, Debug)]
 #[table_name = "log_infos"]
 /// A new, insertable, info/debug message
 pub struct NewLogInfo {
@@ -163,7 +163,7 @@ pub struct NewLogInfo {
   pub details: String,
 }
 
-#[derive(Identifiable, Queryable, AsChangeset, Associations, Clone)]
+#[derive(Identifiable, Queryable, AsChangeset, Associations, Clone, Debug)]
 #[belongs_to(Task)]
 /// A warning message, as per the `LaTeXML` convention
 pub struct LogWarning {
@@ -178,7 +178,7 @@ pub struct LogWarning {
   /// technical details of the message (e.g. localization info)
   pub details: String,
 }
-#[derive(Insertable, Clone)]
+#[derive(Insertable, Clone, Debug)]
 #[table_name = "log_warnings"]
 /// A new, insertable, warning message
 pub struct NewLogWarning {
@@ -192,7 +192,7 @@ pub struct NewLogWarning {
   pub details: String,
 }
 
-#[derive(Identifiable, Queryable, AsChangeset, Associations, Clone)]
+#[derive(Identifiable, Queryable, AsChangeset, Associations, Clone, Debug)]
 #[belongs_to(Task)]
 /// An error message, as per the `LaTeXML` convention
 pub struct LogError {
@@ -207,7 +207,7 @@ pub struct LogError {
   /// technical details of the message (e.g. localization info)
   pub details: String,
 }
-#[derive(Insertable, Clone)]
+#[derive(Insertable, Clone, Debug)]
 #[table_name = "log_errors"]
 /// A new, insertable, error message
 pub struct NewLogError {
@@ -221,7 +221,7 @@ pub struct NewLogError {
   pub details: String,
 }
 
-#[derive(Identifiable, Queryable, AsChangeset, Associations, Clone)]
+#[derive(Identifiable, Queryable, AsChangeset, Associations, Clone, Debug)]
 #[belongs_to(Task)]
 /// A fatal message, as per the `LaTeXML` convention
 pub struct LogFatal {
@@ -236,7 +236,7 @@ pub struct LogFatal {
   /// technical details of the message (e.g. localization info)
   pub details: String,
 }
-#[derive(Insertable, Clone)]
+#[derive(Insertable, Clone, Debug)]
 #[table_name = "log_fatals"]
 /// A new, insertable, fatal message
 pub struct NewLogFatal {
@@ -251,7 +251,7 @@ pub struct NewLogFatal {
 }
 
 
-#[derive(Identifiable, Queryable, AsChangeset, Clone, Associations)]
+#[derive(Identifiable, Queryable, AsChangeset, Clone, Associations, Debug)]
 #[belongs_to(Task)]
 /// An invalid message, as per the `LaTeXML` convention
 pub struct LogInvalid {
@@ -266,7 +266,7 @@ pub struct LogInvalid {
   /// technical details of the message (e.g. localization info)
   pub details: String,
 }
-#[derive(Insertable, Clone)]
+#[derive(Insertable, Clone, Debug)]
 #[table_name = "log_invalids"]
 /// A new, insertable, invalid message
 pub struct NewLogInvalid {

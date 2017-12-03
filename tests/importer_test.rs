@@ -12,12 +12,10 @@ use cortex::models::{Corpus, NewCorpus};
 use diesel::delete;
 use diesel::prelude::*;
 use cortex::schema::{tasks, corpora};
-
-use std::vec::Vec;
 use std::fs;
 
-fn assert_files(files: Vec<&str>) -> Result<(), std::io::Error> {
-  for file in &files {
+fn assert_files(files: &[&str]) -> Result<(), std::io::Error> {
+  for file in files {
     let meta = fs::metadata(file);
     assert!(meta.is_ok());
     assert!(meta.unwrap().is_file());
@@ -27,8 +25,8 @@ fn assert_files(files: Vec<&str>) -> Result<(), std::io::Error> {
   Ok(())
 }
 
-fn assert_dirs(dirs: Vec<&str>) -> Result<(), std::io::Error> {
-  for dir in &dirs {
+fn assert_dirs(dirs: &[&str]) -> Result<(), std::io::Error> {
+  for dir in dirs {
     let meta = fs::metadata(dir);
     assert!(meta.is_ok());
     assert!(meta.unwrap().is_dir());
@@ -118,16 +116,20 @@ fn can_import_complex() {
   println!("-- Testing repeated complex import (successful and no-op)");
   assert!(repeat_importer.process().is_ok());
 
-  let files_removed_ok = assert_files(vec![
-    "tests/data/9107/hep-lat9107001/hep-lat9107001.zip",
-    "tests/data/9107/hep-lat9107002/hep-lat9107002.zip",
-  ]);
+  let files_removed_ok = assert_files(
+    &[
+      "tests/data/9107/hep-lat9107001/hep-lat9107001.zip",
+      "tests/data/9107/hep-lat9107002/hep-lat9107002.zip",
+    ],
+  );
   assert!(files_removed_ok.is_ok());
-  let dirs_removed_ok = assert_dirs(vec![
-    "tests/data/9107/hep-lat9107001",
-    "tests/data/9107/hep-lat9107002",
-    "tests/data/9107",
-  ]);
+  let dirs_removed_ok = assert_dirs(
+    &[
+      "tests/data/9107/hep-lat9107001",
+      "tests/data/9107/hep-lat9107002",
+      "tests/data/9107",
+    ],
+  );
   assert!(dirs_removed_ok.is_ok());
 
   // Clean slate

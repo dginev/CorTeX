@@ -485,7 +485,7 @@ impl Backend {
               .count().get_result(&self.connection).unwrap_or(-1);
             let status_report_query_string =
             "SELECT status, count(*) as task_count, sum(inner_message_count) as message_count FROM ( ".to_string()+
-              "SELECT tasks.id, count(*) as inner_message_count FROM "+
+              "SELECT status, tasks.id, count(*) as inner_message_count FROM "+
               "tasks, "+&log_table+" where tasks.id="+&log_table+".task_id and "+
               "service_id=$1 and corpus_id=$2 and status=$3 group by tasks.id) as tmp";
             let status_report_query = sql_query(status_report_query_string)

@@ -617,7 +617,7 @@ fn aux_task_report(global: &mut HashMap<String, String>, corpus: &Corpus, servic
 
   match cache_val {
     Ok(cached_report_json) => {
-      let cached_report = json::decode(&cached_report_json).unwrap_or(Vec::new());
+      let cached_report : Vec<HashMap<String, String>> = json::decode(&cached_report_json).unwrap_or_default();
       if cached_report.is_empty() {
         let backend = Backend::default();
         let report: Vec<HashMap<String, String>> = backend.task_report(corpus, service, severity, category, what.clone());

@@ -21,7 +21,7 @@ use models::{Task, LogInvalid, LogInfo, LogWarning, LogError, LogFatal, LogRecor
              NewLogInfo, NewLogWarning, NewLogError, NewLogFatal};
 use concerns::CortexInsertable;
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 /// An enumeration of the expected task statuses
 pub enum TaskStatus {
   /// currently queued for processing
@@ -42,7 +42,7 @@ pub enum TaskStatus {
   Queued(i32),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 /// In-progress task, with dispatch metadata
 pub struct TaskProgress {
   /// the `Task` struct being tracked
@@ -59,7 +59,7 @@ impl TaskProgress {
   }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 /// Completed task, with its processing status and report messages
 pub struct TaskReport {
   /// the `Task` we are reporting on
@@ -70,7 +70,7 @@ pub struct TaskReport {
   pub messages: Vec<NewTaskMessage>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 /// Enum for all types of reported messages for a given Task, as per the `LaTeXML` convention
 /// One of "invalid", "fatal", "error", "warning" or "info"
 pub enum TaskMessage {
@@ -228,7 +228,7 @@ impl TaskStatus {
   }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 /// Enum for all types of reported messages for a given Task, as per the `LaTeXML` convention
 /// One of "invalid", "fatal", "error", "warning" or "info"
 pub enum NewTaskMessage {
@@ -449,55 +449,54 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
         println!("Error TODO: Couldn't open archive_reader: {:?}", e);
       }
       Ok(archive_reader) => {
-        while let Ok(e) = archive_reader.next_header() {
-          let current_name = e.pathname();
-          if current_name != log_name {
+        while let Ok(entry) = archive_reader.next_header() {
+          if entry.pathname() != log_name {
             continue;
-          } else {
-            // In a "raw" read, we don't know the data size in advance. So we bite the bullet and
-            // read the usually manageable log file in memory
-            let mut raw_log_data = Vec::new();
-            while let Ok(chunk) = archive_reader.read_data(10240) {
-              raw_log_data.extend(chunk.into_iter());
+          }
+
+          // In a "raw" read, we don't know the data size in advance. So we bite the bullet and
+          // read the usually manageable log file in memory
+          let mut raw_log_data = Vec::new();
+          while let Ok(chunk) = archive_reader.read_data(10240) {
+            raw_log_data.extend(chunk.into_iter());
+          }
+          let log_string: String = match str::from_utf8(&raw_log_data) {
+            Ok(some_utf_string) => some_utf_string.to_string(),
+            Err(e) => {
+              "Fatal:cortex:unicode_parse_error ".to_string() + &e.to_string() +
+                "\nStatus:conversion:3"
             }
-            let log_string: String = match str::from_utf8(&raw_log_data) {
-              Ok(some_utf_string) => some_utf_string.to_string(),
-              Err(e) => {
-                "Fatal:cortex:unicode_parse_error ".to_string() + &e.to_string() +
-                  "\nStatus:conversion:3"
+          };
+          messages = parse_log(task.id, &log_string);
+          // Look for the special status message - Fatal otherwise!
+          for message in &messages {
+            // Invalids are a bit of a workaround for now, they're fatal messages in latexml, but we want them separated out in cortex
+            match message {
+              &NewTaskMessage::Invalid(ref _log_invalid) => {
+                status = TaskStatus::Invalid;
+                break;
               }
-            };
-            messages = parse_log(task.id, &log_string);
-            // Look for the special status message - Fatal otherwise!
-            for message in &messages {
-              // Invalids are a bit of a workaround for now, they're fatal messages in latexml, but we want them separated out in cortex
-              match message {
-                &NewTaskMessage::Invalid(ref _log_invalid) => {
-                  status = TaskStatus::Invalid;
+              &NewTaskMessage::Info(ref _log_info) => {
+                let message_what = message.what();
+                if message.category() == "conversion" && !message_what.is_empty() {
+                  // Adapt status to the CorTeX scheme: cortex_status = -(latexml_status+1)
+                  let latexml_scheme_status = match message_what.parse::<i32>() {
+                    Ok(num) => num,
+                    Err(e) => {
+                      println!(
+                        "Error TODO: Failed to parse conversion status {:?}: {:?}",
+                        message_what,
+                        e
+                      );
+                      3 // latexml raw fatal
+                    }
+                  };
+                  let cortex_scheme_status = -(latexml_scheme_status + 1);
+                  status = TaskStatus::from_raw(cortex_scheme_status);
                   break;
                 }
-                &NewTaskMessage::Info(ref _log_info) => {
-                  let message_what = message.what();
-                  if message.category() == "conversion" && !message_what.is_empty() {
-                    // Adapt status to the CorTeX scheme: cortex_status = -(latexml_status+1)
-                    let latexml_scheme_status = match message_what.parse::<i32>() {
-                      Ok(num) => num,
-                      Err(e) => {
-                        println!(
-                          "Error TODO: Failed to parse conversion status {:?}: {:?}",
-                          message_what,
-                          e
-                        );
-                        TaskStatus::Fatal.raw()
-                      }
-                    };
-                    let cortex_scheme_status = -(latexml_scheme_status + 1);
-                    status = TaskStatus::from_raw(cortex_scheme_status);
-                    break;
-                  }
-                }
-                _ => {}
               }
+              _ => {}
             }
           }
         }

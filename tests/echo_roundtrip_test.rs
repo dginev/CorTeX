@@ -19,7 +19,7 @@ use cortex::importer::Importer;
 
 use diesel::delete;
 use diesel::prelude::*;
-use cortex::schema::{corpora, services};
+use cortex::schema::{corpora, services, tasks};
 
 #[test]
 fn mock_round_trip() {
@@ -45,11 +45,19 @@ fn mock_round_trip() {
   let mock_corpus = corpus_result.unwrap();
 
   let service_name = "echo_service";
+  let mut abs_path = Importer::cwd();
+  abs_path.push("tests/data/1508.01222/1508.01222.zip");
+  let abs_entry = abs_path.to_str().unwrap().to_string();
+
   // clean slate
   let service_clean_slate = delete(services::table)
     .filter(services::name.eq(service_name))
     .execute(&test_backend.connection);
   assert!(service_clean_slate.is_ok());
+  let tasks_clean_slate = delete(tasks::table)
+    .filter(tasks::entry.eq(&abs_entry))
+    .execute(&test_backend.connection);
+  assert!(tasks_clean_slate.is_ok());
 
   let add_service_result = test_backend.add(&NewService {
     name: service_name.to_string(),
@@ -63,11 +71,6 @@ fn mock_round_trip() {
   let service_result = Service::find_by_name(service_name, &test_backend.connection);
   assert!(service_result.is_ok());
   let echo_service = service_result.unwrap();
-
-
-  let mut abs_path = Importer::cwd();
-  abs_path.push("tests/data/1508.01222/1508.01222.zip");
-  let abs_entry = abs_path.to_str().unwrap().to_string();
 
   let import_task_result = test_backend.add(&NewTask {
     entry: abs_entry.clone(),
@@ -90,7 +93,7 @@ fn mock_round_trip() {
     let manager = TaskManager {
       source_port: 5555,
       result_port: 5556,
-      queue_size: 100000,
+      queue_size: 100_000,
       message_size: 100,
       backend_address: TEST_DB_ADDRESS.to_string(),
     };
