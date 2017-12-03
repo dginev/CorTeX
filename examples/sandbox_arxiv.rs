@@ -18,7 +18,7 @@ use std::io::BufReader;
 use std::io::BufRead;
 use std::io::Read;
 use cortex::backend::Backend;
-use cortex::data::{CortexORM, Corpus};
+use cortex::models::Corpus;
 
 /// Reads a lit of arXiv ids given on input, and packages the respective `CorTeX` entries into a new sandbox.
 fn main() {
@@ -37,9 +37,8 @@ fn main() {
   // Fish out the arXiv root directory from CorTeX
   let backend = Backend::default();
   let sandbox_start = time::get_time();
-  let corpus_mock = Corpus { name: "arXMLiv".to_string(), ..Corpus::default() };
-  let corpus = match corpus_mock.select_by_key(&backend.connection) {
-    Ok(Some(corpus)) => corpus,
+  let corpus = match Corpus::find_by_name("arXMLiv", &backend.connection) {
+    Ok(corpus) => corpus,
     _ => {
       println!("--  The arXMLiv corpus isn't registered in the CorTeX backend, aborting.");
       return;
@@ -52,17 +51,19 @@ fn main() {
   let ids_fh = match File::open(&ids_filepath) {
     Ok(fh) => fh,
     _ => {
-      println!("-- Couldn't read file with arXiv ids {:?}, aborting.",
-               ids_filepath);
+      println!(
+        "-- Couldn't read file with arXiv ids {:?}, aborting.",
+        ids_filepath
+      );
       return;
     }
   };
 
   // Prepare a sandbox archive file writer
   let mut sandbox_writer = Writer::new()
-                             .unwrap()
-                             .set_compression(ArchiveFilter::None)
-                             .set_format(ArchiveFormat::Zip);
+    .unwrap()
+    .set_compression(ArchiveFilter::None)
+    .set_format(ArchiveFormat::Zip);
   sandbox_writer.open_filename(&sandbox_path).unwrap();
 
   // Read in ids, and whenever a source exists, write it to the sandbox archive
@@ -123,9 +124,11 @@ fn main() {
           match sandbox_writer.write_data(buffer) {
             Ok(_) => {}
             Err(e) => {
-              println!("Failed to write data to {:?} because {:?}",
-                       relative_entry_path.clone(),
-                       e)
+              println!(
+                "Failed to write data to {:?} because {:?}",
+                relative_entry_path.clone(),
+                e
+              )
             }
           };
         }
@@ -135,8 +138,10 @@ fn main() {
 
   let sandbox_end = time::get_time();
   let sandbox_duration = (sandbox_end - sandbox_start).num_milliseconds();
-  println!("-- Sandboxing {:?} arXiv papers took took {:?}ms",
-           counter,
-           sandbox_duration);
+  println!(
+    "-- Sandboxing {:?} arXiv papers took took {:?}ms",
+    counter,
+    sandbox_duration
+  );
 
 }

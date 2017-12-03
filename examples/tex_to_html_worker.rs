@@ -9,7 +9,7 @@ extern crate rand;
 extern crate tempfile;
 extern crate pericortex;
 
-use pericortex::worker::{Worker,TexToHtmlWorker};
+use pericortex::worker::{Worker, TexToHtmlWorker};
 
 fn main() {
   println!("Starting up TeX to HTML worker and awaiting jobs...");

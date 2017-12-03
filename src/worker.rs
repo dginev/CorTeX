@@ -17,8 +17,9 @@ use std::fs::File;
 use std::thread;
 use std::time::Duration;
 
-use backend::{DEFAULT_DB_ADDRESS, Backend};
-use data::{Task, Corpus};
+use backend;
+use backend::DEFAULT_DB_ADDRESS;
+use models::{Task, Corpus, NewCorpus};
 use importer::Importer;
 use pericortex::worker::Worker;
 
@@ -66,20 +67,21 @@ impl Worker for InitWorker {
 
   fn convert(&self, path: &Path) -> Option<File> {
     let path_str = path.to_str().unwrap().to_string();
-    let backend = Backend::from_address(&self.backend_address);
-    let corpus = Corpus {
-      id: None,
+    let backend = backend::from_address(&self.backend_address);
+    let corpus = NewCorpus {
       path: path_str.clone(),
-      name: path_str,
+      name: path_str.clone(),
       complex: true,
     };
     // Add the new corpus.
-    let checked_corpus = backend.add(corpus).unwrap();
+    backend.add(&corpus).expect("Failed to create new corpus.");
+    let registered_corpus = Corpus::find_by_name(&path_str, &backend.connection)
+      .expect("Failed to create new corpus.");
 
     // Create an importer for the corpus, and then process all entries to populate CorTeX tasks
     let importer = Importer {
-      corpus: checked_corpus,
-      backend: Backend::from_address(&self.backend_address),
+      corpus: registered_corpus,
+      backend: backend::from_address(&self.backend_address),
       cwd: Importer::cwd(),
     };
 
@@ -101,7 +103,7 @@ impl Worker for InitWorker {
     let context_sink = Context::new();
     let sink = context_sink.socket(zmq::PUSH).unwrap();
     assert!(sink.connect(&self.sink()).is_ok());
-    let backend = Backend::from_address(&self.backend_address);
+    let backend = backend::from_address(&self.backend_address);
     // Work in perpetuity
     loop {
       let mut taskid_msg = Message::new().unwrap();
@@ -114,14 +116,9 @@ impl Worker for InitWorker {
       // Terminating with an empty message in place of a payload (INIT is special)
       source.recv(&mut recv_msg, 0).unwrap();
 
-      let placeholder_task = Task {
-        id: Some(taskid.parse::<i64>().unwrap()),
-        entry: String::new(),
-        corpusid: 0,
-        serviceid: 0,
-        status: 0,
-      };
-      let task = match backend.sync(&placeholder_task) {
+
+      let task_result = Task::find(taskid.parse::<i64>().unwrap(), &backend.connection);
+      let task = match task_result {
         Ok(t) => t,
         _ => {
           // If there was nothing to do, retry a minute later

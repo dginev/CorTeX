@@ -1,6 +1,6 @@
 [package]
 name = "cortex"
-version = "0.2.0"
+version = "0.2.9"
 authors = ["Deyan Ginev <d.ginev@jacobs-university.de>"]
 license = "MIT"
 repository = "https://github.com/dginev/CorTeX"
@@ -19,7 +19,7 @@ git = "https://github.com/dginev/libarchive-sys.git"
 git = "https://github.com/dginev/CorTeX-Peripherals.git"
 
 [dependencies.rocket_contrib]
-version = "0.3.0"
+version = "0.3.3"
 default-features = false
 features = ["handlebars_templates"]
 
@@ -30,7 +30,8 @@ rustc-serialize = "0.3"
 serde = "1.0"
 serde_json = "1.0"
 serde_derive = "1.0"
-postgres = "0.15.1"
+dotenv = "0.10"
+dotenv_macros = "0.10"
 sys-info = "0.4.1"
 url = "1.2.3"
 glob = "0.2.11"
@@ -40,10 +41,12 @@ time = "0.1.35"
 libxml = "0.0.61"
 redis = "0.7.0"
 gnuplot = "0.0.21"
-rocket = "0.3.0"
-rocket_codegen = "0.3.0"
+rocket = "0.3.3"
+rocket_codegen = "0.3.3"
 futures = "0.1"
 hyper = "0.11"
 hyper-tls = "0.1"
 tokio-core = "0.1"
 zmq = "0.8.2"
+diesel = {version="0.99.0", features = ["postgres"]}
+diesel_infer_schema = {version="0.99.0", features = ["postgres"]}
