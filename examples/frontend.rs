@@ -240,8 +240,7 @@ fn entry_fetch(service_name: String, entry_id: usize, data: Vec<u8>) -> Result<N
   if !captcha_verified {
     return Err(Redirect::to(&format!("/entry/{:?}/{:?}?expire_quotas", service_name, entry_id)));
   }
-  println!("-- serving verified human request for entry {:?} download", entry_id);
-
+  
   let backend = Backend::default();
   let task = Task::find(entry_id as i64, &backend.connection).unwrap();
 

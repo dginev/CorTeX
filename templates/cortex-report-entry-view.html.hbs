@@ -1,191 +1,206 @@
 <div id="modal-get-entry" class="modal fade" tabindex="-1" role="dialog">
   <div class="modal-dialog">
-  <div class="modal-content">
-  <form id="form-get-entry" class="form-get-entry" name="form-get-entry" method="post"  accept-charset="UTF-8" action="">
-  <div class="modal-header">
-      <a class="close" data-dismiss="modal">×</a>
-      <h3>Are you human?</h3>
-  </div>
-  <div class="modal-body">
-    <div style="text-align: left; margin-bottom: 10px;">
-    <p>By proceeding to a download you:</p>
-    <ol>
-     <li>Agree to a <strong>temporary preview</strong> of the implied data sample,</li>
-     <li>Agree that this download is intended and authorized only for <strong>research use</strong>,</li>
-     <li>Agree to <strong>purging all local copies</strong> of the data at the immediate end of the research experiment,</li>
-     <li>Agree to protecting the <strong>original copyright</strong> of all implied data,</li>
-     <li>Agree to <strong>provide attribution</strong> as appropriate.</li>
-    </ol>
-    <br>
+    <div class="modal-content">
+      <form id="form-get-entry" class="form-get-entry" name="form-get-entry" method="post" accept-charset="UTF-8" action="">
+        <div class="modal-header">
+          <a class="close" data-dismiss="modal">×</a>
+          <h3>Are you human?</h3>
+        </div>
+        <div class="modal-body">
+          <div style="text-align: left; margin-bottom: 10px;">
+            <p>By proceeding to a download you:</p>
+            <ol>
+              <li>Agree to a
+                <strong>temporary preview</strong> of the implied data sample,</li>
+              <li>Agree that this download is intended and authorized only for
+                <strong>research use</strong>,</li>
+              <li>Agree to
+                <strong>purging all local copies</strong> of the data at the immediate end of the research experiment,</li>
+              <li>Agree to protecting the
+                <strong>original copyright</strong> of all implied data,</li>
+              <li>Agree to
+                <strong>provide attribution</strong> as appropriate.</li>
+            </ol>
+            <br>
+          </div>
+          <center>
+            <div class="g-recaptcha" data-sitekey="6LdEehITAAAAAG81QWBR7rTGxz5Rk7-FjwR7so_F"></div>
+          </center>
+        </div>
+        <div class="modal-footer">
+          <input class="btn btn-success" type="submit" value="" id="btn-get-entry">
+        </div>
+      </form>
     </div>
-    <center>
-      <div class="g-recaptcha" data-sitekey="6LdEehITAAAAAG81QWBR7rTGxz5Rk7-FjwR7so_F"></div>
-    </center>
-  </div>
-  <div class="modal-footer">
-      <input class="btn btn-success" type="submit" value="" id="btn-get-entry">
-  </div>
-  </form>
-  </div>
   </div>
 </div>
 
 <div id="modal-preview-entry" class="modal fade" tabindex="-1" role="dialog">
   <div class="modal-dialog" style="width: 100%;height: 100%;padding: 0;margin: 0; position: absolute;">
-  <div class="modal-content" style="height: 100%; border-radius: 0;">
-  <div class="modal-header">
-    <a href="#" class="close" data-dismiss="modal">&times;</a>
-  </div>
-  <div class="modal-body" id="modal-preview-body" style="height: 100%; border-radius: 0;">
+    <div class="modal-content" style="height: 100%; border-radius: 0;">
+      <div class="modal-header">
+        <a href="#" class="close" data-dismiss="modal">&times;</a>
+      </div>
+      <div class="modal-body" id="modal-preview-body" style="height: 100%; border-radius: 0;">
 
-  </div>
-  <div class="modal-footer">
-  </div>
-  </div>
+      </div>
+      <div class="modal-footer">
+      </div>
+    </div>
   </div>
 </div>
 
 <script src='https://www.google.com/recaptcha/api.js'></script>
 <script src='/public/js/jszip.min.js'></script>
 <script>
-$(".entry-submit").click(function(e) {
-  e.preventDefault();
-  $("#btn-get-entry").val("Get "+$(this).parent().parent().find(":first-child").first().text());
-  $("#form-get-entry").attr("action", $(this).attr("href"));
-  $("#form-get-entry").attr("data-action",$(this).attr("data-action"));
-  var saved_recaptcha = localStorage.getItem("g_recaptcha_response");
-  if (saved_recaptcha && (saved_recaptcha.length > 0)) {
-    // We have a saved recaptcha, reuse for convenience
-    $("#g-recaptcha-response").val(saved_recaptcha);
-    $("#form-get-entry").submit();
-  } else {
-    $("#modal-get-entry").modal("show");
-  }
-});
-
-$("#form-get-entry").submit(function(e) {
-  // We'll AJAX our fetch, to have a handle on permissions
-  e.preventDefault();
-  // Record the captcha key, which gets another 1 free uses
-  var g_recaptcha_response = $("#g-recaptcha-response").val();
-  if (localStorage.getItem("g_recaptcha_response") != g_recaptcha_response) {
-    console.log("SETTING localStorage with ",g_recaptcha_response);
-    localStorage.setItem("g_recaptcha_response", g_recaptcha_response);
-    localStorage.setItem("g_recaptcha_quota", 19);
-  } else {
-    // Otherwise just decrement 1
-    var new_quota = localStorage.getItem("g_recaptcha_quota") - 1;
-    if (new_quota > 0) {
-      localStorage.setItem("g_recaptcha_quota", new_quota);
+  $(".entry-submit").click(function (e) {
+    e.preventDefault();
+    $("#btn-get-entry").val("Get " + $(this).parent().parent().find(":first-child").first().text());
+    $("#form-get-entry").attr("action", $(this).attr("href"));
+    $("#form-get-entry").attr("data-action", $(this).attr("data-action"));
+    var saved_recaptcha = localStorage.getItem("g_recaptcha_response");
+    if (saved_recaptcha && (saved_recaptcha.length > 0)) {
+      // We have a saved recaptcha, reuse for convenience
+      $("#g-recaptcha-response").val(saved_recaptcha);
+      $("#form-get-entry").submit();
     } else {
-      // Quota expired, reseting
-      localStorage.removeItem("g_recaptcha_response");
-      localStorage.removeItem("g_recaptcha_quota");
+      $("#modal-get-entry").modal("show");
     }
-  }
-  var form_action = $(this).attr("data-action");
-  var xhr = new XMLHttpRequest();
-  xhr.responseType = "arraybuffer";
-  xhr.onreadystatechange = function(){
-    if (this.readyState == 4) { // Only process when done.
-      if (this.status != 200) {
-        // Something went wrong, throw out the localStorage and re-auth (Redis could've fallen, etc)
+  });
+
+  $("#form-get-entry").submit(function (e) {
+    // We'll AJAX our fetch, to have a handle on permissions
+    e.preventDefault();
+    var $form = $(this);
+    // Record the captcha key, which gets another 1 free uses
+    var g_recaptcha_response = $("#g-recaptcha-response").val();
+    if (localStorage.getItem("g_recaptcha_response") != g_recaptcha_response) {
+      console.log("SETTING localStorage with ", g_recaptcha_response);
+      localStorage.setItem("g_recaptcha_response", g_recaptcha_response);
+      localStorage.setItem("g_recaptcha_quota", 19);
+    } else {
+      // Otherwise just decrement 1
+      var new_quota = localStorage.getItem("g_recaptcha_quota") - 1;
+      if (new_quota > 0) {
+        localStorage.setItem("g_recaptcha_quota", new_quota);
+      } else {
+        // Quota expired, reseting
         localStorage.removeItem("g_recaptcha_response");
         localStorage.removeItem("g_recaptcha_quota");
-        $("#modal-get-entry").modal("show");
-        return;
       }
-      if (form_action == "download") {// Download file
-        var filename = "";
-        var disposition = xhr.getResponseHeader('Content-Disposition');
-        if (disposition && disposition.indexOf('attachment') !== -1) {
-          var filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
-          var matches = filenameRegex.exec(disposition);
-          if (matches != null && matches[1]) filename = matches[1].replace(/['"]/g, '');
-        }
-        var type = xhr.getResponseHeader('Content-Type');
-        var blob = new Blob([this.response], { type: type });
-        if (type == "text/html") {
-          // HTML means an error, reset!
-          console.info(this.response);
+    }
+    var form_action = $form.attr("data-action");
+    var xhr = new XMLHttpRequest();
+    xhr.responseType = "arraybuffer";
+    xhr.onreadystatechange = function () {
+      if (this.readyState == 4) { // Only process when done.
+        if (this.status != 200) {
+          // Something went wrong, throw out the localStorage and re-auth (Redis could've fallen, etc)
           localStorage.removeItem("g_recaptcha_response");
           localStorage.removeItem("g_recaptcha_quota");
           $("#modal-get-entry").modal("show");
           return;
         }
-        if (typeof window.navigator.msSaveBlob !== 'undefined') {
-          // IE workaround for "HTML7007: One or more blob URLs were revoked by closing the blob for which they were created. These URLs will no longer resolve as the data backing the URL has been freed."
-          window.navigator.msSaveBlob(blob, filename);
-        } else {
-          var URL = window.URL || window.webkitURL;
-          var downloadUrl = URL.createObjectURL(blob);
-          if (filename) {
-            // use HTML5 a[download] attribute to specify filename
-            var a = document.createElement("a");
-            // safari doesn't support this yet
-            if (typeof a.download === 'undefined') {
-              window.location = downloadUrl;
-            } else {
-              a.href = downloadUrl;
-              a.download = filename;
-              document.body.appendChild(a);
-              a.click();
-            }
+        if (form_action == "download") {// Download file
+          var filename = "";
+          var disposition = xhr.getResponseHeader('Content-Disposition');
+          if (disposition && disposition.indexOf('attachment') !== -1) {
+            var filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+            var matches = filenameRegex.exec(disposition);
+            if (matches != null && matches[1]) filename = matches[1].replace(/['"]/g, '');
           } else {
-            window.location = downloadUrl;
+            var form_url = $form.attr('action');
+            var matches = /\/(\d+)$/.exec(form_url);
+            if (matches != null && matches[1]) filename = "task_" + matches[1] + ".zip";
           }
-          setTimeout(function () { URL.revokeObjectURL(downloadUrl); }, 100); // cleanup
-        }
-        $("#modal-get-entry").modal("hide");
-      }
-      else if (form_action == "preview") {  // All is good, preview the result
-        var zip = new JSZip(xhr.response);
-        var main_content;
-        var url_map = {};
-        $.each(zip.files, function(filename, fileobject) {
-          if (filename.match(/\.html$/)) {
-            main_content = fileobject.asText();
-            var fileblob = new Blob([fileobject.asText()], {type : 'text/html'});
-            var objectURL = window.URL.createObjectURL(fileblob);
-            url_map[filename] = objectURL;
-          } else if (filename.match(/\.png$/)) {
-            var fileblob = new Blob([fileobject.asUint8Array()], {type : 'image/png'});
-            var objectURL = window.URL.createObjectURL(fileblob);
-            url_map[filename] = objectURL;
+          var type = xhr.getResponseHeader('Content-Type');
+          // Default to ZIP, and also default the name to the id
+          if (!type || type.length == 0) {
+            type = "application/zip";
           }
-        });
-        $.each(url_map, function(filename, newurl) {
-          var re = new RegExp(filename, 'g');
-          main_content = main_content.replace(re, newurl);
-        });
-        if (main_content.match(/<\/head>/)) {
-          // load TeX.js previewer
-          var texjs_css = '<link media="all" rel="stylesheet" href="https://davidar.io/TeX.js/LaTeXML/ltx-article.css"></link>';
-          var texjs_js = '<script src="https://davidar.io/TeX.js/load.js"></'+'script>'; // linter issues...
-          var texjs_responsive = '<meta name="viewport" content="width=device-width, initial-scale=1"></meta>';
-          var fire_loaded = '<script> '+
-          ' var DOMContentLoaded_event = document.createEvent("Event"); '+
-          ' DOMContentLoaded_event.initEvent("DOMContentLoaded", true, true); '+
-          ' var fire_loaded = function(){ '+
-          '  window.document.dispatchEvent(DOMContentLoaded_event); ' +
-          ' }; '+
-          ' var fire_loaded_loop = window.setInterval(fire_loaded, 2000);' +
-          ' window.setTimeout(function(){clearInterval(fire_loaded_loop)}, 6000); '+
-          '</'+'script>';
-          var texjs_sources = texjs_css + "\n" + texjs_responsive + "\n";
-          main_content = main_content.replace(/<\/head>/, texjs_sources + "\n</head>");
-          main_content = main_content.replace(/<\/body>/, "\n"+texjs_js + "\n"+fire_loaded+"\n</body>");
-        }
-        // var mainblob = new Blob([main_content], {type : 'text/html'});
-        // var main_object_url = window.URL.createObjectURL(mainblob);
-        document.write(main_content);
 
+          var blob = new Blob([this.response], { type: type });
+          if (type == "text/html") {
+            // HTML means an error, reset!
+            console.info(this.response);
+            localStorage.removeItem("g_recaptcha_response");
+            localStorage.removeItem("g_recaptcha_quota");
+            $("#modal-get-entry").modal("show");
+            return;
+          }
+          if (typeof window.navigator.msSaveBlob !== 'undefined') {
+            // IE workaround for "HTML7007: One or more blob URLs were revoked by closing the blob for which they were created. These URLs will no longer resolve as the data backing the URL has been freed."
+            window.navigator.msSaveBlob(blob, filename);
+          } else {
+            var URL = window.URL || window.webkitURL;
+            var downloadUrl = URL.createObjectURL(blob);
+            if (filename) {
+              // use HTML5 a[download] attribute to specify filename
+              var a = document.createElement("a");
+              // safari doesn't support this yet
+              if (typeof a.download === 'undefined') {
+                window.location = downloadUrl;
+              } else {
+                a.href = downloadUrl;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+              }
+            } else {
+              window.location = downloadUrl;
+            }
+            setTimeout(function () { URL.revokeObjectURL(downloadUrl); }, 100); // cleanup
+          }
+          $("#modal-get-entry").modal("hide");
+        }
+        else if (form_action == "preview") {  // All is good, preview the result
+          var zip = new JSZip(xhr.response);
+          var main_content;
+          var url_map = {};
+          $.each(zip.files, function (filename, fileobject) {
+            if (filename.match(/\.html$/)) {
+              main_content = fileobject.asText();
+              var fileblob = new Blob([fileobject.asText()], { type: 'text/html' });
+              var objectURL = window.URL.createObjectURL(fileblob);
+              url_map[filename] = objectURL;
+            } else if (filename.match(/\.png$/)) {
+              var fileblob = new Blob([fileobject.asUint8Array()], { type: 'image/png' });
+              var objectURL = window.URL.createObjectURL(fileblob);
+              url_map[filename] = objectURL;
+            }
+          });
+          $.each(url_map, function (filename, newurl) {
+            var re = new RegExp(filename, 'g');
+            main_content = main_content.replace(re, newurl);
+          });
+          if (main_content.match(/<\/head>/)) {
+            // load TeX.js previewer
+            var texjs_css = '<link media="all" rel="stylesheet" href="https://davidar.io/TeX.js/LaTeXML/ltx-article.css"></link>';
+            var texjs_js = '<script src="https://davidar.io/TeX.js/load.js"></' + 'script>'; // linter issues...
+            var texjs_responsive = '<meta name="viewport" content="width=device-width, initial-scale=1"></meta>';
+            var fire_loaded = '<script> ' +
+              ' var DOMContentLoaded_event = document.createEvent("Event"); ' +
+              ' DOMContentLoaded_event.initEvent("DOMContentLoaded", true, true); ' +
+              ' var fire_loaded = function(){ ' +
+              '  window.document.dispatchEvent(DOMContentLoaded_event); ' +
+              ' }; ' +
+              ' var fire_loaded_loop = window.setInterval(fire_loaded, 2000);' +
+              ' window.setTimeout(function(){clearInterval(fire_loaded_loop)}, 6000); ' +
+              '</' + 'script>';
+            var texjs_sources = texjs_css + "\n" + texjs_responsive + "\n";
+            main_content = main_content.replace(/<\/head>/, texjs_sources + "\n</head>");
+            main_content = main_content.replace(/<\/body>/, "\n" + texjs_js + "\n" + fire_loaded + "\n</body>");
+          }
+          // var mainblob = new Blob([main_content], {type : 'text/html'});
+          // var main_object_url = window.URL.createObjectURL(mainblob);
+          document.write(main_content);
+
+        }
       }
-    }
-  };
-  xhr.open('POST', $(this).attr("action"));
-  xhr.setRequestHeader('Content-Type', 'application/json; charset=utf-8');
-  var xhr_payload = $(this).serialize();
-  xhr.send(xhr_payload);
-});
+    };
+    xhr.open('POST', $(this).attr("action"));
+    xhr.setRequestHeader('Content-Type', 'application/json; charset=utf-8');
+    var xhr_payload = $(this).serialize();
+    xhr.send(xhr_payload);
+  });
 </script>
