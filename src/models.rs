@@ -8,7 +8,7 @@
 //! Backend models and traits for the `CorTeX` "Task store"
 
 use std::fmt;
-use std::collections::{HashMap, BTreeMap};
+use std::collections::{BTreeMap, HashMap};
 use rand::{thread_rng, Rng};
 use helpers::TaskStatus;
 use rustc_serialize::json::{Json, ToJson};
@@ -25,8 +25,7 @@ use schema::log_warnings;
 use schema::log_errors;
 use schema::log_fatals;
 use schema::log_invalids;
-use concerns::{CortexInsertable, CortexDeletable};
-
+use concerns::{CortexDeletable, CortexInsertable};
 
 // Tasks
 
@@ -103,9 +102,9 @@ impl Task {
 
   /// Find task by entry, error if none
   pub fn find_by_entry(entry: &str, connection: &PgConnection) -> Result<Task, Error> {
-    tasks::table.filter(tasks::entry.eq(entry)).first(
-      connection,
-    )
+    tasks::table
+      .filter(tasks::entry.eq(entry))
+      .first(connection)
   }
 }
 
@@ -129,6 +128,13 @@ impl NewTask {
   fn delete_by_service_id(&self, connection: &PgConnection) -> Result<usize, Error> {
     use schema::tasks::dsl::service_id;
     delete(tasks::table.filter(service_id.eq(&self.service_id))).execute(connection)
+  }
+  /// Creates the task unless already present in the DB (entry conflict)
+  pub fn create_if_new(&self, connection: &PgConnection) -> Result<usize, Error> {
+    insert_into(tasks::table)
+      .values(self)
+      .on_conflict_do_nothing()
+      .execute(connection)
   }
 }
 
@@ -250,7 +256,6 @@ pub struct NewLogFatal {
   pub details: String,
 }
 
-
 #[derive(Identifiable, Queryable, AsChangeset, Clone, Associations, Debug)]
 #[belongs_to(Task)]
 /// An invalid message, as per the `LaTeXML` convention
@@ -359,9 +364,9 @@ impl LogRecord for NewLogInfo {
 }
 impl CortexInsertable for NewLogInfo {
   fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
-    insert_into(log_infos::table).values(self).execute(
-      connection,
-    )
+    insert_into(log_infos::table)
+      .values(self)
+      .execute(connection)
   }
 }
 impl LogRecord for LogWarning {
@@ -406,9 +411,9 @@ impl LogRecord for NewLogWarning {
 }
 impl CortexInsertable for NewLogWarning {
   fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
-    insert_into(log_warnings::table).values(self).execute(
-      connection,
-    )
+    insert_into(log_warnings::table)
+      .values(self)
+      .execute(connection)
   }
 }
 impl LogRecord for LogError {
@@ -453,9 +458,9 @@ impl LogRecord for NewLogError {
 }
 impl CortexInsertable for NewLogError {
   fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
-    insert_into(log_errors::table).values(self).execute(
-      connection,
-    )
+    insert_into(log_errors::table)
+      .values(self)
+      .execute(connection)
   }
 }
 impl LogRecord for LogFatal {
@@ -500,9 +505,9 @@ impl LogRecord for NewLogFatal {
 }
 impl CortexInsertable for NewLogFatal {
   fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
-    insert_into(log_fatals::table).values(self).execute(
-      connection,
-    )
+    insert_into(log_fatals::table)
+      .values(self)
+      .execute(connection)
   }
 }
 impl LogRecord for LogInvalid {
@@ -547,9 +552,9 @@ impl LogRecord for NewLogInvalid {
 }
 impl CortexInsertable for NewLogInvalid {
   fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
-    insert_into(log_invalids::table).values(self).execute(
-      connection,
-    )
+    insert_into(log_invalids::table)
+      .values(self)
+      .execute(connection)
   }
 }
 // Services
@@ -596,20 +601,19 @@ pub struct NewService {
 }
 impl CortexInsertable for NewService {
   fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
-    insert_into(services::table).values(self).execute(
-      connection,
-    )
+    insert_into(services::table)
+      .values(self)
+      .execute(connection)
   }
 }
-
 
 impl Service {
   /// ORM-like until diesel.rs introduces finders for more fields
   pub fn find_by_name(name_query: &str, connection: &PgConnection) -> Result<Service, Error> {
     use schema::services::name;
-    services::table.filter(name.eq(name_query)).get_result(
-      connection,
-    )
+    services::table
+      .filter(name.eq(name_query))
+      .get_result(connection)
   }
 
   /// Returns a hash representation of the `Service`, usually for frontend reports
@@ -631,7 +635,6 @@ impl Service {
     hm
   }
 }
-
 
 // Corpora
 
@@ -681,17 +684,15 @@ impl Corpus {
   /// Return a vector of services currently activated on this corpus
   pub fn select_services(&self, connection: &PgConnection) -> Result<Vec<Service>, Error> {
     use schema::tasks::dsl::{corpus_id, service_id};
-    let corpus_service_ids_query = tasks::table.select(service_id).distinct().filter(
-      corpus_id.eq(
-        self.id,
-      ),
-    );
+    let corpus_service_ids_query = tasks::table
+      .select(service_id)
+      .distinct()
+      .filter(corpus_id.eq(self.id));
     let services_query = services::table.filter(services::id.eq_any(corpus_service_ids_query));
     let services: Vec<Service> = services_query.get_results(connection).unwrap_or_default();
     Ok(services)
   }
 }
-
 
 /// Insertable `Corpus` struct
 #[derive(Insertable)]
@@ -745,11 +746,9 @@ pub fn fetch_tasks(
     );
     marked_tasks = tasks_for_update
       .into_iter()
-      .map(|task| {
-        Task {
-          status: i32::from(mark),
-          ..task
-        }
+      .map(|task| Task {
+        status: i32::from(mark),
+        ..task
       })
       .map(|task| task.save_changes(connection))
       .filter_map(|saved| saved.ok())
@@ -799,7 +798,7 @@ impl MarkRerun for LogInfo {
     rerun_what: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
-    use schema::log_infos::dsl::{log_infos, category, what, task_id};
+    use schema::log_infos::dsl::{category, log_infos, task_id, what};
     let task_ids_to_rerun = log_infos
       .filter(category.eq(rerun_category))
       .filter(what.eq(rerun_what))
@@ -821,7 +820,7 @@ impl MarkRerun for LogInfo {
     rerun_category: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
-    use schema::log_infos::dsl::{log_infos, category, task_id};
+    use schema::log_infos::dsl::{category, log_infos, task_id};
     let task_ids_to_rerun = log_infos
       .filter(category.eq(rerun_category))
       .select(task_id)
@@ -846,7 +845,7 @@ impl MarkRerun for LogWarning {
     rerun_what: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
-    use schema::log_warnings::dsl::{log_warnings, category, what, task_id};
+    use schema::log_warnings::dsl::{category, log_warnings, task_id, what};
     let task_ids_to_rerun = log_warnings
       .filter(category.eq(rerun_category))
       .filter(what.eq(rerun_what))
@@ -868,7 +867,7 @@ impl MarkRerun for LogWarning {
     rerun_category: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
-    use schema::log_warnings::dsl::{log_warnings, category, task_id};
+    use schema::log_warnings::dsl::{category, log_warnings, task_id};
     let task_ids_to_rerun = log_warnings
       .filter(category.eq(rerun_category))
       .select(task_id)
@@ -893,7 +892,7 @@ impl MarkRerun for LogError {
     rerun_what: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
-    use schema::log_errors::dsl::{log_errors, category, what, task_id};
+    use schema::log_errors::dsl::{category, log_errors, task_id, what};
     let task_ids_to_rerun = log_errors
       .filter(category.eq(rerun_category))
       .filter(what.eq(rerun_what))
@@ -915,7 +914,7 @@ impl MarkRerun for LogError {
     rerun_category: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
-    use schema::log_errors::dsl::{log_errors, category, task_id};
+    use schema::log_errors::dsl::{category, log_errors, task_id};
     let task_ids_to_rerun = log_errors
       .filter(category.eq(rerun_category))
       .select(task_id)
@@ -939,7 +938,7 @@ impl MarkRerun for LogFatal {
     rerun_what: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
-    use schema::log_fatals::dsl::{log_fatals, category, what, task_id};
+    use schema::log_fatals::dsl::{category, log_fatals, task_id, what};
     let task_ids_to_rerun = log_fatals
       .filter(category.eq(rerun_category))
       .filter(what.eq(rerun_what))
@@ -961,7 +960,7 @@ impl MarkRerun for LogFatal {
     rerun_category: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
-    use schema::log_fatals::dsl::{log_fatals, category, task_id};
+    use schema::log_fatals::dsl::{category, log_fatals, task_id};
     let task_ids_to_rerun = log_fatals
       .filter(category.eq(rerun_category))
       .select(task_id)
@@ -986,7 +985,7 @@ impl MarkRerun for LogInvalid {
     rerun_what: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
-    use schema::log_invalids::dsl::{log_invalids, category, what, task_id};
+    use schema::log_invalids::dsl::{category, log_invalids, task_id, what};
     let task_ids_to_rerun = log_invalids
       .filter(category.eq(rerun_category))
       .filter(what.eq(rerun_what))
@@ -1008,7 +1007,7 @@ impl MarkRerun for LogInvalid {
     rerun_category: &str,
     connection: &PgConnection,
   ) -> Result<usize, Error> {
-    use schema::log_invalids::dsl::{log_invalids, category, task_id};
+    use schema::log_invalids::dsl::{category, log_invalids, task_id};
     let task_ids_to_rerun = log_invalids
       .filter(category.eq(rerun_category))
       .select(task_id)

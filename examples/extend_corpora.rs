@@ -43,21 +43,17 @@ fn main() {
 
     // Then re-register all services, so that they pick up on the tasks
     let register_start = time::get_time();
-    println!(
-      "-- Registering services on extended corpus {:?}",
-      corpus.name
-    );
     match corpus.select_services(&backend.connection) {
       Ok(services) => {
         for service in services {
           let service_id = service.id;
           if service_id > 2 {
             println!(
-              "   Registering service {:?} on corpus {:?}",
+              "   Extending service {:?} on corpus {:?}",
               service.name,
               corpus.name
             );
-            backend.register_service(&service, &corpus.path).unwrap();
+            backend.extend_service(&service, &corpus.path).unwrap();
           }
         }
       }
