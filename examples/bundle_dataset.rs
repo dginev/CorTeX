@@ -20,10 +20,10 @@ use cortex::backend::Backend;
 use cortex::models::{Corpus, Service};
 use cortex::helpers::TaskStatus;
 
-/// Extends all corpora registered with the `CorTeX` backend, with any new available sources
-///  (example usage: arXiv.org releases new source bundles every month, which warrant an update at the same frequency.)
+/// Bundle a CorTeX (corpus,service) pair's results into a self-contained redistributable dataset.
 fn main() {
   let start_bundle = time::get_time();
+  let chunk_size = 10_240;
   // Setup CorTeX backend data
   let backend = Backend::default();
   let mut input_args = env::args();
@@ -86,7 +86,7 @@ fn main() {
           .unwrap()
           .support_filter_all()
           .support_format_all()
-          .open_filename(&entry, 10240)
+          .open_filename(&entry, chunk_size)
       {
         while let Ok(e) = archive_reader.next_header() {
           // Which file are we looking at?
@@ -96,7 +96,7 @@ fn main() {
             continue;
           }
           let mut raw_entry_data = Vec::new();
-          while let Ok(chunk) = archive_reader.read_data(10240) {
+          while let Ok(chunk) = archive_reader.read_data(chunk_size) {
             raw_entry_data.extend(chunk.into_iter());
           }
           let is_well_formed = match str::from_utf8(&raw_entry_data) {
