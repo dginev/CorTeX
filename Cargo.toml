@@ -50,3 +50,6 @@ tokio-core = "0.1"
 zmq = "0.8.2"
 diesel = {version="0.99.0", features = ["postgres"]}
 diesel_infer_schema = {version="0.99.0", features = ["postgres"]}
+
+[patch.crates-io]
+ring = { git = "https://github.com/SergioBenitez/ring", branch = "v0.12" }
