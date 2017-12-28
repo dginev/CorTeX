@@ -2,7 +2,7 @@ sudo: false
 dist: trusty
 language: rust
 rust:
-- nightly
+- nightly-2017-12-21
 
 addons:
   apt:
