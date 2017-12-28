@@ -1,4 +1,4 @@
-// Copyright 2015-2016 Deyan Ginev. See the LICENSE
+// Copyright 2015-2018 Deyan Ginev. See the LICENSE
 // file at the top-level directory of this distribution.
 //
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
@@ -66,6 +66,5 @@ fn main() {
       corpus.name,
       register_duration
     );
-
   }
 }
