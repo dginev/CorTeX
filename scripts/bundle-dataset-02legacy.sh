@@ -58,4 +58,7 @@ egrep -o '.+\/' $BASE/error_tasks.txt | while read -r line ; do
 done
 
 # Create the final dataset archive
-zip dataset.zip no_problem/ warning/ error/ && rm -rf no_problem warning error
+zip dataset.zip no_problem/ warning/ error/ || exit 1;
+
+rm -rf no_problem warning error
+exit 0;
