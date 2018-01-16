@@ -439,7 +439,7 @@ impl Backend {
   /// Provides a progress report, grouped by severity, for a given `Corpus` and `Service` pair
   pub fn progress_report(&self, corpus: &Corpus, service: &Service) -> HashMap<String, f64> {
     use schema::tasks::{corpus_id, service_id, status};
-    use diesel::types::BigInt;
+    use diesel::sql_types::BigInt;
 
     let mut stats_hash: HashMap<String, f64> = HashMap::new();
     for status_key in TaskStatus::keys() {
@@ -482,7 +482,7 @@ impl Backend {
     what_opt: Option<String>,
   ) -> Vec<HashMap<String, String>> {
     use schema::tasks::dsl::{corpus_id, service_id, status};
-    use diesel::types::{BigInt, Text};
+    use diesel::sql_types::{BigInt, Text};
     let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
 
     // The final report, populated based on the specific selectors

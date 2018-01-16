@@ -41,12 +41,12 @@ time = "0.1.35"
 libxml = "0.0.61"
 redis = "0.7.0"
 gnuplot = "0.0.21"
-rocket = "0.3.3"
-rocket_codegen = "0.3.3"
+rocket = "0.3"
+rocket_codegen = "0.3"
 futures = "0.1"
 hyper = "0.11"
 hyper-tls = "0.1"
 tokio-core = "0.1"
 zmq = "0.8.2"
-diesel = {version="0.99.0", features = ["postgres"]}
-diesel_infer_schema = {version="0.99.0", features = ["postgres"]}
+diesel = {version="1.1", features = ["postgres"]}
+diesel_infer_schema = {version="1.1", features = ["postgres"]}
