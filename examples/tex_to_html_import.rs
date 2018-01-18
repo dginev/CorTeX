@@ -29,7 +29,7 @@ use cortex::worker::InitWorker;
 use pericortex::worker::Worker;
 
 fn main() {
-  let job_limit: Option<usize> = Some(1);
+  let job_limit: Option<usize> = None;//Some(1);
   let mut input_args = env::args();
   let _ = input_args.next();
   let mut corpus_path = match input_args.next() {
