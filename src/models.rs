@@ -313,55 +313,27 @@ pub trait LogRecord {
   }
 }
 impl fmt::Debug for LogRecord {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    self.debug(f)
-  }
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { self.debug(f) }
 }
 impl fmt::Display for LogRecord {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    self.debug(f)
-  }
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { self.debug(f) }
 }
 
 impl LogRecord for LogInfo {
-  fn task_id(&self) -> i64 {
-    self.task_id
-  }
-  fn category(&self) -> &str {
-    &self.category
-  }
-  fn what(&self) -> &str {
-    &self.what
-  }
-  fn details(&self) -> &str {
-    &self.details
-  }
-  fn set_details(&mut self, new_details: String) {
-    self.details = new_details;
-  }
-  fn severity(&self) -> &str {
-    "info"
-  }
+  fn task_id(&self) -> i64 { self.task_id }
+  fn category(&self) -> &str { &self.category }
+  fn what(&self) -> &str { &self.what }
+  fn details(&self) -> &str { &self.details }
+  fn set_details(&mut self, new_details: String) { self.details = new_details; }
+  fn severity(&self) -> &str { "info" }
 }
 impl LogRecord for NewLogInfo {
-  fn task_id(&self) -> i64 {
-    self.task_id
-  }
-  fn category(&self) -> &str {
-    &self.category
-  }
-  fn what(&self) -> &str {
-    &self.what
-  }
-  fn details(&self) -> &str {
-    &self.details
-  }
-  fn set_details(&mut self, new_details: String) {
-    self.details = new_details;
-  }
-  fn severity(&self) -> &str {
-    "info"
-  }
+  fn task_id(&self) -> i64 { self.task_id }
+  fn category(&self) -> &str { &self.category }
+  fn what(&self) -> &str { &self.what }
+  fn details(&self) -> &str { &self.details }
+  fn set_details(&mut self, new_details: String) { self.details = new_details; }
+  fn severity(&self) -> &str { "info" }
 }
 impl CortexInsertable for NewLogInfo {
   fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
@@ -371,44 +343,20 @@ impl CortexInsertable for NewLogInfo {
   }
 }
 impl LogRecord for LogWarning {
-  fn task_id(&self) -> i64 {
-    self.task_id
-  }
-  fn category(&self) -> &str {
-    &self.category
-  }
-  fn what(&self) -> &str {
-    &self.what
-  }
-  fn details(&self) -> &str {
-    &self.details
-  }
-  fn set_details(&mut self, new_details: String) {
-    self.details = new_details;
-  }
-  fn severity(&self) -> &str {
-    "warning"
-  }
+  fn task_id(&self) -> i64 { self.task_id }
+  fn category(&self) -> &str { &self.category }
+  fn what(&self) -> &str { &self.what }
+  fn details(&self) -> &str { &self.details }
+  fn set_details(&mut self, new_details: String) { self.details = new_details; }
+  fn severity(&self) -> &str { "warning" }
 }
 impl LogRecord for NewLogWarning {
-  fn task_id(&self) -> i64 {
-    self.task_id
-  }
-  fn category(&self) -> &str {
-    &self.category
-  }
-  fn what(&self) -> &str {
-    &self.what
-  }
-  fn details(&self) -> &str {
-    &self.details
-  }
-  fn set_details(&mut self, new_details: String) {
-    self.details = new_details;
-  }
-  fn severity(&self) -> &str {
-    "warning"
-  }
+  fn task_id(&self) -> i64 { self.task_id }
+  fn category(&self) -> &str { &self.category }
+  fn what(&self) -> &str { &self.what }
+  fn details(&self) -> &str { &self.details }
+  fn set_details(&mut self, new_details: String) { self.details = new_details; }
+  fn severity(&self) -> &str { "warning" }
 }
 impl CortexInsertable for NewLogWarning {
   fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
@@ -418,44 +366,20 @@ impl CortexInsertable for NewLogWarning {
   }
 }
 impl LogRecord for LogError {
-  fn task_id(&self) -> i64 {
-    self.task_id
-  }
-  fn category(&self) -> &str {
-    &self.category
-  }
-  fn what(&self) -> &str {
-    &self.what
-  }
-  fn details(&self) -> &str {
-    &self.details
-  }
-  fn set_details(&mut self, new_details: String) {
-    self.details = new_details;
-  }
-  fn severity(&self) -> &str {
-    "error"
-  }
+  fn task_id(&self) -> i64 { self.task_id }
+  fn category(&self) -> &str { &self.category }
+  fn what(&self) -> &str { &self.what }
+  fn details(&self) -> &str { &self.details }
+  fn set_details(&mut self, new_details: String) { self.details = new_details; }
+  fn severity(&self) -> &str { "error" }
 }
 impl LogRecord for NewLogError {
-  fn task_id(&self) -> i64 {
-    self.task_id
-  }
-  fn category(&self) -> &str {
-    &self.category
-  }
-  fn what(&self) -> &str {
-    &self.what
-  }
-  fn details(&self) -> &str {
-    &self.details
-  }
-  fn set_details(&mut self, new_details: String) {
-    self.details = new_details;
-  }
-  fn severity(&self) -> &str {
-    "error"
-  }
+  fn task_id(&self) -> i64 { self.task_id }
+  fn category(&self) -> &str { &self.category }
+  fn what(&self) -> &str { &self.what }
+  fn details(&self) -> &str { &self.details }
+  fn set_details(&mut self, new_details: String) { self.details = new_details; }
+  fn severity(&self) -> &str { "error" }
 }
 impl CortexInsertable for NewLogError {
   fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
@@ -465,44 +389,20 @@ impl CortexInsertable for NewLogError {
   }
 }
 impl LogRecord for LogFatal {
-  fn task_id(&self) -> i64 {
-    self.task_id
-  }
-  fn category(&self) -> &str {
-    &self.category
-  }
-  fn what(&self) -> &str {
-    &self.what
-  }
-  fn details(&self) -> &str {
-    &self.details
-  }
-  fn set_details(&mut self, new_details: String) {
-    self.details = new_details;
-  }
-  fn severity(&self) -> &str {
-    "fatal"
-  }
+  fn task_id(&self) -> i64 { self.task_id }
+  fn category(&self) -> &str { &self.category }
+  fn what(&self) -> &str { &self.what }
+  fn details(&self) -> &str { &self.details }
+  fn set_details(&mut self, new_details: String) { self.details = new_details; }
+  fn severity(&self) -> &str { "fatal" }
 }
 impl LogRecord for NewLogFatal {
-  fn task_id(&self) -> i64 {
-    self.task_id
-  }
-  fn category(&self) -> &str {
-    &self.category
-  }
-  fn what(&self) -> &str {
-    &self.what
-  }
-  fn details(&self) -> &str {
-    &self.details
-  }
-  fn set_details(&mut self, new_details: String) {
-    self.details = new_details;
-  }
-  fn severity(&self) -> &str {
-    "fatal"
-  }
+  fn task_id(&self) -> i64 { self.task_id }
+  fn category(&self) -> &str { &self.category }
+  fn what(&self) -> &str { &self.what }
+  fn details(&self) -> &str { &self.details }
+  fn set_details(&mut self, new_details: String) { self.details = new_details; }
+  fn severity(&self) -> &str { "fatal" }
 }
 impl CortexInsertable for NewLogFatal {
   fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
@@ -512,44 +412,20 @@ impl CortexInsertable for NewLogFatal {
   }
 }
 impl LogRecord for LogInvalid {
-  fn task_id(&self) -> i64 {
-    self.task_id
-  }
-  fn category(&self) -> &str {
-    &self.category
-  }
-  fn what(&self) -> &str {
-    &self.what
-  }
-  fn details(&self) -> &str {
-    &self.details
-  }
-  fn set_details(&mut self, new_details: String) {
-    self.details = new_details;
-  }
-  fn severity(&self) -> &str {
-    "invalid"
-  }
+  fn task_id(&self) -> i64 { self.task_id }
+  fn category(&self) -> &str { &self.category }
+  fn what(&self) -> &str { &self.what }
+  fn details(&self) -> &str { &self.details }
+  fn set_details(&mut self, new_details: String) { self.details = new_details; }
+  fn severity(&self) -> &str { "invalid" }
 }
 impl LogRecord for NewLogInvalid {
-  fn task_id(&self) -> i64 {
-    self.task_id
-  }
-  fn category(&self) -> &str {
-    &self.category
-  }
-  fn what(&self) -> &str {
-    &self.what
-  }
-  fn details(&self) -> &str {
-    &self.details
-  }
-  fn set_details(&mut self, new_details: String) {
-    self.details = new_details;
-  }
-  fn severity(&self) -> &str {
-    "invalid"
-  }
+  fn task_id(&self) -> i64 { self.task_id }
+  fn category(&self) -> &str { &self.category }
+  fn what(&self) -> &str { &self.what }
+  fn details(&self) -> &str { &self.details }
+  fn set_details(&mut self, new_details: String) { self.details = new_details; }
+  fn severity(&self) -> &str { "invalid" }
 }
 impl CortexInsertable for NewLogInvalid {
   fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
@@ -641,7 +517,8 @@ impl Service {
 
 #[derive(Identifiable, Queryable, AsChangeset, Clone, Debug)]
 #[table_name = "corpora"]
-/// A minimal description of a document collection. Defined by a name, path and simple/complex file system setup.
+/// A minimal description of a document collection. Defined by a name, path and simple/complex file
+/// system setup.
 pub struct Corpus {
   /// auto-incremented postgres id
   pub id: i32,
@@ -730,7 +607,8 @@ pub fn fetch_tasks(
   service: &Service,
   queue_size: usize,
   connection: &PgConnection,
-) -> Result<Vec<Task>, Error> {
+) -> Result<Vec<Task>, Error>
+{
   use schema::tasks::dsl::{service_id, status};
   let mut rng = thread_rng();
   let mark: u16 = 1 + rng.gen::<u16>();
@@ -798,7 +676,8 @@ impl MarkRerun for LogInfo {
     rerun_category: &str,
     rerun_what: &str,
     connection: &PgConnection,
-  ) -> Result<usize, Error> {
+  ) -> Result<usize, Error>
+  {
     use schema::log_infos::dsl::{category, log_infos, task_id, what};
     let task_ids_to_rerun = log_infos
       .filter(category.eq(rerun_category))
@@ -820,7 +699,8 @@ impl MarkRerun for LogInfo {
     service_id: i32,
     rerun_category: &str,
     connection: &PgConnection,
-  ) -> Result<usize, Error> {
+  ) -> Result<usize, Error>
+  {
     use schema::log_infos::dsl::{category, log_infos, task_id};
     let task_ids_to_rerun = log_infos
       .filter(category.eq(rerun_category))
@@ -845,7 +725,8 @@ impl MarkRerun for LogWarning {
     rerun_category: &str,
     rerun_what: &str,
     connection: &PgConnection,
-  ) -> Result<usize, Error> {
+  ) -> Result<usize, Error>
+  {
     use schema::log_warnings::dsl::{category, log_warnings, task_id, what};
     let task_ids_to_rerun = log_warnings
       .filter(category.eq(rerun_category))
@@ -867,7 +748,8 @@ impl MarkRerun for LogWarning {
     service_id: i32,
     rerun_category: &str,
     connection: &PgConnection,
-  ) -> Result<usize, Error> {
+  ) -> Result<usize, Error>
+  {
     use schema::log_warnings::dsl::{category, log_warnings, task_id};
     let task_ids_to_rerun = log_warnings
       .filter(category.eq(rerun_category))
@@ -892,7 +774,8 @@ impl MarkRerun for LogError {
     rerun_category: &str,
     rerun_what: &str,
     connection: &PgConnection,
-  ) -> Result<usize, Error> {
+  ) -> Result<usize, Error>
+  {
     use schema::log_errors::dsl::{category, log_errors, task_id, what};
     let task_ids_to_rerun = log_errors
       .filter(category.eq(rerun_category))
@@ -914,7 +797,8 @@ impl MarkRerun for LogError {
     service_id: i32,
     rerun_category: &str,
     connection: &PgConnection,
-  ) -> Result<usize, Error> {
+  ) -> Result<usize, Error>
+  {
     use schema::log_errors::dsl::{category, log_errors, task_id};
     let task_ids_to_rerun = log_errors
       .filter(category.eq(rerun_category))
@@ -938,7 +822,8 @@ impl MarkRerun for LogFatal {
     rerun_category: &str,
     rerun_what: &str,
     connection: &PgConnection,
-  ) -> Result<usize, Error> {
+  ) -> Result<usize, Error>
+  {
     use schema::log_fatals::dsl::{category, log_fatals, task_id, what};
     let task_ids_to_rerun = log_fatals
       .filter(category.eq(rerun_category))
@@ -960,7 +845,8 @@ impl MarkRerun for LogFatal {
     service_id: i32,
     rerun_category: &str,
     connection: &PgConnection,
-  ) -> Result<usize, Error> {
+  ) -> Result<usize, Error>
+  {
     use schema::log_fatals::dsl::{category, log_fatals, task_id};
     let task_ids_to_rerun = log_fatals
       .filter(category.eq(rerun_category))
@@ -985,7 +871,8 @@ impl MarkRerun for LogInvalid {
     rerun_category: &str,
     rerun_what: &str,
     connection: &PgConnection,
-  ) -> Result<usize, Error> {
+  ) -> Result<usize, Error>
+  {
     use schema::log_invalids::dsl::{category, log_invalids, task_id, what};
     let task_ids_to_rerun = log_invalids
       .filter(category.eq(rerun_category))
@@ -1007,7 +894,8 @@ impl MarkRerun for LogInvalid {
     service_id: i32,
     rerun_category: &str,
     connection: &PgConnection,
-  ) -> Result<usize, Error> {
+  ) -> Result<usize, Error>
+  {
     use schema::log_invalids::dsl::{category, log_invalids, task_id};
     let task_ids_to_rerun = log_invalids
       .filter(category.eq(rerun_category))

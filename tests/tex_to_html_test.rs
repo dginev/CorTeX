@@ -10,10 +10,10 @@ extern crate pericortex;
 
 use cortex::backend;
 use cortex::backend::TEST_DB_ADDRESS;
-use cortex::models::{NewCorpus, Corpus, NewService, Service, NewTask, Task};
+use cortex::models::{Corpus, NewCorpus, NewService, NewTask, Service, Task};
 use cortex::helpers::TaskStatus;
 use cortex::manager::TaskManager;
-use cortex::schema::{services, corpora, tasks};
+use cortex::schema::{corpora, services, tasks};
 use cortex::importer::Importer;
 use pericortex::worker::{TexToHtmlWorker, Worker};
 use std::thread;

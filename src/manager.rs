@@ -5,17 +5,18 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! A ZMQ-based job dispatcher, interfacing between the task `Backend` and an open set of remote workers
+//! A ZMQ-based job dispatcher, interfacing between the task `Backend` and an open set of remote
+//! workers
 
-extern crate zmq;
 extern crate tempfile;
+extern crate zmq;
 
 use zmq::{Error, SNDMORE};
 use backend;
 use backend::{Backend, DEFAULT_DB_ADDRESS};
 use models::Service;
 use helpers;
-use helpers::{TaskReport, TaskStatus, TaskProgress, NewTaskMessage};
+use helpers::{NewTaskMessage, TaskProgress, TaskReport, TaskStatus};
 
 use std::thread;
 use std::time::Duration;
@@ -194,7 +195,8 @@ impl Server {
     progress_queue_arc: Arc<Mutex<HashMap<i64, TaskProgress>>>,
     done_queue_arc: Arc<Mutex<Vec<TaskReport>>>,
     job_limit: Option<usize>,
-  ) -> Result<(), Error> {
+  ) -> Result<(), Error>
+  {
     // We have a Ventilator-exclusive "queues" stack for tasks to be dispatched
     let mut queues: HashMap<String, Vec<TaskProgress>> = HashMap::new();
     // Assuming this is the only And tidy up the postgres tasks:
@@ -219,7 +221,7 @@ impl Server {
 
       let mut dispatched_task: Option<TaskProgress> = None;
       match self.get_sync_service_record(&services_arc, service_name.clone()) {
-        None => {}
+        None => {},
         Some(service) => {
           if !queues.contains_key(&service_name) {
             queues.insert(service_name.clone(), Vec::new());
@@ -234,17 +236,16 @@ impl Server {
                 .fetch_tasks(&service, self.queue_size)
                 .unwrap()
                 .into_iter()
-                .map(|task| {
-                  TaskProgress {
-                    task: task,
-                    created_at: now,
-                    retries: 0,
-                  }
+                .map(|task| TaskProgress {
+                  task: task,
+                  created_at: now,
+                  retries: 0,
                 }),
             );
 
-            // This is a good time to also take care that none of the old tasks are dead in the progress queue
-            // since the re-fetch happens infrequently, and directly implies the progress queue will grow
+            // This is a good time to also take care that none of the old tasks are dead in the
+            // progress queue since the re-fetch happens infrequently, and directly
+            // implies the progress queue will grow
             let expired_tasks = Server::timeout_progress_tasks(&progress_queue_arc);
             for expired_t in expired_tasks {
               if expired_t.retries > 1 {
@@ -260,7 +261,7 @@ impl Server {
                         "fatal",
                         "cortex".to_string(),
                         "never_completed_with_retries".to_string(),
-                        String::new()
+                        String::new(),
                       ),
                     ],
                   },
@@ -314,9 +315,7 @@ impl Server {
                 let request_duration = (responded_time - request_time).num_milliseconds();
                 println!(
                   "Source job {}, message size: {}, took {}ms.",
-                  source_job_count,
-                  total_outgoing,
-                  request_duration
+                  source_job_count, total_outgoing, request_duration
                 );
               } else {
                 // TODO: smart handling of failures
@@ -324,7 +323,7 @@ impl Server {
               }
             }
           }
-        }
+        },
       };
       // Record that a task has been dispatched in the progress queue
       if dispatched_task.is_some() {
@@ -350,8 +349,8 @@ impl Server {
     progress_queue_arc: Arc<Mutex<HashMap<i64, TaskProgress>>>,
     done_queue_arc: Arc<Mutex<Vec<TaskReport>>>,
     job_limit: Option<usize>,
-  ) -> Result<(), Error> {
-
+  ) -> Result<(), Error>
+  {
     // Ok, let's bind to a port and start broadcasting
     let context = zmq::Context::new();
     let sink = context.socket(zmq::PULL).unwrap();
@@ -387,9 +386,7 @@ impl Server {
       let request_time = time::get_time();
       println!(
         "Incoming sink job {:?} for Service: {:?}, taskid: {:?}",
-        sink_job_count,
-        service_name,
-        taskid_str
+        sink_job_count, service_name, taskid_str
       );
 
       if let Some(task_progress) = Server::pop_progress_task(&progress_queue_arc, taskid) {
@@ -398,17 +395,17 @@ impl Server {
         match service_option.clone() {
           None => {
             println!("Error TODO: Server::get_service_record found nothing.");
-          } // TODO: Handle errors
+          }, // TODO: Handle errors
           Some(service) => {
             if service.id == task.service_id {
               // println!("Task and Service match up.");
               if service.id == 1 {
                 // No payload needed for init
                 match sink.recv(&mut recv_msg, 0) {
-                  Ok(_) => {}
+                  Ok(_) => {},
                   Err(e) => {
                     println!("Error TODO: sink.recv failed: {:?}", e);
-                  }
+                  },
                 };
                 let done_report = TaskReport {
                   task: task.clone(),
@@ -421,25 +418,26 @@ impl Server {
                 match Path::new(&task.entry.clone()).parent() {
                   None => {
                     println!("Error TODO: Path::new(&task.entry).parent() failed.");
-                  }
+                  },
                   Some(recv_dir) => {
                     match recv_dir.to_str() {
                       None => {
                         println!("Error TODO: recv_dir.to_str() failed");
-                      }
+                      },
                       Some(recv_dir_str) => {
                         let recv_dir_string = recv_dir_str.to_string();
                         let recv_pathname = recv_dir_string + "/" + &service.name + ".zip";
                         let recv_path = Path::new(&recv_pathname);
                         // println!("Will write to {:?}", recv_path);
                         {
-                          // Explicitly scope file, so that we drop it the moment we are done writing.
+                          // Explicitly scope file, so that we drop it the moment we are done
+                          // writing.
                           let mut file = match File::create(recv_path) {
                             Ok(f) => f,
                             Err(e) => {
                               println!("Error TODO: File::create(recv_path): {:?}", e);
                               continue;
-                            }
+                            },
                           };
                           while let Ok(_) = sink.recv(&mut recv_msg, 0) {
                             // Err(e) => {
@@ -453,11 +451,12 @@ impl Server {
                                   e
                                 );
                                 break;
-                              }
+                              },
                             };
                             match sink.get_rcvmore() {
-                              Ok(true) => {} // keep receiving
-                              _ => break, // println!("Error TODO: sink.get_rcvmore failed: {:?}", e);
+                              Ok(true) => {}, // keep receiving
+                              _ => break,     /* println!("Error TODO: sink.get_rcvmore failed:
+                                                * {:?}", e); */
                             };
                           }
                           drop(file);
@@ -465,12 +464,11 @@ impl Server {
                         // Then mark the task done. This can be in a new thread later on
                         let done_report = helpers::generate_report(task, recv_path);
                         Server::push_done_queue(&done_queue_arc, done_report);
-                      }
+                      },
                     }
-                  }
+                  },
                 }
               }
-
             } else {
               // Otherwise just discard the rest of the message
               loop {
@@ -480,16 +478,14 @@ impl Server {
                 }
               }
             }
-          }
+          },
         };
       }
       let responded_time = time::get_time();
       let request_duration = (responded_time - request_time).num_milliseconds();
       println!(
         "Sink job {}, message size: {}, took {}ms.",
-        sink_job_count,
-        total_incoming,
-        request_duration
+        sink_job_count, total_incoming, request_duration
       );
       if job_limit.is_some() && (sink_job_count >= job_limit.unwrap()) {
         println!(
@@ -506,15 +502,13 @@ impl Server {
     &self,
     services_arc: &Arc<Mutex<HashMap<String, Option<Service>>>>,
     service_name: String,
-  ) -> Option<Service> {
+  ) -> Option<Service>
+  {
     let mut services = services_arc.lock().unwrap();
     services
       .entry(service_name.clone())
       .or_insert(Some(
-        Service::find_by_name(
-          &service_name,
-          &self.backend.connection,
-        ).unwrap(),
+        Service::find_by_name(&service_name, &self.backend.connection).unwrap(),
       ))
       .clone()
   }
@@ -522,7 +516,8 @@ impl Server {
   fn get_service_record(
     services_arc: &Arc<Mutex<HashMap<String, Option<Service>>>>,
     service_name: String,
-  ) -> Option<Service> {
+  ) -> Option<Service>
+  {
     let services = services_arc.lock().unwrap();
     let service_record = services.get(&service_name);
     match service_record {
@@ -569,7 +564,7 @@ impl Server {
     let mut expired_tasks = Vec::new();
     for key in expired_keys {
       match progress_queue.remove(&key) {
-        None => {}
+        None => {},
         Some(task_progress) => expired_tasks.push(task_progress),
       }
     }
@@ -579,7 +574,8 @@ impl Server {
   fn pop_progress_task(
     progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>,
     taskid: i64,
-  ) -> Option<TaskProgress> {
+  ) -> Option<TaskProgress>
+  {
     let mut progress_queue = progress_queue_arc.lock().unwrap();
     progress_queue.remove(&taskid)
   }
@@ -587,7 +583,8 @@ impl Server {
   fn push_progress_task(
     progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>,
     progress_task: TaskProgress,
-  ) {
+  )
+  {
     let mut progress_queue = progress_queue_arc.lock().unwrap();
     // NOTE: This constant should be adjusted if you expect a fringe of more than 10,000 jobs
     //       I am using this as a workaround for the inability to catch thread panic!() calls.

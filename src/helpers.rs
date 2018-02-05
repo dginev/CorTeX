@@ -17,8 +17,8 @@ use rand::{thread_rng, Rng};
 use diesel::pg::PgConnection;
 use diesel::result::Error;
 
-use models::{Task, LogInvalid, LogInfo, LogWarning, LogError, LogFatal, LogRecord, NewLogInvalid,
-             NewLogInfo, NewLogWarning, NewLogError, NewLogFatal};
+use models::{LogError, LogFatal, LogInfo, LogInvalid, LogRecord, LogWarning, NewLogError,
+             NewLogFatal, NewLogInfo, NewLogInvalid, NewLogWarning, Task};
 use concerns::CortexInsertable;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -54,9 +54,7 @@ pub struct TaskProgress {
 }
 impl TaskProgress {
   /// What is the latest admissible time for this task to be completed?
-  pub fn expected_at(&self) -> i64 {
-    self.created_at + ((self.retries + 1) * 3600)
-  }
+  pub fn expected_at(&self) -> i64 { self.created_at + ((self.retries + 1) * 3600) }
 }
 
 #[derive(Clone, Debug)]
@@ -158,8 +156,7 @@ impl TaskStatus {
       TaskStatus::Error => -3,
       TaskStatus::Fatal => -4,
       TaskStatus::Invalid => -5,
-      TaskStatus::Blocked(x) |
-      TaskStatus::Queued(x) => x,
+      TaskStatus::Blocked(x) | TaskStatus::Queued(x) => x,
     }
   }
   /// Maps the enumeration into the raw severity string for the Task store logs / frontend reports
@@ -175,7 +172,8 @@ impl TaskStatus {
       TaskStatus::Queued(_) => "queued",
     }.to_string()
   }
-  /// Maps the enumeration into the Postgresql table name expected to hold messages for this status
+  /// Maps the enumeration into the Postgresql table name expected to hold messages for this
+  /// status
   pub fn to_table(&self) -> String {
     match *self {
       TaskStatus::Warning => "log_warnings",
@@ -327,7 +325,8 @@ impl NewTaskMessage {
     category: String,
     what: String,
     details: String,
-  ) -> NewTaskMessage {
+  ) -> NewTaskMessage
+  {
     match severity.to_lowercase().as_str() {
       "warning" => NewTaskMessage::Warning(NewLogWarning {
         task_id,
@@ -419,11 +418,11 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
         in_details_mode = true;
         // Add to the array of parsed messages
         messages.push(message);
-      }
+      },
       None => {
         // Otherwise line is just noise, continue...
         in_details_mode = false;
-      }
+      },
     };
   }
   messages
@@ -443,11 +442,11 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
       .unwrap()
       .support_filter_all()
       .support_format_all()
-      .open_filename(result.to_str().unwrap(), 10240) {
-
+      .open_filename(result.to_str().unwrap(), 10240)
+    {
       Err(e) => {
         println!("Error TODO: Couldn't open archive_reader: {:?}", e);
-      }
+      },
       Ok(archive_reader) => {
         while let Ok(entry) = archive_reader.next_header() {
           if entry.pathname() != log_name {
@@ -463,19 +462,20 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
           let log_string: String = match str::from_utf8(&raw_log_data) {
             Ok(some_utf_string) => some_utf_string.to_string(),
             Err(e) => {
-              "Fatal:cortex:unicode_parse_error ".to_string() + &e.to_string() +
-                "\nStatus:conversion:3"
-            }
+              "Fatal:cortex:unicode_parse_error ".to_string() + &e.to_string()
+                + "\nStatus:conversion:3"
+            },
           };
           messages = parse_log(task.id, &log_string);
           // Look for the special status message - Fatal otherwise!
           for message in &messages {
-            // Invalids are a bit of a workaround for now, they're fatal messages in latexml, but we want them separated out in cortex
+            // Invalids are a bit of a workaround for now, they're fatal messages in latexml, but
+            // we want them separated out in cortex
             match message {
               &NewTaskMessage::Invalid(ref _log_invalid) => {
                 status = TaskStatus::Invalid;
                 break;
-              }
+              },
               &NewTaskMessage::Info(ref _log_info) => {
                 let message_what = message.what();
                 if message.category() == "conversion" && !message_what.is_empty() {
@@ -485,23 +485,22 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
                     Err(e) => {
                       println!(
                         "Error TODO: Failed to parse conversion status {:?}: {:?}",
-                        message_what,
-                        e
+                        message_what, e
                       );
                       3 // latexml raw fatal
-                    }
+                    },
                   };
                   let cortex_scheme_status = -(latexml_scheme_status + 1);
                   status = TaskStatus::from_raw(cortex_scheme_status);
                   break;
                 }
-              }
-              _ => {}
+              },
+              _ => {},
             }
           }
         }
         drop(archive_reader);
-      }
+      },
     }
   } // -- END: Archive::Reader, trying to localize (to .drop asap)
 

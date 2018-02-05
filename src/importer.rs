@@ -7,8 +7,8 @@
 
 //! Import a new corpus into the framework
 
-extern crate glob;
 extern crate Archive;
+extern crate glob;
 
 use glob::glob;
 // use regex::Regex;
@@ -19,7 +19,7 @@ use std::fs;
 use std::env;
 use std::io::Error;
 use backend::Backend;
-use models::{NewTask, Corpus, NewCorpus};
+use models::{Corpus, NewCorpus, NewTask};
 use helpers::TaskStatus;
 
 /// Struct for performing corpus imports into `CorTeX`
@@ -54,9 +54,7 @@ impl Default for Importer {
 
 impl Importer {
   /// Convenience method for (recklessly?) obtaining the current working dir
-  pub fn cwd() -> PathBuf {
-    env::current_dir().unwrap()
-  }
+  pub fn cwd() -> PathBuf { env::current_dir().unwrap() }
   /// Top-level method for unpacking an arxiv-toplogy corpus from its tar-ed form
   fn unpack(&self) -> Result<(), Error> {
     try!(self.unpack_arxiv_top());
@@ -103,15 +101,15 @@ impl Importer {
               Err(_) => {
                 println!("To unpack: {:?}", full_extract_path);
                 match e.extract_to(&full_extract_path, Vec::new()) {
-                  Ok(_) => {}
+                  Ok(_) => {},
                   _ => {
                     println!("Failed to extract {:?}", full_extract_path);
-                  }
+                  },
                 }
-              }
+              },
             }
           }
-        }
+        },
         Err(e) => println!("Failed tar glob: {:?}", e),
       }
     }
@@ -154,7 +152,7 @@ impl Importer {
               }
             }
           }
-        }
+        },
         Err(e) => println!("Failed tar glob: {:?}", e),
       }
     }
@@ -208,8 +206,9 @@ impl Importer {
                   match raw_reader.next_header() {
                     Ok(_) => {
                       let tex_target = base_name.to_string() + ".tex";
-                      // In a "raw" read, we don't know the data size in advance. So we bite the bullet and
-                      // read the usually tiny tex file in memory, obtaining a size estimate
+                      // In a "raw" read, we don't know the data size in advance. So we bite the
+                      // bullet and read the usually tiny tex file in memory,
+                      // obtaining a size estimate
                       let mut raw_data = Vec::new();
                       loop {
                         let chunk_data = raw_reader.read_data(10240);
@@ -218,58 +217,54 @@ impl Importer {
                           Err(_) => break,
                         };
                       }
-                      match archive_writer_new.write_header_new(
-                        &tex_target,
-                        raw_data.len() as i64,
-                      ) {
-                        Ok(_) => {}
+                      match archive_writer_new.write_header_new(&tex_target, raw_data.len() as i64)
+                      {
+                        Ok(_) => {},
                         Err(e) => {
                           println!("Couldn't write header: {:?}", e);
                           break;
-                        }
+                        },
                       }
                       match archive_writer_new.write_data(raw_data) {
-                        Ok(_) => {}
-                        Err(e) => {
-                          println!(
-                            "Failed to write data to {:?} because {:?}",
-                            tex_target.clone(),
-                            e
-                          )
-                        }
+                        Ok(_) => {},
+                        Err(e) => println!(
+                          "Failed to write data to {:?} because {:?}",
+                          tex_target.clone(),
+                          e
+                        ),
                       };
-                    }
+                    },
                     Err(_) => println!("No content in archive: {:?}", entry_path),
                   }
-                }
+                },
                 Err(_) => println!("Unrecognizeable archive: {:?}", entry_path),
               }
-            }
+            },
             Ok(archive_reader) => {
               while let Ok(e) = archive_reader.next_header() {
                 match archive_writer_new.write_header(e) {
-                  _ => {} // TODO: If we need to print an error message, we can do so later.
+                  _ => {}, // TODO: If we need to print an error message, we can do so later.
                 };
                 loop {
                   let entry_data = archive_reader.read_data(10240);
                   match entry_data {
                     Ok(chunk) => {
                       archive_writer_new.write_data(chunk).unwrap();
-                    }
+                    },
                     Err(_) => {
                       break;
-                    }
+                    },
                   };
                 }
               }
-            }
+            },
           }
           // Done with this .gz , remove it:
           match fs::remove_file(path.clone()) {
-            Ok(_) => {}
+            Ok(_) => {},
             Err(e) => println!("Can't remove source .gz: {:?}", e),
           };
-        }
+        },
         Err(e) => println!("Failed gz glob: {:?}", e),
       }
     }
@@ -291,8 +286,8 @@ impl Importer {
         // Ignore files
         // First, test if we just found an entry:
         let current_local_dir = current_path.file_name().unwrap();
-        let current_entry = current_local_dir.to_str().unwrap().to_string() + "." +
-          import_extension;
+        let current_entry =
+          current_local_dir.to_str().unwrap().to_string() + "." + import_extension;
         let current_entry_path = current_path.to_str().unwrap().to_string() + "/" + &current_entry;
         match fs::metadata(current_entry_path.clone()) {
           Ok(_) => {
@@ -306,14 +301,14 @@ impl Importer {
               self.backend.mark_imported(&import_q).unwrap(); // TODO: Proper Error-handling
               import_q.clear();
             }
-          }
+          },
           Err(_) => {
             // No such entry found, traversing into the directory:
             for subentry in try!(fs::read_dir(current_path.clone())) {
               let subentry = try!(subentry);
               walk_q.push(subentry.path());
             }
-          }
+          },
         }
       }
     }
@@ -355,7 +350,8 @@ impl Importer {
     Ok(())
   }
 
-  /// Top-level corpus extension, performs a check for newly added documents and extracts+adds them to the existing corpus tasks
+  /// Top-level corpus extension, performs a check for newly added documents and extracts+adds
+  /// them to the existing corpus tasks
   pub fn extend_corpus(&self) -> Result<(), Error> {
     if self.corpus.complex {
       // Complex setup has an unpack step:

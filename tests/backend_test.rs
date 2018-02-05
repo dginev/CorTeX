@@ -8,9 +8,9 @@ extern crate cortex;
 extern crate diesel;
 
 use cortex::backend;
-use cortex::models::{Corpus, Service, NewTask, Task, NewLogInfo};
-use cortex::helpers::{TaskStatus, TaskReport, NewTaskMessage, random_mark, rand_in_range};
-use cortex::schema::{tasks, log_infos};
+use cortex::models::{Corpus, NewLogInfo, NewTask, Service, Task};
+use cortex::helpers::{rand_in_range, random_mark, NewTaskMessage, TaskReport, TaskStatus};
+use cortex::schema::{log_infos, tasks};
 use cortex::schema::tasks::dsl::{service_id, status};
 use cortex::schema::log_infos::dsl::task_id;
 use diesel::prelude::*;
@@ -150,16 +150,12 @@ fn batch_ops_test() {
   };
   // mark_imported on `mock_task_count` tasks
   let names: Vec<String> = (1..mock_task_count + 1)
-    .map(|index| {
-      format!("{}{}", mock_new_task.entry, index.to_string())
-    })
+    .map(|index| format!("{}{}", mock_new_task.entry, index.to_string()))
     .collect();
   let new_tasks: Vec<NewTask> = (0..mock_task_count)
-    .map(|index| {
-      NewTask {
-        entry: names[index].clone(),
-        ..mock_new_task
-      }
+    .map(|index| NewTask {
+      entry: names[index].clone(),
+      ..mock_new_task
     })
     .collect();
   let imported_count = backend.mark_imported(&new_tasks);
@@ -177,19 +173,17 @@ fn batch_ops_test() {
   //              with a single info message
   let task_reports: Vec<TaskReport> = todo_tasks
     .into_iter()
-    .map(|task| {
-      TaskReport {
-        status: TaskStatus::NoProblem,
-        messages: vec![
-          NewTaskMessage::Info(NewLogInfo {
-            task_id: task.id,
-            category: String::from("trivial"),
-            what: String::from("mock"),
-            details: String::new(),
-          }),
-        ],
-        task,
-      }
+    .map(|task| TaskReport {
+      status: TaskStatus::NoProblem,
+      messages: vec![
+        NewTaskMessage::Info(NewLogInfo {
+          task_id: task.id,
+          category: String::from("trivial"),
+          what: String::from("mock"),
+          details: String::new(),
+        }),
+      ],
+      task,
     })
     .collect();
 

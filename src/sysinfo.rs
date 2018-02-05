@@ -12,15 +12,18 @@ use std::collections::HashMap;
 
 /// Prepare a report for the file system metrics offered by `sys_info`
 pub fn report(store: &mut HashMap<String, String>) -> Result<(), Error> {
-
   store.insert("sys_os_type".to_string(), os_type().unwrap());
   store.insert("sys_os_release".to_string(), os_release().unwrap());
   store.insert("sys_cpu".to_string(), cpu_num().unwrap().to_string());
-  store.insert("sys_cpu_speed".to_string(),
-               cpu_speed().unwrap().to_string());
+  store.insert(
+    "sys_cpu_speed".to_string(),
+    cpu_speed().unwrap().to_string(),
+  );
 
-  store.insert("sys_proc_total".to_string(),
-               proc_total().unwrap().to_string());
+  store.insert(
+    "sys_proc_total".to_string(),
+    proc_total().unwrap().to_string(),
+  );
   let load = loadavg().unwrap();
   store.insert("sys_load_one".to_string(), load.one.to_string());
   store.insert("sys_load_five".to_string(), load.five.to_string());

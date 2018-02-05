@@ -7,7 +7,6 @@
 
 ///! Import a new corpus into `CorTeX` from the command line.
 ///! Example run: $ ./target/release/examples/tex_to_html_import /data/arxmliv/ arXMLiv
-
 extern crate cortex;
 extern crate pericortex;
 extern crate rustc_serialize;
@@ -22,14 +21,14 @@ use std::env;
 use std::thread;
 use std::time::Duration;
 use cortex::backend::{Backend, DEFAULT_DB_ADDRESS};
-use cortex::models::{NewTask, Service, NewService};
+use cortex::models::{NewService, NewTask, Service};
 use cortex::helpers::TaskStatus;
 use cortex::manager::TaskManager;
 use cortex::worker::InitWorker;
 use pericortex::worker::Worker;
 
 fn main() {
-  let job_limit: Option<usize> = None;//Some(1);
+  let job_limit: Option<usize> = None; //Some(1);
   let mut input_args = env::args();
   let _ = input_args.next();
   let mut corpus_path = match input_args.next() {

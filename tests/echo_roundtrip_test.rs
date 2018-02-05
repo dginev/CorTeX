@@ -11,7 +11,7 @@ extern crate pericortex;
 use std::thread;
 use cortex::backend;
 use cortex::backend::TEST_DB_ADDRESS;
-use cortex::models::{Corpus, NewCorpus, Service, NewService, NewTask};
+use cortex::models::{Corpus, NewCorpus, NewService, NewTask, Service};
 use cortex::helpers::TaskStatus;
 use cortex::manager::TaskManager;
 use pericortex::worker::{EchoWorker, Worker};

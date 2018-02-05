@@ -7,7 +7,6 @@
 
 ///! Register a service with a given name on a corpus with a given path
 ///! Example run: $ ./target/release/examples/register_service tex_to_html /data/arxmliv/
-
 extern crate cortex;
 extern crate pericortex;
 extern crate rustc_serialize;
@@ -19,12 +18,12 @@ use cortex::models::Service;
 fn main() {
   let mut input_args = env::args();
   let _ = input_args.next();
-  let service_name = input_args.next().expect(
-    "Please provide service name as the first argument",
-  );
-  let mut corpus_path = input_args.next().expect(
-    "Please provide corpus path as the second argument",
-  );
+  let service_name = input_args
+    .next()
+    .expect("Please provide service name as the first argument");
+  let mut corpus_path = input_args
+    .next()
+    .expect("Please provide corpus path as the second argument");
 
   if let Some(c) = corpus_path.pop() {
     if c != '/' {
@@ -35,8 +34,7 @@ fn main() {
 
   println!(
     "-- Registering service {:?} on corpus at {:?} ...",
-    &service_name,
-    &corpus_path
+    &service_name, &corpus_path
   );
   let backend = Backend::default();
   let service_registered_result = Service::find_by_name(&service_name, &backend.connection);
@@ -48,5 +46,4 @@ fn main() {
       .register_service(&service_registered, &corpus_path)
       .is_ok()
   );
-
 }

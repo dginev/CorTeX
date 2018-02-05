@@ -80,7 +80,8 @@ impl Backend {
       .execute(&self.connection)
   }
 
-  /// Insert a vector of `TaskReport` reports into the Task store, also marking their tasks as completed with the correct status code.
+  /// Insert a vector of `TaskReport` reports into the Task store, also marking their tasks as
+  /// completed with the correct status code.
   pub fn mark_done(&self, reports: &[TaskReport]) -> Result<(), Error> {
     use schema::tasks::{id, status};
 
@@ -132,8 +133,8 @@ impl Backend {
     Ok(())
   }
 
-  /// Given a complex selector, of a `Corpus`, `Service`, and the optional `severity`, `category` and `what`
-  /// mark all matching tasks to be rerun
+  /// Given a complex selector, of a `Corpus`, `Service`, and the optional `severity`, `category`
+  /// and `what` mark all matching tasks to be rerun
   pub fn mark_rerun(
     &self,
     corpus: &Corpus,
@@ -141,7 +142,8 @@ impl Backend {
     severity_opt: Option<String>,
     category_opt: Option<String>,
     what_opt: Option<String>,
-  ) -> Result<(), Error> {
+  ) -> Result<(), Error>
+  {
     use schema::tasks::{corpus_id, service_id, status};
     // Rerun = set status to TODO for all tasks, deleting old logs
     let mark: i32 = random_mark();
@@ -243,7 +245,7 @@ impl Backend {
               .set(status.eq(mark))
               .execute(&self.connection)
           )
-        }
+        },
       },
       None => {
         // Entire corpus
@@ -255,11 +257,12 @@ impl Backend {
             .set(status.eq(mark))
             .execute(&self.connection)
         )
-      }
+      },
     };
 
     // Next, delete all logs for the blocked tasks.
-    // Note that if we are using a negative blocking status, this query should get sped up via an "Index Scan using log_taskid on logs"
+    // Note that if we are using a negative blocking status, this query should get sped up via an
+    // "Index Scan using log_taskid on logs"
     let affected_tasks = tasks::table
       .filter(corpus_id.eq(corpus.id))
       .filter(service_id.eq(service.id))
@@ -301,7 +304,8 @@ impl Backend {
     &self,
     object: &Model,
     field: &str,
-  ) -> Result<usize, Error> {
+  ) -> Result<usize, Error>
+  {
     object.delete_by(&self.connection, field)
   }
 
@@ -318,14 +322,15 @@ impl Backend {
   }
 
   /// Globally resets any "in progress" tasks back to "queued".
-  /// Particularly useful for dispatcher restarts, when all "in progress" tasks need to be invalidated
+  /// Particularly useful for dispatcher restarts, when all "in progress" tasks need to be
+  /// invalidated
   pub fn clear_limbo_tasks(&self) -> Result<usize, Error> {
     models::clear_limbo_tasks(&self.connection)
   }
 
   /// Activates an existing service on a given corpus (via PATH)
-  /// if the service has previously been registered, this call will `RESET` the service into a mint state
-  /// also removing any related log messages.
+  /// if the service has previously been registered, this call will `RESET` the service into a mint
+  /// state also removing any related log messages.
   pub fn register_service(&self, service: &Service, corpus_path: &str) -> Result<(), Error> {
     use schema::tasks::dsl::*;
     let corpus = try!(Corpus::find_by_path(corpus_path, &self.connection));
@@ -367,7 +372,8 @@ impl Backend {
   }
 
   /// Extends an existing service on a given corpus (via PATH)
-  /// if the service has previously been registered, this call will ignore existing entries and simply add newly encountered ones
+  /// if the service has previously been registered, this call will ignore existing entries and
+  /// simply add newly encountered ones
   pub fn extend_service(&self, service: &Service, corpus_path: &str) -> Result<(), Error> {
     use schema::tasks::dsl::*;
     let corpus = Corpus::find_by_path(corpus_path, &self.connection)?;
@@ -413,7 +419,8 @@ impl Backend {
     corpus: &Corpus,
     service: &Service,
     task_status: &TaskStatus,
-  ) -> Vec<String> {
+  ) -> Vec<String>
+  {
     use schema::tasks::dsl::{corpus_id, entry, service_id, status};
     let entries: Vec<String> = tasks::table
       .select(entry)
@@ -471,8 +478,8 @@ impl Backend {
     stats_hash
   }
 
-  /// Given a complex selector, of a `Corpus`, `Service`, and the optional `severity`, `category` and `what`,
-  /// Provide a progress report at the chosen granularity
+  /// Given a complex selector, of a `Corpus`, `Service`, and the optional `severity`, `category`
+  /// and `what`, Provide a progress report at the chosen granularity
   pub fn task_report(
     &self,
     corpus: &Corpus,
@@ -480,7 +487,8 @@ impl Backend {
     severity_opt: Option<String>,
     category_opt: Option<String>,
     what_opt: Option<String>,
-  ) -> Vec<HashMap<String, String>> {
+  ) -> Vec<HashMap<String, String>>
+  {
     use schema::tasks::dsl::{corpus_id, service_id, status};
     use diesel::sql_types::{BigInt, Text};
     let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
@@ -490,7 +498,8 @@ impl Backend {
 
     if let Some(severity_name) = severity_opt {
       let task_status = TaskStatus::from_key(&severity_name);
-      // NoProblem report is a bit special, as it provides a simple list of entries - we assume no logs of notability for this severity.
+      // NoProblem report is a bit special, as it provides a simple list of entries - we assume no
+      // logs of notability for this severity.
       if task_status == TaskStatus::NoProblem {
         let entry_rows: Vec<(String, i64)> = tasks::table
           .select((tasks::entry, tasks::id))
@@ -512,9 +521,10 @@ impl Backend {
           report.push(entry_map);
         }
       } else {
-        // The "total tasks" used in the divison denominators for computing the percentage distributions
-        //  are all valid tasks (total - invalid), as we don't want to dilute the service percentage with jobs that were never processed.
-        // For now the fastest way to obtain that number is using 2 queries for each and subtracting the numbers in Rust
+        // The "total tasks" used in the divison denominators for computing the percentage
+        // distributions are all valid tasks (total - invalid), as we don't want to dilute
+        // the service percentage with jobs that were never processed. For now the fastest
+        // way to obtain that number is using 2 queries for each and subtracting the numbers in Rust
         let total_count: i64 = tasks::table
           .filter(service_id.eq(service.id))
           .filter(corpus_id.eq(corpus.id))
@@ -583,7 +593,7 @@ impl Backend {
               logged_message_count,
               silent_task_count,
             )
-          }
+          },
           Some(category_name) => if category_name == "no_messages" {
             let no_messages_query_string = "SELECT * FROM tasks t WHERE ".to_string()
               + "service_id=$1 and corpus_id=$2 and status=$3 and "
@@ -627,8 +637,8 @@ impl Backend {
                   .get_results(&self.connection)
                   .unwrap_or_default();
                 // How many tasks and messages total in this category?
-                let this_category_report_query_string = 
-              "SELECT NULL as report_name, count(*) as task_count, COALESCE(SUM(inner_message_count::integer),0) as message_count FROM (SELECT tasks.id, count(*) as inner_message_count ".to_string()+
+                let this_category_report_query_string = "SELECT NULL as report_name, count(*) as task_count, COALESCE(SUM(inner_message_count::integer),0) as message_count FROM".to_string() +
+                " (SELECT tasks.id, count(*) as inner_message_count "+
                 "FROM tasks, "+&log_table+" WHERE tasks.id="+&log_table+".task_id and "+
                   "service_id=$1 and corpus_id=$2 and status=$3 and category=$4 group by tasks.id) as tmp";
                 let this_category_report_query = sql_query(this_category_report_query_string)
@@ -647,7 +657,7 @@ impl Backend {
                   this_category_report.message_count,
                   None,
                 )
-              }
+              },
               Some(what_name) => {
                 let details_report_query_string =
                   "SELECT tasks.id, tasks.entry, ".to_string() + &log_table
@@ -676,7 +686,7 @@ impl Backend {
                   entry_map.insert("details".to_string(), details_row.details);
                   report.push(entry_map);
                 }
-              }
+              },
             }
           },
         }
@@ -688,13 +698,14 @@ impl Backend {
   fn aux_stats_compute_percentages(
     stats_hash: &mut HashMap<String, f64>,
     total_given: Option<f64>,
-  ) {
+  )
+  {
     // Compute percentages, now that we have a total
     let total: f64 = 1.0_f64.max(match total_given {
       None => {
         let total_entry = stats_hash.get_mut("total").unwrap();
         *total_entry
-      }
+      },
       Some(total_num) => total_num,
     });
     let stats_keys = stats_hash
@@ -718,7 +729,8 @@ impl Backend {
     these_tasks: i64,
     mut these_messages: i64,
     these_silent: Option<i64>,
-  ) -> Vec<HashMap<String, String>> {
+  ) -> Vec<HashMap<String, String>>
+  {
     let mut report = Vec::new();
     // Guard against dividing by 0
     if total_valid_tasks <= 0 {
@@ -766,7 +778,7 @@ impl Backend {
     let mut total_hash = HashMap::new();
     total_hash.insert("name".to_string(), "total".to_string());
     match these_silent {
-      None => {}
+      None => {},
       Some(silent_count) => {
         let mut no_messages_hash: HashMap<String, String> = HashMap::new();
         no_messages_hash.insert("name".to_string(), "no_messages".to_string());
@@ -782,7 +794,7 @@ impl Backend {
         no_messages_hash.insert("messages".to_string(), "0".to_string());
         no_messages_hash.insert("messages_percent".to_string(), "0".to_string());
         report.push(no_messages_hash);
-      }
+      },
     };
     total_hash.insert("tasks".to_string(), these_tasks.to_string());
     total_hash.insert(

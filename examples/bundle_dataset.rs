@@ -5,11 +5,11 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-extern crate cortex;
-extern crate time;
-extern crate libxml;
 extern crate Archive;
+extern crate cortex;
+extern crate libxml;
 extern crate regex;
+extern crate time;
 
 use std::env;
 use std::str;
@@ -45,14 +45,14 @@ fn main() {
     Err(e) => {
       println!("Failed to load corpus: {:?}", e);
       return;
-    }
+    },
   };
   let service = match Service::find_by_name(&service_name, &backend.connection) {
     Ok(s) => s,
     Err(e) => {
       println!("Failed to load service: {:?}", e);
       return;
-    }
+    },
   };
   // Setup document parser
   let parser = Parser::default_html();
@@ -71,8 +71,7 @@ fn main() {
     TaskStatus::NoProblem,
     TaskStatus::Warning,
     TaskStatus::Error,
-  ]
-  {
+  ] {
     let entries = backend.entries(&corpus, &service, &status);
     println!(
       "Entries found for severity {:?}: {:?}",
@@ -81,12 +80,11 @@ fn main() {
     );
     for entry in entries {
       // Let's open the zip file and grab the result from it
-      if let Ok(archive_reader) =
-        Reader::new()
-          .unwrap()
-          .support_filter_all()
-          .support_format_all()
-          .open_filename(&entry, chunk_size)
+      if let Ok(archive_reader) = Reader::new()
+        .unwrap()
+        .support_filter_all()
+        .support_format_all()
+        .open_filename(&entry, chunk_size)
       {
         while let Ok(e) = archive_reader.next_header() {
           // Which file are we looking at?
@@ -108,11 +106,11 @@ fn main() {
                 println!("-- Ill-formed XML: {:?}", entry);
                 false // ill-formed, do nothing
               }
-            }
+            },
             Err(_) => {
               println!("-- Ill-formed UTF8 archive data: {:?}", entry);
               false
-            }
+            },
           };
           if is_well_formed {
             if let Some(cap) = entry_name_regex.captures(&entry) {
@@ -121,25 +119,21 @@ fn main() {
               let dataset_path = status.to_key() + "/" + month_dir + "/" + paper_dir + ".html";
               println!("Writing: {:?} ", dataset_path);
               total_dataset_entries += 1;
-              match archive_writer_new.write_header_new(
-                &dataset_path,
-                raw_entry_data.len() as i64,
-              ) {
-                Ok(_) => {}
+              match archive_writer_new.write_header_new(&dataset_path, raw_entry_data.len() as i64)
+              {
+                Ok(_) => {},
                 Err(e) => {
                   println!("Couldn't write header: {:?}", e);
                   break;
-                }
+                },
               };
               match archive_writer_new.write_data(raw_entry_data) {
-                Ok(_) => {}
-                Err(e) => {
-                  println!(
-                    "Failed to write data to {:?} because {:?}",
-                    dataset_path.clone(),
-                    e
-                  )
-                }
+                Ok(_) => {},
+                Err(e) => println!(
+                  "Failed to write data to {:?} because {:?}",
+                  dataset_path.clone(),
+                  e
+                ),
               };
             }
           }
@@ -153,9 +147,7 @@ fn main() {
   let bundle_duration = (end_bundle - start_bundle).num_milliseconds();
   println!(
     "-- Dataset bundler for corpus {:?} and service {:?} took {:?}ms",
-    corpus.name,
-    service.name,
-    bundle_duration
+    corpus.name, service.name, bundle_duration
   );
   println!("-- Bundled {:?} dataset entries.", total_dataset_entries);
 }

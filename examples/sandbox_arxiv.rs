@@ -5,10 +5,10 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-extern crate cortex;
-extern crate time;
-extern crate regex;
 extern crate Archive;
+extern crate cortex;
+extern crate regex;
+extern crate time;
 
 use regex::Regex;
 use Archive::*;
@@ -20,7 +20,8 @@ use std::io::Read;
 use cortex::backend::Backend;
 use cortex::models::Corpus;
 
-/// Reads a lit of arXiv ids given on input, and packages the respective `CorTeX` entries into a new sandbox.
+/// Reads a lit of arXiv ids given on input, and packages the respective `CorTeX` entries into a
+/// new sandbox.
 fn main() {
   // Read input arguments
   let mut input_args = env::args();
@@ -42,7 +43,7 @@ fn main() {
     _ => {
       println!("--  The arXMLiv corpus isn't registered in the CorTeX backend, aborting.");
       return;
-    }
+    },
   };
   let corpus_path = corpus.path;
   println!("-- using arXiv path: {:?}", corpus_path);
@@ -56,7 +57,7 @@ fn main() {
         ids_filepath
       );
       return;
-    }
+    },
   };
 
   // Prepare a sandbox archive file writer
@@ -86,21 +87,21 @@ fn main() {
           None => {
             println!("-- Malformed arxiv id: {:?}", id);
             None
-          }
+          },
           Some(caps) => {
             // Obtain new-style entry path
             let month = caps.at(1).unwrap();
             let paper = caps.at(0).unwrap();
             Some(month.to_owned() + "/" + paper + "/" + paper + ".zip")
-          }
+          },
         }
-      }
+      },
       Some(caps) => {
         // Obtain old-style entry path
         let month = caps.at(2).unwrap();
         let paper = caps.at(1).unwrap().to_owned() + month + caps.at(3).unwrap();
         Some(month.to_owned() + "/" + &paper + "/" + &paper + ".zip")
-      }
+      },
     };
     if entry.is_none() {
       continue;
@@ -115,24 +116,22 @@ fn main() {
           // Everything looks ok with this paper, adding it to the sandbox:
           counter += 1;
           match sandbox_writer.write_header_new(&relative_entry_path, buffer.len() as i64) {
-            Ok(_) => {}
+            Ok(_) => {},
             Err(e) => {
               println!("Couldn't write header {:?}: {:?}", relative_entry_path, e);
               continue;
-            }
+            },
           };
           match sandbox_writer.write_data(buffer) {
-            Ok(_) => {}
-            Err(e) => {
-              println!(
-                "Failed to write data to {:?} because {:?}",
-                relative_entry_path.clone(),
-                e
-              )
-            }
+            Ok(_) => {},
+            Err(e) => println!(
+              "Failed to write data to {:?} because {:?}",
+              relative_entry_path.clone(),
+              e
+            ),
           };
         }
-      }
+      },
     };
   }
 
@@ -140,8 +139,6 @@ fn main() {
   let sandbox_duration = (sandbox_end - sandbox_start).num_milliseconds();
   println!(
     "-- Sandboxing {:?} arXiv papers took took {:?}ms",
-    counter,
-    sandbox_duration
+    counter, sandbox_duration
   );
-
 }

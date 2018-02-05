@@ -11,7 +11,7 @@ use cortex::backend;
 use cortex::models::{Corpus, NewCorpus};
 use diesel::delete;
 use diesel::prelude::*;
-use cortex::schema::{tasks, corpora};
+use cortex::schema::{corpora, tasks};
 use std::fs;
 
 fn assert_files(files: &[&str]) -> Result<(), std::io::Error> {
@@ -56,7 +56,8 @@ fn can_import_simple() {
   assert!(corpus_result.is_ok());
   let corpus = corpus_result.unwrap();
   let corpus_id = corpus.id;
-  // had a failing test where path and name were being swapped - diesel seems picky about struct layouts matching table column order
+  // had a failing test where path and name were being swapped - diesel seems picky about struct
+  // layouts matching table column order
   assert_eq!(corpus.name, name);
   let importer = Importer {
     corpus,
@@ -102,7 +103,6 @@ fn can_import_complex() {
     cwd: Importer::cwd(),
   };
 
-
   println!("-- Testing complex import");
   assert!(importer.process().is_ok());
 
@@ -112,24 +112,19 @@ fn can_import_complex() {
     cwd: Importer::cwd(),
   };
 
-
   println!("-- Testing repeated complex import (successful and no-op)");
   assert!(repeat_importer.process().is_ok());
 
-  let files_removed_ok = assert_files(
-    &[
-      "tests/data/9107/hep-lat9107001/hep-lat9107001.zip",
-      "tests/data/9107/hep-lat9107002/hep-lat9107002.zip",
-    ],
-  );
+  let files_removed_ok = assert_files(&[
+    "tests/data/9107/hep-lat9107001/hep-lat9107001.zip",
+    "tests/data/9107/hep-lat9107002/hep-lat9107002.zip",
+  ]);
   assert!(files_removed_ok.is_ok());
-  let dirs_removed_ok = assert_dirs(
-    &[
-      "tests/data/9107/hep-lat9107001",
-      "tests/data/9107/hep-lat9107002",
-      "tests/data/9107",
-    ],
-  );
+  let dirs_removed_ok = assert_dirs(&[
+    "tests/data/9107/hep-lat9107001",
+    "tests/data/9107/hep-lat9107002",
+    "tests/data/9107",
+  ]);
   assert!(dirs_removed_ok.is_ok());
 
   // Clean slate
@@ -137,5 +132,4 @@ fn can_import_complex() {
     .filter(tasks::corpus_id.eq(corpus_id))
     .execute(&test_backend.connection);
   assert!(clean_slate_post.is_ok());
-
 }

@@ -8,10 +8,10 @@
 //! Worker for performing corpus imports, when served as "init" tasks by the `CorTeX` dispatcher
 
 extern crate pericortex;
-extern crate zmq;
 extern crate rand;
+extern crate zmq;
 
-use zmq::{Context, Message, SNDMORE, Error};
+use zmq::{Context, Error, Message, SNDMORE};
 use std::path::Path;
 use std::fs::File;
 use std::thread;
@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use backend;
 use backend::DEFAULT_DB_ADDRESS;
-use models::{Task, Corpus, NewCorpus};
+use models::{Corpus, NewCorpus, Task};
 use importer::Importer;
 use pericortex::worker::Worker;
 
@@ -36,7 +36,8 @@ pub struct InitWorker {
   /// full URL (including port) to task sink/receiver
   pub sink: String,
   /// address to the Task store backend
-  /// (special case, only for the init service, third-party workers can't access the Task store directly)
+  /// (special case, only for the init service, third-party workers can't access the Task store
+  /// directly)
   pub backend_address: String,
 }
 impl Default for InitWorker {
@@ -52,18 +53,10 @@ impl Default for InitWorker {
   }
 }
 impl Worker for InitWorker {
-  fn service(&self) -> String {
-    self.service.clone()
-  }
-  fn source(&self) -> String {
-    self.source.clone()
-  }
-  fn sink(&self) -> String {
-    self.sink.clone()
-  }
-  fn message_size(&self) -> usize {
-    self.message_size
-  }
+  fn service(&self) -> String { self.service.clone() }
+  fn source(&self) -> String { self.source.clone() }
+  fn sink(&self) -> String { self.sink.clone() }
+  fn message_size(&self) -> usize { self.message_size }
 
   fn convert(&self, path: &Path) -> Option<File> {
     let path_str = path.to_str().unwrap().to_string();
@@ -75,8 +68,8 @@ impl Worker for InitWorker {
     };
     // Add the new corpus.
     backend.add(&corpus).expect("Failed to create new corpus.");
-    let registered_corpus = Corpus::find_by_name(&path_str, &backend.connection)
-      .expect("Failed to create new corpus.");
+    let registered_corpus =
+      Corpus::find_by_name(&path_str, &backend.connection).expect("Failed to create new corpus.");
 
     // Create an importer for the corpus, and then process all entries to populate CorTeX tasks
     let importer = Importer {
@@ -116,7 +109,6 @@ impl Worker for InitWorker {
       // Terminating with an empty message in place of a payload (INIT is special)
       source.recv(&mut recv_msg, 0).unwrap();
 
-
       let task_result = Task::find(taskid.parse::<i64>().unwrap(), &backend.connection);
       let task = match task_result {
         Ok(t) => t,
@@ -124,7 +116,7 @@ impl Worker for InitWorker {
           // If there was nothing to do, retry a minute later
           thread::sleep(Duration::new(60, 0));
           continue;
-        }
+        },
       };
 
       self.convert(Path::new(&task.entry));

@@ -13,21 +13,23 @@
 #![recursion_limit="256"]
 #![feature(plugin)]
 #![plugin(dotenv_macros)]
-extern crate glob;
-extern crate libxml;
-extern crate zmq;
-extern crate libc;
-extern crate regex;
-extern crate sys_info;
 extern crate Archive;
-extern crate rustc_serialize;
-extern crate rand;
-extern crate tempfile;
-extern crate pericortex;
-extern crate time;
-#[macro_use] extern crate diesel;
-#[macro_use] extern crate diesel_infer_schema;
+#[macro_use]
+extern crate diesel;
+#[macro_use]
+extern crate diesel_infer_schema;
 extern crate dotenv;
+extern crate glob;
+extern crate libc;
+extern crate libxml;
+extern crate pericortex;
+extern crate rand;
+extern crate regex;
+extern crate rustc_serialize;
+extern crate sys_info;
+extern crate tempfile;
+extern crate time;
+extern crate zmq;
 
 pub mod schema;
 pub mod concerns;
