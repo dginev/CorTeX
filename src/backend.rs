@@ -19,7 +19,8 @@ use diesel::pg::PgConnection;
 // use diesel::pg::upsert::*;
 use diesel::result::Error;
 use diesel::dsl::sql;
-use schema::{corpora, log_errors, log_fatals, log_infos, log_invalids, log_warnings, tasks};
+use schema::{corpora, log_errors, log_fatals, log_infos, log_invalids, log_warnings, services,
+             tasks};
 
 // use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
 use concerns::{CortexDeletable, CortexInsertable};
@@ -403,6 +404,13 @@ impl Backend {
     }));
 
     Ok(())
+  }
+
+  /// Deletes a service by name
+  pub fn delete_service_by_name(&self, name: &str) -> Result<usize, Error> {
+    delete(services::table)
+      .filter(services::name.eq(name))
+      .execute(&self.connection)
   }
 
   /// Returns a vector of currently available corpora in the Task store

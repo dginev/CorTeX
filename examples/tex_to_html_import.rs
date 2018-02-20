@@ -21,14 +21,13 @@ use std::env;
 use std::thread;
 use std::time::Duration;
 use cortex::backend::{Backend, DEFAULT_DB_ADDRESS};
-use cortex::models::{NewService, NewTask, Service};
+use cortex::models::{Corpus, NewService, NewTask, Service};
 use cortex::helpers::TaskStatus;
 use cortex::manager::TaskManager;
 use cortex::worker::InitWorker;
 use pericortex::worker::Worker;
 
 fn main() {
-  let job_limit: Option<usize> = None; //Some(1);
   let mut input_args = env::args();
   let _ = input_args.next();
   let mut corpus_path = match input_args.next() {
@@ -43,6 +42,10 @@ fn main() {
   corpus_path.push('/');
   println!("-- Importing corpus at {:?} ...", &corpus_path);
   let backend = Backend::default();
+
+  if let Ok(corpus) = Corpus::find_by_path(&corpus_path, &backend.connection) {
+    assert!(corpus.destroy(&backend.connection).is_ok());
+  }
 
   backend
     .add(&NewTask {
@@ -63,7 +66,7 @@ fn main() {
       message_size: 100,
       backend_address: DEFAULT_DB_ADDRESS.to_string(),
     };
-    assert!(manager.start(job_limit).is_ok());
+    assert!(manager.start(Some(1)).is_ok());
   });
 
   // Start up an init worker
@@ -76,24 +79,29 @@ fn main() {
     backend_address: DEFAULT_DB_ADDRESS.to_string(),
   };
   // Perform a single echo task
-  assert!(worker.start(job_limit).is_ok());
+  assert!(worker.start(Some(1)).is_ok());
   // Wait for the final finisher to persist to DB
   thread::sleep(Duration::new(2, 0)); // TODO: Can this be deterministic? Join?
 
   // Then add a TeX-to-HTML service on this corpus.
   let service_name = "tex_to_html";
-  let new_tex_to_html_service = NewService {
-    name: service_name.to_string(),
-    version: 0.1,
-    inputformat: "tex".to_string(),
-    outputformat: "html".to_string(),
-    inputconverter: Some("import".to_string()),
-    complex: true,
+  let service_registered = match Service::find_by_name(&service_name, &backend.connection) {
+    Ok(s) => s,
+    Err(_) => {
+      let new_service = NewService {
+        name: service_name.to_string(),
+        version: 0.1,
+        inputformat: "tex".to_string(),
+        outputformat: "html".to_string(),
+        inputconverter: Some("import".to_string()),
+        complex: true,
+      };
+      assert!(backend.add(&new_service).is_ok());
+      let service_registered_result = Service::find_by_name(service_name, &backend.connection);
+      assert!(service_registered_result.is_ok());
+      service_registered_result.unwrap()
+    },
   };
-  assert!(backend.add(&new_tex_to_html_service).is_ok());
-  let service_registered_result = Service::find_by_name(service_name, &backend.connection);
-  assert!(service_registered_result.is_ok());
-  let service_registered = service_registered_result.unwrap();
 
   assert!(
     backend

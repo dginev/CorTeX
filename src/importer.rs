@@ -280,16 +280,15 @@ impl Importer {
     let mut import_counter = 0;
     while !walk_q.is_empty() {
       let current_path = walk_q.pop().unwrap();
-      println!("-- current path {:?}", current_path);
       let current_metadata = try!(fs::metadata(current_path.clone()));
       if current_metadata.is_dir() {
-        // Ignore files
+        println!("-- current path {:?}", current_path);
         // First, test if we just found an entry:
         let current_local_dir = current_path.file_name().unwrap();
         let current_entry =
           current_local_dir.to_str().unwrap().to_string() + "." + import_extension;
         let current_entry_path = current_path.to_str().unwrap().to_string() + "/" + &current_entry;
-        match fs::metadata(current_entry_path.clone()) {
+        match fs::metadata(&current_entry_path) {
           Ok(_) => {
             // Found the expected file, import this entry:
             println!("Found entry: {:?}", current_entry_path);

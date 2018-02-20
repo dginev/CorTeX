@@ -543,12 +543,12 @@ impl ToJson for Corpus {
 }
 impl Corpus {
   /// ORM-like until diesel.rs introduces finders for more fields
-  pub fn find_by_name(name_query: &str, connection: &PgConnection) -> Result<Corpus, Error> {
+  pub fn find_by_name(name_query: &str, connection: &PgConnection) -> Result<Self, Error> {
     use schema::corpora::name;
     corpora::table.filter(name.eq(name_query)).first(connection)
   }
   /// ORM-like until diesel.rs introduces finders for more fields
-  pub fn find_by_path(path_query: &str, connection: &PgConnection) -> Result<Corpus, Error> {
+  pub fn find_by_path(path_query: &str, connection: &PgConnection) -> Result<Self, Error> {
     use schema::corpora::path;
     corpora::table.filter(path.eq(path_query)).first(connection)
   }
@@ -569,6 +569,23 @@ impl Corpus {
     let services_query = services::table.filter(services::id.eq_any(corpus_service_ids_query));
     let services: Vec<Service> = services_query.get_results(connection).unwrap_or_default();
     Ok(services)
+  }
+
+  /// Deletes a corpus and its dependent tasks from the DB, consuming the object
+  pub fn destroy(self, connection: &PgConnection) -> Result<usize, Error> {
+    try!(
+      delete(tasks::table)
+        .filter(tasks::corpus_id.eq(self.id))
+        .execute(connection)
+    );
+    try!(
+      delete(tasks::table)
+        .filter(tasks::entry.eq(self.path))
+        .execute(connection)
+    );
+    delete(corpora::table)
+      .filter(corpora::id.eq(self.id))
+      .execute(connection)
   }
 }
 
