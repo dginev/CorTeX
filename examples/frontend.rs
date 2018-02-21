@@ -407,6 +407,12 @@ fn rerun_what(
   )
 }
 
+#[get("/favicon.ico")]
+fn favicon() -> Result<NamedFile, NotFound<String>> {
+  let path = Path::new("public/").join("favicon.ico");
+  NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {:?}", path)))
+}
+
 #[get("/public/<file..>")]
 fn files(file: PathBuf) -> Result<NamedFile, NotFound<String>> {
   let path = Path::new("public/").join(file);
@@ -421,6 +427,7 @@ fn rocket() -> rocket::Rocket {
         root,
         admin,
         corpus,
+        favicon,
         files,
         top_service_report,
         severity_service_report,
