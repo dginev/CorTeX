@@ -70,7 +70,7 @@ impl Default for TaskManager {
       source_port: 5555,
       result_port: 5556,
       queue_size: 100,
-      message_size: 100000,
+      message_size: 100_000,
       backend_address: DEFAULT_DB_ADDRESS.to_string(),
     }
   }
@@ -220,7 +220,7 @@ impl Server {
       source_job_count += 1;
 
       let mut dispatched_task: Option<TaskProgress> = None;
-      match self.get_sync_service_record(&services_arc, service_name.clone()) {
+      match self.get_sync_service_record(&services_arc, &service_name) {
         None => {},
         Some(service) => {
           if !queues.contains_key(&service_name) {
@@ -391,7 +391,7 @@ impl Server {
 
       if let Some(task_progress) = Server::pop_progress_task(&progress_queue_arc, taskid) {
         let task = task_progress.task;
-        let service_option = Server::get_service_record(&services_arc, service_name.to_string());
+        let service_option = Server::get_service_record(&services_arc, service_name);
         match service_option.clone() {
           None => {
             println!("Error TODO: Server::get_service_record found nothing.");
@@ -501,25 +501,25 @@ impl Server {
   fn get_sync_service_record(
     &self,
     services_arc: &Arc<Mutex<HashMap<String, Option<Service>>>>,
-    service_name: String,
+    service_name: &str,
   ) -> Option<Service>
   {
     let mut services = services_arc.lock().unwrap();
     services
-      .entry(service_name.clone())
-      .or_insert(Some(
-        Service::find_by_name(&service_name, &self.backend.connection).unwrap(),
+      .entry(service_name.to_string())
+      .or_insert_with(|| Some(
+        Service::find_by_name(service_name, &self.backend.connection).unwrap(),
       ))
       .clone()
   }
 
   fn get_service_record(
     services_arc: &Arc<Mutex<HashMap<String, Option<Service>>>>,
-    service_name: String,
+    service_name: &str,
   ) -> Option<Service>
   {
     let services = services_arc.lock().unwrap();
-    let service_record = services.get(&service_name);
+    let service_record = services.get(service_name);
     match service_record {
       None => None, // TODO: Handle errors
       Some(service_option) => service_option.clone(),
@@ -542,7 +542,7 @@ impl Server {
   /// Adds a task report to a shared report queue
   pub fn push_done_queue(reports_arc: &Arc<Mutex<Vec<TaskReport>>>, report: TaskReport) {
     let mut reports = reports_arc.lock().unwrap();
-    if reports.len() > 10000 {
+    if reports.len() > 10_000 {
       panic!(
         "Done queue is too large: {:?} tasks. Stop the sink!",
         reports.len()
@@ -588,7 +588,7 @@ impl Server {
     let mut progress_queue = progress_queue_arc.lock().unwrap();
     // NOTE: This constant should be adjusted if you expect a fringe of more than 10,000 jobs
     //       I am using this as a workaround for the inability to catch thread panic!() calls.
-    if progress_queue.len() > 10000 {
+    if progress_queue.len() > 10_000 {
       panic!(
         "Progress queue is too large: {:?} tasks. Stop the ventilator!",
         progress_queue.len()

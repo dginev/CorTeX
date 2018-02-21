@@ -21,6 +21,8 @@ use models::{LogError, LogFatal, LogInfo, LogInvalid, LogRecord, LogWarning, New
              NewLogFatal, NewLogInfo, NewLogInvalid, NewLogWarning, Task};
 use concerns::CortexInsertable;
 
+const BUFFER_SIZE : usize = 10_240;
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 /// An enumeration of the expected task statuses
 pub enum TaskStatus {
@@ -429,7 +431,7 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
 }
 
 /// Generates a `TaskReport`, given the path to a result archive from a `CorTeX` processing job
-/// Expects a "cortex.log" file in the archive, following the LaTeXML messaging conventions
+/// Expects a "cortex.log" file in the archive, following the `LaTeXML` messaging conventions
 pub fn generate_report(task: Task, result: &Path) -> TaskReport {
   // println!("Preparing report for {:?}, result at {:?}",self.entry, result);
   let mut messages = Vec::new();
@@ -442,7 +444,7 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
       .unwrap()
       .support_filter_all()
       .support_format_all()
-      .open_filename(result.to_str().unwrap(), 10240)
+      .open_filename(result.to_str().unwrap(), BUFFER_SIZE)
     {
       Err(e) => {
         println!("Error TODO: Couldn't open archive_reader: {:?}", e);
@@ -456,7 +458,7 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
           // In a "raw" read, we don't know the data size in advance. So we bite the bullet and
           // read the usually manageable log file in memory
           let mut raw_log_data = Vec::new();
-          while let Ok(chunk) = archive_reader.read_data(10240) {
+          while let Ok(chunk) = archive_reader.read_data(BUFFER_SIZE) {
             raw_log_data.extend(chunk.into_iter());
           }
           let log_string: String = match str::from_utf8(&raw_log_data) {
@@ -471,12 +473,12 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
           for message in &messages {
             // Invalids are a bit of a workaround for now, they're fatal messages in latexml, but
             // we want them separated out in cortex
-            match message {
-              &NewTaskMessage::Invalid(ref _log_invalid) => {
+            match *message {
+              NewTaskMessage::Invalid(ref _log_invalid) => {
                 status = TaskStatus::Invalid;
                 break;
               },
-              &NewTaskMessage::Info(ref _log_info) => {
+              NewTaskMessage::Info(ref _log_info) => {
                 let message_what = message.what();
                 if message.category() == "conversion" && !message_what.is_empty() {
                   // Adapt status to the CorTeX scheme: cortex_status = -(latexml_status+1)

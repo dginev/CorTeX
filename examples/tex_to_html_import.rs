@@ -6,7 +6,7 @@
 // except according to those terms.
 
 ///! Import a new corpus into `CorTeX` from the command line.
-///! Example run: $ ./target/release/examples/tex_to_html_import /data/arxmliv/ arXMLiv
+///! Example run: `$ ./target/release/examples/tex_to_html_import /data/arxmliv/ arXMLiv`
 extern crate cortex;
 extern crate pericortex;
 extern crate rustc_serialize;
@@ -62,7 +62,7 @@ fn main() {
     let manager = TaskManager {
       source_port: 5757,
       result_port: 5758,
-      queue_size: 100000,
+      queue_size: 100_000,
       message_size: 100,
       backend_address: DEFAULT_DB_ADDRESS.to_string(),
     };
@@ -73,7 +73,7 @@ fn main() {
   let worker = InitWorker {
     service: "init".to_string(),
     version: 0.1,
-    message_size: 100000,
+    message_size: 100_000,
     source: "tcp://localhost:5757".to_string(),
     sink: "tcp://localhost:5758".to_string(),
     backend_address: DEFAULT_DB_ADDRESS.to_string(),
@@ -85,7 +85,7 @@ fn main() {
 
   // Then add a TeX-to-HTML service on this corpus.
   let service_name = "tex_to_html";
-  let service_registered = match Service::find_by_name(&service_name, &backend.connection) {
+  let service_registered = match Service::find_by_name(service_name, &backend.connection) {
     Ok(s) => s,
     Err(_) => {
       let new_service = NewService {

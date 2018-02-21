@@ -156,7 +156,7 @@ fn admin() -> Template {
 #[get("/corpus/<corpus_name>")]
 fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
   let backend = Backend::default();
-  let corpus_name = aux_uri_unescape(Some(&corpus_name)).unwrap_or(UNKNOWN.to_string());
+  let corpus_name = aux_uri_unescape(Some(&corpus_name)).unwrap_or_else(|| UNKNOWN.to_string());
   let corpus_result = Corpus::find_by_name(&corpus_name, &backend.connection);
   if let Ok(corpus) = corpus_result {
     let mut global = HashMap::new();
@@ -203,7 +203,7 @@ fn top_service_report(
   service_name: String,
 ) -> Result<Template, NotFound<String>>
 {
-  serve_report(corpus_name, service_name, None, None, None)
+  serve_report(&corpus_name, &service_name, None, None, None)
 }
 #[get("/corpus/<corpus_name>/<service_name>/<severity>")]
 fn severity_service_report(
@@ -212,7 +212,7 @@ fn severity_service_report(
   severity: String,
 ) -> Result<Template, NotFound<String>>
 {
-  serve_report(corpus_name, service_name, Some(severity), None, None)
+  serve_report(&corpus_name, &service_name, Some(severity), None, None)
 }
 #[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>")]
 fn category_service_report(
@@ -223,8 +223,8 @@ fn category_service_report(
 ) -> Result<Template, NotFound<String>>
 {
   serve_report(
-    corpus_name,
-    service_name,
+    &corpus_name,
+    &service_name,
     Some(severity),
     Some(category),
     None,
@@ -241,8 +241,8 @@ fn what_service_report(
 ) -> Result<Template, NotFound<String>>
 {
   serve_report(
-    corpus_name,
-    service_name,
+    &corpus_name,
+    &service_name,
     Some(severity),
     Some(category),
     Some(what),
@@ -264,7 +264,7 @@ fn entry_fetch(
   let cortex_config = aux_load_config();
 
   let g_recaptcha_response = if data.len() > 21 {
-    str::from_utf8(&data[21..]).unwrap_or(&UNKNOWN)
+    str::from_utf8(&data[21..]).unwrap_or(UNKNOWN)
   } else {
     UNKNOWN
   };
@@ -284,8 +284,8 @@ fn entry_fetch(
 
   let captcha_verified = if quota > 0 {
     if quota == 1 {
-      match &redis_opt {
-        &Some(ref redis_connection) => {
+      match redis_opt {
+        Some(ref redis_connection) => {
           // Remove if last
           redis_connection.del(g_recaptcha_response).unwrap_or(());
           // We have quota available, decrement it
@@ -293,7 +293,7 @@ fn entry_fetch(
             .set(g_recaptcha_response, quota - 1)
             .unwrap_or(());
         },
-        &None => {}, // compatibility mode: redis has ran away?
+        None => {}, // compatibility mode: redis has ran away?
       };
     }
     // And allow operation
@@ -335,7 +335,7 @@ fn entry_fetch(
     Err(Redirect::to("/")) // TODO : Err(NotFound(format!("Service {:?} does not have a result for entry {:?}",
                            // service_name, entry_id)))
   } else {
-    NamedFile::open(&zip_path).map_err(|_| Redirect::to(&format!("/")))
+    NamedFile::open(&zip_path).map_err(|_| Redirect::to("/"))
   }
 }
 
@@ -347,7 +347,7 @@ fn rerun_corpus(
   data: Vec<u8>,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
-  serve_rerun(corpus_name, service_name, None, None, None, data)
+  serve_rerun(&corpus_name, &service_name, None, None, None, &data)
 }
 
 #[post("/rerun/<corpus_name>/<service_name>/<severity>", data = "<data>")]
@@ -358,7 +358,14 @@ fn rerun_severity(
   data: Vec<u8>,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
-  serve_rerun(corpus_name, service_name, Some(severity), None, None, data)
+  serve_rerun(
+    &corpus_name,
+    &service_name,
+    Some(severity),
+    None,
+    None,
+    &data,
+  )
 }
 
 #[post("/rerun/<corpus_name>/<service_name>/<severity>/<category>", data = "<data>")]
@@ -371,12 +378,12 @@ fn rerun_category(
 ) -> Result<Accepted<String>, NotFound<String>>
 {
   serve_rerun(
-    corpus_name,
-    service_name,
+    &corpus_name,
+    &service_name,
     Some(severity),
     Some(category),
     None,
-    data,
+    &data,
   )
 }
 
@@ -391,12 +398,12 @@ fn rerun_what(
 ) -> Result<Accepted<String>, NotFound<String>>
 {
   serve_rerun(
-    corpus_name,
-    service_name,
+    &corpus_name,
+    &service_name,
     Some(severity),
     Some(category),
     Some(what),
-    data,
+    &data,
   )
 }
 
@@ -438,8 +445,8 @@ fn main() {
 }
 
 fn serve_report(
-  corpus_name: String,
-  service_name: String,
+  corpus_name: &str,
+  service_name: &str,
   severity: Option<String>,
   category: Option<String>,
   what: Option<String>,
@@ -457,22 +464,22 @@ fn serve_report(
   // aux_uri_unescape(request.param("category")); let what =
   // aux_uri_unescape(request.param("what"));
 
-  let corpus_result = Corpus::find_by_name(&corpus_name, &backend.connection);
+  let corpus_result = Corpus::find_by_name(corpus_name, &backend.connection);
   if let Ok(corpus) = corpus_result {
-    let service_result = Service::find_by_name(&service_name, &backend.connection);
+    let service_result = Service::find_by_name(service_name, &backend.connection);
     if let Ok(service) = service_result {
       // Metadata in all reports
       global.insert(
         "title".to_string(),
-        "Corpus Report for ".to_string() + &corpus_name,
+        "Corpus Report for ".to_string() + corpus_name,
       );
       global.insert(
         "description".to_string(),
         "An analysis framework for corpora of TeX/LaTeX documents - statistical reports for "
-          .to_string() + &corpus_name,
+          .to_string() + corpus_name,
       );
-      global.insert("corpus_name".to_string(), corpus_name.clone());
-      global.insert("service_name".to_string(), service_name.clone());
+      global.insert("corpus_name".to_string(), corpus_name.to_string());
+      global.insert("service_name".to_string(), service_name.to_string());
       global.insert("type".to_string(), "Conversion".to_string());
       global.insert("inputformat".to_string(), service.inputformat.clone());
       global.insert("outputformat".to_string(), service.outputformat.clone());
@@ -574,12 +581,12 @@ fn serve_report(
 }
 
 fn serve_rerun(
-  corpus_name: String,
-  service_name: String,
+  corpus_name: &str,
+  service_name: &str,
   severity: Option<String>,
   category: Option<String>,
   what: Option<String>,
-  token_bytes: Vec<u8>,
+  token_bytes: &[u8],
 ) -> Result<Accepted<String>, NotFound<String>>
 {
   let config = aux_load_config();
@@ -592,10 +599,10 @@ fn serve_rerun(
   // aux_uri_unescape(request.param("what"));
 
   // Ensure we're given a valid rerun token to rerun, or anyone can wipe the cortex results
-  let token = str::from_utf8(&token_bytes).unwrap_or(UNKNOWN);
+  let token = str::from_utf8(token_bytes).unwrap_or(UNKNOWN);
   let user_opt = config.rerun_tokens.get(token);
   let user = match user_opt {
-    None => return Err(NotFound(format!("Access Denied"))), /* TODO: response.error(Forbidden,
+    None => return Err(NotFound("Access Denied".to_string())), /* TODO: response.error(Forbidden,
                                                               * "Access denied"), */
     Some(user) => user,
   };
@@ -608,14 +615,14 @@ fn serve_rerun(
   let report_start = time::get_time();
   let backend = Backend::default();
   // Build corpus and service objects
-  let corpus = match Corpus::find_by_name(&corpus_name, &backend.connection) {
-    Err(_) => return Err(NotFound(format!("Access Denied"))), /* TODO: response.error(Forbidden,
+  let corpus = match Corpus::find_by_name(corpus_name, &backend.connection) {
+    Err(_) => return Err(NotFound("Access Denied".to_string())), /* TODO: response.error(Forbidden,
                                                                 * "Access denied"), */
     Ok(corpus) => corpus,
   };
 
-  let service = match Service::find_by_name(&service_name, &backend.connection) {
-    Err(_) => return Err(NotFound(format!("Access Denied"))), /* TODO: response.error(Forbidden,
+  let service = match Service::find_by_name(service_name, &backend.connection) {
+    Err(_) => return Err(NotFound("Access Denied".to_string())), /* TODO: response.error(Forbidden,
                                                                 * "Access denied"), */
     Ok(service) => service,
   };
@@ -627,7 +634,7 @@ fn serve_rerun(
     user, report_duration
   );
   match rerun_result {
-    Err(_) => Err(NotFound(format!("Access Denied"))), // TODO: better error message?
+    Err(_) => Err(NotFound("Access Denied".to_string())), // TODO: better error message?
     Ok(_) => Ok(Accepted(None)),
   }
 }
@@ -704,7 +711,7 @@ fn aux_decorate_uri_encodings(context: &mut TemplateContext) {
     &mut context.categories,
     &mut context.whats,
   ] {
-    if let &mut &mut Some(ref mut inner_vec_data) = inner_vec {
+    if let Some(ref mut inner_vec_data) = **inner_vec {
       for mut subhash in inner_vec_data {
         let mut uri_decorations = vec![];
         for (subkey, subval) in subhash.iter() {
@@ -721,7 +728,7 @@ fn aux_decorate_uri_encodings(context: &mut TemplateContext) {
   }
   // global is handled separately
   let mut uri_decorations = vec![];
-  for (subkey, subval) in context.global.iter() {
+  for (subkey, subval) in &context.global {
     uri_decorations.push((
       subkey.to_string() + "_uri",
       aux_uri_escape(Some(subval.to_string())).unwrap(),
@@ -841,18 +848,20 @@ fn aux_task_report(
         fetched_report = report;
       } else {
         // Get the report time, so that the user knows where the data is coming from
-        time_val = redis_connection
-          .get(cache_key_time)
-          .unwrap_or(time::now().rfc822().to_string());
+        time_val = match redis_connection.get(cache_key_time) {
+          Ok(tval) => tval,
+          Err(_) => time::now().rfc822().to_string(),
+        };
         fetched_report = cached_report;
       }
     },
     Err(_) => {
       let backend = Backend::default();
-      let report = backend.task_report(corpus, service, severity, category, what.clone());
+      let what_is_none = what.is_none();
+      let report = backend.task_report(corpus, service, severity, category, what);
       let report_json: String = json::encode(&report).unwrap();
       // println!("SET2 {:?}", cache_key);
-      if what.is_none() {
+      if what_is_none {
         // don't cache the task lists pages
         let _: () = redis_connection.set(cache_key, report_json).unwrap();
       }
@@ -896,7 +905,7 @@ fn cache_worker() {
           // Pages we'll cache:
           let report = backend.progress_report(corpus, service);
           let zero: f64 = 0.0;
-          let huge: usize = 999999;
+          let huge: usize = 999_999;
           let queued_count_f64: f64 =
             report.get("queued").unwrap_or(&zero) + report.get("todo").unwrap_or(&zero);
           let queued_count: usize = queued_count_f64 as usize;

@@ -22,6 +22,8 @@ use backend::Backend;
 use models::{Corpus, NewCorpus, NewTask};
 use helpers::TaskStatus;
 
+const BUFFER_SIZE: usize = 10_240;
+
 /// Struct for performing corpus imports into `CorTeX`
 pub struct Importer {
   /// a `Corpus` to be imported, containing all relevant metadata
@@ -92,7 +94,7 @@ impl Importer {
             .unwrap()
             .support_filter_all()
             .support_format_all()
-            .open_filename(path.to_str().unwrap(), 10240)
+            .open_filename(path.to_str().unwrap(), BUFFER_SIZE)
             .unwrap();
           while let Ok(e) = archive_reader.next_header() {
             let full_extract_path = path_str.to_string() + &e.pathname();
@@ -128,7 +130,7 @@ impl Importer {
             .unwrap()
             .support_filter_all()
             .support_format_all()
-            .open_filename(path.to_str().unwrap(), 10240)
+            .open_filename(path.to_str().unwrap(), BUFFER_SIZE)
             .unwrap();
           while let Ok(e) = archive_reader.next_header() {
             let full_extract_path = path_str.to_string() + &e.pathname();
@@ -183,7 +185,7 @@ impl Importer {
             .unwrap()
             .support_filter_all()
             .support_format_all()
-            .open_filename(entry_path, 10240);
+            .open_filename(entry_path, BUFFER_SIZE);
           // We'll write out a ZIP file for each entry
           let full_extract_path = entry_cp_dir.to_string() + "/" + base_name + ".zip";
           let mut archive_writer_new = Writer::new().unwrap()
@@ -200,7 +202,7 @@ impl Importer {
                 .unwrap()
                 .support_filter_all()
                 .support_format_raw()
-                .open_filename(entry_path, 10240);
+                .open_filename(entry_path, BUFFER_SIZE);
               match raw_reader_new {
                 Ok(raw_reader) => {
                   match raw_reader.next_header() {
@@ -211,7 +213,7 @@ impl Importer {
                       // obtaining a size estimate
                       let mut raw_data = Vec::new();
                       loop {
-                        let chunk_data = raw_reader.read_data(10240);
+                        let chunk_data = raw_reader.read_data(BUFFER_SIZE);
                         match chunk_data {
                           Ok(chunk) => raw_data.extend(chunk.into_iter()),
                           Err(_) => break,
@@ -246,7 +248,7 @@ impl Importer {
                   _ => {}, // TODO: If we need to print an error message, we can do so later.
                 };
                 loop {
-                  let entry_data = archive_reader.read_data(10240);
+                  let entry_data = archive_reader.read_data(BUFFER_SIZE);
                   match entry_data {
                     Ok(chunk) => {
                       archive_writer_new.write_data(chunk).unwrap();
@@ -293,7 +295,7 @@ impl Importer {
             // Found the expected file, import this entry:
             println!("Found entry: {:?}", current_entry_path);
             import_counter += 1;
-            import_q.push(self.new_task(current_entry_path));
+            import_q.push(self.new_task(&current_entry_path));
             if import_q.len() >= 1000 {
               // Flush the import queue to backend:
               println!("Checkpoint backend writer: job {:?}", import_counter);
@@ -320,13 +322,13 @@ impl Importer {
   }
 
   /// Create a new NoProblem task for the "import" service and the Importer-specified corpus
-  pub fn new_task(&self, entry: String) -> NewTask {
+  pub fn new_task(&self, entry: &str) -> NewTask {
     let abs_entry: String = if Path::new(&entry).is_relative() {
       let mut new_abs = self.cwd.clone();
-      new_abs.push(&entry);
+      new_abs.push(entry);
       new_abs.to_str().unwrap().to_string()
     } else {
-      entry.clone()
+      entry.to_string()
     };
 
     NewTask {

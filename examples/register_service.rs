@@ -6,7 +6,7 @@
 // except according to those terms.
 
 ///! Register a service with a given name on a corpus with a given path
-///! Example run: $ ./target/release/examples/register_service tex_to_html /data/arxmliv/
+///! Example run: `$ ./target/release/examples/register_service tex_to_html /data/arxmliv/`
 extern crate cortex;
 extern crate pericortex;
 extern crate rustc_serialize;

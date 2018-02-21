@@ -112,7 +112,7 @@ fn main() {
       Err(_) => println!("-- missing arXiv source for {:?}", id),
       Ok(mut entry_fh) => {
         let mut buffer = Vec::new();
-        if let Ok(_) = entry_fh.read_to_end(&mut buffer) {
+        if entry_fh.read_to_end(&mut buffer).is_ok() {
           // Everything looks ok with this paper, adding it to the sandbox:
           counter += 1;
           match sandbox_writer.write_header_new(&relative_entry_path, buffer.len() as i64) {

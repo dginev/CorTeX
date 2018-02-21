@@ -20,7 +20,7 @@ use cortex::backend::Backend;
 use cortex::models::{Corpus, Service};
 use cortex::helpers::TaskStatus;
 
-/// Bundle a CorTeX (corpus,service) pair's results into a self-contained redistributable dataset.
+/// Bundle a (corpus,service) pair's results into a self-contained redistributable dataset.
 fn main() {
   let start_bundle = time::get_time();
   let chunk_size = 10_240;
