@@ -1,4 +1,7 @@
 ### System-level prerequisites:
+ Note: for up-to-date instructions, it may be best to consult the [.travis.yml](https://github.com/dginev/CorTeX/blob/master/.travis.yml) file used in continuous integration. A docker image may be a good long-term solution (feel free to contribute one!).
+
+
  * A Postgres installation, with the dev client-side bindings for diesel
 ```
   sudo apt-get install postgresql libpq-dev
