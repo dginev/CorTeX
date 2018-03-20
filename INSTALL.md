@@ -5,7 +5,7 @@
 ```
  * A ZeroMQ installation and bindings
 ```
-  sudo apt-get install libtool autoconf make
+  sudo apt-get install libtool autoconf make pkg-config
   cd /tmp
   git clone --depth 1 -b stable https://github.com/jedisct1/libsodium.git
   cd libsodium
