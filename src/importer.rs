@@ -97,7 +97,9 @@ impl Importer {
             .open_filename(path.to_str().unwrap(), BUFFER_SIZE)
             .unwrap();
           while let Ok(e) = archive_reader.next_header() {
-            if e.pathname().ends_with(".pdf") { continue; }
+            if e.pathname().ends_with(".pdf") {
+              continue;
+            }
             let full_extract_path = path_str.to_string() + &e.pathname();
             match fs::metadata(full_extract_path.clone()) {
               Ok(_) => println!("File {:?} exists, won't unpack.", e.pathname()),
@@ -198,8 +200,9 @@ impl Importer {
             .unwrap()
             .support_filter_all()
             .support_format_all()
-            .open_filename(entry_path, BUFFER_SIZE) {
-            Err(_) => {raw_read_needed = true},
+            .open_filename(entry_path, BUFFER_SIZE)
+          {
+            Err(_) => raw_read_needed = true,
             Ok(archive_reader) => {
               let mut file_count = 0;
               while let Ok(e) = archive_reader.next_header() {
@@ -216,7 +219,7 @@ impl Importer {
                 // Special case (bug? in libarchive crate), single file in .gz
                 raw_read_needed = true;
               }
-            }
+            },
           }
 
           if raw_read_needed {
@@ -226,13 +229,11 @@ impl Importer {
               .support_format_raw()
               .open_filename(entry_path, BUFFER_SIZE);
             match raw_reader_new {
-              Ok(raw_reader) => {
-                match raw_reader.next_header() {
-                  Ok(_) => {
-                    single_file_transfer(&default_tex_target, &raw_reader, &mut archive_writer_new);
-                  },
-                  Err(_) => println!("No content in archive: {:?}", entry_path),
-                }
+              Ok(raw_reader) => match raw_reader.next_header() {
+                Ok(_) => {
+                  single_file_transfer(&default_tex_target, &raw_reader, &mut archive_writer_new);
+                },
+                Err(_) => println!("No content in archive: {:?}", entry_path),
               },
               Err(_) => println!("Unrecognizeable archive: {:?}", entry_path),
             }
@@ -343,7 +344,6 @@ impl Importer {
 
 /// Transfer the data contained within `Reader` to a `Writer`, assuming it was a single file
 pub fn single_file_transfer(tex_target: &str, reader: &Reader, writer: &mut Writer) {
-  println!("adding to zip: {:?}", tex_target);
   // In a "raw" read, we don't know the data size in advance. So we bite the
   // bullet and read the usually tiny tex file in memory,
   // obtaining a size estimate
@@ -353,7 +353,9 @@ pub fn single_file_transfer(tex_target: &str, reader: &Reader, writer: &mut Writ
   }
   let mut ok_header = false;
   match writer.write_header_new(&tex_target, raw_data.len() as i64) {
-    Ok(_) => { ok_header = true; },
+    Ok(_) => {
+      ok_header = true;
+    },
     Err(e) => {
       println!("Couldn't write header: {:?}", e);
     },
@@ -361,11 +363,7 @@ pub fn single_file_transfer(tex_target: &str, reader: &Reader, writer: &mut Writ
   if ok_header {
     match writer.write_data(raw_data) {
       Ok(_) => {},
-      Err(e) => println!(
-        "Failed to write data to {:?} because {:?}",
-        tex_target,
-        e
-      ),
+      Err(e) => println!("Failed to write data to {:?} because {:?}", tex_target, e),
     };
   }
 }
