@@ -182,7 +182,6 @@ impl Importer {
               reason.kind()
             );
           });
-          println!("\nVisiting: {:?}", path);
           // We'll write out a ZIP file for each entry
           let full_extract_path = entry_cp_dir.to_string() + "/" + base_name + ".zip";
           let mut archive_writer_new = Writer::new().unwrap()
@@ -202,10 +201,8 @@ impl Importer {
             .open_filename(entry_path, BUFFER_SIZE) {
             Err(_) => {raw_read_needed = true},
             Ok(archive_reader) => {
-              println!("multi-file .gz");
               let mut file_count = 0;
               while let Ok(e) = archive_reader.next_header() {
-                println!("header: {:?}", e.pathname());
                 file_count += 1;
                 match archive_writer_new.write_header(e) {
                   Ok(_) => {}, // TODO: If we need to print an error message, we can do so later.
@@ -230,7 +227,6 @@ impl Importer {
               .open_filename(entry_path, BUFFER_SIZE);
             match raw_reader_new {
               Ok(raw_reader) => {
-                println!("format_raw .gz");
                 match raw_reader.next_header() {
                   Ok(_) => {
                     single_file_transfer(&default_tex_target, &raw_reader, &mut archive_writer_new);
