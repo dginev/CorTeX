@@ -13,10 +13,10 @@ use rand::{thread_rng, Rng};
 use helpers::TaskStatus;
 use rustc_serialize::json::{Json, ToJson};
 
+use diesel::*;
 use diesel::result::Error;
 use diesel::{delete, insert_into, update};
 use diesel::pg::PgConnection;
-use diesel::prelude::*;
 use schema::tasks;
 use schema::services;
 use schema::corpora;
@@ -865,17 +865,37 @@ impl MarkRerun for LogFatal {
   ) -> Result<usize, Error>
   {
     use schema::log_fatals::dsl::{category, log_fatals, task_id};
-    let task_ids_to_rerun = log_fatals
-      .filter(category.eq(rerun_category))
-      .select(task_id)
-      .distinct();
+    use diesel::sql_types::BigInt;
+    if rerun_category == "no_messages" {
+      let no_messages_query_string = "SELECT * FROM tasks t WHERE ".to_string()
+        + "service_id=$1 and corpus_id=$2 and status=$3 and "
+        + "NOT EXISTS (SELECT null FROM log_fatals where log_fatals.task_id=t.id)";
+      let tasks_to_rerun: Vec<Task> = sql_query(no_messages_query_string)
+        .bind::<BigInt, i64>(i64::from(service_id))
+        .bind::<BigInt, i64>(i64::from(corpus_id))
+        .bind::<BigInt, i64>(i64::from(mark))
+        .get_results(connection)
+        .unwrap_or_default();
+      let task_ids_to_rerun: Vec<i64> = tasks_to_rerun.iter().map(|t| t.id).collect();
+      update(tasks::table)
+        .filter(tasks::corpus_id.eq(&corpus_id))
+        .filter(tasks::service_id.eq(&service_id))
+        .filter(tasks::id.eq_any(task_ids_to_rerun))
+        .set(tasks::status.eq(mark))
+        .execute(connection)
+    } else {
+      let task_ids_to_rerun = log_fatals
+        .filter(category.eq(rerun_category))
+        .select(task_id)
+        .distinct();
 
-    update(tasks::table)
-      .filter(tasks::corpus_id.eq(&corpus_id))
-      .filter(tasks::service_id.eq(&service_id))
-      .filter(tasks::id.eq_any(task_ids_to_rerun))
-      .set(tasks::status.eq(mark))
-      .execute(connection)
+      update(tasks::table)
+        .filter(tasks::corpus_id.eq(&corpus_id))
+        .filter(tasks::service_id.eq(&service_id))
+        .filter(tasks::id.eq_any(task_ids_to_rerun))
+        .set(tasks::status.eq(mark))
+        .execute(connection)
+    }
   }
 }
 
