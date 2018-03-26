@@ -873,7 +873,7 @@ impl MarkRerun for LogFatal {
       let tasks_to_rerun: Vec<Task> = sql_query(no_messages_query_string)
         .bind::<BigInt, i64>(i64::from(service_id))
         .bind::<BigInt, i64>(i64::from(corpus_id))
-        .bind::<BigInt, i64>(i64::from(mark))
+        .bind::<BigInt, i64>(i64::from(TaskStatus::Fatal.raw()))
         .get_results(connection)
         .unwrap_or_default();
       let task_ids_to_rerun: Vec<i64> = tasks_to_rerun.iter().map(|t| t.id).collect();
