@@ -348,6 +348,12 @@ impl NewTaskMessage {
         what,
         details,
       }),
+      "invalid" => NewTaskMessage::Invalid(NewLogInvalid {
+        task_id,
+        category,
+        what,
+        details,
+      }),
       _ => NewTaskMessage::Info(NewLogInfo {
         task_id,
         category,
