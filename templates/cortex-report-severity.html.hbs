@@ -1,34 +1,49 @@
 {{> layout-cortex-pre }}
 <div class="center">
   <h1>{{global.severity}} categories</h1>
+
+  {{#if (global.all_messages_true)}}
+  <h5>All Tasks</h5>
+  <h5>
+    <a href="/corpus/{{../global.corpus_name_uri}}/{{../global.service_name_uri}}/{{../global.severity}}?all=false">(Click here to switch to {{global.severity}} only)</a>
+  </h5>
+  {{else}}
+  <h5>"{{global.severity}}" severity tasks</h5>
+  <h5>
+    <a href="/corpus/{{../global.corpus_name_uri}}/{{../global.service_name_uri}}/{{../global.severity}}?all=true">(Click here to see this report for all tasks)</a>
+  </h5>
+  {{/if}}
+
   <br>
   <div class="row">
-  <div class="col-md-3"></div>
-  <div class="col-md-6">
-  <table id="corpus-report" class="table">
-  <thead>
-    <tr>
-      <th class="left">Category</th>
-      <th class="right">Tasks %</th>
-      <th class="right">Tasks</th>
-      <th class="right">Messages %</th>
-      <th class="right">Messages</th>
-    </tr>
-  </thead>
-  <tbody>
-    {{#each categories}}
-    <tr class="{{../global.highlight}} corpus-report-{{../global.severity}}">
-      <td class="left"><a class="link-{{name}}" href="/corpus/{{../global.corpus_name_uri}}/{{../global.service_name_uri}}/{{../global.severity_uri}}/{{this.name_uri}}">{{this.name}}</a></td>
-      <td class="right">{{tasks_percent}}%</td>
-      <td class="right">{{tasks}}</td>
-      <td class="right">{{messages_percent}}%</td>
-      <td class="right">{{messages}}</td>
-    </tr>
-    {{/each}}
-  </tbody>
-  </table>
-  </div>
-  <div class="col-md-3"></div>
+    <div class="col-md-3"></div>
+    <div class="col-md-6">
+      <table id="corpus-report" class="table">
+        <thead>
+          <tr>
+            <th class="left">Category</th>
+            <th class="right">Tasks %</th>
+            <th class="right">Tasks</th>
+            <th class="right">Messages %</th>
+            <th class="right">Messages</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#each categories}}
+          <tr class="{{../global.highlight}} corpus-report-{{../global.severity}}">
+            <td class="left">
+              <a class="link-{{name}}" href="/corpus/{{../global.corpus_name_uri}}/{{../global.service_name_uri}}/{{../global.severity_uri}}/{{this.name_uri}}?all={{../global.all_messages}}">{{this.name}}</a>
+            </td>
+            <td class="right">{{tasks_percent}}%</td>
+            <td class="right">{{tasks}}</td>
+            <td class="right">{{messages_percent}}%</td>
+            <td class="right">{{messages}}</td>
+          </tr>
+          {{/each}}
+        </tbody>
+      </table>
+    </div>
+    <div class="col-md-3"></div>
   </div>
 </div>
 {{> layout-cortex-post }}

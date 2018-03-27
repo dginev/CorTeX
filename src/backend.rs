@@ -495,6 +495,7 @@ impl Backend {
     severity_opt: Option<String>,
     category_opt: Option<String>,
     what_opt: Option<String>,
+    all_messages: bool,
   ) -> Vec<HashMap<String, String>>
   {
     use schema::tasks::dsl::{corpus_id, service_id, status};
@@ -549,6 +550,16 @@ impl Backend {
         let total_valid_count = total_count - invalid_count;
 
         let log_table = task_status.to_table();
+        let status_clause = if !all_messages {
+          String::from("status=$3")
+        } else {
+          String::from("status < $3 and status > ")+&TaskStatus::Invalid.raw().to_string()
+        };
+        let bind_status = if !all_messages {
+          task_status.raw()
+        } else {
+          TaskStatus::NoProblem.raw()
+        };
         match category_opt {
           None => {
             // Bad news, query is close to line noise
@@ -556,34 +567,41 @@ impl Backend {
             let category_report_string =
               "SELECT category as report_name, count(*) as task_count, COALESCE(SUM(total_counts::integer),0) as message_count FROM (".to_string()+
                 "SELECT "+&log_table+".category, "+&log_table+".task_id, count(*) as total_counts FROM "+
-                  "tasks LEFT OUTER JOIN "+&log_table+" ON (tasks.id="+&log_table+".task_id) WHERE service_id=$1 and corpus_id=$2 and status=$3 "+
-                    "GROUP BY "+&log_table+".category, "+&log_table+".task_id) as tmp "+
+                  "tasks LEFT OUTER JOIN "+&log_table+" ON (tasks.id="+&log_table+".task_id) WHERE service_id=$1 and corpus_id=$2 and "+ &status_clause +
+                    " GROUP BY "+&log_table+".category, "+&log_table+".task_id) as tmp "+
               "GROUP BY category ORDER BY task_count desc";
             let category_report_query = sql_query(category_report_string);
             let category_report_rows: Vec<AggregateReport> = category_report_query
               .bind::<BigInt, i64>(i64::from(service.id))
               .bind::<BigInt, i64>(i64::from(corpus.id))
-              .bind::<BigInt, i64>(i64::from(task_status.raw()))
+              .bind::<BigInt, i64>(i64::from(bind_status))
               .load(&self.connection)
               .unwrap_or_default();
 
             // How many tasks total in this severity-status?
-            let severity_tasks: i64 = tasks::table
-              .filter(service_id.eq(service.id))
-              .filter(corpus_id.eq(corpus.id))
-              .filter(status.eq(task_status.raw()))
-              .count()
-              .get_result(&self.connection)
-              .unwrap_or(-1);
+            let severity_tasks: i64  = if !all_messages {
+              tasks::table
+                .filter(service_id.eq(service.id))
+                .filter(corpus_id.eq(corpus.id))
+                .filter(status.eq(task_status.raw()))
+                .count()
+                .get_result(&self.connection).unwrap_or(-1)
+              } else {
+                tasks::table
+                .filter(service_id.eq(service.id))
+                .filter(corpus_id.eq(corpus.id))
+                .count()
+                .get_result(&self.connection).unwrap_or(-1)
+              };
             let status_report_query_string =
             "SELECT NULL as report_name, count(*) as task_count, COALESCE(SUM(inner_message_count::integer),0) as message_count FROM ( ".to_string()+
               "SELECT tasks.id, count(*) as inner_message_count FROM "+
               "tasks, "+&log_table+" where tasks.id="+&log_table+".task_id and "+
-              "service_id=$1 and corpus_id=$2 and status=$3 group by tasks.id) as tmp";
+              "service_id=$1 and corpus_id=$2 and "+&status_clause+" group by tasks.id) as tmp";
             let status_report_query = sql_query(status_report_query_string)
               .bind::<BigInt, i64>(i64::from(service.id))
               .bind::<BigInt, i64>(i64::from(corpus.id))
-              .bind::<BigInt, i64>(i64::from(task_status.raw()));
+              .bind::<BigInt, i64>(i64::from(bind_status));
             let status_report_rows_result = status_report_query.get_result(&self.connection);
             let status_report_rows: AggregateReport = status_report_rows_result.unwrap();
 

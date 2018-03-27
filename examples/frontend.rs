@@ -6,6 +6,7 @@
 // except according to those terms.
 
 #![feature(plugin)]
+#![feature(custom_derive)]
 #![plugin(rocket_codegen)]
 
 extern crate futures;
@@ -108,6 +109,11 @@ fn aux_load_config() -> CortexConfig {
   }
 }
 
+#[derive(FromForm)]
+struct ToggleAllMessages {
+  all: bool
+}
+
 #[get("/")]
 fn root() -> Template {
   let mut context = TemplateContext::default();
@@ -203,7 +209,7 @@ fn top_service_report(
   service_name: String,
 ) -> Result<Template, NotFound<String>>
 {
-  serve_report(&corpus_name, &service_name, None, None, None)
+  serve_report(&corpus_name, &service_name, None, None, None, false)
 }
 #[get("/corpus/<corpus_name>/<service_name>/<severity>")]
 fn severity_service_report(
@@ -212,7 +218,17 @@ fn severity_service_report(
   severity: String,
 ) -> Result<Template, NotFound<String>>
 {
-  serve_report(&corpus_name, &service_name, Some(severity), None, None)
+  serve_report(&corpus_name, &service_name, Some(severity), None, None, false)
+}
+#[get("/corpus/<corpus_name>/<service_name>/<severity>?<toggle>")]
+fn severity_service_report_all(
+  corpus_name: String,
+  service_name: String,
+  severity: String,
+  toggle: Option<ToggleAllMessages>
+) -> Result<Template, NotFound<String>>
+{
+  serve_report(&corpus_name, &service_name, Some(severity), None, None, toggle.is_some() && toggle.unwrap().all)
 }
 #[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>")]
 fn category_service_report(
@@ -228,6 +244,25 @@ fn category_service_report(
     Some(severity),
     Some(category),
     None,
+    false
+  )
+}
+#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>?<toggle>")]
+fn category_service_report_all(
+  corpus_name: String,
+  service_name: String,
+  severity: String,
+  category: String,
+  toggle: Option<ToggleAllMessages>
+) -> Result<Template, NotFound<String>>
+{
+  serve_report(
+    &corpus_name,
+    &service_name,
+    Some(severity),
+    Some(category),
+    None,
+    toggle.is_some() && toggle.unwrap().all
   )
 }
 
@@ -246,6 +281,26 @@ fn what_service_report(
     Some(severity),
     Some(category),
     Some(what),
+    false
+  )
+}
+#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>/<what>?<toggle>")]
+fn what_service_report_all(
+  corpus_name: String,
+  service_name: String,
+  severity: String,
+  category: String,
+  what: String,
+  toggle: Option<ToggleAllMessages>,
+) -> Result<Template, NotFound<String>>
+{
+  serve_report(
+    &corpus_name,
+    &service_name,
+    Some(severity),
+    Some(category),
+    Some(what),
+    toggle.is_some() && toggle.unwrap().all
   )
 }
 
@@ -433,6 +488,9 @@ fn rocket() -> rocket::Rocket {
         severity_service_report,
         category_service_report,
         what_service_report,
+        severity_service_report_all,
+        category_service_report_all,
+        what_service_report_all,
         entry_fetch,
         rerun_corpus,
         rerun_severity,
@@ -457,6 +515,7 @@ fn serve_report(
   severity: Option<String>,
   category: Option<String>,
   what: Option<String>,
+  all_messages: bool,
 ) -> Result<Template, NotFound<String>>
 {
   let mut context = TemplateContext::default();
@@ -490,6 +549,11 @@ fn serve_report(
       global.insert("type".to_string(), "Conversion".to_string());
       global.insert("inputformat".to_string(), service.inputformat.clone());
       global.insert("outputformat".to_string(), service.outputformat.clone());
+      global.insert("all_messages".to_string(), all_messages.to_string());
+      if all_messages {
+        // Handlebars has a weird limitation on its #if conditional, can only test for field presence. So...
+        global.insert("all_messages_true".to_string(), all_messages.to_string());
+      }
       match service.inputconverter {
         Some(ref ic_service_name) => {
           global.insert("inputconverter".to_string(), ic_service_name.clone())
@@ -517,13 +581,13 @@ fn serve_report(
           aux_severity_highlight(&severity.clone().unwrap()).to_string(),
         );
         template = if severity.is_some() && (severity.clone().unwrap() == "no_problem") {
-          let entries = aux_task_report(&mut global, &corpus, &service, severity, None, None);
+          let entries = aux_task_report(&mut global, &corpus, &service, severity, None, None, all_messages);
           // Record the report into "entries" vector
           context.entries = Some(entries);
           // And set the task list template
           "cortex-report-task-list"
         } else {
-          let categories = aux_task_report(&mut global, &corpus, &service, severity, None, None);
+          let categories = aux_task_report(&mut global, &corpus, &service, severity, None, None, all_messages);
           // Record the report into "categories" vector
           context.categories = Some(categories);
           // And set the severity template
@@ -538,13 +602,13 @@ fn serve_report(
         );
         global.insert("category".to_string(), category.clone().unwrap());
         if category.is_some() && (category.clone().unwrap() == "no_messages") {
-          let entries = aux_task_report(&mut global, &corpus, &service, severity, category, None);
+          let entries = aux_task_report(&mut global, &corpus, &service, severity, category, None, all_messages);
           // Record the report into "entries" vector
           context.entries = Some(entries);
           // And set the task list template
           template = "cortex-report-task-list";
         } else {
-          let whats = aux_task_report(&mut global, &corpus, &service, severity, category, None);
+          let whats = aux_task_report(&mut global, &corpus, &service, severity, category, None, all_messages);
           // Record the report into "whats" vector
           context.whats = Some(whats);
           // And set the category template
@@ -559,7 +623,7 @@ fn serve_report(
         );
         global.insert("category".to_string(), category.clone().unwrap());
         global.insert("what".to_string(), what.clone().unwrap());
-        let entries = aux_task_report(&mut global, &corpus, &service, severity, category, what);
+        let entries = aux_task_report(&mut global, &corpus, &service, severity, category, what, all_messages);
         // Record the report into "entries" vector
         context.entries = Some(entries);
         // And set the task list template
@@ -808,9 +872,10 @@ fn aux_task_report(
   severity: Option<String>,
   category: Option<String>,
   what: Option<String>,
+  all_messages: bool,
 ) -> Vec<HashMap<String, String>>
 {
-  let key_tail = match severity.clone() {
+  let key_tail = match severity.clone() {    
     Some(severity) => {
       let cat_tail = match category.clone() {
         Some(category) => {
@@ -825,7 +890,7 @@ fn aux_task_report(
       "_".to_string() + &severity + &cat_tail
     },
     None => String::new(),
-  };
+  } + if all_messages { "_all_messages" } else {""};
   let cache_key: String = corpus.id.to_string() + "_" + &service.id.to_string() + &key_tail;
   let cache_key_time = cache_key.clone() + "_time";
   let redis_client = redis::Client::open("redis://127.0.0.1/").unwrap(); // TODO: Better error handling
@@ -841,7 +906,7 @@ fn aux_task_report(
       if cached_report.is_empty() {
         let backend = Backend::default();
         let report: Vec<HashMap<String, String>> =
-          backend.task_report(corpus, service, severity, category, what.clone());
+          backend.task_report(corpus, service, severity, category, what.clone(), all_messages);
         let report_json: String = json::encode(&report).unwrap();
         // println!("SET {:?}", cache_key);
         if what.is_none() {
@@ -865,7 +930,7 @@ fn aux_task_report(
     Err(_) => {
       let backend = Backend::default();
       let what_is_none = what.is_none();
-      let report = backend.task_report(corpus, service, severity, category, what);
+      let report = backend.task_report(corpus, service, severity, category, what, all_messages);
       let report_json: String = json::encode(&report).unwrap();
       // println!("SET2 {:?}", cache_key);
       if what_is_none {
@@ -939,6 +1004,7 @@ fn cache_worker() {
                   Some(severity.to_string()),
                   None,
                   None,
+                  false
                 );
                 // for each category, cache the what page
                 for cat_hash in &category_report {
@@ -957,6 +1023,7 @@ fn cache_worker() {
                     Some(severity.to_string()),
                     Some(category.to_string()),
                     None,
+                    false
                   );
                   // for each what, cache the "task list" page
                   // for what_hash in what_report.iter() {
