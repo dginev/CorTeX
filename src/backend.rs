@@ -553,12 +553,13 @@ impl Backend {
         let status_clause = if !all_messages {
           String::from("status=$3")
         } else {
-          String::from("status < $3 and status > ")+&TaskStatus::Invalid.raw().to_string()
+          String::from("status < $3 and status > ") + &TaskStatus::Invalid.raw().to_string()
         };
         let bind_status = if !all_messages {
           task_status.raw()
         } else {
-          TaskStatus::NoProblem.raw()
+          task_status.raw() + 1 // TODO: better would be a .prev() method or so, since this hardwires the assumption of
+                                // using adjacent negative integers
         };
         match category_opt {
           None => {
@@ -579,20 +580,22 @@ impl Backend {
               .unwrap_or_default();
 
             // How many tasks total in this severity-status?
-            let severity_tasks: i64  = if !all_messages {
+            let severity_tasks: i64 = if !all_messages {
               tasks::table
                 .filter(service_id.eq(service.id))
                 .filter(corpus_id.eq(corpus.id))
                 .filter(status.eq(task_status.raw()))
                 .count()
-                .get_result(&self.connection).unwrap_or(-1)
-              } else {
-                tasks::table
+                .get_result(&self.connection)
+                .unwrap_or(-1)
+            } else {
+              tasks::table
                 .filter(service_id.eq(service.id))
                 .filter(corpus_id.eq(corpus.id))
                 .count()
-                .get_result(&self.connection).unwrap_or(-1)
-              };
+                .get_result(&self.connection)
+                .unwrap_or(-1)
+            };
             let status_report_query_string =
             "SELECT NULL as report_name, count(*) as task_count, COALESCE(SUM(inner_message_count::integer),0) as message_count FROM ( ".to_string()+
               "SELECT tasks.id, count(*) as inner_message_count FROM "+

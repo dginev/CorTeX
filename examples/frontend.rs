@@ -111,7 +111,7 @@ fn aux_load_config() -> CortexConfig {
 
 #[derive(FromForm)]
 struct ToggleAllMessages {
-  all: bool
+  all: bool,
 }
 
 #[get("/")]
@@ -218,17 +218,31 @@ fn severity_service_report(
   severity: String,
 ) -> Result<Template, NotFound<String>>
 {
-  serve_report(&corpus_name, &service_name, Some(severity), None, None, false)
+  serve_report(
+    &corpus_name,
+    &service_name,
+    Some(severity),
+    None,
+    None,
+    false,
+  )
 }
 #[get("/corpus/<corpus_name>/<service_name>/<severity>?<toggle>")]
 fn severity_service_report_all(
   corpus_name: String,
   service_name: String,
   severity: String,
-  toggle: Option<ToggleAllMessages>
+  toggle: Option<ToggleAllMessages>,
 ) -> Result<Template, NotFound<String>>
 {
-  serve_report(&corpus_name, &service_name, Some(severity), None, None, toggle.is_some() && toggle.unwrap().all)
+  serve_report(
+    &corpus_name,
+    &service_name,
+    Some(severity),
+    None,
+    None,
+    toggle.is_some() && toggle.unwrap().all,
+  )
 }
 #[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>")]
 fn category_service_report(
@@ -244,7 +258,7 @@ fn category_service_report(
     Some(severity),
     Some(category),
     None,
-    false
+    false,
   )
 }
 #[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>?<toggle>")]
@@ -253,7 +267,7 @@ fn category_service_report_all(
   service_name: String,
   severity: String,
   category: String,
-  toggle: Option<ToggleAllMessages>
+  toggle: Option<ToggleAllMessages>,
 ) -> Result<Template, NotFound<String>>
 {
   serve_report(
@@ -262,7 +276,7 @@ fn category_service_report_all(
     Some(severity),
     Some(category),
     None,
-    toggle.is_some() && toggle.unwrap().all
+    toggle.is_some() && toggle.unwrap().all,
   )
 }
 
@@ -281,7 +295,7 @@ fn what_service_report(
     Some(severity),
     Some(category),
     Some(what),
-    false
+    false,
   )
 }
 #[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>/<what>?<toggle>")]
@@ -300,7 +314,7 @@ fn what_service_report_all(
     Some(severity),
     Some(category),
     Some(what),
-    toggle.is_some() && toggle.unwrap().all
+    toggle.is_some() && toggle.unwrap().all,
   )
 }
 
@@ -394,7 +408,7 @@ fn entry_fetch(
   }
 }
 
-//Rerun queries
+// Rerun queries
 #[post("/rerun/<corpus_name>/<service_name>", data = "<data>")]
 fn rerun_corpus(
   corpus_name: String,
@@ -518,6 +532,7 @@ fn serve_report(
   all_messages: bool,
 ) -> Result<Template, NotFound<String>>
 {
+  let report_start = time::get_time();
   let mut context = TemplateContext::default();
   let mut global = HashMap::new();
   let backend = Backend::default();
@@ -551,7 +566,8 @@ fn serve_report(
       global.insert("outputformat".to_string(), service.outputformat.clone());
       global.insert("all_messages".to_string(), all_messages.to_string());
       if all_messages {
-        // Handlebars has a weird limitation on its #if conditional, can only test for field presence. So...
+        // Handlebars has a weird limitation on its #if conditional, can only test for field
+        // presence. So...
         global.insert("all_messages_true".to_string(), all_messages.to_string());
       }
       match service.inputconverter {
@@ -563,7 +579,6 @@ fn serve_report(
 
       let report;
       let template;
-      let report_start = time::get_time();
       if severity.is_none() {
         // Top-level report
         report = backend.progress_report(&corpus, &service);
@@ -581,13 +596,29 @@ fn serve_report(
           aux_severity_highlight(&severity.clone().unwrap()).to_string(),
         );
         template = if severity.is_some() && (severity.clone().unwrap() == "no_problem") {
-          let entries = aux_task_report(&mut global, &corpus, &service, severity, None, None, all_messages);
+          let entries = aux_task_report(
+            &mut global,
+            &corpus,
+            &service,
+            severity,
+            None,
+            None,
+            all_messages,
+          );
           // Record the report into "entries" vector
           context.entries = Some(entries);
           // And set the task list template
           "cortex-report-task-list"
         } else {
-          let categories = aux_task_report(&mut global, &corpus, &service, severity, None, None, all_messages);
+          let categories = aux_task_report(
+            &mut global,
+            &corpus,
+            &service,
+            severity,
+            None,
+            None,
+            all_messages,
+          );
           // Record the report into "categories" vector
           context.categories = Some(categories);
           // And set the severity template
@@ -602,13 +633,29 @@ fn serve_report(
         );
         global.insert("category".to_string(), category.clone().unwrap());
         if category.is_some() && (category.clone().unwrap() == "no_messages") {
-          let entries = aux_task_report(&mut global, &corpus, &service, severity, category, None, all_messages);
+          let entries = aux_task_report(
+            &mut global,
+            &corpus,
+            &service,
+            severity,
+            category,
+            None,
+            all_messages,
+          );
           // Record the report into "entries" vector
           context.entries = Some(entries);
           // And set the task list template
           template = "cortex-report-task-list";
         } else {
-          let whats = aux_task_report(&mut global, &corpus, &service, severity, category, None, all_messages);
+          let whats = aux_task_report(
+            &mut global,
+            &corpus,
+            &service,
+            severity,
+            category,
+            None,
+            all_messages,
+          );
           // Record the report into "whats" vector
           context.whats = Some(whats);
           // And set the category template
@@ -623,22 +670,30 @@ fn serve_report(
         );
         global.insert("category".to_string(), category.clone().unwrap());
         global.insert("what".to_string(), what.clone().unwrap());
-        let entries = aux_task_report(&mut global, &corpus, &service, severity, category, what, all_messages);
+        let entries = aux_task_report(
+          &mut global,
+          &corpus,
+          &service,
+          severity,
+          category,
+          what,
+          all_messages,
+        );
         // Record the report into "entries" vector
         context.entries = Some(entries);
         // And set the task list template
         template = "cortex-report-task-list";
       }
-
-      // Report also the query times
-      let report_end = time::get_time();
-      let report_duration = (report_end - report_start).num_milliseconds();
-      global.insert("report_duration".to_string(), report_duration.to_string());
       // Pass the globals(reports+metadata) onto the stash
       context.global = global;
       // And pass the handy lambdas
       // And render the correct template
       aux_decorate_uri_encodings(&mut context);
+
+      // Report also the query times
+      let report_end = time::get_time();
+      let report_duration = (report_end - report_start).num_milliseconds();
+      context.global.insert("report_duration".to_string(), report_duration.to_string());
       Ok(Template::render(template, context))
     } else {
       Err(NotFound(format!(
@@ -875,7 +930,7 @@ fn aux_task_report(
   all_messages: bool,
 ) -> Vec<HashMap<String, String>>
 {
-  let key_tail = match severity.clone() {    
+  let key_tail = match severity.clone() {
     Some(severity) => {
       let cat_tail = match category.clone() {
         Some(category) => {
@@ -890,7 +945,7 @@ fn aux_task_report(
       "_".to_string() + &severity + &cat_tail
     },
     None => String::new(),
-  } + if all_messages { "_all_messages" } else {""};
+  } + if all_messages { "_all_messages" } else { "" };
   let cache_key: String = corpus.id.to_string() + "_" + &service.id.to_string() + &key_tail;
   let cache_key_time = cache_key.clone() + "_time";
   let redis_client = redis::Client::open("redis://127.0.0.1/").unwrap(); // TODO: Better error handling
@@ -905,8 +960,14 @@ fn aux_task_report(
         json::decode(&cached_report_json).unwrap_or_default();
       if cached_report.is_empty() {
         let backend = Backend::default();
-        let report: Vec<HashMap<String, String>> =
-          backend.task_report(corpus, service, severity, category, what.clone(), all_messages);
+        let report: Vec<HashMap<String, String>> = backend.task_report(
+          corpus,
+          service,
+          severity,
+          category,
+          what.clone(),
+          all_messages,
+        );
         let report_json: String = json::encode(&report).unwrap();
         // println!("SET {:?}", cache_key);
         if what.is_none() {
@@ -1004,7 +1065,7 @@ fn cache_worker() {
                   Some(severity.to_string()),
                   None,
                   None,
-                  false
+                  false,
                 );
                 // for each category, cache the what page
                 for cat_hash in &category_report {
@@ -1023,7 +1084,7 @@ fn cache_worker() {
                     Some(severity.to_string()),
                     Some(category.to_string()),
                     None,
-                    false
+                    false,
                   );
                   // for each what, cache the "task list" page
                   // for what_hash in what_report.iter() {
