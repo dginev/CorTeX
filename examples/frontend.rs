@@ -948,9 +948,18 @@ fn aux_task_report(
   } + if all_messages { "_all_messages" } else { "" };
   let cache_key: String = corpus.id.to_string() + "_" + &service.id.to_string() + &key_tail;
   let cache_key_time = cache_key.clone() + "_time";
-  let redis_client = redis::Client::open("redis://127.0.0.1/").unwrap(); // TODO: Better error handling
-  let redis_connection = redis_client.get_connection().unwrap();
-  let cache_val: Result<String, _> = redis_connection.get(cache_key.clone());
+  let mut redis_connection = None;
+  let cache_val:Result<String, _> = match redis::Client::open("redis://127.0.0.1/") {
+    Ok(redis_client) => match redis_client.get_connection() {
+      Ok(rc) => {
+        let cached_val = rc.get(cache_key.clone());
+        redis_connection = Some(rc);
+        cached_val
+      },
+      Err(e) => Err(e)
+    },
+    Err(e) => Err(e)
+  };
   let fetched_report;
   let time_val: String;
 
@@ -972,18 +981,26 @@ fn aux_task_report(
         // println!("SET {:?}", cache_key);
         if what.is_none() {
           // don't cache the task list pages
-          let _: () = redis_connection.set(cache_key, report_json).unwrap();
+          if let &mut Some(ref mut rc) = &mut redis_connection {
+            let _: () = rc.set(cache_key, report_json).unwrap();
+          }
         }
         time_val = time::now().rfc822().to_string();
-        let _: () = redis_connection
-          .set(cache_key_time, time_val.clone())
-          .unwrap();
+        if let &mut Some(ref mut rc) = &mut redis_connection {
+          let _: () = rc
+            .set(cache_key_time, time_val.clone())
+            .unwrap();
+        }
         fetched_report = report;
       } else {
         // Get the report time, so that the user knows where the data is coming from
-        time_val = match redis_connection.get(cache_key_time) {
-          Ok(tval) => tval,
-          Err(_) => time::now().rfc822().to_string(),
+        time_val = if let &mut Some(ref mut rc) = &mut redis_connection {
+          match rc.get(cache_key_time) {
+            Ok(tval) => tval,
+            Err(_) => time::now().rfc822().to_string(),
+          } 
+        } else {
+          time::now().rfc822().to_string()
         };
         fetched_report = cached_report;
       }
@@ -996,12 +1013,16 @@ fn aux_task_report(
       // println!("SET2 {:?}", cache_key);
       if what_is_none {
         // don't cache the task lists pages
-        let _: () = redis_connection.set(cache_key, report_json).unwrap();
+        if let &mut Some(ref mut rc) = &mut redis_connection {
+          let _: () = rc.set(cache_key, report_json).unwrap();
+        }
       }
       time_val = time::now().rfc822().to_string();
-      let _: () = redis_connection
-        .set(cache_key_time, time_val.clone())
-        .unwrap();
+      if let &mut Some(ref mut rc) = &mut redis_connection {
+        let _: () = rc
+          .set(cache_key_time, time_val.clone())
+          .unwrap();
+      }
       fetched_report = report;
     },
   }
