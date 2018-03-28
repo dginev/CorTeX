@@ -652,12 +652,12 @@ impl Backend {
               "SELECT what as report_name, count(*) as task_count, COALESCE(SUM(total_counts::integer),0) as message_count FROM ( ".to_string() +
                 "SELECT "+&log_table+".what, "+&log_table+".task_id, count(*) as total_counts FROM "+
                   "tasks LEFT OUTER JOIN "+&log_table+" ON (tasks.id="+&log_table+".task_id) "+
-                  "WHERE service_id=$1 and corpus_id=$2 and status=$3 and category=$4 "+
+                  "WHERE service_id=$1 and corpus_id=$2 and "+&status_clause+" and category=$4 "+
                   "GROUP BY "+&log_table+".what, "+&log_table+".task_id) as tmp GROUP BY what ORDER BY task_count desc";
                 let what_report_query = sql_query(what_report_query_string)
                   .bind::<BigInt, i64>(i64::from(service.id))
                   .bind::<BigInt, i64>(i64::from(corpus.id))
-                  .bind::<BigInt, i64>(i64::from(task_status.raw()))
+                  .bind::<BigInt, i64>(i64::from(bind_status))
                   .bind::<Text, _>(category_name.clone());
                 let what_report: Vec<AggregateReport> = what_report_query
                   .get_results(&self.connection)
@@ -666,11 +666,11 @@ impl Backend {
                 let this_category_report_query_string = "SELECT NULL as report_name, count(*) as task_count, COALESCE(SUM(inner_message_count::integer),0) as message_count FROM".to_string() +
                 " (SELECT tasks.id, count(*) as inner_message_count "+
                 "FROM tasks, "+&log_table+" WHERE tasks.id="+&log_table+".task_id and "+
-                  "service_id=$1 and corpus_id=$2 and status=$3 and category=$4 group by tasks.id) as tmp";
+                  "service_id=$1 and corpus_id=$2 and "+&status_clause+" and category=$4 group by tasks.id) as tmp";
                 let this_category_report_query = sql_query(this_category_report_query_string)
                   .bind::<BigInt, i64>(i64::from(service.id))
                   .bind::<BigInt, i64>(i64::from(corpus.id))
-                  .bind::<BigInt, i64>(i64::from(task_status.raw()))
+                  .bind::<BigInt, i64>(i64::from(bind_status))
                   .bind::<Text, _>(category_name);
                 let this_category_report: AggregateReport = this_category_report_query
                   .get_result(&self.connection)
