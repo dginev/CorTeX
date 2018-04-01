@@ -2,6 +2,14 @@
 
 ## [0.2.1 (in active dev)]
 
+### Added
+ * Toggle-able reports for all tasks, as well as per-severity tasks
+ * Improved robustness of unpacking .gz sources on import
+ * Fixed recognition of invalid tasks
+
+### Changed
+ * Switched to using Tera templates instead of Handlebars, due to performance limitations for large HTML tables
+
 ## [0.2.0]
 
 This is a maintenance release that updates CorTeX to passing all tests on Rust Nightly 1.21 (2017-08-04).

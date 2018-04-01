@@ -519,7 +519,6 @@ fn main() {
   let _ = thread::spawn(move || {
     cache_worker();
   });
-
   rocket().launch();
 }
 
