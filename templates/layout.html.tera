@@ -95,22 +95,22 @@
 
     <footer>
         <nav class="navbar navbar-default navbar-fixed-bottom" role="navigation">
-            {% if global.report_duration %}
-            <div class="pull-right">
-                <span class="report-duration" data-report-duration="{{global.report_duration}}">[Report generated in {{global.report_duration}}ms, on {{global.report_time}}]
-                    <a href="javascript:void(0);" data-toggle="modal" data-target="#modal-rerun" title="Mark reported tasks for rerun">
-                        <i class="fa fa-refresh"></i>
-                    </a>
-                </span>
-            </div>
-            {% else %}
             <div class="container">
+                {% if global.report_duration %}
+                <div class="pull-right">
+                    <span class="report-duration" data-report-duration="{{global.report_duration}}">[Report generated in {{global.report_duration}}ms, on {{global.report_time}}]
+                        <a href="javascript:void(0);" data-toggle="modal" data-target="#modal-rerun" title="Mark reported tasks for rerun">
+                            <i class="fa fa-refresh"></i>
+                        </a>
+                    </span>
+                </div>
+                {% else %}
                 <div class="btn-github-star">
                     <iframe src="https://ghbtns.com/github-btn.html?user=dginev&repo=CorTeX&type=star&count=false&size=large" frameborder="0"
                         scrolling="0" width="75px" height="30px"></iframe>
                 </div>
+                {% endif %}
             </div>
-            {% endif %}
         </nav>
     </footer>
 </body>
