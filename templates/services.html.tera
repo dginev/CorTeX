@@ -1,0 +1,34 @@
+{% extends "layout" %} {% block content %}
+<div class="center">
+  <h1>Services for {{global.corpus_name}}</h1>
+  <br>
+  <div class="col-md-4"></div>
+  <div class="col-md-4">
+    <table id="service-report" class="table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>From</th>
+          <th>To</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for service in services %}
+        <tr>
+          <td class="left">
+            <a href="/corpus/{{global.corpus_name_uri}}/{{service.name_uri}}">{{service.name}}</a>
+          </td>
+          <td class="left">converter</td>
+          <td class="left">{{service.inputformat}}</td>
+          <td class="left">{{service.outputformat}}</td>
+          <td class="left">{{service.status}}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="col-md-4"></div>
+</div>
+{% endblock content %}

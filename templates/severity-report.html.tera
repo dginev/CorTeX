@@ -1,0 +1,49 @@
+{% extends "layout" %} {% block content %}
+<div class="center">
+  <h1>{{global.severity}} categories</h1>
+
+  {% if global.all_messages_true %}
+  <h5>All Tasks</h5>
+  <h5>
+    <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}?all=false">(Click here to switch to {{global.severity}} only)</a>
+  </h5>
+  {{else}}
+  <h5>"{{global.severity}}" severity tasks</h5>
+  <h5>
+    <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}?all=true">(Click here to see this report for all tasks)</a>
+  </h5>
+  {% endif %}
+
+  <br>
+  <div class="row">
+    <div class="col-md-3"></div>
+    <div class="col-md-6">
+      <table id="corpus-report" class="table">
+        <thead>
+          <tr>
+            <th class="left">Category</th>
+            <th class="right">Tasks %</th>
+            <th class="right">Tasks</th>
+            <th class="right">Messages %</th>
+            <th class="right">Messages</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for category in categories %}
+          <tr class="{{global.highlight}} corpus-report-{{global.severity}}">
+            <td class="left">
+              <a class="link-{{category.name}}" href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity_uri}}/{{category.name_uri}}?all={{global.all_messages}}">{{category.name}}</a>
+            </td>
+            <td class="right">{{category.tasks_percent}}%</td>
+            <td class="right">{{category.tasks}}</td>
+            <td class="right">{{category.messages_percent}}%</td>
+            <td class="right">{{category.messages}}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="col-md-3"></div>
+  </div>
+</div>
+{% endblock content %}

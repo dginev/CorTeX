@@ -27,31 +27,31 @@ extern crate redis;
 extern crate regex;
 extern crate time;
 
-use rocket::response::{NamedFile, Redirect};
-use rocket::response::status::{Accepted, NotFound};
-use rocket_contrib::Template;
 use futures::{Future, Stream};
-use tokio_core::reactor::Core;
 use hyper::Client;
-use hyper::{Method, Request};
 use hyper::header::{ContentLength, ContentType};
+use hyper::{Method, Request};
 use hyper_tls::HttpsConnector;
+use rocket::response::status::{Accepted, NotFound};
+use rocket::response::{NamedFile, Redirect};
+use rocket_contrib::Template;
+use tokio_core::reactor::Core;
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 use std::fs::File;
 use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::str;
 
+use redis::Commands;
+use regex::Regex;
 use std::thread;
 use std::time::Duration;
-use regex::Regex;
-use redis::Commands;
 
-use rustc_serialize::json;
-use cortex::sysinfo;
 use cortex::backend::Backend;
 use cortex::models::{Corpus, Service, Task};
+use cortex::sysinfo;
+use rustc_serialize::json;
 
 static UNKNOWN: &'static str = "_unknown_";
 
@@ -118,10 +118,13 @@ struct ToggleAllMessages {
 fn root() -> Template {
   let mut context = TemplateContext::default();
   let mut global = HashMap::new();
-  global.insert("title".to_string(), "Framework Overview".to_string());
+  global.insert(
+    "title".to_string(),
+    "Overview of available Corpora".to_string(),
+  );
   global.insert(
     "description".to_string(),
-    "An analysis framework for corpora of TeX/LaTeX documents - overview.".to_string(),
+    "An analysis framework for corpora of TeX/LaTeX documents - overview page".to_string(),
   );
 
   let backend = Backend::default();
@@ -135,7 +138,7 @@ fn root() -> Template {
   context.corpora = Some(corpora);
   aux_decorate_uri_encodings(&mut context);
 
-  Template::render("cortex-overview", context)
+  Template::render("overview", context)
 }
 
 // Admin interface
@@ -156,7 +159,7 @@ fn admin() -> Template {
     global: global,
     ..TemplateContext::default()
   };
-  Template::render("cortex-admin", context)
+  Template::render("admin", context)
 }
 
 #[get("/corpus/<corpus_name>")]
@@ -195,7 +198,7 @@ fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
       context.services = Some(service_reports);
     }
     aux_decorate_uri_encodings(&mut context);
-    return Ok(Template::render("cortex-services", context));
+    return Ok(Template::render("services", context));
   }
   Err(NotFound(format!(
     "Corpus {} is not registered",
@@ -519,7 +522,6 @@ fn main() {
   let _ = thread::spawn(move || {
     cache_worker();
   });
-
   rocket().launch();
 }
 
@@ -587,7 +589,7 @@ fn serve_report(
           global.insert(key.clone(), val.to_string());
         }
         global.insert("report_time".to_string(), time::now().rfc822().to_string());
-        template = "cortex-report";
+        template = "report";
       } else if category.is_none() {
         // Severity-level report
         global.insert("severity".to_string(), severity.clone().unwrap());
@@ -608,7 +610,7 @@ fn serve_report(
           // Record the report into "entries" vector
           context.entries = Some(entries);
           // And set the task list template
-          "cortex-report-task-list"
+          "task-list-report"
         } else {
           let categories = aux_task_report(
             &mut global,
@@ -622,7 +624,7 @@ fn serve_report(
           // Record the report into "categories" vector
           context.categories = Some(categories);
           // And set the severity template
-          "cortex-report-severity"
+          "severity-report"
         };
       } else if what.is_none() {
         // Category-level report
@@ -645,7 +647,7 @@ fn serve_report(
           // Record the report into "entries" vector
           context.entries = Some(entries);
           // And set the task list template
-          template = "cortex-report-task-list";
+          template = "task-list-report";
         } else {
           let whats = aux_task_report(
             &mut global,
@@ -659,7 +661,7 @@ fn serve_report(
           // Record the report into "whats" vector
           context.whats = Some(whats);
           // And set the category template
-          template = "cortex-report-category";
+          template = "category-report";
         }
       } else {
         // What-level report
@@ -682,7 +684,7 @@ fn serve_report(
         // Record the report into "entries" vector
         context.entries = Some(entries);
         // And set the task list template
-        template = "cortex-report-task-list";
+        template = "task-list-report";
       }
       // Pass the globals(reports+metadata) onto the stash
       context.global = global;
@@ -693,7 +695,9 @@ fn serve_report(
       // Report also the query times
       let report_end = time::get_time();
       let report_duration = (report_end - report_start).num_milliseconds();
-      context.global.insert("report_duration".to_string(), report_duration.to_string());
+      context
+        .global
+        .insert("report_duration".to_string(), report_duration.to_string());
       Ok(Template::render(template, context))
     } else {
       Err(NotFound(format!(
@@ -949,16 +953,16 @@ fn aux_task_report(
   let cache_key: String = corpus.id.to_string() + "_" + &service.id.to_string() + &key_tail;
   let cache_key_time = cache_key.clone() + "_time";
   let mut redis_connection = None;
-  let cache_val:Result<String, _> = match redis::Client::open("redis://127.0.0.1/") {
+  let cache_val: Result<String, _> = match redis::Client::open("redis://127.0.0.1/") {
     Ok(redis_client) => match redis_client.get_connection() {
       Ok(rc) => {
         let cached_val = rc.get(cache_key.clone());
         redis_connection = Some(rc);
         cached_val
       },
-      Err(e) => Err(e)
+      Err(e) => Err(e),
     },
-    Err(e) => Err(e)
+    Err(e) => Err(e),
   };
   let fetched_report;
   let time_val: String;
@@ -987,9 +991,7 @@ fn aux_task_report(
         }
         time_val = time::now().rfc822().to_string();
         if let &mut Some(ref mut rc) = &mut redis_connection {
-          let _: () = rc
-            .set(cache_key_time, time_val.clone())
-            .unwrap();
+          let _: () = rc.set(cache_key_time, time_val.clone()).unwrap();
         }
         fetched_report = report;
       } else {
@@ -998,7 +1000,7 @@ fn aux_task_report(
           match rc.get(cache_key_time) {
             Ok(tval) => tval,
             Err(_) => time::now().rfc822().to_string(),
-          } 
+          }
         } else {
           time::now().rfc822().to_string()
         };
@@ -1019,15 +1021,14 @@ fn aux_task_report(
       }
       time_val = time::now().rfc822().to_string();
       if let &mut Some(ref mut rc) = &mut redis_connection {
-        let _: () = rc
-          .set(cache_key_time, time_val.clone())
-          .unwrap();
+        let _: () = rc.set(cache_key_time, time_val.clone()).unwrap();
       }
       fetched_report = report;
     },
   }
   // Setup the return
   global.insert("report_time".to_string(), time_val);
+  
   fetched_report
 }
 
