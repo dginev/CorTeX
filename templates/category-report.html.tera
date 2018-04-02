@@ -7,7 +7,7 @@
   <h5>
     <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}/{{global.category_uri}}?all=false">(Click here to switch to {{global.severity}} only)</a>
   </h5>
-  {{else}}
+  {% else %}
   <h5>"{{global.severity}}" severity tasks</h5>
   <h5>
     <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}/{{global.category_uri}}?all=true">(Click here to see this report for all tasks)</a>
