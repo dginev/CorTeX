@@ -1,7 +1,3 @@
-[global.limits]
-forms = 1048576
-json  = 1048576
-
 [development]
 template_dir = "templates/"
 
@@ -9,6 +5,4 @@ template_dir = "templates/"
 template_dir = "templates/"
 
 [production]
-port = 8000
 template_dir = "templates/"
-secret_key = "PswVQIoG2GUAR4AE2lSwsjGpzM4Bz8ppl8Apt4Z7C7E="
