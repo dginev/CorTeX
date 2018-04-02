@@ -1,0 +1,77 @@
+<div id="modal-rerun" class="modal fade" tabindex="-1" role="dialog">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="form-rerun" class="form-rerun" name="form-rerun" method="post" accept-charset="UTF-8" action="/rerun/{{global.corpus_name_uri}}/{{global.service_name_uri}}{%if global.severity_uri %}/{{global.severity}}{%if global.category_uri %}/{{global.category_uri}}{%if global.what_uri%}/{{global.what_uri}}{%endif%}{%endif%}{%endif%}">
+        <div class="modal-header">
+          <a class="close" data-dismiss="modal">×</a>
+          <h3>Mark tasks for rerun</h3>
+        </div>
+        <div class="modal-body">
+          <p>You are about to rerun all tasks matching
+            <strong>all</strong> of the below: </p>
+          <p class="rerun-banner">
+            <span class="rerun-banner-segment" data-segment="corpus">{{global.corpus_name}}</span>
+            <span class="rerun-banner-segment" data-segment="service">{{global.service_name}}</span>
+            {% if global.severity %}
+            <span class="rerun-banner-segment" data-segment="severity">{{global.severity}}</span>
+            {% if global.category %}
+            <span class="rerun-banner-segment" data-segment="category">{{global.category}}</span>
+            {% if global.what %}
+            <span class="rerun-banner-segment" data-segment="class">{{global.what}}</span>
+            {% endif %} {% endif %} {% endif %}
+          </p>
+        </div>
+        <div class="modal-footer">
+          <input id="rerun-token" type="text" class="form-control" placeholder="Please enter your rerun token" name="token">
+          <br>
+          <button type="button" id="btn-rerun" class="btn btn-primary disabled">Mark for rerun</buttont>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+
+<script>
+  $("#modal-rerun").on('shown.bs.modal', function () {
+    $("#rerun-token").val("");
+    $("#btn-rerun").html('Mark for rerun');
+    $("#btn-rerun").attr("class", "btn btn-primary disabled");
+  });
+  $("input#rerun-token").on('input', function () {
+    if ($(this).val().length == 0) {
+      $("#btn-rerun").addClass("disabled");
+    } else {
+      $("#btn-rerun").removeClass("disabled");
+    }
+  });
+
+  $("#btn-rerun").click(function (e) {
+    e.preventDefault();
+    $("#btn-rerun").html('<i class="fa fa-refresh fa-spin"></i> Marking...');
+    var action = $("form#form-rerun").attr("action").replace(/\/+$/, '');
+    var xhr = new XMLHttpRequest();
+    xhr.onreadystatechange = function () {
+      if (this.readyState == 4) { // Only process when done.
+        if (this.status != 200 && this.status != 202) {
+          // Something went wrong, throw out the localStorage and re-auth (Redis could've fallen, etc)
+          $("#btn-rerun").html('Failed, please retry.');
+          $("#btn-rerun").attr("class", "btn btn-danger disabled");
+        } else {
+          $("#btn-rerun").html('Marked!');
+          $("#btn-rerun").attr("class", "btn btn-success disabled");
+        }
+      }
+    };
+    xhr.open('POST', action);
+    xhr.setRequestHeader('Content-Type', 'application/json; charset=utf-8');
+    var xhr_payload = $("#rerun-token").val();
+    xhr.send(xhr_payload);
+    return false;
+  });
+
+  $("span.rerun-banner-segment:not(:empty)").each(function () {
+    var segment = "[" + $(this).data('segment') + "]&nbsp;";
+    $(this).prepend('<i class="fa fa-chevron-right fa-lg"></i>&nbsp;&nbsp;' + segment);
+  });
+</script>

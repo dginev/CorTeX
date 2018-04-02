@@ -1,18 +1,18 @@
-{{> layout-cortex-pre }}
+{% extends "layout" %} {% block content %}
 <div class="center">
   <h1>"{{global.category}}" classes</h1>
 
-  {{#if (global.all_messages_true)}}
+  {% if global.all_messages_true %}
   <h5>All Tasks</h5>
   <h5>
-    <a href="/corpus/{{../global.corpus_name_uri}}/{{../global.service_name_uri}}/{{../global.severity}}/{{global.category_uri}}?all=false">(Click here to switch to {{global.severity}} only)</a>
+    <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}/{{global.category_uri}}?all=false">(Click here to switch to {{global.severity}} only)</a>
   </h5>
   {{else}}
   <h5>"{{global.severity}}" severity tasks</h5>
   <h5>
-    <a href="/corpus/{{../global.corpus_name_uri}}/{{../global.service_name_uri}}/{{../global.severity}}/{{global.category_uri}}?all=true">(Click here to see this report for all tasks)</a>
+    <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}/{{global.category_uri}}?all=true">(Click here to see this report for all tasks)</a>
   </h5>
-  {{/if}}
+  {% endif %}
 
   <br>
 
@@ -30,17 +30,17 @@
           </tr>
         </thead>
         <tbody>
-          {{#each whats}}
-          <tr class="{{../global.highlight}} corpus-report-{{../global.category}}">
+          {% for this in whats %}
+          <tr class="{{global.highlight}} corpus-report-{{global.category}}">
             <td class="left">
-              <a class="link-{{name}}" href="/corpus/{{../global.corpus_name_uri}}/{{../global.service_name_uri}}/{{../global.severity}}/{{../global.category_uri}}/{{this.name_uri}}?all={{../global.all_messages}}">{{this.name}}</a>
+              <a class="link-{{this.name}}" href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}/{{global.category_uri}}/{{this.name_uri}}?all={{global.all_messages}}">{{this.name}}</a>
             </td>
             <td class="right">{{this.tasks_percent}}%</td>
             <td class="right">{{this.tasks}}</td>
             <td class="right">{{this.messages_percent}}%</td>
             <td class="right">{{this.messages}}</td>
           </tr>
-          {{/each}}
+          {% endfor %}
         </tbody>
       </table>
     </div>
@@ -48,4 +48,4 @@
   </div>
 </div>
 
-{{> layout-cortex-post }}
+{% endblock content %}
