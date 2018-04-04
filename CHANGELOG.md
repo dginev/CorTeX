@@ -2,6 +2,8 @@
 
 ## [0.2.1 (in active dev)]
 
+* Minimum required `rustc` is `1.27.0-nightly 2018-04-03`.
+
 ### Added
  * Toggle-able reports for all tasks, as well as per-severity tasks
  * Improved robustness of unpacking .gz sources on import
