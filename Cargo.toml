@@ -19,7 +19,7 @@ git = "https://github.com/dginev/libarchive-sys.git"
 git = "https://github.com/dginev/CorTeX-Peripherals.git"
 
 [dependencies.rocket_contrib]
-version = "0.3.7"
+version = "0.3.8"
 default-features = false
 features = ["tera_templates"]
 
@@ -41,8 +41,8 @@ time = "0.1.35"
 libxml = "0.0.61"
 redis = "0.7.0"
 gnuplot = "0.0.21"
-rocket = "0.3.7"
-rocket_codegen = "0.3.7"
+rocket = "0.3.8"
+rocket_codegen = "0.3.8"
 futures = "0.1"
 hyper = "0.11"
 hyper-tls = "0.1"
