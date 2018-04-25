@@ -192,7 +192,8 @@ fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
         .collect::<Vec<_>>();
       let mut service_reports = Vec::new();
       for mut service in services {
-        service.insert("status".to_string(), "Running".to_string());
+        // TODO: Report on the service status when we improve on the service report UX
+        // service.insert("status".to_string(), "Running".to_string());
         service_reports.push(service);
       }
       context.services = Some(service_reports);

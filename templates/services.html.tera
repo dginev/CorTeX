@@ -11,7 +11,6 @@
           <th>Type</th>
           <th>From</th>
           <th>To</th>
-          <th>Status</th>
         </tr>
       </thead>
       <tbody>
@@ -23,7 +22,6 @@
           <td class="left">converter</td>
           <td class="left">{{service.inputformat}}</td>
           <td class="left">{{service.outputformat}}</td>
-          <td class="left">{{service.status}}</td>
         </tr>
         {% endfor %}
       </tbody>
