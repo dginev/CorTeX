@@ -3,7 +3,7 @@ name = "cortex"
 version = "0.2.9"
 authors = ["Deyan Ginev <d.ginev@jacobs-university.de>"]
 license = "MIT"
-repository = "https://github.com/dginev/CorTeX"
+repository = "https://github.com/dginev/cortex"
 description = """
 A general purpose processing framework for corpora of scientific documents
 """
@@ -16,7 +16,7 @@ crate-type = ["rlib", "dylib", "staticlib"]
 git = "https://github.com/dginev/libarchive-sys.git"
 
 [dependencies.pericortex]
-git = "https://github.com/dginev/CorTeX-Peripherals.git"
+git = "https://github.com/dginev/cortex-peripherals.git"
 
 [dependencies.rocket_contrib]
 version = "0.3.8"
