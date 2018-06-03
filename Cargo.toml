@@ -10,7 +10,15 @@ A general purpose processing framework for corpora of scientific documents
 
 [lib]
 name = "cortex"
-crate-type = ["rlib", "dylib", "staticlib"]
+crate-type = ["rlib","staticlib"]
+
+[[bin]]
+name = "frontend"
+path = "bin/frontend.rs"
+
+[[bin]]
+name = "dispatcher"
+path = "bin/dispatcher.rs"
 
 [dependencies.libarchive-sys]
 git = "https://github.com/dginev/libarchive-sys.git"

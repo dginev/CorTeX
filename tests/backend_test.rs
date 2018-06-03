@@ -8,11 +8,11 @@ extern crate cortex;
 extern crate diesel;
 
 use cortex::backend;
-use cortex::models::{Corpus, NewLogInfo, NewTask, Service, Task};
 use cortex::helpers::{rand_in_range, random_mark, NewTaskMessage, TaskReport, TaskStatus};
-use cortex::schema::{log_infos, tasks};
-use cortex::schema::tasks::dsl::{service_id, status};
+use cortex::models::{Corpus, NewLogInfo, NewTask, Service, Task};
 use cortex::schema::log_infos::dsl::task_id;
+use cortex::schema::tasks::dsl::{service_id, status};
+use cortex::schema::{log_infos, tasks};
 use diesel::prelude::*;
 
 #[test]
@@ -175,14 +175,12 @@ fn batch_ops_test() {
     .into_iter()
     .map(|task| TaskReport {
       status: TaskStatus::NoProblem,
-      messages: vec![
-        NewTaskMessage::Info(NewLogInfo {
-          task_id: task.id,
-          category: String::from("trivial"),
-          what: String::from("mock"),
-          details: String::new(),
-        }),
-      ],
+      messages: vec![NewTaskMessage::Info(NewLogInfo {
+        task_id: task.id,
+        category: String::from("trivial"),
+        what: String::from("mock"),
+        details: String::new(),
+      })],
       task,
     })
     .collect();
