@@ -102,7 +102,12 @@ pub fn get_sync_service(
   let mut services = services.lock().unwrap();
   services
     .entry(service_name.to_string())
-    .or_insert_with(|| Some(Service::find_by_name(service_name, &backend.connection).unwrap()))
+    .or_insert_with(
+      || match Service::find_by_name(service_name, &backend.connection) {
+        Ok(s) => Some(s),
+        _ => None,
+      },
+    )
     .clone()
 }
 

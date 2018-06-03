@@ -65,108 +65,106 @@ impl Ventilator {
       source_job_count += 1;
 
       let mut dispatched_task: Option<TaskProgress> = None;
-      match server::get_sync_service(&service_name, &services_arc, &backend) {
-        None => {},
-        Some(service) => {
-          if !queues.contains_key(&service_name) {
-            queues.insert(service_name.clone(), Vec::new());
-          }
-          let mut task_queue: &mut Vec<TaskProgress> = queues.get_mut(&service_name).unwrap();
-          if task_queue.is_empty() {
-            // Refetch a new batch of tasks
-            let now = time::get_time().sec;
-            task_queue.extend(
-              backend
-                .fetch_tasks(&service, self.queue_size)
-                .unwrap()
-                .into_iter()
-                .map(|task| TaskProgress {
-                  task: task,
-                  created_at: now,
-                  retries: 0,
-                }),
-            );
+      // Requests for unknown service names will be silently ignored.
+      if let Some(service) = server::get_sync_service(&service_name, &services_arc, &backend) {
+        if !queues.contains_key(&service_name) {
+          queues.insert(service_name.clone(), Vec::new());
+        }
+        let mut task_queue: &mut Vec<TaskProgress> = queues.get_mut(&service_name).unwrap();
+        if task_queue.is_empty() {
+          // Refetch a new batch of tasks
+          let now = time::get_time().sec;
+          task_queue.extend(
+            backend
+              .fetch_tasks(&service, self.queue_size)
+              .unwrap()
+              .into_iter()
+              .map(|task| TaskProgress {
+                task: task,
+                created_at: now,
+                retries: 0,
+              }),
+          );
 
-            // This is a good time to also take care that none of the old tasks are dead in the
-            // progress queue since the re-fetch happens infrequently, and directly
-            // implies the progress queue will grow
-            let expired_tasks = server::timeout_progress_tasks(&progress_queue_arc);
-            for expired_t in expired_tasks {
-              if expired_t.retries > 1 {
-                // Too many retries, mark as fatal failure
-                server::push_done_queue(
-                  &done_queue_arc,
-                  TaskReport {
-                    task: expired_t.task.clone(),
-                    status: TaskStatus::Fatal,
-                    messages: vec![NewTaskMessage::new(
-                      expired_t.task.id,
-                      "fatal",
-                      "cortex".to_string(),
-                      "never_completed_with_retries".to_string(),
-                      String::new(),
-                    )],
-                  },
-                );
-              } else {
-                // We can still retry, re-add to the dispatch queue
-                task_queue.push(TaskProgress {
-                  task: expired_t.task,
-                  created_at: expired_t.created_at,
-                  retries: expired_t.retries + 1,
-                });
-              }
-            }
-          }
-          if let Some(current_task_progress) = task_queue.pop() {
-            dispatched_task = Some(current_task_progress.clone());
-
-            let current_task = current_task_progress.task;
-            let taskid = current_task.id;
-            let serviceid = current_task.service_id;
-
-            ventilator.send_msg(identity, SNDMORE).unwrap();
-            ventilator.send_str(&taskid.to_string(), SNDMORE).unwrap();
-            if serviceid == 1 {
-              // No payload needed for init
-              ventilator.send(&[], 0).unwrap();
+          // This is a good time to also take care that none of the old tasks are dead in the
+          // progress queue since the re-fetch happens infrequently, and directly
+          // implies the progress queue will grow
+          let expired_tasks = server::timeout_progress_tasks(&progress_queue_arc);
+          for expired_t in expired_tasks {
+            if expired_t.retries > 1 {
+              // Too many retries, mark as fatal failure
+              server::push_done_queue(
+                &done_queue_arc,
+                TaskReport {
+                  task: expired_t.task.clone(),
+                  status: TaskStatus::Fatal,
+                  messages: vec![NewTaskMessage::new(
+                    expired_t.task.id,
+                    "fatal",
+                    "cortex".to_string(),
+                    "never_completed_with_retries".to_string(),
+                    String::new(),
+                  )],
+                },
+              );
             } else {
-              // Regular services fetch the task payload and transfer it to the worker
-              let file_opt = helpers::prepare_input_stream(&current_task);
-              if file_opt.is_ok() {
-                let mut file = file_opt.unwrap();
-                let mut total_outgoing: usize = 0;
-                loop {
-                  // Stream input data via zmq
-                  let mut data = vec![0; self.message_size];
-                  let size = file.read(&mut data).unwrap();
-                  total_outgoing += size;
-                  data.truncate(size);
-
-                  if size < self.message_size {
-                    // If exhausted, send the last frame
-                    ventilator.send(&data, 0).unwrap();
-                    // And terminate
-                    break;
-                  } else {
-                    // If more to go, send the frame and indicate there's more to come
-                    ventilator.send(&data, SNDMORE).unwrap();
-                  }
-                }
-                let responded_time = time::get_time();
-                let request_duration = (responded_time - request_time).num_milliseconds();
-                println!(
-                  "Source job {}, message size: {}, took {}ms.",
-                  source_job_count, total_outgoing, request_duration
-                );
-              } else {
-                // TODO: smart handling of failures
-                ventilator.send(&[], 0).unwrap();
-              }
+              // We can still retry, re-add to the dispatch queue
+              task_queue.push(TaskProgress {
+                task: expired_t.task,
+                created_at: expired_t.created_at,
+                retries: expired_t.retries + 1,
+              });
             }
           }
-        },
-      };
+        }
+        if let Some(current_task_progress) = task_queue.pop() {
+          dispatched_task = Some(current_task_progress.clone());
+
+          let current_task = current_task_progress.task;
+          let taskid = current_task.id;
+          let serviceid = current_task.service_id;
+
+          ventilator.send_msg(identity, SNDMORE).unwrap();
+          ventilator.send_str(&taskid.to_string(), SNDMORE).unwrap();
+          if serviceid == 1 {
+            // No payload needed for init
+            ventilator.send(&[], 0).unwrap();
+          } else {
+            // Regular services fetch the task payload and transfer it to the worker
+            let file_opt = helpers::prepare_input_stream(&current_task);
+            if file_opt.is_ok() {
+              let mut file = file_opt.unwrap();
+              let mut total_outgoing: usize = 0;
+              loop {
+                // Stream input data via zmq
+                let mut data = vec![0; self.message_size];
+                let size = file.read(&mut data).unwrap();
+                total_outgoing += size;
+                data.truncate(size);
+
+                if size < self.message_size {
+                  // If exhausted, send the last frame
+                  ventilator.send(&data, 0).unwrap();
+                  // And terminate
+                  break;
+                } else {
+                  // If more to go, send the frame and indicate there's more to come
+                  ventilator.send(&data, SNDMORE).unwrap();
+                }
+              }
+              let responded_time = time::get_time();
+              let request_duration = (responded_time - request_time).num_milliseconds();
+              println!(
+                "Source job {}, message size: {}, took {}ms.",
+                source_job_count, total_outgoing, request_duration
+              );
+            } else {
+              // TODO: smart handling of failures
+              ventilator.send(&[], 0).unwrap();
+            }
+          }
+        }
+      }
       // Record that a task has been dispatched in the progress queue
       if dispatched_task.is_some() {
         server::push_progress_task(&progress_queue_arc, dispatched_task.unwrap());
