@@ -8,18 +8,18 @@ extern crate cortex;
 extern crate diesel;
 extern crate pericortex;
 
-use std::thread;
 use cortex::backend;
 use cortex::backend::TEST_DB_ADDRESS;
-use cortex::models::{Corpus, NewCorpus, NewService, NewTask, Service};
+use cortex::dispatcher::manager::TaskManager;
 use cortex::helpers::TaskStatus;
-use cortex::manager::TaskManager;
-use pericortex::worker::{EchoWorker, Worker};
 use cortex::importer::Importer;
+use cortex::models::{Corpus, NewCorpus, NewService, NewTask, Service};
+use pericortex::worker::{EchoWorker, Worker};
+use std::thread;
 
+use cortex::schema::{corpora, services, tasks};
 use diesel::delete;
 use diesel::prelude::*;
-use cortex::schema::{corpora, services, tasks};
 
 #[test]
 fn mock_round_trip() {

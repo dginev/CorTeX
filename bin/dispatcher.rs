@@ -8,8 +8,8 @@ extern crate cortex;
 // extern crate libxml;
 extern crate zmq;
 
-use cortex::manager::TaskManager;
 use cortex::backend::DEFAULT_DB_ADDRESS;
+use cortex::dispatcher::manager::TaskManager;
 
 /// A dispatcher executable for `CorTeX` distributed processing with ZMQ
 fn main() {

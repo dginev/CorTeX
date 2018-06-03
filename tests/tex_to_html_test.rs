@@ -10,18 +10,18 @@ extern crate pericortex;
 
 use cortex::backend;
 use cortex::backend::TEST_DB_ADDRESS;
-use cortex::models::{Corpus, NewCorpus, NewService, NewTask, Service, Task};
+use cortex::dispatcher::manager::TaskManager;
 use cortex::helpers::TaskStatus;
-use cortex::manager::TaskManager;
-use cortex::schema::{corpora, services, tasks};
 use cortex::importer::Importer;
+use cortex::models::{Corpus, NewCorpus, NewService, NewTask, Service, Task};
+use cortex::schema::{corpora, services, tasks};
+use diesel::delete;
+use diesel::prelude::*;
 use pericortex::worker::{TexToHtmlWorker, Worker};
+use std::process::Command;
+use std::str;
 use std::thread;
 use std::time::Duration;
-use std::str;
-use std::process::Command;
-use diesel::prelude::*;
-use diesel::delete;
 
 #[test]
 fn mock_tex_to_html() {

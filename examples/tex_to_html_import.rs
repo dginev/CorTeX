@@ -18,14 +18,14 @@ use std::env;
 // use std::io::Read;
 // use std::io::Error;
 
-use std::thread;
-use std::time::Duration;
 use cortex::backend::{Backend, DEFAULT_DB_ADDRESS};
-use cortex::models::{Corpus, NewService, NewTask, Service};
+use cortex::dispatcher::manager::TaskManager;
 use cortex::helpers::TaskStatus;
-use cortex::manager::TaskManager;
+use cortex::models::{Corpus, NewService, NewTask, Service};
 use cortex::worker::InitWorker;
 use pericortex::worker::Worker;
+use std::thread;
+use std::time::Duration;
 
 fn main() {
   let mut input_args = env::args();

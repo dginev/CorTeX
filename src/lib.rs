@@ -8,9 +8,11 @@
 //! A general purpose processing framework for corpora of scientific documents
 
 #![doc(html_root_url = "https://dginev.github.io/rust-cortex/")]
-#![doc(html_logo_url = "https://raw.githubusercontent.com/dginev/rust-cortex/master/public/img/logo.jpg")]
+#![doc(
+  html_logo_url = "https://raw.githubusercontent.com/dginev/rust-cortex/master/public/img/logo.jpg"
+)]
 #![deny(missing_docs)]
-#![recursion_limit="256"]
+#![recursion_limit = "256"]
 #![feature(plugin)]
 #![plugin(dotenv_macros)]
 extern crate Archive;
@@ -31,14 +33,13 @@ extern crate tempfile;
 extern crate time;
 extern crate zmq;
 
-pub mod schema;
-pub mod concerns;
-pub mod models;
-pub mod helpers;
-pub mod reports;
 pub mod backend;
-
+pub mod concerns;
+pub mod dispatcher;
+pub mod helpers;
 pub mod importer;
+pub mod models;
+pub mod reports;
+pub mod schema;
 pub mod sysinfo;
-pub mod manager;
 pub mod worker;

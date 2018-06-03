@@ -84,10 +84,10 @@ impl Default for TemplateContext {
 }
 
 fn aux_load_config() -> CortexConfig {
-  let mut config_file = match File::open("examples/config.json") {
+  let mut config_file = match File::open("config.json") {
     Ok(cfg) => cfg,
     Err(e) => panic!(
-      "You need a well-formed JSON examples/config.json file to run the frontend. Error: {}",
+      "You need a well-formed JSON config.json file to run the frontend. Error: {}",
       e
     ),
   };
@@ -95,7 +95,7 @@ fn aux_load_config() -> CortexConfig {
   match config_file.read_to_string(&mut config_buffer) {
     Ok(_) => {},
     Err(e) => panic!(
-      "You need a well-formed JSON examples/config.json file to run the frontend. Error: {}",
+      "You need a well-formed JSON config.json file to run the frontend. Error: {}",
       e
     ),
   };
@@ -103,7 +103,7 @@ fn aux_load_config() -> CortexConfig {
   match json::decode(&config_buffer) {
     Ok(decoded) => decoded,
     Err(e) => panic!(
-      "You need a well-formed JSON examples/config.json file to run the frontend. Error: {}",
+      "You need a well-formed JSON config.json file to run the frontend. Error: {}",
       e
     ),
   }
@@ -333,7 +333,7 @@ fn entry_fetch(
   data: Vec<u8>,
 ) -> Result<NamedFile, Redirect>
 {
-  // Any secrets reside in examples/config.json
+  // Any secrets reside in config.json
   let cortex_config = aux_load_config();
 
   let g_recaptcha_response = if data.len() > 21 {
@@ -887,7 +887,9 @@ fn aux_check_captcha(g_recaptcha_response: &str, captcha_secret: &str) -> bool {
 
   let mut verified = false;
   let url_with_query = "https://www.google.com/recaptcha/api/siteverify?secret=".to_string()
-    + captcha_secret + "&response=" + g_recaptcha_response;
+    + captcha_secret
+    + "&response="
+    + g_recaptcha_response;
   let json_str = format!(
     "{{\"secret\":\"{:?}\",\"response\":\"{:?}\"}}",
     captcha_secret, g_recaptcha_response
