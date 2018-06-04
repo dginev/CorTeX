@@ -401,7 +401,7 @@ fn entry_fetch(
     "import" => entry,
     _ => {
       let strip_name_regex = Regex::new(r"/[^/]+$").unwrap();
-      strip_name_regex.replace(&entry, "") + "/" + &service_name + ".zip"
+      strip_name_regex.replace(&entry, "").to_string() + "/" + &service_name + ".zip"
     },
   };
   if zip_path.is_empty() {

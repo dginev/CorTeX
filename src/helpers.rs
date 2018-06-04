@@ -6,22 +6,24 @@
 // except according to those terms.
 
 //! Helper structures and methods for Task
+use rand::{thread_rng, Rng};
+use regex::Regex;
 use std::fs::File;
-use std::str;
 use std::io;
 use std::path::Path;
-use regex::Regex;
+use std::str;
 use Archive::*;
-use rand::{thread_rng, Rng};
 
 use diesel::pg::PgConnection;
 use diesel::result::Error;
 
-use models::{LogError, LogFatal, LogInfo, LogInvalid, LogRecord, LogWarning, NewLogError,
-             NewLogFatal, NewLogInfo, NewLogInvalid, NewLogWarning, Task};
 use concerns::CortexInsertable;
+use models::{
+  LogError, LogFatal, LogInfo, LogInvalid, LogRecord, LogWarning, NewLogError, NewLogFatal,
+  NewLogInfo, NewLogInvalid, NewLogWarning, Task,
+};
 
-const BUFFER_SIZE : usize = 10_240;
+const BUFFER_SIZE: usize = 10_240;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 /// An enumeration of the expected task statuses
@@ -400,13 +402,17 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
         // Indeed a message, so record it
         // We'll need to do some manual truncations, since the POSTGRESQL wrapper prefers
         //   panicking to auto-truncating (would not have been the Perl way, but Rust is Rust)
-        let mut truncated_severity = cap.at(1).unwrap_or("").to_string().to_lowercase();
+        let mut truncated_severity = cap
+          .get(1)
+          .map_or("", |m| m.as_str())
+          .to_string()
+          .to_lowercase();
         utf_truncate(&mut truncated_severity, 50);
-        let mut truncated_category = cap.at(2).unwrap_or("").to_string();
+        let mut truncated_category = cap.get(2).map_or("", |m| m.as_str()).to_string();
         utf_truncate(&mut truncated_category, 50);
-        let mut truncated_what = cap.at(3).unwrap_or("").to_string();
+        let mut truncated_what = cap.get(3).map_or("", |m| m.as_str()).to_string();
         utf_truncate(&mut truncated_what, 50);
-        let mut truncated_details = cap.at(5).unwrap_or("").to_string();
+        let mut truncated_details = cap.get(5).map_or("", |m| m.as_str()).to_string();
         utf_truncate(&mut truncated_details, 2000);
 
         if truncated_severity == "fatal" && truncated_category == "invalid" {
@@ -470,7 +476,8 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
           let log_string: String = match str::from_utf8(&raw_log_data) {
             Ok(some_utf_string) => some_utf_string.to_string(),
             Err(e) => {
-              "Fatal:cortex:unicode_parse_error ".to_string() + &e.to_string()
+              "Fatal:cortex:unicode_parse_error ".to_string()
+                + &e.to_string()
                 + "\nStatus:conversion:3"
             },
           };

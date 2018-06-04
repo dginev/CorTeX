@@ -22,7 +22,6 @@ extern crate diesel;
 extern crate diesel_infer_schema;
 extern crate dotenv;
 extern crate glob;
-extern crate libc;
 extern crate libxml;
 extern crate pericortex;
 extern crate rand;

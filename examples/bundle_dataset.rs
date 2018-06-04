@@ -11,14 +11,14 @@ extern crate libxml;
 extern crate regex;
 extern crate time;
 
+use cortex::backend::Backend;
+use cortex::helpers::TaskStatus;
+use cortex::models::{Corpus, Service};
+use libxml::parser::Parser;
+use regex::Regex;
 use std::env;
 use std::str;
-use regex::Regex;
 use Archive::*;
-use libxml::parser::Parser;
-use cortex::backend::Backend;
-use cortex::models::{Corpus, Service};
-use cortex::helpers::TaskStatus;
 
 /// Bundle a (corpus,service) pair's results into a self-contained redistributable dataset.
 fn main() {
@@ -114,8 +114,8 @@ fn main() {
           };
           if is_well_formed {
             if let Some(cap) = entry_name_regex.captures(&entry) {
-              let month_dir = cap.at(1).unwrap_or("monthXX");
-              let paper_dir = cap.at(2).unwrap_or("paperXX");
+              let month_dir = cap.get(1).map_or("monthXX", |m| m.as_str());
+              let paper_dir = cap.get(2).map_or("paperXX", |m| m.as_str());
               let dataset_path = status.to_key() + "/" + month_dir + "/" + paper_dir + ".html";
               println!("Writing: {:?} ", dataset_path);
               total_dataset_entries += 1;

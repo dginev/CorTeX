@@ -10,15 +10,15 @@ extern crate cortex;
 extern crate regex;
 extern crate time;
 
-use regex::Regex;
-use Archive::*;
-use std::env;
-use std::fs::File;
-use std::io::BufReader;
-use std::io::BufRead;
-use std::io::Read;
 use cortex::backend::Backend;
 use cortex::models::Corpus;
+use regex::Regex;
+use std::env;
+use std::fs::File;
+use std::io::BufRead;
+use std::io::BufReader;
+use std::io::Read;
+use Archive::*;
 
 /// Reads a lit of arXiv ids given on input, and packages the respective `CorTeX` entries into a
 /// new sandbox.
@@ -77,7 +77,7 @@ fn main() {
 
   for line in reader.lines() {
     let mut id = line.unwrap();
-    id = no_version.replace(&id, "");
+    id = no_version.replace(&id, "").to_string();
     // We have two styles of ids:
     //   - old, such as "cond-mat/0306509", which map to ""
     //   - new, such as "1511.03528", which map to "/rootpath/idmonth/id/id.zip"
@@ -90,16 +90,17 @@ fn main() {
           },
           Some(caps) => {
             // Obtain new-style entry path
-            let month = caps.at(1).unwrap();
-            let paper = caps.at(0).unwrap();
+            let month = caps.get(1).unwrap().as_str();
+            let paper = caps.get(0).unwrap().as_str();
             Some(month.to_owned() + "/" + paper + "/" + paper + ".zip")
           },
         }
       },
       Some(caps) => {
         // Obtain old-style entry path
-        let month = caps.at(2).unwrap();
-        let paper = caps.at(1).unwrap().to_owned() + month + caps.at(3).unwrap();
+        let month = caps.get(2).unwrap().as_str();
+        let paper =
+          caps.get(1).unwrap().as_str().to_owned() + month + caps.get(3).unwrap().as_str();
         Some(month.to_owned() + "/" + &paper + "/" + &paper + ".zip")
       },
     };

@@ -12,22 +12,25 @@ extern crate rustc_serialize;
 
 use std::collections::HashMap;
 // use std::thread;
-use regex::Regex;
-use dotenv::dotenv;
-use diesel::*;
 use diesel::pg::PgConnection;
+use diesel::*;
+use dotenv::dotenv;
+use regex::Regex;
 // use diesel::pg::upsert::*;
-use diesel::result::Error;
 use diesel::dsl::sql;
-use schema::{corpora, log_errors, log_fatals, log_infos, log_invalids, log_warnings, services,
-             tasks};
+use diesel::result::Error;
+use schema::{
+  corpora, log_errors, log_fatals, log_infos, log_invalids, log_warnings, services, tasks,
+};
 
 // use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
 use concerns::{CortexDeletable, CortexInsertable};
-use models;
-use models::{Corpus, LogError, LogFatal, LogInfo, LogInvalid, LogRecord, LogWarning, MarkRerun,
-             NewTask, Service, Task};
 use helpers::{random_mark, TaskReport, TaskStatus};
+use models;
+use models::{
+  Corpus, LogError, LogFatal, LogInfo, LogInvalid, LogRecord, LogWarning, MarkRerun, NewTask,
+  Service, Task,
+};
 use reports::{AggregateReport, TaskDetailReport};
 
 /// The production database postgresql address, set from the .env configuration file
@@ -445,7 +448,7 @@ impl Backend {
         if service.name == "import" {
           trimmed_entry
         } else {
-          entry_name_regex.replace(&trimmed_entry, "$1") + "/" + &service.name + ".zip"
+          entry_name_regex.replace(&trimmed_entry, "$1").to_string() + "/" + &service.name + ".zip"
         }
       })
       .collect()
@@ -453,8 +456,8 @@ impl Backend {
 
   /// Provides a progress report, grouped by severity, for a given `Corpus` and `Service` pair
   pub fn progress_report(&self, corpus: &Corpus, service: &Service) -> HashMap<String, f64> {
-    use schema::tasks::{corpus_id, service_id, status};
     use diesel::sql_types::BigInt;
+    use schema::tasks::{corpus_id, service_id, status};
 
     let mut stats_hash: HashMap<String, f64> = HashMap::new();
     for status_key in TaskStatus::keys() {
@@ -498,8 +501,8 @@ impl Backend {
     all_messages: bool,
   ) -> Vec<HashMap<String, String>>
   {
-    use schema::tasks::dsl::{corpus_id, service_id, status};
     use diesel::sql_types::{BigInt, Text};
+    use schema::tasks::dsl::{corpus_id, service_id, status};
     let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
 
     // The final report, populated based on the specific selectors
@@ -521,7 +524,7 @@ impl Backend {
         for &(ref entry_fixedwidth, entry_taskid) in &entry_rows {
           let mut entry_map = HashMap::new();
           let entry_trimmed = entry_fixedwidth.trim_right().to_string();
-          let entry_name = entry_name_regex.replace(&entry_trimmed, "$1");
+          let entry_name = entry_name_regex.replace(&entry_trimmed, "$1").to_string();
 
           entry_map.insert("entry".to_string(), entry_trimmed);
           entry_map.insert("entry_name".to_string(), entry_name);
@@ -627,7 +630,9 @@ impl Backend {
             let no_messages_query_string = "SELECT * FROM tasks t WHERE ".to_string()
               + "service_id=$1 and corpus_id=$2 and status=$3 and "
               + "NOT EXISTS (SELECT null FROM "
-              + &log_table + " where " + &log_table
+              + &log_table
+              + " where "
+              + &log_table
               + ".task_id=t.id) limit 100";
             let no_messages_query = sql_query(no_messages_query_string)
               .bind::<BigInt, i64>(i64::from(service.id))
@@ -640,7 +645,7 @@ impl Backend {
             for task in &no_message_tasks {
               let mut entry_map = HashMap::new();
               let entry = task.entry.trim_right().to_string();
-              let entry_name = entry_name_regex.replace(&entry, "$1");
+              let entry_name = entry_name_regex.replace(&entry, "$1").to_string();
 
               entry_map.insert("entry".to_string(), entry);
               entry_map.insert("entry_name".to_string(), entry_name);
@@ -688,12 +693,14 @@ impl Backend {
                 )
               },
               Some(what_name) => {
-                let details_report_query_string =
-                  "SELECT tasks.id, tasks.entry, ".to_string() + &log_table
-                    + ".details from tasks, " + &log_table + " WHERE tasks.id="
-                    + &log_table
-                    + ".task_id and service_id=$1 and corpus_id=$2 and status=$3 "
-                    + "and category=$4 and what=$5 limit 100";
+                let details_report_query_string = "SELECT tasks.id, tasks.entry, ".to_string()
+                  + &log_table
+                  + ".details from tasks, "
+                  + &log_table
+                  + " WHERE tasks.id="
+                  + &log_table
+                  + ".task_id and service_id=$1 and corpus_id=$2 and status=$3 "
+                  + "and category=$4 and what=$5 limit 100";
                 let details_report_query = sql_query(details_report_query_string)
                   .bind::<BigInt, i64>(i64::from(service.id))
                   .bind::<BigInt, i64>(i64::from(corpus.id))
@@ -707,7 +714,7 @@ impl Backend {
                 for details_row in details_report {
                   let mut entry_map = HashMap::new();
                   let entry = details_row.entry.trim_right().to_string();
-                  let entry_name = entry_name_regex.replace(&entry, "$1");
+                  let entry_name = entry_name_regex.replace(&entry, "$1").to_string();
                   // TODO: Also use url-escape
                   entry_map.insert("entry".to_string(), entry);
                   entry_map.insert("entry_name".to_string(), entry_name);
