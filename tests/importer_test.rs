@@ -6,12 +6,12 @@
 // except according to those terms.
 extern crate cortex;
 extern crate diesel;
-use cortex::importer::*;
 use cortex::backend;
+use cortex::importer::*;
 use cortex::models::{Corpus, NewCorpus};
+use cortex::schema::{corpora, tasks};
 use diesel::delete;
 use diesel::prelude::*;
-use cortex::schema::{corpora, tasks};
 use std::fs;
 
 fn assert_files(files: &[&str]) -> Result<(), std::io::Error> {
@@ -49,6 +49,7 @@ fn can_import_simple() {
     name: name.to_string(),
     path: "tests/data/".to_string(),
     complex: false,
+    description: String::new(),
   };
   let add_corpus_result = test_backend.add(&new_corpus);
   assert!(add_corpus_result.is_ok());
@@ -90,6 +91,7 @@ fn can_import_complex() {
     name: name.to_string(),
     path: "tests/data/".to_string(),
     complex: true,
+    description: String::new(),
   };
   let add_corpus_result = test_backend.add(&new_corpus);
   assert!(add_corpus_result.is_ok());

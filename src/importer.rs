@@ -12,15 +12,15 @@ extern crate glob;
 
 use glob::glob;
 // use regex::Regex;
-use Archive::*;
+use backend::Backend;
+use helpers::TaskStatus;
+use models::{Corpus, NewCorpus, NewTask};
+use std::env;
+use std::fs;
+use std::io::Error;
 use std::path::Path;
 use std::path::PathBuf;
-use std::fs;
-use std::env;
-use std::io::Error;
-use backend::Backend;
-use models::{Corpus, NewCorpus, NewTask};
-use helpers::TaskStatus;
+use Archive::*;
 
 const BUFFER_SIZE: usize = 10_240;
 
@@ -42,6 +42,7 @@ impl Default for Importer {
         path: ".".to_string(),
         name: name.to_string(),
         complex: false,
+        description: String::new(),
       })
       .expect("Failed to create new corpus.");
     let registered_corpus = Corpus::find_by_name(name, &default_backend.connection).unwrap();

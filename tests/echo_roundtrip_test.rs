@@ -38,6 +38,7 @@ fn mock_round_trip() {
     name: corpus_name.to_string(),
     path: "tests/data/".to_string(),
     complex: true,
+    description: String::new(),
   });
   assert!(add_corpus_result.is_ok());
   let corpus_result = Corpus::find_by_name(corpus_name, &test_backend.connection);

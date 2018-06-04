@@ -11,16 +11,16 @@ extern crate pericortex;
 extern crate rand;
 extern crate zmq;
 
-use zmq::{Context, Error, Message, SNDMORE};
-use std::path::Path;
 use std::fs::File;
+use std::path::Path;
 use std::thread;
 use std::time::Duration;
+use zmq::{Context, Error, Message, SNDMORE};
 
 use backend;
 use backend::DEFAULT_DB_ADDRESS;
-use models::{Corpus, NewCorpus, Task};
 use importer::Importer;
+use models::{Corpus, NewCorpus, Task};
 use pericortex::worker::Worker;
 
 /// `Worker` for initializing/importing a new corpus into `CorTeX`
@@ -65,6 +65,7 @@ impl Worker for InitWorker {
       path: path_str.clone(),
       name: path_str.clone(),
       complex: true,
+      description: String::new(),
     };
     // Add the new corpus.
     backend.add(&corpus).expect("Failed to create new corpus.");

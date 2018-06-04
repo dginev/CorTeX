@@ -7,25 +7,25 @@
 
 //! Backend models and traits for the `CorTeX` "Task store"
 
-use std::fmt;
-use std::collections::{BTreeMap, HashMap};
-use rand::{thread_rng, Rng};
 use helpers::TaskStatus;
+use rand::{thread_rng, Rng};
 use rustc_serialize::json::{Json, ToJson};
+use std::collections::{BTreeMap, HashMap};
+use std::fmt;
 
-use diesel::*;
-use diesel::result::Error;
-use diesel::{delete, insert_into, update};
+use concerns::{CortexDeletable, CortexInsertable};
 use diesel::pg::PgConnection;
-use schema::tasks;
-use schema::services;
+use diesel::result::Error;
+use diesel::*;
+use diesel::{delete, insert_into, update};
 use schema::corpora;
-use schema::log_infos;
-use schema::log_warnings;
 use schema::log_errors;
 use schema::log_fatals;
+use schema::log_infos;
 use schema::log_invalids;
-use concerns::{CortexDeletable, CortexInsertable};
+use schema::log_warnings;
+use schema::services;
+use schema::tasks;
 
 // Tasks
 
@@ -530,6 +530,8 @@ pub struct Corpus {
   /// are we using multiple files to represent a document entry?
   /// (if unsure, always use "true")
   pub complex: bool,
+  /// frontend-facing description of the corpus, maybe allow markdown here?
+  pub description: String,
 }
 impl ToJson for Corpus {
   fn to_json(&self) -> Json {
@@ -601,6 +603,8 @@ pub struct NewCorpus {
   /// are we using multiple files to represent a document entry?
   /// (if unsure, always use "true")
   pub complex: bool,
+  /// frontend-facing description of the corpus, maybe allow markdown here?
+  pub description: String,
 }
 impl Default for NewCorpus {
   fn default() -> Self {
@@ -608,6 +612,7 @@ impl Default for NewCorpus {
       name: "mock corpus".to_string(),
       path: ".".to_string(),
       complex: true,
+      description: String::new(),
     }
   }
 }
@@ -864,8 +869,8 @@ impl MarkRerun for LogFatal {
     connection: &PgConnection,
   ) -> Result<usize, Error>
   {
-    use schema::log_fatals::dsl::{category, log_fatals, task_id};
     use diesel::sql_types::BigInt;
+    use schema::log_fatals::dsl::{category, log_fatals, task_id};
     if rerun_category == "no_messages" {
       let no_messages_query_string = "SELECT * FROM tasks t WHERE ".to_string()
         + "service_id=$1 and corpus_id=$2 and status=$3 and "
