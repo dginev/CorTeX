@@ -43,7 +43,7 @@ before_script:
   - psql -c 'GRANT ALL PRIVILEGES ON DATABASE cortex TO cortex;' -U postgres
   - psql -c 'GRANT ALL PRIVILEGES ON DATABASE cortex_tester TO cortex_tester;' -U postgres
   - export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
-  - cargo install diesel_cli  --no-default-features --features postgres
+  - cargo install diesel_cli --vers 1.1.2  --no-default-features --features postgres
   - diesel migration run
   - DATABASE_URL="postgres://cortex_tester:cortex_tester@localhost/cortex_tester" diesel migration run
 # load travis-cargo
