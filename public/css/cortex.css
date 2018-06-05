@@ -177,3 +177,16 @@ h1 {
 .rerun-banner-segment:empty{
   visibility: hidden;
 }
+
+p.corpus-description, p.service-description {
+  padding-left: 4em;
+}
+div.bottom-content {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 1rem;
+  z-index: 1900;
+  background-color: #efefef;
+}

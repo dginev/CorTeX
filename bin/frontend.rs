@@ -177,6 +177,7 @@ fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
         .to_string() + &corpus_name,
     );
     global.insert("corpus_name".to_string(), corpus_name.to_string());
+    global.insert("corpus_description".to_string(), corpus.description.clone());
     let mut context = TemplateContext {
       global: global,
       ..TemplateContext::default()
@@ -561,7 +562,12 @@ fn serve_report(
           .to_string() + corpus_name,
       );
       global.insert("corpus_name".to_string(), corpus_name.to_string());
+      global.insert("corpus_description".to_string(), corpus.description.clone());
       global.insert("service_name".to_string(), service_name.to_string());
+      global.insert(
+        "service_description".to_string(),
+        service.description.clone(),
+      );
       global.insert("type".to_string(), "Conversion".to_string());
       global.insert("inputformat".to_string(), service.inputformat.clone());
       global.insert("outputformat".to_string(), service.outputformat.clone());

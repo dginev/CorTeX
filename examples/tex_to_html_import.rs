@@ -94,6 +94,7 @@ fn main() {
         outputformat: "html".to_string(),
         inputconverter: Some("import".to_string()),
         complex: true,
+        description: String::from("mock"),
       };
       assert!(backend.add(&new_service).is_ok());
       let service_registered_result = Service::find_by_name(service_name, &backend.connection);

@@ -439,13 +439,13 @@ impl CortexInsertable for NewLogInvalid {
 pub struct Service {
   /// auto-incremented postgres id
   pub id: i32,
-  /// a human-readable name for this service
+  /// a human-readable name
   pub name: String,
   /// a floating-point number to mark the current version (e.g. 0.01)
   pub version: f32,
-  /// the expected input format for this service (e.g. tex)
+  /// the expected input format (e.g. tex)
   pub inputformat: String,
-  /// the produced output format by this service (e.g. html)
+  /// the produced output format (e.g. html)
   pub outputformat: String,
   // pub xpath : String,
   // pub resource : String,
@@ -454,18 +454,20 @@ pub struct Service {
   /// is this service requiring more than the main textual content of a document?
   /// mark "true" if unsure
   pub complex: bool,
+  /// a human-readable description
+  pub description: String,
 }
 /// Insertable struct for `Service`
 #[derive(Insertable, Clone, Debug)]
 #[table_name = "services"]
 pub struct NewService {
-  /// a human-readable name for this service
+  /// a human-readable name
   pub name: String,
   /// a floating-point number to mark the current version (e.g. 0.01)
   pub version: f32,
-  /// the expected input format for this service (e.g. tex)
+  /// the expected input format (e.g. tex)
   pub inputformat: String,
-  /// the produced output format by this service (e.g. html)
+  /// the produced output format (e.g. html)
   pub outputformat: String,
   // pub xpath : String,
   // pub resource : String,
@@ -474,6 +476,8 @@ pub struct NewService {
   /// is this service requiring more than the main textual content of a document?
   /// mark "true" if unsure
   pub complex: bool,
+  /// a human-readable description
+  pub description: String,
 }
 impl CortexInsertable for NewService {
   fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
@@ -497,6 +501,7 @@ impl Service {
     let mut hm = HashMap::new();
     hm.insert("id".to_string(), self.id.to_string());
     hm.insert("name".to_string(), self.name.clone());
+    hm.insert("description".to_string(), self.description.clone());
     hm.insert("version".to_string(), self.version.to_string());
     hm.insert("inputformat".to_string(), self.inputformat.clone());
     hm.insert("outputformat".to_string(), self.outputformat.clone());
@@ -529,7 +534,7 @@ pub struct Corpus {
   /// are we using multiple files to represent a document entry?
   /// (if unsure, always use "true")
   pub complex: bool,
-  /// frontend-facing description of the corpus, maybe allow markdown here?
+  /// a human-readable description of the corpus, maybe allow markdown here?
   pub description: String,
 }
 
@@ -548,6 +553,8 @@ impl Corpus {
   pub fn to_hash(&self) -> HashMap<String, String> {
     let mut hm = HashMap::new();
     hm.insert("name".to_string(), self.name.clone());
+    hm.insert("path".to_string(), self.path.clone());
+    hm.insert("description".to_string(), self.description.clone());
     hm
   }
 
@@ -585,11 +592,11 @@ impl Corpus {
 #[derive(Insertable)]
 #[table_name = "corpora"]
 pub struct NewCorpus {
-  /// a human-readable name for this corpus
-  pub name: String,
   /// file system path to corpus root
   /// (a corpus is held in a single top-level directory)
   pub path: String,
+  /// a human-readable name for this corpus
+  pub name: String,
   /// are we using multiple files to represent a document entry?
   /// (if unsure, always use "true")
   pub complex: bool,

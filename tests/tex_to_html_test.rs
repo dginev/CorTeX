@@ -79,6 +79,7 @@ fn mock_tex_to_html() {
     outputformat: "html".to_string(),
     inputconverter: Some("import".to_string()),
     complex: true,
+    description: String::from("mock"),
   });
   assert!(add_service_result.is_ok());
   let service_result = Service::find_by_name(service_name, &test_backend.connection);

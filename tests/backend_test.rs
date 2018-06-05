@@ -27,6 +27,7 @@ fn task_table_crud() {
     inputconverter: None,
     inputformat: String::from("tex"),
     outputformat: String::from("tex"),
+    description: String::from("mock"),
     version: 0.1,
   };
   let mock_task = NewTask {
@@ -68,6 +69,7 @@ fn task_lifecycle_test() {
     name: String::from("mark_tasks"),
     complex: false,
     inputconverter: None,
+    description: String::from("mock"),
     inputformat: String::from("tex"),
     outputformat: String::from("tex"),
     version: 0.1,
@@ -128,6 +130,7 @@ fn batch_ops_test() {
     name: String::from("batch_ops_test"),
     complex: false,
     inputconverter: None,
+    description: String::from("mock"),
     inputformat: String::from("tex"),
     outputformat: String::from("tex"),
     version: 0.1,

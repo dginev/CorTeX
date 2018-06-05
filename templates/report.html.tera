@@ -74,3 +74,15 @@
   </div>
 </div>
 {% endblock content %}
+
+<br> {% block footer_extra %}
+<div>
+  {% if global.corpus_description %}
+  <p class="corpus-description">
+    <span class="bold">{{global.corpus_name}}:</span> {{global.corpus_description}} </p>
+  {% endif %} {% if global.service_description %}
+  <p class="service-description">
+    <span class="bold">{{global.service_name}}:</span> {{global.service_description}} </p>
+  {% endif %}
+</div>
+{% endblock footer_extra %}
