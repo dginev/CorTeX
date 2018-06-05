@@ -26,8 +26,10 @@ extern crate libxml;
 extern crate pericortex;
 extern crate rand;
 extern crate regex;
-extern crate rustc_serialize;
 extern crate sys_info;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde_json;
 extern crate tempfile;
 extern crate time;
 extern crate zmq;

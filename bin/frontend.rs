@@ -17,7 +17,6 @@ extern crate rocket_contrib;
 extern crate tokio_core;
 extern crate url;
 
-extern crate rustc_serialize; // TODO: Migrate FULLY to serde
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
@@ -51,11 +50,10 @@ use std::time::Duration;
 use cortex::backend::Backend;
 use cortex::models::{Corpus, Service, Task};
 use cortex::sysinfo;
-use rustc_serialize::json;
 
 static UNKNOWN: &'static str = "_unknown_";
 
-#[derive(RustcDecodable, RustcEncodable, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 struct CortexConfig {
   captcha_secret: String,
   rerun_tokens: HashMap<String, String>,
@@ -100,7 +98,7 @@ fn aux_load_config() -> CortexConfig {
     ),
   };
 
-  match json::decode(&config_buffer) {
+  match serde_json::from_str(&config_buffer) {
     Ok(decoded) => decoded,
     Err(e) => panic!(
       "You need a well-formed JSON config.json file to run the frontend. Error: {}",
@@ -870,7 +868,7 @@ fn aux_decorate_uri_encodings(context: &mut TemplateContext) {
   }
 }
 
-#[derive(RustcDecodable)]
+#[derive(Deserialize)]
 struct IsSuccess {
   success: bool,
 }
@@ -917,7 +915,7 @@ fn aux_check_captcha(g_recaptcha_response: &str, captcha_secret: &str) -> bool {
       return false;
     },
   };
-  let json_decoded: Result<IsSuccess, _> = json::decode(&posted);
+  let json_decoded: Result<IsSuccess, _> = serde_json::from_str(&posted);
   if let Ok(response_json) = json_decoded {
     if response_json.success {
       verified = true;
@@ -973,7 +971,7 @@ fn aux_task_report(
   match cache_val {
     Ok(cached_report_json) => {
       let cached_report: Vec<HashMap<String, String>> =
-        json::decode(&cached_report_json).unwrap_or_default();
+        serde_json::from_str(&cached_report_json).unwrap_or_default();
       if cached_report.is_empty() {
         let backend = Backend::default();
         let report: Vec<HashMap<String, String>> = backend.task_report(
@@ -984,7 +982,7 @@ fn aux_task_report(
           what.clone(),
           all_messages,
         );
-        let report_json: String = json::encode(&report).unwrap();
+        let report_json: String = serde_json::to_string(&report).unwrap();
         // println!("SET {:?}", cache_key);
         if what.is_none() {
           // don't cache the task list pages
@@ -1014,7 +1012,7 @@ fn aux_task_report(
       let backend = Backend::default();
       let what_is_none = what.is_none();
       let report = backend.task_report(corpus, service, severity, category, what, all_messages);
-      let report_json: String = json::encode(&report).unwrap();
+      let report_json: String = serde_json::to_string(&report).unwrap();
       // println!("SET2 {:?}", cache_key);
       if what_is_none {
         // don't cache the task lists pages

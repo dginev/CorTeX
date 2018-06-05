@@ -5,20 +5,21 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 extern crate gnuplot;
-extern crate rustc_serialize;
+extern crate serde;
+extern crate serde_json;
 
+use serde::ser::Serialize;
 use std::collections::HashMap;
-use std::hash::Hash;
-use rustc_serialize::*;
 use std::env;
-use std::path::Path;
 use std::fs;
 use std::fs::File;
+use std::hash::Hash;
 use std::io::Write;
+use std::path::Path;
 // use std::io::Result;
+use gnuplot::*;
 use std::fs::DirEntry;
 use std::u64;
-use gnuplot::*;
 
 // arXiv months in order
 // TODO: Only current as of 1505, you'll have to extend manually next time this is run
@@ -96,13 +97,13 @@ fn get_path_subfiles(path: &Path) -> Vec<DirEntry> {
     .collect::<Vec<_>>()
 }
 
-fn write_stats<K: Hash + Eq + Encodable, V: Encodable>(
+fn write_stats<K: Hash + Eq + Serialize, V: Serialize>(
   name: &'static str,
   counts: &HashMap<K, V>,
 ) -> std::io::Result<()>
 {
   let mut f = try!(File::create(name));
-  try!(f.write_all(json::encode(&counts).unwrap().as_bytes()));
+  try!(f.write_all(serde_json::to_string(&counts).unwrap().as_bytes()));
   Ok(())
 }
 

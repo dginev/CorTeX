@@ -9,11 +9,10 @@
 ///! Example run: `$ ./target/release/examples/register_service tex_to_html /data/arxmliv/`
 extern crate cortex;
 extern crate pericortex;
-extern crate rustc_serialize;
 
-use std::env;
 use cortex::backend::Backend;
 use cortex::models::Service;
+use std::env;
 
 fn main() {
   let mut input_args = env::args();

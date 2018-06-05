@@ -9,7 +9,6 @@
 ///! Example run: `$ ./target/release/examples/tex_to_html_import /data/arxmliv/ arXMLiv`
 extern crate cortex;
 extern crate pericortex;
-extern crate rustc_serialize;
 
 // use std::collections::HashMap;
 // use std::path::Path;

@@ -8,7 +8,6 @@
 //! ORM-like capabilities for high- and mid-level operations on the Task store
 extern crate dotenv;
 extern crate rand;
-extern crate rustc_serialize;
 
 use std::collections::HashMap;
 // use std::thread;

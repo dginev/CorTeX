@@ -9,8 +9,7 @@
 
 use helpers::TaskStatus;
 use rand::{thread_rng, Rng};
-use rustc_serialize::json::{Json, ToJson};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::fmt;
 
 use concerns::{CortexDeletable, CortexInsertable};
@@ -515,7 +514,7 @@ impl Service {
 
 // Corpora
 
-#[derive(Identifiable, Queryable, AsChangeset, Clone, Debug)]
+#[derive(Identifiable, Queryable, AsChangeset, Clone, Debug, Serialize)]
 #[table_name = "corpora"]
 /// A minimal description of a document collection. Defined by a name, path and simple/complex file
 /// system setup.
@@ -533,16 +532,7 @@ pub struct Corpus {
   /// frontend-facing description of the corpus, maybe allow markdown here?
   pub description: String,
 }
-impl ToJson for Corpus {
-  fn to_json(&self) -> Json {
-    let mut map = BTreeMap::new();
-    map.insert("id".to_string(), self.id.to_json());
-    map.insert("path".to_string(), self.path.to_json());
-    map.insert("name".to_string(), self.name.to_json());
-    map.insert("complex".to_string(), self.complex.to_json());
-    Json::Object(map)
-  }
-}
+
 impl Corpus {
   /// ORM-like until diesel.rs introduces finders for more fields
   pub fn find_by_name(name_query: &str, connection: &PgConnection) -> Result<Self, Error> {
