@@ -301,9 +301,9 @@ pub trait LogRecord {
   fn severity(&self) -> &str;
   /// Implements the fmt::Debug fmt
   fn debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(
+    writeln!(
       f,
-      "{}(category: {},\n\twhat: {},\n\tdetails: {})\n",
+      "{}(category: {},\n\twhat: {},\n\tdetails: {})",
       self.severity(),
       self.category(),
       self.what(),

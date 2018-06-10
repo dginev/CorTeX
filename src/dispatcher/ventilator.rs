@@ -80,7 +80,7 @@ impl Ventilator {
               .unwrap()
               .into_iter()
               .map(|task| TaskProgress {
-                task: task,
+                task,
                 created_at: now,
                 retries: 0,
               }),

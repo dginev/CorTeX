@@ -37,8 +37,8 @@ pub fn push_done_queue(reports_arc: &Arc<Mutex<Vec<TaskReport>>>, report: TaskRe
 }
 
 /// Check for, remove and return any expired tasks from the progress queue
-pub fn timeout_progress_tasks(
-  progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>,
+pub fn timeout_progress_tasks<S: ::std::hash::BuildHasher>(
+  progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress, S>>>,
 ) -> Vec<TaskProgress> {
   let mut progress_queue = progress_queue_arc.lock().unwrap();
   let now = time::get_time().sec;
@@ -58,8 +58,8 @@ pub fn timeout_progress_tasks(
 }
 
 /// Pops the next task from the progress queue
-pub fn pop_progress_task(
-  progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>,
+pub fn pop_progress_task<S: ::std::hash::BuildHasher>(
+  progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress, S>>>,
   taskid: i64,
 ) -> Option<TaskProgress>
 {
@@ -68,8 +68,8 @@ pub fn pop_progress_task(
 }
 
 /// Pushes a new task on the progress queue
-pub fn push_progress_task(
-  progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>,
+pub fn push_progress_task<S: ::std::hash::BuildHasher>(
+  progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress, S>>>,
   progress_task: TaskProgress,
 )
 {
@@ -93,9 +93,9 @@ pub fn drain_shared_vec<T: Clone>(vec_arc: &Arc<Mutex<Vec<T>>>) -> Vec<T> {
 }
 
 /// Memoized getter for a `Service` record from the backend
-pub fn get_sync_service(
+pub fn get_sync_service<S: ::std::hash::BuildHasher>(
   service_name: &str,
-  services: &Arc<Mutex<HashMap<String, Option<Service>>>>,
+  services: &Arc<Mutex<HashMap<String, Option<Service>, S>>>,
   backend: &Backend,
 ) -> Option<Service>
 {
@@ -112,9 +112,9 @@ pub fn get_sync_service(
 }
 
 /// Getter for a `Service` stored inside an `Arc<Mutex<HashMap>`, with no DB access
-pub fn get_service(
+pub fn get_service<S: ::std::hash::BuildHasher>(
   service_name: &str,
-  services: &Arc<Mutex<HashMap<String, Option<Service>>>>,
+  services: &Arc<Mutex<HashMap<String, Option<Service>, S>>>,
 ) -> Option<Service>
 {
   let services = services.lock().unwrap();

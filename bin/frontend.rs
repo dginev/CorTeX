@@ -154,7 +154,7 @@ fn admin() -> Template {
   };
 
   let context = TemplateContext {
-    global: global,
+    global,
     ..TemplateContext::default()
   };
   Template::render("admin", context)
@@ -356,30 +356,24 @@ fn entry_fetch(
 
   let captcha_verified = if quota > 0 {
     if quota == 1 {
-      match redis_opt {
-        Some(ref redis_connection) => {
-          // Remove if last
-          redis_connection.del(g_recaptcha_response).unwrap_or(());
-          // We have quota available, decrement it
-          redis_connection
-            .set(g_recaptcha_response, quota - 1)
-            .unwrap_or(());
-        },
-        None => {}, // compatibility mode: redis has ran away?
-      };
+      if let Some(ref redis_connection) = redis_opt {
+        // Remove if last
+        redis_connection.del(g_recaptcha_response).unwrap_or(());
+        // We have quota available, decrement it
+        redis_connection
+          .set(g_recaptcha_response, quota - 1)
+          .unwrap_or(());
+      }
     }
     // And allow operation
     true
   } else {
     let check_val = aux_check_captcha(g_recaptcha_response, &cortex_config.captcha_secret);
     if check_val {
-      match &redis_opt {
-        &Some(ref redis_connection) => {
-          // Add a reuse quota if things check out, 19 more downloads
-          redis_connection.set(g_recaptcha_response, 19).unwrap_or(());
-        },
-        &None => {},
-      };
+      if let Some(ref redis_connection) = redis_opt {
+        // Add a reuse quota if things check out, 19 more downloads
+        redis_connection.set(g_recaptcha_response, 19).unwrap_or(());
+      }
     }
     check_val
   };

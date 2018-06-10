@@ -96,7 +96,7 @@ impl TaskManager {
     });
 
     // Now prepare the results sink
-    let result_port = self.result_port.clone();
+    let result_port = self.result_port;
     let result_queue_size = self.queue_size;
     let result_message_size = self.message_size;
     let result_backend_address = self.backend_address.clone();
