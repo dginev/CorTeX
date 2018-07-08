@@ -60,7 +60,7 @@ impl Worker for InitWorker {
 
   fn convert(&self, path_opt: &Path) -> Option<File> {
     let path = path_opt.to_str().unwrap().to_string();
-    let name = path.rsplitn(1, "/").next().unwrap_or(&path).to_lowercase(); // TODO: this is Unix path only
+    let name = path.rsplitn(1, '/').next().unwrap_or(&path).to_lowercase(); // TODO: this is Unix path only
     let backend = backend::from_address(&self.backend_address);
     let corpus = NewCorpus {
       path: path.clone(),

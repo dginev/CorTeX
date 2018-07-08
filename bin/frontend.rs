@@ -179,7 +179,7 @@ fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
     global.insert("corpus_name".to_string(), corpus_name.to_string());
     global.insert("corpus_description".to_string(), corpus.description.clone());
     let mut context = TemplateContext {
-      global: global,
+      global,
       ..TemplateContext::default()
     };
 
@@ -416,7 +416,10 @@ fn rerun_corpus(
   serve_rerun(&corpus_name, &service_name, None, None, None, &data)
 }
 
-#[post("/rerun/<corpus_name>/<service_name>/<severity>", data = "<data>")]
+#[post(
+  "/rerun/<corpus_name>/<service_name>/<severity>",
+  data = "<data>"
+)]
 fn rerun_severity(
   corpus_name: String,
   service_name: String,
@@ -434,7 +437,10 @@ fn rerun_severity(
   )
 }
 
-#[post("/rerun/<corpus_name>/<service_name>/<severity>/<category>", data = "<data>")]
+#[post(
+  "/rerun/<corpus_name>/<service_name>/<severity>/<category>",
+  data = "<data>"
+)]
 fn rerun_category(
   corpus_name: String,
   service_name: String,
@@ -453,7 +459,10 @@ fn rerun_category(
   )
 }
 
-#[post("/rerun/<corpus_name>/<service_name>/<severity>/<category>/<what>", data = "<data>")]
+#[post(
+  "/rerun/<corpus_name>/<service_name>/<severity>/<category>/<what>",
+  data = "<data>"
+)]
 fn rerun_what(
   corpus_name: String,
   service_name: String,

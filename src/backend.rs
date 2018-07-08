@@ -53,7 +53,7 @@ impl Default for Backend {
 
 /// Constructs a new Task store representation from a Postgres DB address
 pub fn connection_at(address: &str) -> PgConnection {
-  PgConnection::establish(address).expect(&format!("Error connecting to {}", address))
+  PgConnection::establish(address).unwrap_or_else(|_| panic!("Error connecting to {}", address))
 }
 
 /// Constructs the default Backend struct for testing
