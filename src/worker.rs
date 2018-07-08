@@ -58,19 +58,20 @@ impl Worker for InitWorker {
   fn sink(&self) -> String { self.sink.clone() }
   fn message_size(&self) -> usize { self.message_size }
 
-  fn convert(&self, path: &Path) -> Option<File> {
-    let path_str = path.to_str().unwrap().to_string();
+  fn convert(&self, path_opt: &Path) -> Option<File> {
+    let path = path_opt.to_str().unwrap().to_string();
+    let name = path.rsplitn(1, "/").next().unwrap_or(&path).to_lowercase(); // TODO: this is Unix path only
     let backend = backend::from_address(&self.backend_address);
     let corpus = NewCorpus {
-      path: path_str.clone(),
-      name: path_str.clone(),
+      path: path.clone(),
+      name: name.clone(),
       complex: true,
       description: String::new(),
     };
     // Add the new corpus.
     backend.add(&corpus).expect("Failed to create new corpus.");
     let registered_corpus =
-      Corpus::find_by_name(&path_str, &backend.connection).expect("Failed to create new corpus.");
+      Corpus::find_by_name(&path, &backend.connection).expect("Failed to create new corpus.");
 
     // Create an importer for the corpus, and then process all entries to populate CorTeX tasks
     let importer = Importer {
