@@ -45,7 +45,7 @@ impl Sink {
   {
     // Ok, let's bind to a port and start broadcasting
     let context = zmq::Context::new();
-    let sink = context.socket(zmq::PULL).unwrap();
+    let sink = context.socket(zmq::PULL)?;
     let port_str = self.port.to_string();
     let address = "tcp://*:".to_string() + &port_str;
     assert!(sink.bind(&address).is_ok());
@@ -53,17 +53,17 @@ impl Sink {
     let mut sink_job_count: usize = 0;
 
     loop {
-      let mut recv_msg = zmq::Message::new().unwrap();
-      let mut taskid_msg = zmq::Message::new().unwrap();
-      let mut service_msg = zmq::Message::new().unwrap();
+      let mut recv_msg = zmq::Message::new()?;
+      let mut taskid_msg = zmq::Message::new()?;
+      let mut service_msg = zmq::Message::new()?;
 
-      sink.recv(&mut service_msg, 0).unwrap();
+      sink.recv(&mut service_msg, 0)?;
       let service_name = match service_msg.as_str() {
         Some(some_name) => some_name,
         None => "_unknown_",
       };
 
-      sink.recv(&mut taskid_msg, 0).unwrap();
+      sink.recv(&mut taskid_msg, 0)?;
       let taskid_str = match taskid_msg.as_str() {
         Some(some_id) => some_id,
         None => "-1",
@@ -164,8 +164,8 @@ impl Sink {
             } else {
               // Otherwise just discard the rest of the message
               loop {
-                sink.recv(&mut recv_msg, 0).unwrap();
-                if !sink.get_rcvmore().unwrap() {
+                sink.recv(&mut recv_msg, 0)?;
+                if !sink.get_rcvmore()? {
                   break;
                 }
               }
@@ -179,12 +179,14 @@ impl Sink {
         "Sink job {}, message size: {}, took {}ms.",
         sink_job_count, total_incoming, request_duration
       );
-      if job_limit.is_some() && (sink_job_count >= job_limit.unwrap()) {
-        println!(
-          "Manager job limit of {:?} reached, terminating Sink thread...",
-          job_limit.unwrap()
-        );
-        break;
+      if let Some(limit_number) = job_limit {
+        if sink_job_count >= limit_number {
+          println!(
+            "Manager job limit of {:?} reached, terminating Sink thread...",
+            limit_number
+          );
+          break;
+        }
       }
     }
     Ok(())

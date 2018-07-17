@@ -24,5 +24,7 @@ fn main() {
     backend_address: DEFAULT_DB_ADDRESS.to_string(),
   };
   let job_limit = None;
-  manager.start(job_limit).unwrap();
+  manager
+    .start(job_limit)
+    .unwrap_or_else(|_| panic!("Failed to start TaskManager"));
 }

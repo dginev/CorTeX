@@ -82,7 +82,7 @@ impl TaskManager {
         vent_done_queue_arc,
         job_limit,
       )
-        .unwrap();
+        .unwrap_or_else(|e| panic!("Failed in ventilator thread: {:?}", e));
     });
 
     // Next prepare the finalize thread which will persist finished jobs to the DB
@@ -92,7 +92,8 @@ impl TaskManager {
       Finalize {
         backend_address: finalize_backend_address.clone(),
         job_limit,
-      }.start(finalize_done_queue_arc);
+      }.start(finalize_done_queue_arc)
+        .unwrap_or_else(|e| panic!("Failed in finalize thread: {:?}", e));
     });
 
     // Now prepare the results sink
@@ -117,7 +118,7 @@ impl TaskManager {
         sink_done_queue_arc,
         job_limit,
       )
-        .unwrap();
+        .unwrap_or_else(|e| panic!("Failed in sink thread: {:?}", e));
     });
 
     if vent_thread.join().is_err() {

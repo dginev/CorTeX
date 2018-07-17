@@ -12,7 +12,8 @@ use dispatcher::server;
 use helpers;
 use helpers::{NewTaskMessage, TaskProgress, TaskReport, TaskStatus};
 use models::Service;
-use zmq::{Error, SNDMORE};
+use std::error::Error;
+use zmq::SNDMORE;
 
 /// Specifies the binding and operation parameters for a ZMQ ventilator component
 pub struct Ventilator {
@@ -39,52 +40,51 @@ impl Ventilator {
     progress_queue_arc: Arc<Mutex<HashMap<i64, TaskProgress>>>,
     done_queue_arc: Arc<Mutex<Vec<TaskReport>>>,
     job_limit: Option<usize>,
-  ) -> Result<(), Error>
+  ) -> Result<(), Box<Error>>
   {
     // We have a Ventilator-exclusive "queues" stack for tasks to be dispatched
     let mut queues: HashMap<String, Vec<TaskProgress>> = HashMap::new();
     // Assuming this is the only And tidy up the postgres tasks:
     let backend = backend::from_address(&self.backend_address);
-    backend.clear_limbo_tasks().unwrap();
+    backend.clear_limbo_tasks()?;
     // Ok, let's bind to a port and start broadcasting
     let context = zmq::Context::new();
-    let ventilator = context.socket(zmq::ROUTER).unwrap();
+    let ventilator = context.socket(zmq::ROUTER)?;
     let port_str = self.port.to_string();
     let address = "tcp://*:".to_string() + &port_str;
     assert!(ventilator.bind(&address).is_ok());
     let mut source_job_count: usize = 0;
 
     loop {
-      let mut msg = zmq::Message::new().unwrap();
-      let mut identity = zmq::Message::new().unwrap();
-      ventilator.recv(&mut identity, 0).unwrap();
-      ventilator.recv(&mut msg, 0).unwrap();
-      let service_name = msg.as_str().unwrap().to_string();
+      let mut msg = zmq::Message::new()?;
+      let mut identity = zmq::Message::new()?;
+      ventilator.recv(&mut identity, 0)?;
+      ventilator.recv(&mut msg, 0)?;
+      let service_name = msg.as_str().unwrap_or_default().to_string();
       // println!("Task requested for service: {}", service_name.clone());
       let request_time = time::get_time();
       source_job_count += 1;
 
-      let mut dispatched_task: Option<TaskProgress> = None;
+      let mut dispatched_task_opt: Option<TaskProgress> = None;
       // Requests for unknown service names will be silently ignored.
       if let Some(service) = server::get_sync_service(&service_name, &services_arc, &backend) {
         if !queues.contains_key(&service_name) {
           queues.insert(service_name.clone(), Vec::new());
         }
-        let mut task_queue: &mut Vec<TaskProgress> = queues.get_mut(&service_name).unwrap();
+        let mut task_queue: &mut Vec<TaskProgress> = queues
+          .get_mut(&service_name)
+          .unwrap_or_else(|| panic!("Could not obtain queue mutex lock in main ventilator loop"));
         if task_queue.is_empty() {
           // Refetch a new batch of tasks
           let now = time::get_time().sec;
-          task_queue.extend(
-            backend
-              .fetch_tasks(&service, self.queue_size)
-              .unwrap()
-              .into_iter()
-              .map(|task| TaskProgress {
-                task,
-                created_at: now,
-                retries: 0,
-              }),
-          );
+          let fetched_tasks = backend
+            .fetch_tasks(&service, self.queue_size)
+            .unwrap_or(Vec::new());
+          task_queue.extend(fetched_tasks.into_iter().map(|task| TaskProgress {
+            task,
+            created_at: now,
+            retries: 0,
+          }));
 
           // This is a good time to also take care that none of the old tasks are dead in the
           // progress queue since the re-fetch happens infrequently, and directly
@@ -118,38 +118,38 @@ impl Ventilator {
           }
         }
         if let Some(current_task_progress) = task_queue.pop() {
-          dispatched_task = Some(current_task_progress.clone());
+          dispatched_task_opt = Some(current_task_progress.clone());
 
           let current_task = current_task_progress.task;
           let taskid = current_task.id;
           let serviceid = current_task.service_id;
 
-          ventilator.send_msg(identity, SNDMORE).unwrap();
-          ventilator.send_str(&taskid.to_string(), SNDMORE).unwrap();
+          ventilator.send_msg(identity, SNDMORE)?;
+          ventilator.send_str(&taskid.to_string(), SNDMORE)?;
           if serviceid == 1 {
             // No payload needed for init
-            ventilator.send(&[], 0).unwrap();
+            ventilator.send(&[], 0)?;
           } else {
             // Regular services fetch the task payload and transfer it to the worker
             let file_opt = helpers::prepare_input_stream(&current_task);
             if file_opt.is_ok() {
-              let mut file = file_opt.unwrap();
+              let mut file = file_opt?;
               let mut total_outgoing: usize = 0;
               loop {
                 // Stream input data via zmq
                 let mut data = vec![0; self.message_size];
-                let size = file.read(&mut data).unwrap();
+                let size = file.read(&mut data)?;
                 total_outgoing += size;
                 data.truncate(size);
 
                 if size < self.message_size {
                   // If exhausted, send the last frame
-                  ventilator.send(&data, 0).unwrap();
+                  ventilator.send(&data, 0)?;
                   // And terminate
                   break;
                 } else {
                   // If more to go, send the frame and indicate there's more to come
-                  ventilator.send(&data, SNDMORE).unwrap();
+                  ventilator.send(&data, SNDMORE)?;
                 }
               }
               let responded_time = time::get_time();
@@ -159,22 +159,23 @@ impl Ventilator {
                 source_job_count, total_outgoing, request_duration
               );
             } else {
-              // TODO: smart handling of failures
-              ventilator.send(&[], 0).unwrap();
+              ventilator.send(&[], 0)?;
             }
           }
         }
       }
       // Record that a task has been dispatched in the progress queue
-      if dispatched_task.is_some() {
-        server::push_progress_task(&progress_queue_arc, dispatched_task.unwrap());
+      if let Some(dispatched_task) = dispatched_task_opt {
+        server::push_progress_task(&progress_queue_arc, dispatched_task);
       }
-      if job_limit.is_some() && (source_job_count >= job_limit.unwrap()) {
-        println!(
-          "Manager job limit of {:?} reached, terminating Ventilator thread...",
-          job_limit.unwrap()
-        );
-        break;
+      if let Some(limit_number) = job_limit {
+        if source_job_count >= limit_number {
+          println!(
+            "Manager job limit of {:?} reached, terminating Ventilator thread...",
+            limit_number
+          );
+          break;
+        }
       }
     }
     Ok(())

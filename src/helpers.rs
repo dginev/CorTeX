@@ -384,7 +384,9 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
       // If the line starts with tab, we are indeed reading in details
       if line.starts_with('\t') {
         // Append details line to the last message
-        let mut last_message = messages.pop().unwrap();
+        let mut last_message = messages.pop().unwrap_or_else(|| {
+          panic!("parse_log tried to parse details without having a log message, invalid log file?")
+        });
         let mut truncated_details = last_message.details().to_string() + "\n" + line;
         utf_truncate(&mut truncated_details, 2000);
         last_message.set_details(truncated_details);
@@ -453,10 +455,10 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
     // Let's open the archive file and find the cortex.log file:
     let log_name = "cortex.log";
     match Reader::new()
-      .unwrap()
+      .unwrap_or_else(|_| panic!("Could not create libarchive Reader struct"))
       .support_filter_all()
       .support_format_all()
-      .open_filename(result.to_str().unwrap(), BUFFER_SIZE)
+      .open_filename(result.to_str().unwrap_or_default(), BUFFER_SIZE)
     {
       Err(e) => {
         println!("Error TODO: Couldn't open archive_reader: {:?}", e);
