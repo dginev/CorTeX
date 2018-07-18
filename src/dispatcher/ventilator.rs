@@ -75,6 +75,10 @@ impl Ventilator {
           .get_mut(&service_name)
           .unwrap_or_else(|| panic!("Could not obtain queue mutex lock in main ventilator loop"));
         if task_queue.is_empty() {
+          println!(
+            "No tasks in task queue, fetching up to {:?} more from backend...",
+            self.queue_size
+          );
           // Refetch a new batch of tasks
           let now = time::get_time().sec;
           let fetched_tasks = backend
@@ -117,6 +121,7 @@ impl Ventilator {
             }
           }
         }
+        ventilator.send_msg(identity, SNDMORE)?;
         if let Some(current_task_progress) = task_queue.pop() {
           dispatched_task_opt = Some(current_task_progress.clone());
 
@@ -124,7 +129,6 @@ impl Ventilator {
           let taskid = current_task.id;
           let serviceid = current_task.service_id;
 
-          ventilator.send_msg(identity, SNDMORE)?;
           ventilator.send_str(&taskid.to_string(), SNDMORE)?;
           if serviceid == 1 {
             // No payload needed for init
@@ -162,6 +166,10 @@ impl Ventilator {
               ventilator.send(&[], 0)?;
             }
           }
+        } else {
+          println!("No jobs in queue, sent mock task reply.");
+          ventilator.send_str("0", SNDMORE)?;
+          ventilator.send(&[], 0)?;
         }
       }
       // Record that a task has been dispatched in the progress queue
