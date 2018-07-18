@@ -76,8 +76,8 @@ impl Ventilator {
           .unwrap_or_else(|| panic!("Could not obtain queue mutex lock in main ventilator loop"));
         if task_queue.is_empty() {
           println!(
-            "No tasks in task queue, fetching up to {:?} more from backend...",
-            self.queue_size
+            "No tasks in task queue for service {:?}, fetching up to {:?} more from backend...",
+            service_name, self.queue_size
           );
           // Refetch a new batch of tasks
           let now = time::get_time().sec;
