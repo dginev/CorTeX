@@ -2,19 +2,22 @@ extern crate tempfile;
 extern crate zmq;
 
 use std::collections::HashMap;
+use std::error::Error;
 use std::fs::File;
+use std::io;
+use std::io::ErrorKind;
 use std::io::Write;
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
+
 use time;
 
 use dispatcher::server;
 use helpers;
 use helpers::{TaskProgress, TaskReport, TaskStatus};
 use models::Service;
-use zmq::Error;
 
 /// Specifies the binding and operation parameters for a ZMQ sink component
 pub struct Sink {
@@ -41,7 +44,7 @@ impl Sink {
     progress_queue_arc: Arc<Mutex<HashMap<i64, TaskProgress>>>,
     done_queue_arc: Arc<Mutex<Vec<TaskReport>>>,
     job_limit: Option<usize>,
-  ) -> Result<(), Error>
+  ) -> Result<(), Box<Error>>
   {
     // Ok, let's bind to a port and start broadcasting
     let context = zmq::Context::new();
@@ -86,19 +89,17 @@ impl Sink {
         let service_option = server::get_service(service_name, &services_arc);
         match service_option.clone() {
           None => {
-            println!("Error TODO: Server::get_service found nothing.");
+            return Err(Box::new(io::Error::new(
+              ErrorKind::Other,
+              "TODO: Server::get_service found nothing.",
+            )));
           }, // TODO: Handle errors
           Some(service) => {
             if service.id == task.service_id {
               // println!("Task and Service match up.");
               if service.id == 1 {
                 // No payload needed for init
-                match sink.recv(&mut recv_msg, 0) {
-                  Ok(_) => {},
-                  Err(e) => {
-                    println!("Error TODO: sink.recv failed: {:?}", e);
-                  },
-                };
+                sink.recv(&mut recv_msg, 0)?;
                 let done_report = TaskReport {
                   task: task.clone(),
                   status: TaskStatus::NoProblem,
@@ -163,8 +164,7 @@ impl Sink {
               }
             } else {
               // Otherwise just discard the rest of the message
-              loop {
-                sink.recv(&mut recv_msg, 0)?;
+              while let Ok(_) = sink.recv(&mut recv_msg, 0) {
                 if !sink.get_rcvmore()? {
                   break;
                 }
@@ -172,6 +172,13 @@ impl Sink {
             }
           },
         };
+      } else {
+        // No such task, just discard the next message from the sink
+        while let Ok(_) = sink.recv(&mut recv_msg, 0) {
+          if !sink.get_rcvmore()? {
+            break;
+          }
+        }
       }
       let responded_time = time::get_time();
       let request_duration = (responded_time - request_time).num_milliseconds();

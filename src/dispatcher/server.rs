@@ -96,6 +96,10 @@ pub fn pop_progress_task<S: ::std::hash::BuildHasher>(
   taskid: i64,
 ) -> Option<TaskProgress>
 {
+  if taskid < 0 {
+    // Mock ids are to be skipped
+    return None;
+  }
   let mut progress_queue = progress_queue_arc
     .lock()
     .unwrap_or_else(|_| panic!("Failed to obtain Mutex lock in pop_progress_task"));
