@@ -95,7 +95,7 @@ impl Ventilator {
           // implies the progress queue will grow
           let expired_tasks = server::timeout_progress_tasks(&progress_queue_arc);
           for expired_t in expired_tasks {
-            if expired_t.retries > 1 {
+            if expired_t.retries > 4 {
               // Too many retries, mark as fatal failure
               server::push_done_queue(
                 &done_queue_arc,
