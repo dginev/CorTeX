@@ -76,7 +76,7 @@ impl Ventilator {
           .unwrap_or_else(|| panic!("Could not obtain queue mutex lock in main ventilator loop"));
         if task_queue.is_empty() {
           println!(
-            "No tasks in task queue for service {:?}, fetching up to {:?} more from backend...",
+            "-- No tasks in task queue for service {:?}, fetching up to {:?} more from backend...",
             service_name, self.queue_size
           );
           // Refetch a new batch of tasks
@@ -128,7 +128,10 @@ impl Ventilator {
           let current_task = current_task_progress.task;
           let taskid = current_task.id;
           let serviceid = current_task.service_id;
-
+          println!(
+            "Replying for source job {:?} with task id {:?}",
+            source_job_count, taskid,
+          );
           ventilator.send_str(&taskid.to_string(), SNDMORE)?;
           if serviceid == 1 {
             // No payload needed for init
@@ -163,14 +166,20 @@ impl Ventilator {
                 source_job_count, total_outgoing, request_duration
               );
             } else {
+              println!("-- Failed to prepare input stream for taskid {:?}", taskid);
               ventilator.send(&[], 0)?;
             }
           }
         } else {
-          println!("No jobs in queue, sent mock task reply.");
+          println!("-- No jobs in queue, sent mock task reply.");
           ventilator.send_str("0", SNDMORE)?;
           ventilator.send(&[], 0)?;
         }
+      } else {
+        println!(
+          "-- No such service in ventilator request: {:?}",
+          service_name
+        );
       }
       // Record that a task has been dispatched in the progress queue
       if let Some(dispatched_task) = dispatched_task_opt {
