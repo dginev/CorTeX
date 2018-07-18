@@ -2,8 +2,7 @@
 <div class="center">
   <h1>Services for {{global.corpus_name}}</h1>
   <br>
-  <div class="col-md-4"></div>
-  <div class="col-md-4">
+  <div>
     <table id="service-report" class="table">
       <thead>
         <tr>
@@ -29,6 +28,5 @@
       </tbody>
     </table>
   </div>
-  <div class="col-md-4"></div>
 </div>
 {% endblock content %}
