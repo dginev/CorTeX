@@ -80,14 +80,13 @@ impl Sink {
       let mut total_incoming = 0;
       let request_time = time::get_time();
       println!(
-        "Incoming sink job {:?} for Service: {:?}, taskid: {:?}",
+        "Incoming sink job {:?} for service {:?}, taskid: {}",
         sink_job_count, service_name, taskid_str
       );
 
       if let Some(task_progress) = server::pop_progress_task(&progress_queue_arc, taskid) {
         let task = task_progress.task;
-        let service_option = server::get_service(service_name, &services_arc);
-        match service_option.clone() {
+        match server::get_service(service_name, &services_arc) {
           None => {
             return Err(Box::new(io::Error::new(
               ErrorKind::Other,
@@ -110,12 +109,12 @@ impl Sink {
                 // Receive the rest of the input in the correct file
                 match Path::new(&task.entry.clone()).parent() {
                   None => {
-                    println!("Error TODO: Path::new(&task.entry).parent() failed.");
+                    println!("-- Error TODO: Path::new(&task.entry).parent() failed.");
                   },
                   Some(recv_dir) => {
                     match recv_dir.to_str() {
                       None => {
-                        println!("Error TODO: recv_dir.to_str() failed");
+                        println!("-- Error TODO: recv_dir.to_str() failed");
                       },
                       Some(recv_dir_str) => {
                         let recv_dir_string = recv_dir_str.to_string();
@@ -128,19 +127,16 @@ impl Sink {
                           let mut file = match File::create(recv_path) {
                             Ok(f) => f,
                             Err(e) => {
-                              println!("Error TODO: File::create(recv_path): {:?}", e);
+                              println!("-- Error TODO: File::create(recv_path): {:?}", e);
                               continue;
                             },
                           };
                           while let Ok(_) = sink.recv(&mut recv_msg, 0) {
-                            // Err(e) => {
-                            //   println!("Error TODO: sink.recv (line 309) failed: {:?}", e);
-                            // }
                             match file.write(recv_msg.deref()) {
                               Ok(written_bytes) => total_incoming += written_bytes,
                               Err(e) => {
                                 println!(
-                                  "Error TODO: file.write(recv_msg.deref()) failed: {:?}",
+                                  "-- Error TODO: file.write(recv_msg.deref()) failed: {:?}",
                                   e
                                 );
                                 break;
@@ -164,6 +160,10 @@ impl Sink {
               }
             } else {
               // Otherwise just discard the rest of the message
+              println!(
+                "-- Mismatch between requested service id {:?} and task's service id {:?} for task {:?}, discarding response",
+                service.id, task.service_id, taskid
+              );
               while let Ok(_) = sink.recv(&mut recv_msg, 0) {
                 if !sink.get_rcvmore()? {
                   break;
@@ -174,6 +174,7 @@ impl Sink {
         };
       } else {
         // No such task, just discard the next message from the sink
+        println!("-- No such task id found in dispatcher queue: {:?}", taskid);
         while let Ok(_) = sink.recv(&mut recv_msg, 0) {
           if !sink.get_rcvmore()? {
             break;

@@ -23,7 +23,7 @@ pub fn mark_done_arc(
     let request_time = time::get_time();
     let mut success = false;
     if let Err(e) = backend.mark_done(&reports) {
-      println!("mark_done attempt failed: {:?}", e);
+      println!("-- mark_done attempt failed: {:?}", e);
       // DB persist failed, retry
       let mut retries = 0;
       while retries < 3 {
@@ -34,7 +34,7 @@ pub fn mark_done_arc(
             success = true;
             break;
           },
-          Err(e) => println!("mark_done retry failed: {:?}", e),
+          Err(e) => println!("-- mark_done retry failed: {:?}", e),
         };
       }
     } else {
