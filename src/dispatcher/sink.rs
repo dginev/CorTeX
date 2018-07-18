@@ -81,7 +81,7 @@ impl Sink {
       let request_time = time::get_time();
       println!(
         "Incoming sink job {:?} for service {:?}, taskid: {}",
-        sink_job_count, service_name, taskid_str
+        sink_job_count, service_name, taskid
       );
 
       if let Some(task_progress) = server::pop_progress_task(&progress_queue_arc, taskid) {
