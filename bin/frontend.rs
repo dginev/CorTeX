@@ -8,7 +8,12 @@
 #![feature(plugin)]
 #![feature(custom_derive)]
 #![plugin(rocket_codegen)]
-
+#![allow(
+  unknown_lints,
+  needless_pass_by_value,
+  let_unit_value,
+  print_literal
+)]
 extern crate futures;
 extern crate hyper;
 extern crate hyper_tls;
@@ -995,18 +1000,18 @@ fn aux_task_report(
         // println!("SET {:?}", cache_key);
         if what.is_none() {
           // don't cache the task list pages
-          if let &mut Some(ref mut rc) = &mut redis_connection {
+          if let Some(ref mut rc) = redis_connection {
             let _: () = rc.set(cache_key, report_json).unwrap();
           }
         }
         time_val = time::now().rfc822().to_string();
-        if let &mut Some(ref mut rc) = &mut redis_connection {
+        if let Some(ref mut rc) = redis_connection {
           let _: () = rc.set(cache_key_time, time_val.clone()).unwrap();
         }
         fetched_report = report;
       } else {
         // Get the report time, so that the user knows where the data is coming from
-        time_val = if let &mut Some(ref mut rc) = &mut redis_connection {
+        time_val = if let Some(ref mut rc) = redis_connection {
           match rc.get(cache_key_time) {
             Ok(tval) => tval,
             Err(_) => time::now().rfc822().to_string(),
@@ -1025,12 +1030,12 @@ fn aux_task_report(
       // println!("SET2 {:?}", cache_key);
       if what_is_none {
         // don't cache the task lists pages
-        if let &mut Some(ref mut rc) = &mut redis_connection {
+        if let Some(ref mut rc) = redis_connection {
           let _: () = rc.set(cache_key, report_json).unwrap();
         }
       }
       time_val = time::now().rfc822().to_string();
-      if let &mut Some(ref mut rc) = &mut redis_connection {
+      if let Some(ref mut rc) = redis_connection {
         let _: () = rc.set(cache_key_time, time_val.clone()).unwrap();
       }
       fetched_report = report;
