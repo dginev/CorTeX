@@ -7,11 +7,13 @@
 
 //! Convenience reports for system info (experimental)
 
-use sys_info::*;
 use std::collections::HashMap;
+use sys_info::*;
 
 /// Prepare a report for the file system metrics offered by `sys_info`
-pub fn report(store: &mut HashMap<String, String>) -> Result<(), Error> {
+pub fn report<S: ::std::hash::BuildHasher>(
+  store: &mut HashMap<String, String, S>,
+) -> Result<(), Error> {
   store.insert("sys_os_type".to_string(), os_type().unwrap());
   store.insert("sys_os_release".to_string(), os_release().unwrap());
   store.insert("sys_cpu".to_string(), cpu_num().unwrap().to_string());

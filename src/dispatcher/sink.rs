@@ -40,9 +40,9 @@ impl Sink {
   /// A job limit can be provided as a termination condition for the sink server.
   pub fn start(
     &self,
-    services_arc: Arc<Mutex<HashMap<String, Option<Service>>>>,
-    progress_queue_arc: Arc<Mutex<HashMap<i64, TaskProgress>>>,
-    done_queue_arc: Arc<Mutex<Vec<TaskReport>>>,
+    services_arc: &Arc<Mutex<HashMap<String, Option<Service>>>>,
+    progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>,
+    done_queue_arc: &Arc<Mutex<Vec<TaskReport>>>,
     job_limit: Option<usize>,
   ) -> Result<(), Box<Error>>
   {

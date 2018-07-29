@@ -77,9 +77,9 @@ impl TaskManager {
         message_size: source_message_size,
         backend_address: source_backend_address.clone(),
       }.start(
-        vent_services_arc,
-        vent_progress_queue_arc,
-        vent_done_queue_arc,
+        &vent_services_arc,
+        &vent_progress_queue_arc,
+        &vent_done_queue_arc,
         job_limit,
       )
         .unwrap_or_else(|e| panic!("Failed in ventilator thread: {:?}", e));
@@ -92,7 +92,7 @@ impl TaskManager {
       Finalize {
         backend_address: finalize_backend_address.clone(),
         job_limit,
-      }.start(finalize_done_queue_arc)
+      }.start(&finalize_done_queue_arc)
         .unwrap_or_else(|e| panic!("Failed in finalize thread: {:?}", e));
     });
 
@@ -113,9 +113,9 @@ impl TaskManager {
         message_size: result_message_size,
         backend_address: result_backend_address.clone(),
       }.start(
-        sink_services_arc,
-        sink_progress_queue_arc,
-        sink_done_queue_arc,
+        &sink_services_arc,
+        &sink_progress_queue_arc,
+        &sink_done_queue_arc,
         job_limit,
       )
         .unwrap_or_else(|e| panic!("Failed in sink thread: {:?}", e));
