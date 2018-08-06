@@ -40,8 +40,8 @@ pub struct TaskManager {
 impl Default for TaskManager {
   fn default() -> TaskManager {
     TaskManager {
-      source_port: 5555,
-      result_port: 5556,
+      source_port: 51695,
+      result_port: 51696,
       queue_size: 100,
       message_size: 100_000,
       backend_address: DEFAULT_DB_ADDRESS.to_string(),
@@ -81,8 +81,7 @@ impl TaskManager {
         &vent_progress_queue_arc,
         &vent_done_queue_arc,
         job_limit,
-      )
-        .unwrap_or_else(|e| panic!("Failed in ventilator thread: {:?}", e));
+      ).unwrap_or_else(|e| panic!("Failed in ventilator thread: {:?}", e));
     });
 
     // Next prepare the finalize thread which will persist finished jobs to the DB
@@ -93,7 +92,7 @@ impl TaskManager {
         backend_address: finalize_backend_address.clone(),
         job_limit,
       }.start(&finalize_done_queue_arc)
-        .unwrap_or_else(|e| panic!("Failed in finalize thread: {:?}", e));
+      .unwrap_or_else(|e| panic!("Failed in finalize thread: {:?}", e));
     });
 
     // Now prepare the results sink
@@ -117,8 +116,7 @@ impl TaskManager {
         &sink_progress_queue_arc,
         &sink_done_queue_arc,
         job_limit,
-      )
-        .unwrap_or_else(|e| panic!("Failed in sink thread: {:?}", e));
+      ).unwrap_or_else(|e| panic!("Failed in sink thread: {:?}", e));
     });
 
     if vent_thread.join().is_err() {

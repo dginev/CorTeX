@@ -46,8 +46,8 @@ impl Default for InitWorker {
       service: "init".to_string(),
       version: 0.1,
       message_size: 100_000,
-      source: "tcp://localhost:5555".to_string(),
-      sink: "tcp://localhost:5556".to_string(),
+      source: "tcp://localhost:51695".to_string(),
+      sink: "tcp://localhost:51696".to_string(),
       backend_address: DEFAULT_DB_ADDRESS.to_string(),
     }
   }

@@ -93,8 +93,8 @@ fn mock_round_trip() {
   // Start up a ventilator/sink pair
   let manager_thread = thread::spawn(move || {
     let manager = TaskManager {
-      source_port: 5555,
-      result_port: 5556,
+      source_port: 51695,
+      result_port: 51696,
       queue_size: 100,
       message_size: 100,
       backend_address: TEST_DB_ADDRESS.to_string(),

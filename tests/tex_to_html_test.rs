@@ -104,8 +104,8 @@ fn mock_tex_to_html() {
   });
   // Start up an tex to html worker
   let worker = TexToHtmlWorker {
-    source: "tcp://localhost:5555".to_string(),
-    sink: "tcp://localhost:5556".to_string(),
+    source: "tcp://localhost:51695".to_string(),
+    sink: "tcp://localhost:51696".to_string(),
     ..TexToHtmlWorker::default()
   };
   // Perform a single echo task
