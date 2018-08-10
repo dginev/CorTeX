@@ -449,8 +449,7 @@ impl Backend {
         } else {
           entry_name_regex.replace(&trimmed_entry, "$1").to_string() + "/" + &service.name + ".zip"
         }
-      })
-      .collect()
+      }).collect()
   }
 
   /// Provides a progress report, grouped by severity, for a given `Corpus` and `Service` pair
@@ -627,7 +626,9 @@ impl Backend {
           },
           Some(category_name) => if category_name == "no_messages" {
             let no_messages_query_string = "SELECT * FROM tasks t WHERE ".to_string()
-              + "service_id=$1 and corpus_id=$2 and status=$3 and "
+              + "service_id=$1 and corpus_id=$2 and "
+              + &status_clause
+              + " and "
               + "NOT EXISTS (SELECT null FROM "
               + &log_table
               + " where "
@@ -636,6 +637,7 @@ impl Backend {
             let no_messages_query = sql_query(no_messages_query_string)
               .bind::<BigInt, i64>(i64::from(service.id))
               .bind::<BigInt, i64>(i64::from(corpus.id))
+              .bind::<BigInt, i64>(i64::from(bind_status))
               .bind::<BigInt, i64>(i64::from(task_status.raw()));
             let no_message_tasks: Vec<Task> = no_messages_query
               .get_results(&self.connection)
@@ -698,12 +700,13 @@ impl Backend {
                   + &log_table
                   + " WHERE tasks.id="
                   + &log_table
-                  + ".task_id and service_id=$1 and corpus_id=$2 and status=$3 "
+                  + ".task_id and service_id=$1 and corpus_id=$2 and "
+                  + &status_clause
                   + "and category=$4 and what=$5 limit 100";
                 let details_report_query = sql_query(details_report_query_string)
                   .bind::<BigInt, i64>(i64::from(service.id))
                   .bind::<BigInt, i64>(i64::from(corpus.id))
-                  .bind::<BigInt, i64>(i64::from(task_status.raw()))
+                  .bind::<BigInt, i64>(i64::from(bind_status))
                   .bind::<Text, _>(category_name)
                   .bind::<Text, _>(what_name);
                 let details_report: Vec<TaskDetailReport> = details_report_query
