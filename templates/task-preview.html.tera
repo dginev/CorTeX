@@ -100,7 +100,7 @@
             $.each(zip.files, function (filename, fileobject) {
               console.log("Unpacking: ", filename);
               // We only keep HTML and PNG files, discarding anything else that may have been preserved in the conversion result ZIP archive
-              if (filename.match(/\.html$/)) {
+              if (filename.match(/\.(html|log)$/)) {
                 filenames.push(filename);
                 promises.push(fileobject.async("text"));
               } else if (filename.match(/\.(png|svg)$/)) {
@@ -111,12 +111,15 @@
             });
 
             var main_content;
+            var conversion_report = '';
             var data_url_map = {};
             Promise.all(promises).then(function (values) {
               $.each(filenames, function (i, filename) {
                 var data = values[i];
                 if (filename.match(/\.html$/)) {
                   main_content = data;
+                } else if (filename.match(/\.log$/)) {
+                  conversion_report = data;
                 } else { // only image files in else case
                   var reader = new FileReader();
                   // Huge? Yes. But it survives document.write() in firefox,
@@ -125,7 +128,7 @@
                     data_url_map[filename] = reader.result;
                     if (Object.keys(data_url_map).length >= data_url_pending) {
                       console.log("Data URLs generated.");
-                      final_main_content_write(data_url_map, main_content);
+                      final_main_content_write(data_url_map, conversion_report, main_content);
                     }
                   });
                   var fileblob = new Blob([data], { type: 'image/png' });
@@ -134,7 +137,7 @@
               });
               if (data_url_pending == 0) { // simple paper with no data blobs, just render
                 console.log("No Data URLs present.");
-                final_main_content_write({}, main_content);
+                final_main_content_write({}, conversion_report, main_content);
               }
             });
           });
@@ -160,7 +163,7 @@
     }
 
   });
-  function final_main_content_write(data_url_map, main_content) {
+  function final_main_content_write(data_url_map, conversion_report, main_content) {
     $.each(data_url_map, function (filename, newurl) {
       let escaped_name = 'src=[\'"]' + filename.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1") + '[\'"]';
       new_src = "src=\"" + newurl + "\"";
@@ -183,6 +186,18 @@
         '</' + 'script>';
       var texjs_sources = texjs_css + "\n" + texjs_responsive + "\n";
       main_content = main_content.replace(/<\/head>/, texjs_sources + "\n</head>");
+
+      if (conversion_report.length > 0) {
+        var html_report = '<section id="CR1" class="ltx_section">' +
+          '<h2 class="ltx_title ltx_title_section">Cortex Conversion Report</h2>' +
+          '<div id="S1.p1" class="ltx_para">' +
+          '<p class="ltx_p">' +
+          conversion_report.split("\n").join('</p><p class="ltx_p">');
+        '</p>' +
+          '</div></section></article>';
+        main_content = main_content.replace(/<\/article>/, html_report);
+      }
+
       main_content = main_content.replace(/<\/body>/, "\n" + texjs_js + "\n" + fire_loaded + "\n</body>");
     }
     document.write(main_content);
