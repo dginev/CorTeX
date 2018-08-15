@@ -23,9 +23,7 @@
             </ol>
             <br>
           </div>
-          <center>
-            <div class="g-recaptcha" data-sitekey="6LdEehITAAAAAG81QWBR7rTGxz5Rk7-FjwR7so_F"></div>
-          </center>
+          <div class="g-recaptcha" data-sitekey="6LdEehITAAAAAG81QWBR7rTGxz5Rk7-FjwR7so_F"></div>
         </div>
         <div class="modal-footer">
           <input class="btn btn-success" type="submit" value="" id="btn-get-entry">
@@ -93,6 +91,8 @@
     var xhr = new XMLHttpRequest();
     xhr.responseType = "arraybuffer";
     xhr.onreadystatechange = function () {
+      console.log("onreadystatechange: ", this);
+      console.log("action: ", form_action);
       if (this.readyState == 4) { // Only process when done.
         if (this.status != 200) {
           // Something went wrong, throw out the localStorage and re-auth (Redis could've fallen, etc)
@@ -136,15 +136,15 @@
             var downloadUrl = URL.createObjectURL(blob);
             if (filename) {
               // use HTML5 a[download] attribute to specify filename
-              var a = document.createElement("a");
+              var anchor_element = document.createElement("a");
               // safari doesn't support this yet
-              if (typeof a.download === 'undefined') {
+              if (typeof anchor_element.download === 'undefined') {
                 window.location = downloadUrl;
               } else {
-                a.href = downloadUrl;
-                a.download = filename;
-                document.body.appendChild(a);
-                a.click();
+                anchor_element.href = downloadUrl;
+                anchor_element.download = filename;
+                document.body.appendChild(anchor_element);
+                anchor_element.click();
               }
             } else {
               window.location = downloadUrl;
@@ -154,47 +154,48 @@
           $("#modal-get-entry").modal("hide");
         }
         else if (form_action == "preview") {  // All is good, preview the result
-          var zip = new JSZip(xhr.response);
-          var main_content;
-          var url_map = {};
-          $.each(zip.files, function (filename, fileobject) {
-            if (filename.match(/\.html$/)) {
-              main_content = fileobject.asText();
-              var fileblob = new Blob([fileobject.asText()], { type: 'text/html' });
-              var objectURL = window.URL.createObjectURL(fileblob);
-              url_map[filename] = objectURL;
-            } else if (filename.match(/\.png$/)) {
-              var fileblob = new Blob([fileobject.asUint8Array()], { type: 'image/png' });
-              var objectURL = window.URL.createObjectURL(fileblob);
-              url_map[filename] = objectURL;
-            }
-          });
-          $.each(url_map, function (filename, newurl) {
-            var re = new RegExp(filename, 'g');
-            main_content = main_content.replace(re, newurl);
-          });
-          if (main_content.match(/<\/head>/)) {
-            // load TeX.js previewer
-            var texjs_css = '<link media="all" rel="stylesheet" href="https://davidar.io/TeX.js/LaTeXML/ltx-article.css"></link>';
-            var texjs_js = '<script src="https://davidar.io/TeX.js/load.js"></' + 'script>'; // linter issues...
-            var texjs_responsive = '<meta name="viewport" content="width=device-width, initial-scale=1"></meta>';
-            var fire_loaded = '<script> ' +
-              ' var DOMContentLoaded_event = document.createEvent("Event"); ' +
-              ' DOMContentLoaded_event.initEvent("DOMContentLoaded", true, true); ' +
-              ' var fire_loaded = function(){ ' +
-              '  window.document.dispatchEvent(DOMContentLoaded_event); ' +
-              ' }; ' +
-              ' var fire_loaded_loop = window.setInterval(fire_loaded, 2000);' +
-              ' window.setTimeout(function(){clearInterval(fire_loaded_loop)}, 6000); ' +
-              '</' + 'script>';
-            var texjs_sources = texjs_css + "\n" + texjs_responsive + "\n";
-            main_content = main_content.replace(/<\/head>/, texjs_sources + "\n</head>");
-            main_content = main_content.replace(/<\/body>/, "\n" + texjs_js + "\n" + fire_loaded + "\n</body>");
-          }
-          // var mainblob = new Blob([main_content], {type : 'text/html'});
-          // var main_object_url = window.URL.createObjectURL(mainblob);
-          document.write(main_content);
+          JSZip.loadAsync(xhr.response).then(function (zip) {
+            var filenames = [];
+            var promises = [];
+            $.each(zip.files, function (filename, fileobject) {
+              console.log("Unpacking: ", filename);
+              // We only keep HTML and PNG files, discarding anything else that may have been preserved in the conversion result ZIP archive
+              if (filename.match(/\.html$/)) {
+                filenames.push(filename);
+                promises.push(fileobject.async("text"));
+              } else if (filename.match(/\.(png|svg)$/)) {
+                filenames.push(filename);
+                promises.push(fileobject.async("uint8array"));
+              }
+            });
 
+            var main_content;
+            var data_url_map = {};
+            var data_url_pending = 0;
+            Promise.all(promises).then(function (values) {
+              $.each(filenames, function (i, filename) {
+                var data = values[i];
+                if (filename.match(/\.html$/)) {
+                  main_content = data;
+                } else { // only image files in else case
+                  data_url_pending++;
+                  var reader = new FileReader();
+                  // Huge? Yes. But it survives document.write() in firefox,
+                  // which an ObjectURL for a blob apparently does *not*
+                  reader.addEventListener("loadend", function () {
+                    data_url_map[filename] = reader.result;
+                    if (Object.keys(data_url_map).length >= data_url_pending) {
+                      console.log("Data urls generated.");
+                      final_main_content_write(data_url_map, main_content);
+                    }
+                  });
+                  var fileblob = new Blob([data], { type: 'image/png' });
+                  reader.readAsDataURL(fileblob);
+                }
+              });
+
+            });
+          });
         }
       }
     };
@@ -203,4 +204,33 @@
     var xhr_payload = $(this).serialize();
     xhr.send(xhr_payload);
   });
+
+
+  function final_main_content_write(data_url_map, main_content) {
+    $.each(data_url_map, function (filename, newurl) {
+      let escaped_name = 'src=[\'"]' + filename.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1") + '[\'"]';
+      new_src = "src=\"" + newurl + "\"";
+      main_content = main_content.replace(new RegExp(escaped_name, 'g'), new_src);
+    });
+
+    if (main_content.match(/<\/head>/)) {
+      // load TeX.js previewer
+      var texjs_css = '<link media="all" rel="stylesheet" href="https://davidar.io/TeX.js/LaTeXML/ltx-article.css">';
+      var texjs_js = '<script src="https://davidar.io/TeX.js/load.js"></' + 'script>'; // linter issues...
+      var texjs_responsive = '<meta name="viewport" content="width=device-width, initial-scale=1">';
+      var fire_loaded = '<script> ' +
+        ' var DOMContentLoaded_event = document.createEvent("Event"); ' +
+        ' DOMContentLoaded_event.initEvent("DOMContentLoaded", true, true); ' +
+        ' var fire_loaded = function(){ ' +
+        '  window.document.dispatchEvent(DOMContentLoaded_event); ' +
+        ' }; ' +
+        ' var fire_loaded_loop = window.setInterval(fire_loaded, 2000);' +
+        ' window.setTimeout(function(){clearInterval(fire_loaded_loop)}, 6000); ' +
+        '</' + 'script>';
+      var texjs_sources = texjs_css + "\n" + texjs_responsive + "\n";
+      main_content = main_content.replace(/<\/head>/, texjs_sources + "\n</head>");
+      main_content = main_content.replace(/<\/body>/, "\n" + texjs_js + "\n" + fire_loaded + "\n</body>");
+    }
+    document.write(main_content);
+  }
 </script>

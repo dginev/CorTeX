@@ -18,3 +18,7 @@ tests/data/cond-mat9912403/tex_to_html.zip
 
 # Config files 
 examples/config.json
+config.json
+
+# Temp files
+*.rdb
