@@ -157,6 +157,7 @@
           JSZip.loadAsync(xhr.response).then(function (zip) {
             var filenames = [];
             var promises = [];
+            var data_url_pending = 0;
             $.each(zip.files, function (filename, fileobject) {
               console.log("Unpacking: ", filename);
               // We only keep HTML and PNG files, discarding anything else that may have been preserved in the conversion result ZIP archive
@@ -164,6 +165,7 @@
                 filenames.push(filename);
                 promises.push(fileobject.async("text"));
               } else if (filename.match(/\.(png|svg)$/)) {
+                data_url_pending++;
                 filenames.push(filename);
                 promises.push(fileobject.async("uint8array"));
               }
@@ -171,21 +173,19 @@
 
             var main_content;
             var data_url_map = {};
-            var data_url_pending = 0;
             Promise.all(promises).then(function (values) {
               $.each(filenames, function (i, filename) {
                 var data = values[i];
                 if (filename.match(/\.html$/)) {
                   main_content = data;
                 } else { // only image files in else case
-                  data_url_pending++;
                   var reader = new FileReader();
                   // Huge? Yes. But it survives document.write() in firefox,
                   // which an ObjectURL for a blob apparently does *not*
                   reader.addEventListener("loadend", function () {
                     data_url_map[filename] = reader.result;
                     if (Object.keys(data_url_map).length >= data_url_pending) {
-                      console.log("Data urls generated.");
+                      console.log("Data URLs generated.");
                       final_main_content_write(data_url_map, main_content);
                     }
                   });
@@ -193,7 +193,10 @@
                   reader.readAsDataURL(fileblob);
                 }
               });
-
+              if (data_url_pending == 0) { // simple paper with no data blobs, just render
+                console.log("No Data URLs present.");
+                final_main_content_write({}, main_content);
+              }
             });
           });
         }
