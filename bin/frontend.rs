@@ -365,10 +365,79 @@ fn what_service_report_all(
   )
 }
 
+#[get("/preview/<corpus_name>/<service_name>/<entry_name>")]
+fn preview_entry(
+  corpus_name: String,
+  service_name: String,
+  entry_name: String,
+) -> Result<Template, NotFound<String>>
+{
+  let report_start = time::get_time();
+  let mut context = TemplateContext::default();
+  let mut global = HashMap::new();
+  let backend = Backend::default();
+
+  let corpus_result = Corpus::find_by_name(&corpus_name, &backend.connection);
+  if let Ok(corpus) = corpus_result {
+    let service_result = Service::find_by_name(&service_name, &backend.connection);
+    if let Ok(service) = service_result {
+      // Assemble the Download URL from where we will gather the page contents (after captcha is
+      // confirmed) First, we need the taskid
+      let task = Task::find_by_name(&entry_name, &corpus, &service, &backend.connection).unwrap();
+      let download_url = format!("/entry/{}/{}/", service_name, task.id.to_string());
+      global.insert("download_url".to_string(), download_url);
+
+      // Metadata for preview page
+      global.insert(
+        "title".to_string(),
+        "Corpus Report for ".to_string() + &corpus_name,
+      );
+      global.insert(
+        "description".to_string(),
+        "An analysis framework for corpora of TeX/LaTeX documents - statistical reports for "
+          .to_string()
+          + &corpus_name,
+      );
+      global.insert("corpus_name".to_string(), corpus_name.clone());
+      global.insert("corpus_description".to_string(), corpus.description.clone());
+      global.insert("service_name".to_string(), service_name.clone());
+      global.insert(
+        "service_description".to_string(),
+        service.description.clone(),
+      );
+      global.insert("type".to_string(), "Conversion".to_string());
+      global.insert("inputformat".to_string(), service.inputformat.clone());
+      global.insert("outputformat".to_string(), service.outputformat.clone());
+      match service.inputconverter {
+        Some(ref ic_service_name) => {
+          global.insert("inputconverter".to_string(), ic_service_name.clone())
+        },
+        None => global.insert("inputconverter".to_string(), "missing?".to_string()),
+      };
+      global.insert("report_time".to_string(), time::now().rfc822().to_string());
+    }
+    global.insert("severity".to_string(), entry_name.clone());
+    global.insert("entry_name".to_string(), entry_name.clone());
+  }
+
+  // Pass the globals(reports+metadata) onto the stash
+  context.global = global;
+  // And pass the handy lambdas
+  // And render the correct template
+  aux_decorate_uri_encodings(&mut context);
+
+  // Report also the query times
+  let report_end = time::get_time();
+  let report_duration = (report_end - report_start).num_milliseconds();
+  context
+    .global
+    .insert("report_duration".to_string(), report_duration.to_string());
+  Ok(Template::render("task-preview", context))
+}
+
 // Note, the docs warn "data: Vec<u8>" is a DDoS vector - https://api.rocket.rs/rocket/data/trait.FromData.html
 // since this is a research-first implementation, i will abstain from doing this perfectly now and
 // run with the slurp.
-
 #[post("/entry/<service_name>/<entry_id>", data = "<data>")]
 fn entry_fetch(
   service_name: String,
@@ -379,11 +448,14 @@ fn entry_fetch(
   // Any secrets reside in config.json
   let cortex_config = aux_load_config();
 
-  let g_recaptcha_response = if data.len() > 21 {
-    str::from_utf8(&data[21..]).unwrap_or(UNKNOWN)
+  let g_recaptcha_response_string = if data.len() > 21 {
+    str::from_utf8(&data[21..])
+      .unwrap_or(UNKNOWN)
+      .replace("&g-recaptcha-response=", "")
   } else {
-    UNKNOWN
+    UNKNOWN.to_owned()
   };
+  let g_recaptcha_response = &g_recaptcha_response_string;
   // Check if we hve the g_recaptcha_response in Redis, then reuse
   let redis_opt;
   let quota: usize = match redis::Client::open("redis://127.0.0.1/") {
@@ -398,21 +470,29 @@ fn entry_fetch(
     }
   };
 
+  println!("Response: {:?}", g_recaptcha_response);
+  println!("Quota: {:?}", quota);
   let captcha_verified = if quota > 0 {
-    if quota == 1 {
-      if let Some(ref redis_connection) = redis_opt {
+    if let Some(ref redis_connection) = redis_opt {
+      println!("Using local redis quota.");
+      if quota == 1 {
         // Remove if last
         redis_connection.del(g_recaptcha_response).unwrap_or(());
+      } else {
         // We have quota available, decrement it
         redis_connection
           .set(g_recaptcha_response, quota - 1)
           .unwrap_or(());
       }
+      // And allow operation
+      true
+    } else {
+      false // no redis, no access.
     }
-    // And allow operation
-    true
   } else {
+    // expired quota, check with google
     let check_val = aux_check_captcha(g_recaptcha_response, &cortex_config.captcha_secret);
+    println!("Google validity: {:?}", check_val);
     if check_val {
       if let Some(ref redis_connection) = redis_opt {
         // Add a reuse quota if things check out, 19 more downloads
@@ -421,13 +501,15 @@ fn entry_fetch(
     }
     check_val
   };
+  println!("Captcha validity: {:?}", captcha_verified);
 
   // If you are not human, you have no business here.
   if !captcha_verified {
-    return Err(Redirect::to(&format!(
-      "/entry/{:?}/{:?}?expire_quotas",
-      service_name, entry_id
-    )));
+    if g_recaptcha_response != UNKNOWN {
+      return Err(Redirect::to("/expire_captcha"));
+    } else {
+      return Err(Redirect::to("/"));
+    }
   }
 
   let backend = Backend::default();
@@ -447,6 +529,19 @@ fn entry_fetch(
   } else {
     NamedFile::open(&zip_path).map_err(|_| Redirect::to("/"))
   }
+}
+
+//Expire captchas
+#[get("/expire_captcha")]
+fn expire_captcha() -> Result<Template, NotFound<String>> {
+  let mut context = TemplateContext::default();
+  let mut global = HashMap::new();
+  global.insert(
+    "description".to_string(),
+    "Expire captcha cache for CorTeX.".to_string(),
+  );
+  context.global = global;
+  Ok(Template::render("expire_captcha", context))
 }
 
 // Rerun queries
@@ -555,11 +650,13 @@ fn rocket() -> rocket::Rocket {
         severity_service_report_all,
         category_service_report_all,
         what_service_report_all,
+        preview_entry,
         entry_fetch,
         rerun_corpus,
         rerun_severity,
         rerun_category,
-        rerun_what
+        rerun_what,
+        expire_captcha
       ],
     ).attach(Template::fairing())
     .attach(CORS())

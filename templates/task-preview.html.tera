@@ -1,0 +1,190 @@
+{% extends "layout" %} {% block content %}
+<div class="center">
+  <form id="form-get-entry" class="form-get-entry" name="form-get-entry" method="post" accept-charset="UTF-8" action="{{global.download_url}}">
+    <div id="modal-get-entry" class="modal fade" tabindex="-1" role="dialog">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <a class="close" data-dismiss="modal">×</a>
+            <h3>Are you human?</h3>
+          </div>
+          <div class="modal-body">
+            <div style="text-align: left; margin-bottom: 10px;">
+              <p>By proceeding to a download you:</p>
+              <ol>
+                <li>Agree to a
+                  <strong>temporary preview</strong> of the implied data sample,</li>
+                <li>Agree that this download is intended and authorized only for
+                  <strong>research use</strong>,</li>
+                <li>Agree to
+                  <strong>purging all local copies</strong> of the data at the immediate end of the research experiment,</li>
+                <li>Agree to protecting the
+                  <strong>original copyright</strong> of all implied data,</li>
+                <li>Agree to
+                  <strong>provide attribution</strong> as appropriate.</li>
+              </ol>
+              <br>
+            </div>
+            <div class="g-recaptcha" data-sitekey="6LdEehITAAAAAG81QWBR7rTGxz5Rk7-FjwR7so_F"></div>
+          </div>
+          <div class="modal-footer">
+            <input class="btn btn-success" type="submit" value="Get {{global.entry_name}}" id="btn-get-entry">
+          </div>
+        </div>
+      </div>
+    </div>
+  </form>
+</div>
+
+<script src='//www.google.com/recaptcha/api.js'></script>
+<script src='/public/js/jszip.min.js'></script>
+<script>
+  $(document).ready(function () {
+    $("#form-get-entry").submit(function (e) {
+      // We'll AJAX our fetch, to have a handle on permissions
+      e.preventDefault();
+      var $form = $(this);
+      // Record the captcha key, which gets another 1 free uses
+      var g_recaptcha_response = $("#g-recaptcha-response").val();
+      var saved_recaptcha = localStorage.getItem("g_recaptcha_response");
+      if (!g_recaptcha_response || g_recaptcha_response == "undefined") {
+        g_recaptcha_response = saved_recaptcha;
+      }
+
+      if (saved_recaptcha != g_recaptcha_response) {
+        console.log("SETTING localStorage with ", g_recaptcha_response);
+        localStorage.setItem("g_recaptcha_response", g_recaptcha_response);
+        localStorage.setItem("g_recaptcha_quota", 20);
+      } else {
+        // Otherwise just decrement 1
+        var new_quota = (localStorage.getItem("g_recaptcha_quota") || 0) - 1;
+        console.log("NEW QUOTA: ", new_quota);
+        if (new_quota > 0) {
+          localStorage.setItem("g_recaptcha_quota", new_quota);
+        } else {
+          // Quota expired, reseting
+          localStorage.removeItem("g_recaptcha_response");
+          localStorage.removeItem("g_recaptcha_quota");
+          $("#g-recaptcha-response").val('');
+          $("#modal-get-entry").modal("show");
+          return;
+        }
+      }
+
+      var xhr = new XMLHttpRequest();
+      xhr.responseType = "arraybuffer";
+      xhr.onreadystatechange = function () {
+        console.log("onreadystatechange: ", this);
+        if (this.readyState == 4) { // Only process when done.
+          if (this.status != 200) {
+            // Something went wrong, throw out the localStorage and re-auth (Redis could've fallen, etc)
+            localStorage.removeItem("g_recaptcha_response");
+            localStorage.removeItem("g_recaptcha_quota");
+            $("#g-recaptcha-response").val('');
+            $("#modal-get-entry").modal("show");
+            return;
+          }
+          if (this.responseURL.match(/expire_captcha/)) {
+            console.log("responseURL was: ", this.responseURL);
+            // Quota expired, reseting
+            localStorage.removeItem("g_recaptcha_response");
+            localStorage.removeItem("g_recaptcha_quota");
+            $("#g-recaptcha-response").val('');
+            $("#modal-get-entry").modal("show");
+            return;
+          }
+          JSZip.loadAsync(xhr.response).then(function (zip) {
+            var filenames = [];
+            var promises = [];
+            var data_url_pending = 0;
+            $.each(zip.files, function (filename, fileobject) {
+              console.log("Unpacking: ", filename);
+              // We only keep HTML and PNG files, discarding anything else that may have been preserved in the conversion result ZIP archive
+              if (filename.match(/\.html$/)) {
+                filenames.push(filename);
+                promises.push(fileobject.async("text"));
+              } else if (filename.match(/\.(png|svg)$/)) {
+                data_url_pending++;
+                filenames.push(filename);
+                promises.push(fileobject.async("uint8array"));
+              }
+            });
+
+            var main_content;
+            var data_url_map = {};
+            Promise.all(promises).then(function (values) {
+              $.each(filenames, function (i, filename) {
+                var data = values[i];
+                if (filename.match(/\.html$/)) {
+                  main_content = data;
+                } else { // only image files in else case
+                  var reader = new FileReader();
+                  // Huge? Yes. But it survives document.write() in firefox,
+                  // which an ObjectURL for a blob apparently does *not*
+                  reader.addEventListener("loadend", function () {
+                    data_url_map[filename] = reader.result;
+                    if (Object.keys(data_url_map).length >= data_url_pending) {
+                      console.log("Data URLs generated.");
+                      final_main_content_write(data_url_map, main_content);
+                    }
+                  });
+                  var fileblob = new Blob([data], { type: 'image/png' });
+                  reader.readAsDataURL(fileblob);
+                }
+              });
+              if (data_url_pending == 0) { // simple paper with no data blobs, just render
+                console.log("No Data URLs present.");
+                final_main_content_write({}, main_content);
+              }
+            });
+          });
+        }
+      }
+      xhr.open('POST', $(this).attr("action"));
+      xhr.setRequestHeader('Content-Type', 'application/json; charset=utf-8');
+      var xhr_payload = $(this).serialize();
+      xhr.send(xhr_payload);
+    });
+
+    var saved_recaptcha = localStorage.getItem("g_recaptcha_response");
+    if (saved_recaptcha && saved_recaptcha != "undefined" && (saved_recaptcha.length > 0)) {
+      // We have a saved recaptcha, reuse for convenience
+      console.log("SAVED: ", saved_recaptcha);
+      if ($("#g-recaptcha-response").length == 0) {
+        $('form').append('<textarea id="g-recaptcha-response" name="g-recaptcha-response" class="g-recaptcha-response" style="display: none;"></textarea>');
+      }
+      $("#g-recaptcha-response").val(saved_recaptcha);
+      $("#form-get-entry").submit();
+    } else {
+      $("#modal-get-entry").modal("show");
+    }
+
+  });
+  function final_main_content_write(data_url_map, main_content) {
+    $.each(data_url_map, function (filename, newurl) {
+      let escaped_name = 'src=[\'"]' + filename.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1") + '[\'"]';
+      new_src = "src=\"" + newurl + "\"";
+      main_content = main_content.replace(new RegExp(escaped_name, 'g'), new_src);
+    });
+
+    if (main_content.match(/<\/head>/)) {
+      // load TeX.js previewer
+      var texjs_css = '<link media="all" rel="stylesheet" href="//davidar.io/TeX.js/LaTeXML/ltx-article.css">';
+      var texjs_js = '<script src="//davidar.io/TeX.js/load.js"></' + 'script>'; // linter issues...
+      var texjs_responsive = '<meta name="viewport" content="width=device-width, initial-scale=1">';
+      var fire_loaded = '<script> ' +
+        ' var DOMContentLoaded_event = document.createEvent("Event"); ' +
+        ' DOMContentLoaded_event.initEvent("DOMContentLoaded", true, true); ' +
+        ' var fire_loaded = function(){ ' +
+        '  window.document.dispatchEvent(DOMContentLoaded_event); ' +
+        ' }; ' +
+        ' var fire_loaded_loop = window.setInterval(fire_loaded, 2000);' +
+        ' window.setTimeout(function(){clearInterval(fire_loaded_loop)}, 6000); ' +
+        '</' + 'script>';
+      var texjs_sources = texjs_css + "\n" + texjs_responsive + "\n";
+      main_content = main_content.replace(/<\/head>/, texjs_sources + "\n</head>");
+      main_content = main_content.replace(/<\/body>/, "\n" + texjs_js + "\n" + fire_loaded + "\n</body>");
+    }
+    document.write(main_content);
+  }
+</script> {% endblock content %}
