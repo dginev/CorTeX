@@ -25,7 +25,7 @@
             <a class="entry-submit" data-action="download" href="/entry/{{global.service_name_uri}}/{{this.entry_taskid}}">{{global.outputformat}}</a>
           </td>
           <td class="left task-preview">
-            <a class="entry-submit" data-action="preview" href="/entry/{{global.service_name_uri}}/{{this.entry_taskid}}">preview</a>
+            <a target="_blank" href="/preview/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{this.entry_name}}">preview</a>
           </td>
           <td class="left">{{this.details}}</td>
         </tr>

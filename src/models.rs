@@ -106,6 +106,22 @@ impl Task {
       .filter(tasks::entry.eq(entry))
       .first(connection)
   }
+
+  /// Find task by name-suffix of an entry, error if none
+  pub fn find_by_name(
+    name: &str,
+    corpus: &Corpus,
+    service: &Service,
+    connection: &PgConnection,
+  ) -> Result<Task, Error>
+  {
+    use schema::tasks::dsl::{corpus_id, service_id};
+    tasks::table
+      .filter(corpus_id.eq(corpus.id))
+      .filter(service_id.eq(service.id))
+      .filter(tasks::entry.like(&format!("%{}.zip", name)))
+      .first(connection)
+  }
 }
 
 impl CortexDeletable for NewTask {
@@ -647,8 +663,7 @@ pub fn fetch_tasks(
       .map(|task| Task {
         status: i32::from(mark),
         ..task
-      })
-      .map(|task| task.save_changes(connection))
+      }).map(|task| task.save_changes(connection))
       .filter_map(|saved| saved.ok())
       .collect();
     Ok(())
