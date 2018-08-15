@@ -48,7 +48,7 @@
   </div>
 </div>
 
-<script src='https://www.google.com/recaptcha/api.js'></script>
+<script src='//www.google.com/recaptcha/api.js'></script>
 <script src='/public/js/jszip.min.js'></script>
 <script>
   $(".entry-submit").click(function (e) {
@@ -215,8 +215,8 @@
 
     if (main_content.match(/<\/head>/)) {
       // load TeX.js previewer
-      var texjs_css = '<link media="all" rel="stylesheet" href="https://davidar.io/TeX.js/LaTeXML/ltx-article.css">';
-      var texjs_js = '<script src="https://davidar.io/TeX.js/load.js"></' + 'script>'; // linter issues...
+      var texjs_css = '<link media="all" rel="stylesheet" href="//davidar.io/TeX.js/LaTeXML/ltx-article.css">';
+      var texjs_js = '<script src="//davidar.io/TeX.js/load.js"></' + 'script>'; // linter issues...
       var texjs_responsive = '<meta name="viewport" content="width=device-width, initial-scale=1">';
       var fire_loaded = '<script> ' +
         ' var DOMContentLoaded_event = document.createEvent("Event"); ' +

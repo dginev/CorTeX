@@ -7,18 +7,18 @@
     <title> {% if global.title %} {{global.title}} | CorTeX Framework {% endif %}</title>
 
     <!-- Sprinkle some jQuery : -->
-    <script src='https://code.jquery.com/jquery-2.1.4.min.js'></script>
+    <script src='//code.jquery.com/jquery-2.1.4.min.js'></script>
     <!-- Bootstrap, the modern mother of all design: -->
     <!-- Latest compiled and minified CSS -->
-    <link rel='stylesheet' type='text/css' href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.1/css/bootstrap.min.css">
+    <link rel='stylesheet' type='text/css' href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.1/css/bootstrap.min.css">
     <!-- Optional theme -->
-    <link rel='stylesheet' type='text/css' href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.1/css/bootstrap-theme.min.css">
+    <link rel='stylesheet' type='text/css' href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.1/css/bootstrap-theme.min.css">
     <!-- Latest compiled and minified JavaScript -->
-    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.1/js/bootstrap.min.js"></script>
+    <script src="//maxcdn.bootstrapcdn.com/bootstrap/3.3.1/js/bootstrap.min.js"></script>
     <!-- And some Awesome Font sauce: -->
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.4.0/css/font-awesome.min.css">
+    <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.4.0/css/font-awesome.min.css">
     <!-- Robot slab font: -->
-    <link rel='stylesheet' type='text/css' href='http://fonts.googleapis.com/css?family=Roboto+Slab:400,700'>
+    <link rel='stylesheet' type='text/css' href='//fonts.googleapis.com/css?family=Roboto+Slab:400,700'>
 
     <link rel="stylesheet" type='text/css' href='/public/css/cortex.css'>
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -99,7 +99,8 @@
             <div class="container">
                 {% if global.report_duration %}
                 <div class="pull-right">
-                    <span class="report-duration" data-report-duration="{{global.report_duration}}">[Report generated in {{global.report_duration}}ms, on {{global.report_time}}]
+                    <span class="report-duration" data-report-duration="{{global.report_duration}}">[Report generated in
+                        {{global.report_duration}}ms, on {{global.report_time}}]
                         <a href="javascript:void(0);" data-toggle="modal" data-target="#modal-rerun" title="Mark reported tasks for rerun">
                             <i class="fa fa-refresh"></i>
                         </a>
@@ -107,14 +108,14 @@
                 </div>
                 {% else %}
                 <div class="btn-github-star">
-                    <iframe src="https://ghbtns.com/github-btn.html?user=dginev&repo=CorTeX&type=star&count=false&size=large" frameborder="0"
-                        scrolling="0" width="75px" height="30px"></iframe>
+                    <iframe src="//ghbtns.com/github-btn.html?user=dginev&repo=CorTeX&type=star&count=false&size=large" frameborder="0" scrolling="0"
+                        width="75px" height="30px"></iframe>
                 </div>
                 {% endif %}
             </div>
         </nav>
     </footer>
-    <script src='https://privacy.kwarc.info/policy.js'></script>
+    <script src='//privacy.kwarc.info/policy.js'></script>
 </body>
 
 </html>
