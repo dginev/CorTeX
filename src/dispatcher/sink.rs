@@ -57,8 +57,15 @@ impl Sink {
 
     loop {
       let mut recv_msg = zmq::Message::new()?;
+      let mut identity_msg = zmq::Message::new()?;
       let mut taskid_msg = zmq::Message::new()?;
       let mut service_msg = zmq::Message::new()?;
+
+      sink.recv(&mut identity_msg, 0)?;
+      let identity = match identity_msg.as_str() {
+        Some(some_name) => some_name,
+        None => "_worker_",
+      };
 
       sink.recv(&mut service_msg, 0)?;
       let service_name = match service_msg.as_str() {
@@ -75,13 +82,14 @@ impl Sink {
         Ok(some_id) => some_id,
         Err(_) => -1,
       };
+
       // We have a job, count it
       sink_job_count += 1;
       let mut total_incoming = 0;
       let request_time = time::get_time();
       println!(
-        "Incoming sink job {:?} for service {:?}, taskid: {}",
-        sink_job_count, service_name, taskid
+        "sink {:?}: incoming result for {:?}, worker {:?}, taskid: {}",
+        sink_job_count, service_name, identity, taskid
       );
 
       if let Some(task_progress) = server::pop_progress_task(&progress_queue_arc, taskid) {
@@ -184,13 +192,13 @@ impl Sink {
       let responded_time = time::get_time();
       let request_duration = (responded_time - request_time).num_milliseconds();
       println!(
-        "Sink job {}, message size: {}, took {}ms.",
+        "sink {}: message size: {}, took {}ms.",
         sink_job_count, total_incoming, request_duration
       );
       if let Some(limit_number) = job_limit {
         if sink_job_count >= limit_number {
           println!(
-            "Manager job limit of {:?} reached, terminating Sink thread...",
+            "sink {}: job limit reached, terminating Sink thread...",
             limit_number
           );
           break;

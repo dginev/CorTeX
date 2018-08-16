@@ -47,7 +47,10 @@ pub fn mark_done_arc(
     }
     let responded_time = time::get_time();
     let request_duration = (responded_time - request_time).num_milliseconds();
-    println!("Reporting done tasks to DB took {}ms.", request_duration);
+    println!(
+      "finalize: reporting tasks to DB took {}ms.",
+      request_duration
+    );
     Ok(true)
   } else {
     Ok(false)
@@ -152,8 +155,7 @@ pub fn get_sync_service<S: ::std::hash::BuildHasher>(
         Ok(s) => Some(s),
         _ => None,
       },
-    )
-    .clone()
+    ).clone()
 }
 
 /// Getter for a `Service` stored inside an `Arc<Mutex<HashMap>`, with no DB access

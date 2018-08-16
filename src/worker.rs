@@ -11,6 +11,7 @@ extern crate pericortex;
 extern crate rand;
 extern crate zmq;
 
+use rand::{thread_rng, Rng};
 use std::fs::File;
 use std::path::Path;
 use std::thread;
@@ -90,7 +91,11 @@ impl Worker for InitWorker {
     // Connect to a task ventilator
     let context_source = Context::new();
     let source = context_source.socket(zmq::DEALER).unwrap();
-    let identity: String = (0..10).map(|_| rand::random::<u8>() as char).collect();
+    let letters: Vec<_> = "abcdefghijklmonpqrstuvwxyz".chars().collect();
+    let mut identity = String::new();
+    for _step in 1..20 {
+      identity.push(*thread_rng().choose(&letters).unwrap());
+    }
     source.set_identity(identity.as_bytes()).unwrap();
 
     assert!(source.connect(&self.source()).is_ok());
@@ -122,7 +127,7 @@ impl Worker for InitWorker {
       };
 
       self.convert(Path::new(&task.entry));
-
+      sink.send_str(&identity, SNDMORE).unwrap();
       sink.send_str(&self.service(), SNDMORE).unwrap();
       sink.send_str(taskid, SNDMORE).unwrap();
       sink.send(&[], 0).unwrap();

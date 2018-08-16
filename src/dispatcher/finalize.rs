@@ -32,7 +32,7 @@ impl Finalize {
       if let Some(limit) = self.job_limit {
         if jobs_count >= limit {
           println!(
-            "Manager job limit of {:?} reached, terminating IO thread...",
+            "finalize {}: job limit reached, terminating finalize thread...",
             limit
           );
           break;

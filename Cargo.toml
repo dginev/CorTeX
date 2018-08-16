@@ -1,6 +1,6 @@
 [package]
 name = "cortex"
-version = "0.2.10"
+version = "0.3.0"
 authors = ["Deyan Ginev <d.ginev@jacobs-university.de>"]
 license = "MIT"
 repository = "https://github.com/dginev/cortex"

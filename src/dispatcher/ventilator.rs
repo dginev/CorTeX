@@ -61,6 +61,7 @@ impl Ventilator {
       ventilator.recv(&mut identity, 0)?;
       ventilator.recv(&mut msg, 0)?;
       let service_name = msg.as_str().unwrap_or_default().to_string();
+      let identity_str = identity.as_str().unwrap_or_default().to_string();
       // println!("Task requested for service: {}", service_name.clone());
       let request_time = time::get_time();
       source_job_count += 1;
@@ -129,8 +130,8 @@ impl Ventilator {
           let taskid = current_task.id;
           let serviceid = current_task.service_id;
           println!(
-            "Replying for source job {:?} with task id {:?}",
-            source_job_count, taskid,
+            "vent {}: worker {:?} received task {:?}",
+            source_job_count, identity_str, taskid
           );
           ventilator.send_str(&taskid.to_string(), SNDMORE)?;
           if serviceid == 1 {
@@ -162,7 +163,7 @@ impl Ventilator {
               let responded_time = time::get_time();
               let request_duration = (responded_time - request_time).num_milliseconds();
               println!(
-                "Source job {}, message size: {}, took {}ms.",
+                "vent {}: message size: {}, took {}ms.",
                 source_job_count, total_outgoing, request_duration
               );
             } else {
@@ -171,7 +172,10 @@ impl Ventilator {
             }
           }
         } else {
-          println!("-- No jobs in queue, sent mock task reply.");
+          println!(
+            "vent {:?}: worker {:?} received mock reply.",
+            source_job_count, identity_str
+          );
           ventilator.send_str("0", SNDMORE)?;
           ventilator.send(&[], 0)?;
         }
@@ -188,7 +192,7 @@ impl Ventilator {
       if let Some(limit_number) = job_limit {
         if source_job_count >= limit_number {
           println!(
-            "Manager job limit of {:?} reached, terminating Ventilator thread...",
+            "vent {}: job limit reached, terminating Ventilator thread...",
             limit_number
           );
           break;
