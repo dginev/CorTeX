@@ -497,6 +497,8 @@ impl Backend {
     category_opt: Option<String>,
     what_opt: Option<String>,
     all_messages: bool,
+    offset: i64,
+    page_size: i64,
   ) -> Vec<HashMap<String, String>>
   {
     use diesel::sql_types::{BigInt, Text};
@@ -516,7 +518,9 @@ impl Backend {
           .filter(service_id.eq(service.id))
           .filter(corpus_id.eq(corpus.id))
           .filter(status.eq(task_status.raw()))
-          .limit(100)
+          .order(tasks::entry.asc())
+          .offset(offset as i64)
+          .limit(page_size as i64)
           .load(&self.connection)
           .unwrap_or_default();
         for &(ref entry_fixedwidth, entry_taskid) in &entry_rows {
@@ -702,13 +706,16 @@ impl Backend {
                   + &log_table
                   + ".task_id and service_id=$1 and corpus_id=$2 and "
                   + &status_clause
-                  + "and category=$4 and what=$5 limit 100";
+                  + "and category=$4 and what=$5 ORDER BY tasks.entry ASC offset $6 limit $7";
+
                 let details_report_query = sql_query(details_report_query_string)
                   .bind::<BigInt, i64>(i64::from(service.id))
                   .bind::<BigInt, i64>(i64::from(corpus.id))
                   .bind::<BigInt, i64>(i64::from(bind_status))
                   .bind::<Text, _>(category_name)
-                  .bind::<Text, _>(what_name);
+                  .bind::<Text, _>(what_name)
+                  .bind::<BigInt, i64>(i64::from(offset))
+                  .bind::<BigInt, i64>(i64::from(page_size));
                 let details_report: Vec<TaskDetailReport> = details_report_query
                   .get_results(&self.connection)
                   .unwrap_or_default();
