@@ -151,8 +151,10 @@ fn aux_load_config() -> CortexConfig {
 }
 
 #[derive(FromForm)]
-struct ToggleAllMessages {
-  all: bool,
+struct ReportParams {
+  all: Option<bool>,
+  offset: Option<i64>,
+  page_size: Option<i64>,
 }
 
 #[get("/")]
@@ -256,7 +258,7 @@ fn top_service_report(
   service_name: String,
 ) -> Result<Template, NotFound<String>>
 {
-  serve_report(&corpus_name, &service_name, None, None, None, false)
+  serve_report(&corpus_name, &service_name, None, None, None, None)
 }
 #[get("/corpus/<corpus_name>/<service_name>/<severity>")]
 fn severity_service_report(
@@ -271,15 +273,15 @@ fn severity_service_report(
     Some(severity),
     None,
     None,
-    false,
+    None,
   )
 }
-#[get("/corpus/<corpus_name>/<service_name>/<severity>?<toggle>")]
+#[get("/corpus/<corpus_name>/<service_name>/<severity>?<params>")]
 fn severity_service_report_all(
   corpus_name: String,
   service_name: String,
   severity: String,
-  toggle: Option<ToggleAllMessages>,
+  params: Option<ReportParams>,
 ) -> Result<Template, NotFound<String>>
 {
   serve_report(
@@ -288,7 +290,7 @@ fn severity_service_report_all(
     Some(severity),
     None,
     None,
-    toggle.is_some() && toggle.unwrap().all,
+    params,
   )
 }
 #[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>")]
@@ -305,16 +307,16 @@ fn category_service_report(
     Some(severity),
     Some(category),
     None,
-    false,
+    None,
   )
 }
-#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>?<toggle>")]
+#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>?<params>")]
 fn category_service_report_all(
   corpus_name: String,
   service_name: String,
   severity: String,
   category: String,
-  toggle: Option<ToggleAllMessages>,
+  params: Option<ReportParams>,
 ) -> Result<Template, NotFound<String>>
 {
   serve_report(
@@ -323,7 +325,7 @@ fn category_service_report_all(
     Some(severity),
     Some(category),
     None,
-    toggle.is_some() && toggle.unwrap().all,
+    params,
   )
 }
 
@@ -342,17 +344,17 @@ fn what_service_report(
     Some(severity),
     Some(category),
     Some(what),
-    false,
+    None,
   )
 }
-#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>/<what>?<toggle>")]
+#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>/<what>?<params>")]
 fn what_service_report_all(
   corpus_name: String,
   service_name: String,
   severity: String,
   category: String,
   what: String,
-  toggle: Option<ToggleAllMessages>,
+  params: Option<ReportParams>,
 ) -> Result<Template, NotFound<String>>
 {
   serve_report(
@@ -361,7 +363,7 @@ fn what_service_report_all(
     Some(severity),
     Some(category),
     Some(what),
-    toggle.is_some() && toggle.unwrap().all,
+    params,
   )
 }
 
@@ -675,7 +677,7 @@ fn serve_report(
   severity: Option<String>,
   category: Option<String>,
   what: Option<String>,
-  all_messages: bool,
+  params: Option<ReportParams>,
 ) -> Result<Template, NotFound<String>>
 {
   let report_start = time::get_time();
@@ -716,6 +718,11 @@ fn serve_report(
       global.insert("type".to_string(), "Conversion".to_string());
       global.insert("inputformat".to_string(), service.inputformat.clone());
       global.insert("outputformat".to_string(), service.outputformat.clone());
+
+      let all_messages = match params {
+        None => false,
+        Some(ref params) => *params.all.as_ref().unwrap_or(&false),
+      };
       global.insert("all_messages".to_string(), all_messages.to_string());
       if all_messages {
         // Handlebars has a weird limitation on its #if conditional, can only test for field
@@ -755,7 +762,7 @@ fn serve_report(
             severity,
             None,
             None,
-            all_messages,
+            &params,
           );
           // Record the report into "entries" vector
           context.entries = Some(entries);
@@ -769,7 +776,7 @@ fn serve_report(
             severity,
             None,
             None,
-            all_messages,
+            &params,
           );
           // Record the report into "categories" vector
           context.categories = Some(categories);
@@ -792,7 +799,7 @@ fn serve_report(
             severity,
             category,
             None,
-            all_messages,
+            &params,
           );
           // Record the report into "entries" vector
           context.entries = Some(entries);
@@ -806,7 +813,7 @@ fn serve_report(
             severity,
             category,
             None,
-            all_messages,
+            &params,
           );
           // Record the report into "whats" vector
           context.whats = Some(whats);
@@ -829,7 +836,7 @@ fn serve_report(
           severity,
           category,
           what,
-          all_messages,
+          &params,
         );
         // Record the report into "entries" vector
         context.entries = Some(entries);
@@ -1017,6 +1024,30 @@ fn aux_decorate_uri_encodings(context: &mut TemplateContext) {
   for (decoration_key, decoration_val) in uri_decorations {
     context.global.insert(decoration_key, decoration_val);
   }
+  let mut current_link = String::new();
+  {
+    if let Some(corpus_name) = context.global.get("corpus_name_uri") {
+      if let Some(service_name) = context.global.get("service_name_uri") {
+        current_link = format!("/corpus/{}/{}/", corpus_name, service_name);
+        if let Some(severity) = context.global.get("severity_uri") {
+          current_link.push_str(severity);
+          current_link.push('/');
+          if let Some(category) = context.global.get("category_uri") {
+            current_link.push_str(category);
+            current_link.push('/');
+            if let Some(what) = context.global.get("what_uri") {
+              current_link.push_str(what);
+            }
+          }
+        }
+      }
+    }
+  }
+  if !current_link.is_empty() {
+    context
+      .global
+      .insert("current_link_uri".to_string(), current_link);
+  }
 }
 
 #[derive(Deserialize)]
@@ -1083,9 +1114,22 @@ fn aux_task_report(
   severity: Option<String>,
   category: Option<String>,
   what: Option<String>,
-  all_messages: bool,
+  params: &Option<ReportParams>,
 ) -> Vec<HashMap<String, String>>
 {
+  let all_messages = match params {
+    None => false,
+    Some(ref params) => *params.all.as_ref().unwrap_or(&false),
+  };
+  let offset = match params {
+    None => 0,
+    Some(ref params) => *params.offset.as_ref().unwrap_or(&0),
+  };
+  let page_size = match params {
+    None => 100,
+    Some(ref params) => *params.page_size.as_ref().unwrap_or(&100),
+  };
+
   let key_tail = match severity.clone() {
     Some(severity) => {
       let cat_tail = match category.clone() {
@@ -1101,7 +1145,11 @@ fn aux_task_report(
       "_".to_string() + &severity + &cat_tail
     },
     None => String::new(),
-  } + if all_messages { "_all_messages" } else { "" };
+  } + "_offset_"
+    + &offset.to_string()
+    + "_page_size_"
+    + &page_size.to_string()
+    + if all_messages { "_all_messages" } else { "" };
   let cache_key: String = corpus.id.to_string() + "_" + &service.id.to_string() + &key_tail;
   let cache_key_time = cache_key.clone() + "_time";
   let mut redis_connection = None;
@@ -1118,7 +1166,6 @@ fn aux_task_report(
   };
   let fetched_report;
   let time_val: String;
-
   match cache_val {
     Ok(cached_report_json) => {
       let cached_report: Vec<HashMap<String, String>> =
@@ -1132,6 +1179,8 @@ fn aux_task_report(
           category,
           what.clone(),
           all_messages,
+          offset,
+          page_size,
         );
         let report_json: String = serde_json::to_string(&report).unwrap();
         // println!("SET {:?}", cache_key);
@@ -1162,7 +1211,16 @@ fn aux_task_report(
     Err(_) => {
       let backend = Backend::default();
       let what_is_none = what.is_none();
-      let report = backend.task_report(corpus, service, severity, category, what, all_messages);
+      let report = backend.task_report(
+        corpus,
+        service,
+        severity,
+        category,
+        what,
+        all_messages,
+        offset,
+        page_size,
+      );
       let report_json: String = serde_json::to_string(&report).unwrap();
       // println!("SET2 {:?}", cache_key);
       if what_is_none {
@@ -1179,6 +1237,30 @@ fn aux_task_report(
     },
   }
   // Setup the return
+
+  let from_offset = offset;
+  let to_offset = offset + page_size;
+  global.insert("from_offset".to_string(), from_offset.to_string());
+  if from_offset >= page_size {
+    // TODO: properly do tera ifs?
+    global.insert("offset_min_false".to_string(), "true".to_string());
+    global.insert(
+      "prev_offset".to_string(),
+      (from_offset - page_size).to_string(),
+    );
+  }
+
+  if fetched_report.len() >= page_size as usize {
+    global.insert("offset_max_false".to_string(), "true".to_string());
+  }
+  global.insert(
+    "next_offset".to_string(),
+    (from_offset + page_size).to_string(),
+  );
+
+  global.insert("offset".to_string(), offset.to_string());
+  global.insert("page_size".to_string(), page_size.to_string());
+  global.insert("to_offset".to_string(), to_offset.to_string());
   global.insert("report_time".to_string(), time_val);
 
   fetched_report
@@ -1244,7 +1326,7 @@ fn cache_worker() {
                   Some(severity.to_string()),
                   None,
                   None,
-                  false,
+                  &None,
                 );
                 // for each category, cache the what page
                 for cat_hash in &category_report {
@@ -1269,7 +1351,7 @@ fn cache_worker() {
                     Some(severity.to_string()),
                     Some(category.to_string()),
                     None,
-                    false,
+                    &None,
                   );
                   // for each what, cache the "task list" page
                   // for what_hash in what_report.iter() {

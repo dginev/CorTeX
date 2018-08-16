@@ -1,8 +1,8 @@
 {% extends "layout" %} {% block content %}
 <div class="center">
-  <h1>Entries (example 100)</h1>
+  <h1>Entries {{global.from_offset}} to {{global.to_offset}}</h1>
   <br>
-  <div class="row">
+  <div>
 
     <table id="corpus-report" class="table">
       <thead>
@@ -34,5 +34,14 @@
     </table>
     {% include "entry-view-report" %}
   </div>
-</div>
-{% endblock content %}
+
+  <div>
+    {% if global.offset_min_false %}
+    <span><a href="{{global.current_link_uri}}?offset={{global.prev_offset}}&page_size={{global.page_size}}">&lt;&lt;</a></span>
+    {% endif %}
+    <span>[{{global.from_offset}}-{{global.to_offset}}]</span>
+    {% if global.offset_max_false %}
+    <span><a href="{{global.current_link_uri}}?offset={{global.next_offset}}&page_size={{global.page_size}}">&gt;&gt;</a></span>
+    {% endif %}
+  </div>
+  {% endblock content %}
