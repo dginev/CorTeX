@@ -34,6 +34,12 @@ $(document).ready(function () {
     tr_fatal.append('<td class="right">' + ((100.0 * fatal) / total).toFixed(2) + '%</td>');
     tr_fatal.append('<td class="right no-problem">' + fatal + '</td>');
 
+    var tr_completed = $('<tr class="corpus-report-completed" />');
+    tr_completed.append('<td class="left">Completed</td>');
+    tr_completed.append('<td class="right">100%</td>');
+    tr_completed.append('<td class="right no-problem">' + total + '</td>');
+
+
     var table = $('<table class="table"/>');
     table.append('<thead><tr><th class="left">Status</th><th class="right">Percent</th><th class="right">Tasks</th></tr></thead>');
     var tbody = $("<tbody />");
@@ -41,6 +47,7 @@ $(document).ready(function () {
     tbody.append(tr_warning);
     tbody.append(tr_error);
     tbody.append(tr_fatal);
+    tbody.append(tr_completed);
     table.append(tbody);
     report_div.prepend(table);
     report_div.prepend("<h2>Rerun Progress</h2>");
