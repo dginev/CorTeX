@@ -110,6 +110,7 @@ struct TemplateContext {
   entries: Option<Vec<HashMap<String, String>>>,
   categories: Option<Vec<HashMap<String, String>>>,
   whats: Option<Vec<HashMap<String, String>>>,
+  workers: Option<Vec<HashMap<String, String>>>,
 }
 impl Default for TemplateContext {
   fn default() -> Self {
@@ -120,6 +121,7 @@ impl Default for TemplateContext {
       entries: None,
       categories: None,
       whats: None,
+      workers: None,
     }
   }
 }
@@ -203,6 +205,45 @@ fn admin() -> Template {
     ..TemplateContext::default()
   };
   Template::render("admin", context)
+}
+
+#[get("/workers/<service_name>")]
+fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
+  let backend = Backend::default();
+  let service_name = aux_uri_unescape(Some(&service_name)).unwrap_or_else(|| UNKNOWN.to_string());
+  if let Ok(service) = Service::find_by_name(&service_name, &backend.connection) {
+    let mut global = HashMap::new();
+    global.insert(
+      "title".to_string(),
+      "Registered services for ".to_string() + &service_name,
+    );
+    global.insert(
+      "description".to_string(),
+      "An analysis framework for corpora of TeX/LaTeX documents - registered services for "
+        .to_string()
+        + &service_name,
+    );
+    global.insert("service_name".to_string(), service_name.to_string());
+    global.insert(
+      "service_description".to_string(),
+      service.description.clone(),
+    );
+    let mut context = TemplateContext {
+      global,
+      ..TemplateContext::default()
+    };
+
+    let workers = service
+      .select_workers(&backend.connection)
+      .unwrap()
+      .into_iter()
+      .map(|w| w.into())
+      .collect();
+    context.workers = Some(workers);
+    Ok(Template::render("workers", context))
+  } else {
+    Err(NotFound(String::from("no such service")))
+  }
 }
 
 #[get("/corpus/<corpus_name>")]
@@ -645,6 +686,7 @@ fn rocket() -> rocket::Rocket {
         corpus,
         favicon,
         files,
+        worker_report,
         top_service_report,
         severity_service_report,
         category_service_report,

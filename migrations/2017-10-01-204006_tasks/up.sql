@@ -1,5 +1,6 @@
 -- Your SQL goes here
-CREATE TABLE tasks (
+CREATE TABLE tasks
+(
   id BIGSERIAL PRIMARY KEY,
   service_id INTEGER NOT NULL,
   corpus_id INTEGER NOT NULL,
