@@ -95,31 +95,28 @@
 
     <footer>
         <nav class="navbar navbar-default navbar-fixed-bottom" role="navigation">
-            {%block footer_extra %}{% endblock footer_extra %}
-            <div class="container">
-                {% if global.report_duration %}
-                <div class="pull-right">
-                    <span class="report-duration" data-report-duration="{{global.report_duration}}">Report generated in {{global.report_duration}}ms,
-                        on {{global.report_time}}
-                        <a href="javascript:void(0);" data-toggle="modal" data-target="#modal-rerun" title="Mark reported tasks for rerun">
-                            <i class="fa fa-refresh"></i>
-                        </a><br>
-                    </span>
-                    {% if not global.severity %}
-                    <span class="auto-refresh">auto refresh:
-                        <label class="switch">
-                            <input type="checkbox" name="refresh" value="false">
-                            <span class="slider round"></span>
-                        </label>
-                    </span><br> {% endif %}
-                </div>
-                {% else %}
-                <div class="btn-github-star">
-                    <iframe src="//ghbtns.com/github-btn.html?user=dginev&repo=CorTeX&type=star&count=false&size=large" frameborder="0" scrolling="0"
-                        width="75px" height="30px"></iframe>
-                </div>
-                {% endif %}
+            {% if global.report_duration %}
+            <div class="pull-right">
+                <span class="report-duration" data-report-duration="{{global.report_duration}}">Report generated in {{global.report_duration}}ms,
+                    on {{global.report_time}}
+                    <a href="javascript:void(0);" data-toggle="modal" data-target="#modal-rerun" title="Mark reported tasks for rerun">
+                        <i class="fa fa-refresh"></i>
+                    </a><br>
+                </span>
+                {% if not global.severity %}
+                <span class="auto-refresh">auto refresh:
+                    <label class="switch">
+                        <input type="checkbox" name="refresh" value="false">
+                        <span class="slider round"></span>
+                    </label>
+                </span><br> {% endif %}
             </div>
+            {% else %}
+            <div class="btn-github-star">
+                <iframe src="//ghbtns.com/github-btn.html?user=dginev&repo=CorTeX&type=star&count=false&size=large" frameborder="0" scrolling="0"
+                    width="75px" height="30px"></iframe>
+            </div>
+            {% endif %} {%block footer_extra %}{% endblock footer_extra %}
         </nav>
     </footer>
     <script src='//privacy.kwarc.info/policy.js'></script>
