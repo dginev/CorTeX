@@ -1,8 +1,11 @@
 extern crate tempfile;
 extern crate zmq;
+extern crate zmq_sys;
 
 use std::collections::HashMap;
 use std::io::Read;
+use std::mem::size_of;
+use std::os::raw::c_int;
 use std::sync::Arc;
 use std::sync::Mutex;
 use time;
@@ -13,7 +16,7 @@ use helpers;
 use helpers::{NewTaskMessage, TaskProgress, TaskReport, TaskStatus};
 use models::{Service, WorkerMetadata};
 use std::error::Error;
-use zmq::SNDMORE;
+use zmq::{Constants, SNDMORE};
 
 /// Specifies the binding and operation parameters for a ZMQ ventilator component
 pub struct Ventilator {
@@ -49,9 +52,18 @@ impl Ventilator {
     backend.clear_limbo_tasks()?;
     // Ok, let's bind to a port and start broadcasting
     let context = zmq::Context::new();
-    let ventilator = context.socket(zmq::ROUTER)?;
-    let port_str = self.port.to_string();
-    let address = "tcp://*:".to_string() + &port_str;
+    let mut ventilator = context.socket(zmq::ROUTER)?;
+    let mut one: c_int = 1;
+    unsafe {
+      let _rc = zmq_sys::zmq_setsockopt(
+        ventilator.as_mut_ptr(),
+        Constants::ZMQ_ROUTER_HANDOVER.to_raw(),
+        &mut one as *mut c_int as *mut _,
+        size_of::<c_int>(),
+      );
+    }
+
+    let address = format!("tcp://*:{}", self.port);
     assert!(ventilator.bind(&address).is_ok());
     let mut source_job_count: usize = 0;
 

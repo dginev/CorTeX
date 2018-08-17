@@ -49,8 +49,7 @@ impl Sink {
     // Ok, let's bind to a port and start broadcasting
     let context = zmq::Context::new();
     let sink = context.socket(zmq::PULL)?;
-    let port_str = self.port.to_string();
-    let address = "tcp://*:".to_string() + &port_str;
+    let address = format!("tcp://*:{}", self.port);
     assert!(sink.bind(&address).is_ok());
 
     let mut sink_job_count: usize = 0;

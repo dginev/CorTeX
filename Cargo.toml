@@ -51,6 +51,7 @@ hyper-tls = "0.1"
 url="1.7"
 tokio-core = "0.1"
 zmq = "0.8.2"
+zmq-sys = "0.8.2"
 dotenv = "0.10"
 dotenv_macros = "0.10"
 diesel = {version="=1.1.2", features = ["postgres"]}
