@@ -4,7 +4,7 @@
   <br>
   <div class="row">
     <div class="col-md-4"></div>
-    <div class="col-md-4">
+    <div class="col-md-4" id="report-div">
       <table id="corpus-report" class="table">
         <thead>
           <tr>
@@ -19,38 +19,38 @@
               <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/no_problem">No Problems</a>
             </td>
             <td class="right">{{global.no_problem_percent}}%</td>
-            <td class="right">{{global.no_problem}}</td>
+            <td class="right no-problem">{{global.no_problem}}</td>
           </tr>
           <tr class="warning corpus-report-warnings">
             <td class="left">
               <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/warning">Warning</a>
             </td>
             <td class="right">{{global.warning_percent}}%</td>
-            <td class="right">{{global.warning}}</td>
+            <td class="right warning">{{global.warning}}</td>
           </tr>
           <tr class="error corpus-report-errors">
             <td class="left">
               <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/error">Error</a>
             </td>
             <td class="right">{{global.error_percent}}%</td>
-            <td class="right">{{global.error}}</td>
+            <td class="right error">{{global.error}}</td>
           </tr>
           <tr class="danger corpus-report-fatal">
             <td class="left">
               <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/fatal">Fatal</a>
             </td>
             <td class="right">{{global.fatal_percent}}%</td>
-            <td class="right">{{global.fatal}}</td>
+            <td class="right fatal">{{global.fatal}}</td>
           </tr>
           <tr class="info corpus-report-info">
             <td class="left">Pending {{global.type}}</td>
             <td class="right">{{global.todo_percent}}%</td>
-            <td class="right">{{global.todo}}</td>
+            <td class="right todo">{{global.todo}}</td>
           </tr>
           <tr class="info corpus-report-info">
             <td class="left"><a href="/workers/{{global.service_name_uri}}">In progress</a></td>
             <td class="right">{{global.queued_percent}}%</td>
-            <td class="right">{{global.queued}}</td>
+            <td class="right queued">{{global.queued}}</td>
           </tr>
           <tr class="info corpus-report-info">
             <td class="left">Blocked</td>
@@ -73,7 +73,7 @@
     <div class="col-md-4"></div>
   </div>
 </div>
-{% endblock content %}
+<script src="/public/js/progress_report.js"></script> {% endblock content %}
 
 <br> {% block footer_extra %}
 <div>
