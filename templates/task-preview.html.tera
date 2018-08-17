@@ -58,7 +58,6 @@
       } else {
         // Otherwise just decrement 1
         var new_quota = (localStorage.getItem("g_recaptcha_quota") || 0) - 1;
-        console.log("NEW QUOTA: ", new_quota);
         if (new_quota > 0) {
           localStorage.setItem("g_recaptcha_quota", new_quota);
         } else {
@@ -70,7 +69,7 @@
           return;
         }
       }
-
+      $("body").css("cursor", "progress");
       var xhr = new XMLHttpRequest();
       xhr.responseType = "arraybuffer";
       xhr.onreadystatechange = function () {
@@ -152,7 +151,6 @@
     var saved_recaptcha = localStorage.getItem("g_recaptcha_response");
     if (saved_recaptcha && saved_recaptcha != "undefined" && (saved_recaptcha.length > 0)) {
       // We have a saved recaptcha, reuse for convenience
-      console.log("SAVED: ", saved_recaptcha);
       if ($("#g-recaptcha-response").length == 0) {
         $('form').append('<textarea id="g-recaptcha-response" name="g-recaptcha-response" class="g-recaptcha-response" style="display: none;"></textarea>');
       }
@@ -161,7 +159,7 @@
     } else {
       $("#modal-get-entry").modal("show");
     }
-
+    return;
   });
   function final_main_content_write(data_url_map, conversion_report, main_content) {
     // Add all assets as data URLs.
@@ -203,6 +201,7 @@
       ' DOMContentLoaded_event.initEvent("DOMContentLoaded", true, true); ' +
       ' var fire_loaded = function(){ ' +
       '  window.document.dispatchEvent(DOMContentLoaded_event); ' +
+      '  $("body").css("cursor", "auto");' +
       ' }; ' +
       ' var fire_loaded_loop = window.setInterval(fire_loaded, 2000);' +
       ' window.setTimeout(function(){clearInterval(fire_loaded_loop)}, 6000); ' +
