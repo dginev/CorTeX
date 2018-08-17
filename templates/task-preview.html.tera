@@ -164,41 +164,77 @@
 
   });
   function final_main_content_write(data_url_map, conversion_report, main_content) {
+    // Add all assets as data URLs.
     $.each(data_url_map, function (filename, newurl) {
       let escaped_name = 'src=[\'"]' + filename.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1") + '[\'"]';
       new_src = "src=\"" + newurl + "\"";
       main_content = main_content.replace(new RegExp(escaped_name, 'g'), new_src);
     });
 
-    if (main_content.match(/<\/head>/)) {
-      // load TeX.js previewer
-      var texjs_css = '<link media="all" rel="stylesheet" href="//davidar.io/TeX.js/LaTeXML/ltx-article.css">';
-      var texjs_js = '<script src="//davidar.io/TeX.js/load.js"></' + 'script>'; // linter issues...
-      var texjs_responsive = '<meta name="viewport" content="width=device-width, initial-scale=1">';
-      var fire_loaded = '<script> ' +
-        ' var DOMContentLoaded_event = document.createEvent("Event"); ' +
-        ' DOMContentLoaded_event.initEvent("DOMContentLoaded", true, true); ' +
-        ' var fire_loaded = function(){ ' +
-        '  window.document.dispatchEvent(DOMContentLoaded_event); ' +
-        ' }; ' +
-        ' var fire_loaded_loop = window.setInterval(fire_loaded, 2000);' +
-        ' window.setTimeout(function(){clearInterval(fire_loaded_loop)}, 6000); ' +
-        '</' + 'script>';
-      var texjs_sources = texjs_css + "\n" + texjs_responsive + "\n";
-      main_content = main_content.replace(/<\/head>/, texjs_sources + "\n</head>");
+    // If a conversion log is present, attach it as a trailing section
+    if (conversion_report.length > 0) {
+      var html_report = '<section id="CR1" class="ltx_section">' +
+        '<h2 class="ltx_title ltx_title_section">Cortex Conversion Report</h2>' +
+        '<div id="S1.p1" class="ltx_para">' +
+        '<p class="ltx_p">' +
+        conversion_report.split("\n").join('</p><p class="ltx_p">');
+      '</p>' +
+        '</div></section></article>';
+      main_content = main_content.replace(/<\/article>/, html_report);
+    }
 
-      if (conversion_report.length > 0) {
-        var html_report = '<section id="CR1" class="ltx_section">' +
-          '<h2 class="ltx_title ltx_title_section">Cortex Conversion Report</h2>' +
-          '<div id="S1.p1" class="ltx_para">' +
-          '<p class="ltx_p">' +
-          conversion_report.split("\n").join('</p><p class="ltx_p">');
-        '</p>' +
-          '</div></section></article>';
-        main_content = main_content.replace(/<\/article>/, html_report);
+    // Apply a style of choice to the article, default is TeX.js
+    let style = "texjs";
+    var sPageURL = decodeURIComponent(window.location.search.substring(1)),
+      sURLVariables = sPageURL.split('&'),
+      sParameterName,
+      i;
+
+    for (i = 0; i < sURLVariables.length; i++) {
+      sParameterName = sURLVariables[i].split('=');
+
+      if (sParameterName[0] === "style" && (sParameterName[1] !== undefined)) {
+        style = sParameterName[1];
       }
+    }
 
-      main_content = main_content.replace(/<\/body>/, "\n" + texjs_js + "\n" + fire_loaded + "\n</body>");
+    var fire_loaded = '<script> ' +
+      ' var DOMContentLoaded_event = document.createEvent("Event"); ' +
+      ' DOMContentLoaded_event.initEvent("DOMContentLoaded", true, true); ' +
+      ' var fire_loaded = function(){ ' +
+      '  window.document.dispatchEvent(DOMContentLoaded_event); ' +
+      ' }; ' +
+      ' var fire_loaded_loop = window.setInterval(fire_loaded, 2000);' +
+      ' window.setTimeout(function(){clearInterval(fire_loaded_loop)}, 6000); ' +
+      '</' + 'script>';
+    var latexml_css = ["amsart", "apj", "article", "book", "cv", "listings", "report", "svjour", "ulem"];
+    var maybe_mathjax_js = '<script>' +
+      'var agent = navigator.userAgent; ' +
+      'var canMathML = ((agent.indexOf("Gecko") > -1) && (agent.indexOf("KHTML") === -1)|| agent.match(/MathPlayer/) ); ' +
+      'if (!canMathML) {' +
+      'var el = document.createElement("script");' +
+      'el.src = "https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=MML_HTMLorMML";' +
+      'document.querySelector("head").appendChild(el); }' +
+      '</' + 'script>';
+
+    if (main_content.match(/<\/head>/)) {
+      if (style == "simple") {
+        var simple_css = '<link media="all" rel="stylesheet" href="//latexml.mathweb.org/css/external/LaTeXML.css">' + "\n" + '<link media="all" rel="stylesheet" href="//latexml.mathweb.org/css/external/ltx-article.css">';
+        main_content = main_content.replace(/<\/head>/, simple_css + "\n</head>");
+        main_content = main_content.replace(/<\/body>/, "\n" + maybe_mathjax_js + "\n" + fire_loaded + "\n</body>");
+      } else if (style && latexml_css.indexOf(style) !== -1) {
+        var simple_css = '<link media="all" rel="stylesheet" href="//latexml.mathweb.org/css/external/LaTeXML.css">' + "\n" + '<link media="all" rel="stylesheet" href="//latexml.mathweb.org/css/external/ltx-' + style + '.css">';
+        main_content = main_content.replace(/<\/head>/, simple_css + "\n</head>");
+        main_content = main_content.replace(/<\/body>/, "\n" + maybe_mathjax_js + "\n" + fire_loaded + "\n</body>");
+      } else { // load TeX.js previewer by default
+        var texjs_css = '<link media="all" rel="stylesheet" href="//davidar.io/TeX.js/LaTeXML/ltx-article.css">';
+        var texjs_js = '<script src="//davidar.io/TeX.js/load.js"></' + 'script>'; // linter issues...
+        var texjs_responsive = '<meta name="viewport" content="width=device-width, initial-scale=1">';
+
+        var texjs_sources = texjs_css + "\n" + texjs_responsive + "\n";
+        main_content = main_content.replace(/<\/head>/, texjs_sources + "\n</head>");
+        main_content = main_content.replace(/<\/body>/, "\n" + texjs_js + "\n" + fire_loaded + "\n</body>");
+      }
     }
     document.write(main_content);
   }
