@@ -1,0 +1,32 @@
+{% extends "layout" %} {% block content %}
+<div class="center">
+  <h1>Workers for {{global.service_name}}</h1>
+  <br>
+  <div>
+    <table id="worker-report" class="table table-striped table-hover table-condensed">
+      <thead>
+        <tr>
+          <th class="center">Identity</th>
+          <th class="center">First Seen</th>
+          <th class="center">Last Dispatch Time</th>
+          <th class="center">Last Returned Time</th>
+          <th class="center" width="90px;">Total Tasks Dispatched</th>
+          <th class="center" width="90px;">Total Tasks Returned</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for worker in workers %}
+        <tr>
+          <td>{{worker.name}}</td>
+          <td>{{worker.session_seen}}</td>
+          <td>{{worker.time_last_dispatch}}</td>
+          <td>{{worker.time_last_return}}</td>
+          <td>{{worker.total_dispatched}}</td>
+          <td>{{worker.total_returned}}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock content %}

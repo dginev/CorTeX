@@ -48,7 +48,7 @@
             <td class="right">{{global.todo}}</td>
           </tr>
           <tr class="info corpus-report-info">
-            <td class="left">In progress</td>
+            <td class="left"><a href="/workers/{{global.service_name_uri}}">In progress</a></td>
             <td class="right">{{global.queued_percent}}%</td>
             <td class="right">{{global.queued}}</td>
           </tr>

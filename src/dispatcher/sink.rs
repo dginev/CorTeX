@@ -17,7 +17,7 @@ use time;
 use dispatcher::server;
 use helpers;
 use helpers::{TaskProgress, TaskReport, TaskStatus};
-use models::Service;
+use models::{Service, WorkerMetadata};
 
 /// Specifies the binding and operation parameters for a ZMQ sink component
 pub struct Sink {
@@ -166,6 +166,13 @@ impl Sink {
                   },
                 }
               }
+              // Also update worker metadata for transparency
+              WorkerMetadata::record_received(
+                identity.to_string(),
+                service.id,
+                taskid,
+                self.backend_address.clone(),
+              )?;
             } else {
               // Otherwise just discard the rest of the message
               println!(

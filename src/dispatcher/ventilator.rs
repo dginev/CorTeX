@@ -11,7 +11,7 @@ use backend;
 use dispatcher::server;
 use helpers;
 use helpers::{NewTaskMessage, TaskProgress, TaskReport, TaskStatus};
-use models::Service;
+use models::{Service, WorkerMetadata};
 use std::error::Error;
 use zmq::SNDMORE;
 
@@ -122,12 +122,14 @@ impl Ventilator {
             }
           }
         }
+
         ventilator.send_msg(identity, SNDMORE)?;
+        let mut taskid = -1;
         if let Some(current_task_progress) = task_queue.pop() {
           dispatched_task_opt = Some(current_task_progress.clone());
 
           let current_task = current_task_progress.task;
-          let taskid = current_task.id;
+          taskid = current_task.id;
           let serviceid = current_task.service_id;
           println!(
             "vent {}: worker {:?} received task {:?}",
@@ -168,6 +170,7 @@ impl Ventilator {
               );
             } else {
               println!("-- Failed to prepare input stream for taskid {:?}", taskid);
+              taskid = -1;
               ventilator.send(&[], 0)?;
             }
           }
@@ -179,6 +182,13 @@ impl Ventilator {
           ventilator.send_str("0", SNDMORE)?;
           ventilator.send(&[], 0)?;
         }
+        // Update this worker's metadata
+        WorkerMetadata::record_dispatched(
+          identity_str,
+          service.id,
+          taskid,
+          self.backend_address.clone(),
+        )?;
       } else {
         println!(
           "-- No such service in ventilator request: {:?}",
