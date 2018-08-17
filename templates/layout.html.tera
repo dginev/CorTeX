@@ -99,12 +99,19 @@
             <div class="container">
                 {% if global.report_duration %}
                 <div class="pull-right">
-                    <span class="report-duration" data-report-duration="{{global.report_duration}}">[Report generated in
-                        {{global.report_duration}}ms, on {{global.report_time}}]
+                    <span class="report-duration" data-report-duration="{{global.report_duration}}">Report generated in {{global.report_duration}}ms,
+                        on {{global.report_time}}
                         <a href="javascript:void(0);" data-toggle="modal" data-target="#modal-rerun" title="Mark reported tasks for rerun">
                             <i class="fa fa-refresh"></i>
-                        </a>
+                        </a><br>
                     </span>
+                    {% if not global.severity %}
+                    <span class="auto-refresh">auto refresh:
+                        <label class="switch">
+                            <input type="checkbox" name="refresh" value="false">
+                            <span class="slider round"></span>
+                        </label>
+                    </span><br> {% endif %}
                 </div>
                 {% else %}
                 <div class="btn-github-star">

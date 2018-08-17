@@ -1,4 +1,18 @@
+var refreshTimer;
+function startRefreshTimer() {
+  var refresh_secs = localStorage.getItem("report-auto-refresh");
+  if (!refresh_secs || refresh_secs == "undefined") {
+    clearTimeout(refreshTimer);
+  } else {
+    $("input[name='refresh']").attr("checked", "checked");
+    refreshTimer = setTimeout(function () { $("label.switch").replaceWith("<span>Refreshing ...</span>"); window.location.reload(true); }, refresh_secs * 1000);
+  }
+}
+
 $(document).ready(function () {
+  startRefreshTimer();
+
+  var report_div = $("div#report-div");
   var queued_count = parseInt($("td.queued").text());
   if (queued_count > 0) {
     // conversion in progress, create temporary rerun report
@@ -7,7 +21,6 @@ $(document).ready(function () {
     var error = parseInt($("td.error").text());
     var fatal = parseInt($("td.fatal").text());
     var total = no_problem + warning + error + fatal;
-    var report_div = $("div#report-div");
     report_div.prepend("<br><h2>Full Corpus</h2>");
 
     var td_a_no_problem = $("tr.corpus-report-no-problems").find('>:first-child');
@@ -52,4 +65,19 @@ $(document).ready(function () {
     report_div.prepend(table);
     report_div.prepend("<h2>Rerun Progress</h2>");
   }
+  report_div.css('visibility', 'visible');
+
+  $("input[name='refresh']").click(function () {
+    var $this = $(this);
+    if ($this.attr("checked")) {
+      // disable auto-refresh
+      $this.removeAttr("checked");
+      localStorage.removeItem("report-auto-refresh");
+    } else {
+      // enable auto-refresh
+      $this.attr("checked", "checked");
+      localStorage.setItem("report-auto-refresh", 60);
+    }
+    startRefreshTimer();
+  });
 })
