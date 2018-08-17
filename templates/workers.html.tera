@@ -16,11 +16,11 @@
       </thead>
       <tbody>
         {% for worker in workers %}
-        <tr>
+        <tr class="{{worker.fresh}}">
           <td>{{worker.name}}</td>
-          <td>{{worker.session_seen}}</td>
-          <td>{{worker.time_last_dispatch}}</td>
-          <td>{{worker.time_last_return}}</td>
+          <td class="time-ago">{{worker.session_seen}}</td>
+          <td class="time-ago">{{worker.time_last_dispatch}}</td>
+          <td class="time-ago">{{worker.time_last_return}}</td>
           <td>{{worker.total_dispatched}}</td>
           <td>{{worker.total_returned}}</td>
         </tr>

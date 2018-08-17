@@ -511,7 +511,6 @@ pub struct WorkerMetadata {
 impl From<WorkerMetadata> for HashMap<String, String> {
   fn from(worker: WorkerMetadata) -> HashMap<String, String> {
     let mut wh = HashMap::new();
-    let now = SystemTime::now();
     wh.insert("id".to_string(), worker.id.to_string());
     wh.insert("service_id".to_string(), worker.service_id.to_string());
     wh.insert(
@@ -534,49 +533,56 @@ impl From<WorkerMetadata> for HashMap<String, String> {
       worker.total_returned.to_string(),
     );
 
-    let first_seen_ago = now.duration_since(worker.first_seen).unwrap();
-    let first_seen_ago_str = if first_seen_ago.as_secs() <= 60 {
-      format!("{} seconds ago", first_seen_ago.as_secs())
-    } else {
-      format!("{} minutes ago", first_seen_ago.as_secs() / 60)
-    };
-    wh.insert("first_seen".to_string(), first_seen_ago_str);
+    let mut fresh = false;
+    wh.insert(
+      "first_seen".to_string(),
+      since_string(worker.first_seen, &mut fresh),
+    );
 
-    if let Some(session_seen) = worker.session_seen {
-      let session_seen_ago = now.duration_since(session_seen).unwrap();
-      let session_seen_ago_str = if session_seen_ago.as_secs() <= 60 {
-        format!("{} seconds ago", session_seen_ago.as_secs())
-      } else {
-        format!("{} minutes ago", session_seen_ago.as_secs() / 60)
-      };
-      wh.insert("session_seen".to_string(), session_seen_ago_str);
-    } else {
-      wh.insert("session_seen".to_string(), String::new());
-    }
+    wh.insert(
+      "session_seen".to_string(),
+      match worker.session_seen {
+        Some(session_seen) => since_string(session_seen, &mut fresh),
+        None => String::new(),
+      },
+    );
 
-    let dispatch_ago = now.duration_since(worker.time_last_dispatch).unwrap();
-    let dispatch_ago_str = if dispatch_ago.as_secs() <= 60 {
-      format!("{} seconds ago", dispatch_ago.as_secs())
-    } else {
-      format!("{} minutes ago", dispatch_ago.as_secs() / 60)
-    };
-    wh.insert("time_last_dispatch".to_string(), dispatch_ago_str);
-    if let Some(time_last_return) = worker.time_last_return {
-      let return_ago = now.duration_since(time_last_return).unwrap();
-      let return_ago_str = if return_ago.as_secs() <= 60 {
-        format!("{} seconds ago", return_ago.as_secs())
-      } else {
-        format!("{} minutes ago", return_ago.as_secs() / 60)
-      };
-
-      wh.insert("time_last_return".to_string(), return_ago_str);
-    } else {
-      wh.insert("time_last_return".to_string(), String::new());
-    }
+    wh.insert(
+      "time_last_dispatch".to_string(),
+      since_string(worker.time_last_dispatch, &mut fresh),
+    );
+    wh.insert(
+      "time_last_return".to_string(),
+      match worker.time_last_return {
+        Some(time_last_return) => since_string(time_last_return, &mut fresh),
+        None => String::new(),
+      },
+    );
+    wh.insert(
+      "fresh".to_string(),
+      if fresh { "fresh" } else { "stale" }.to_string(),
+    );
     wh.insert("name".to_string(), worker.name.to_string());
     wh
   }
 }
+
+fn since_string(then: SystemTime, is_fresh: &mut bool) -> String {
+  let now = SystemTime::now();
+  let since_duration = now.duration_since(then).unwrap();
+  let secs = since_duration.as_secs();
+  if secs < 60 {
+    *is_fresh = true;
+    format!("{} seconds ago", secs)
+  } else if secs < 3_600 {
+    format!("{} minutes ago", secs / 60)
+  } else if secs < 86_400 {
+    format!("{} hours ago", secs / 3_600)
+  } else {
+    format!("{} days ago", secs / 86_400)
+  }
+}
+
 impl WorkerMetadata {
   /// Update the metadata for a worker which was just dispatched to
   pub fn record_dispatched(
