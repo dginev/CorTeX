@@ -215,13 +215,14 @@ fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
     let mut global = HashMap::new();
     global.insert(
       "title".to_string(),
-      "Registered services for ".to_string() + &service_name,
+      format!("Worker report for service {} ", &service_name),
     );
     global.insert(
       "description".to_string(),
-      "An analysis framework for corpora of TeX/LaTeX documents - registered services for "
-        .to_string()
-        + &service_name,
+      format!(
+        "Worker report for service {} as registered by the CorTeX dispatcher",
+        &service_name
+      ),
     );
     global.insert("service_name".to_string(), service_name.to_string());
     global.insert(
