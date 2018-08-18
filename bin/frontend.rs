@@ -1197,11 +1197,7 @@ fn aux_task_report(
           "_".to_string() + &severity + &cat_tail
         },
         None => String::new(),
-      } + "_offset_"
-        + &offset.to_string()
-        + "_page_size_"
-        + &page_size.to_string()
-        + if all_messages { "_all_messages" } else { "" };
+      } + if all_messages { "_all_messages" } else { "" };
       cache_key = corpus.id.to_string() + "_" + &service.id.to_string() + &key_tail;
       cache_key_time = cache_key.clone() + "_time";
       let cache_val: String = if let Some(ref rc) = redis_connection {
