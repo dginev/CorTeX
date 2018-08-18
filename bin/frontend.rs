@@ -728,14 +728,6 @@ fn serve_report(
   let mut global = HashMap::new();
   let backend = Backend::default();
 
-  // let corpus_name =
-  // aux_uri_unescape(request.param("corpus_name")).unwrap_or(UNKNOWN.to_string());
-  // let service_name =
-  // aux_uri_unescape(request.param("service_name")).unwrap_or(UNKNOWN.to_string()); let severity
-  // = aux_uri_unescape(request.param("severity")); let category =
-  // aux_uri_unescape(request.param("category")); let what =
-  // aux_uri_unescape(request.param("what"));
-
   let corpus_result = Corpus::find_by_name(corpus_name, &backend.connection);
   if let Ok(corpus) = corpus_result {
     let service_result = Service::find_by_name(service_name, &backend.connection);
@@ -1172,113 +1164,95 @@ fn aux_task_report(
     None => 100,
     Some(ref params) => *params.page_size.as_ref().unwrap_or(&100),
   };
+  let fetched_report;
+  let mut time_val: String = time::now().rfc822().to_string();
 
-  let key_tail = match severity.clone() {
-    Some(severity) => {
-      let cat_tail = match category.clone() {
-        Some(category) => {
-          let what_tail = match what.clone() {
-            Some(what) => "_".to_string() + &what,
+  let mut redis_connection = match redis::Client::open("redis://127.0.0.1/") {
+    Ok(redis_client) => match redis_client.get_connection() {
+      Ok(rc) => Some(rc),
+      _ => None,
+    },
+    _ => None,
+  };
+
+  let mut cache_key = String::new();
+  let mut cache_key_time = String::new();
+  let cached_report: Vec<HashMap<String, String>> =
+    if what.is_some() || severity == Some("no_problem".to_string()) {
+      vec![]
+    } else {
+      // Levels 1-3 get cached, except no_problem pages
+      let key_tail = match severity.clone() {
+        Some(severity) => {
+          let cat_tail = match category.clone() {
+            Some(category) => {
+              let what_tail = match what.clone() {
+                Some(what) => "_".to_string() + &what,
+                None => String::new(),
+              };
+              "_".to_string() + &category + &what_tail
+            },
             None => String::new(),
           };
-          "_".to_string() + &category + &what_tail
+          "_".to_string() + &severity + &cat_tail
         },
         None => String::new(),
-      };
-      "_".to_string() + &severity + &cat_tail
-    },
-    None => String::new(),
-  } + "_offset_"
-    + &offset.to_string()
-    + "_page_size_"
-    + &page_size.to_string()
-    + if all_messages { "_all_messages" } else { "" };
-  let cache_key: String = corpus.id.to_string() + "_" + &service.id.to_string() + &key_tail;
-  let cache_key_time = cache_key.clone() + "_time";
-  let mut redis_connection = None;
-  let cache_val: Result<String, _> = match redis::Client::open("redis://127.0.0.1/") {
-    Ok(redis_client) => match redis_client.get_connection() {
-      Ok(rc) => {
-        let cached_val = rc.get(cache_key.clone());
-        redis_connection = Some(rc);
-        cached_val
-      },
-      Err(e) => Err(e),
-    },
-    Err(e) => Err(e),
-  };
-  let fetched_report;
-  let time_val: String;
-  match cache_val {
-    Ok(cached_report_json) => {
-      let cached_report: Vec<HashMap<String, String>> =
-        serde_json::from_str(&cached_report_json).unwrap_or_default();
-      if cached_report.is_empty() {
-        let backend = Backend::default();
-        let report: Vec<HashMap<String, String>> = backend.task_report(
-          corpus,
-          service,
-          severity,
-          category,
-          what.clone(),
-          all_messages,
-          offset,
-          page_size,
-        );
-        let report_json: String = serde_json::to_string(&report).unwrap();
-        // println!("SET {:?}", cache_key);
-        if what.is_none() {
-          // don't cache the task list pages
-          if let Some(ref mut rc) = redis_connection {
-            let _: () = rc.set(cache_key, report_json).unwrap();
-          }
-        }
-        time_val = time::now().rfc822().to_string();
-        if let Some(ref mut rc) = redis_connection {
-          let _: () = rc.set(cache_key_time, time_val.clone()).unwrap();
-        }
-        fetched_report = report;
+      } + "_offset_"
+        + &offset.to_string()
+        + "_page_size_"
+        + &page_size.to_string()
+        + if all_messages { "_all_messages" } else { "" };
+      cache_key = corpus.id.to_string() + "_" + &service.id.to_string() + &key_tail;
+      cache_key_time = cache_key.clone() + "_time";
+      let cache_val: String = if let Some(ref rc) = redis_connection {
+        rc.get(cache_key.clone()).unwrap_or_default()
       } else {
-        // Get the report time, so that the user knows where the data is coming from
-        time_val = if let Some(ref mut rc) = redis_connection {
-          match rc.get(cache_key_time) {
-            Ok(tval) => tval,
-            Err(_) => time::now().rfc822().to_string(),
-          }
-        } else {
-          time::now().rfc822().to_string()
-        };
-        fetched_report = cached_report;
+        String::new()
+      };
+      if cache_val.is_empty() {
+        vec![]
+      } else {
+        serde_json::from_str(&cache_val).unwrap_or_default()
       }
-    },
-    Err(_) => {
-      let backend = Backend::default();
-      let what_is_none = what.is_none();
-      let report = backend.task_report(
-        corpus,
-        service,
-        severity,
-        category,
-        what,
-        all_messages,
-        offset,
-        page_size,
-      );
-      let report_json: String = serde_json::to_string(&report).unwrap();
-      // println!("SET2 {:?}", cache_key);
-      if what_is_none {
-        // don't cache the task lists pages
-        if let Some(ref mut rc) = redis_connection {
-          let _: () = rc.set(cache_key, report_json).unwrap();
-        }
+    };
+
+  if cached_report.is_empty() {
+    let backend = Backend::default();
+    fetched_report = backend.task_report(
+      corpus,
+      service,
+      severity.clone(),
+      category,
+      what.clone(),
+      all_messages,
+      offset,
+      page_size,
+    );
+    if what.is_none() && severity != Some("no_problem".to_string()) {
+      let report_json: String = serde_json::to_string(&fetched_report).unwrap();
+      // don't cache the task list pages
+
+      if let Some(ref mut rc) = redis_connection {
+        let _: () = rc.set(cache_key, report_json).unwrap();
       }
-      time_val = time::now().rfc822().to_string();
+
       if let Some(ref mut rc) = redis_connection {
         let _: () = rc.set(cache_key_time, time_val.clone()).unwrap();
       }
-      fetched_report = report;
-    },
+    }
+  } else {
+    // Get the report time, so that the user knows where the data is coming from
+    time_val = if let Some(ref mut rc) = redis_connection {
+      match rc.get(cache_key_time) {
+        Ok(tval) => tval,
+        Err(_) => time::now().rfc822().to_string(),
+      }
+    } else {
+      time::now().rfc822().to_string()
+    };
+    fetched_report = cached_report;
   }
+
   // Setup the return
 
   let from_offset = offset;
@@ -1358,6 +1332,9 @@ fn cache_worker() {
               let key_severity_all = key_severity.clone() + "_all_messages";
               println!("[cache worker] DEL {:?}", key_severity_all);
               redis_connection.del(key_severity_all.clone()).unwrap_or(());
+              if "no_problem" == *severity {
+                continue;
+              }
 
               if *report.get(*severity).unwrap_or(&zero) > 0.0 {
                 // cache category page
@@ -1396,16 +1373,6 @@ fn cache_worker() {
                     None,
                     &None,
                   );
-                  // for each what, cache the "task list" page
-                  // for what_hash in what_report.iter() {
-                  //   let what = what_hash.get("name").unwrap_or(&string_empty);
-                  //   if what.is_empty() || (what == "total") {continue;}
-                  //   let key_what = key_category.clone() + "_" + what;
-                  //   println!("[cache worker] DEL {:?}", key_what);
-                  //   redis_connection.del(key_what).unwrap_or(());
-                  // let _entries = aux_task_report(&mut global_stub, &corpus, &service,
-                  // Some(severity.to_string()), Some(category.to_string()),
-                  // Some(what.to_string())); }
                 }
               }
             }
