@@ -99,10 +99,10 @@
             $.each(zip.files, function (filename, fileobject) {
               console.log("Unpacking: ", filename);
               // We only keep HTML and PNG files, discarding anything else that may have been preserved in the conversion result ZIP archive
-              if (filename.match(/\.(html|log)$/)) {
+              if (filename.match(/\.(html|log)$/i)) {
                 filenames.push(filename);
                 promises.push(fileobject.async("text"));
-              } else if (filename.match(/\.(png|svg)$/)) {
+              } else if (filename.match(/\.(png|jpg|svg)$/i)) {
                 data_url_pending++;
                 filenames.push(filename);
                 promises.push(fileobject.async("uint8array"));
@@ -115,9 +115,9 @@
             Promise.all(promises).then(function (values) {
               $.each(filenames, function (i, filename) {
                 var data = values[i];
-                if (filename.match(/\.html$/)) {
+                if (filename.match(/\.html$/i)) {
                   main_content = data;
-                } else if (filename.match(/\.log$/)) {
+                } else if (filename.match(/\.log$/i)) {
                   conversion_report = data;
                 } else { // only image files in else case
                   var reader = new FileReader();
