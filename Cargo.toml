@@ -1,6 +1,6 @@
 [package]
 name = "cortex"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Deyan Ginev <d.ginev@jacobs-university.de>"]
 license = "MIT"
 repository = "https://github.com/dginev/cortex"
@@ -27,7 +27,7 @@ git = "https://github.com/dginev/libarchive-sys.git"
 git = "https://github.com/dginev/cortex-peripherals.git"
 
 [dependencies.rocket_contrib]
-version = "=0.3.15"
+version = "=0.3.16"
 default-features = false
 features = ["tera_templates"]
 
@@ -43,8 +43,8 @@ tempfile = "3"
 time = "0.1.4"
 redis = "0.7.0"
 gnuplot = "0.0.21"
-rocket = "=0.3.15"
-rocket_codegen = "=0.3.15"
+rocket = "=0.3.16"
+rocket_codegen = "=0.3.16"
 futures = "0.1"
 hyper = "0.11"
 hyper-tls = "0.1"
@@ -52,8 +52,7 @@ url="1.7"
 tokio-core = "0.1"
 zmq = "0.8.2"
 zmq-sys = "0.8.2"
-dotenv = "0.10"
-dotenv_macros = "0.10"
-diesel = {version="=1.1.2", features = ["postgres"]}
-diesel_infer_schema = {version="=1.1.2", features = ["postgres"]}
+dotenv = "0.13"
+dotenv_codegen = "0.11"
+diesel = {version="=1.3.2", features = ["postgres"]}
 libxml = "0.2.2"
