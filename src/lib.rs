@@ -14,12 +14,11 @@
 #![deny(missing_docs)]
 #![recursion_limit = "256"]
 #![feature(plugin)]
-#![plugin(dotenv_macros)]
 extern crate Archive;
 #[macro_use]
 extern crate diesel;
 #[macro_use]
-extern crate diesel_infer_schema;
+extern crate dotenv_codegen;
 extern crate dotenv;
 extern crate glob;
 extern crate libxml;
@@ -41,6 +40,7 @@ pub mod helpers;
 pub mod importer;
 pub mod models;
 pub mod reports;
+/// Auto-generated diesel schema for the backend DB
 pub mod schema;
 pub mod sysinfo;
 pub mod worker;
