@@ -502,7 +502,7 @@ impl Backend {
     severity_opt: Option<String>,
     category_opt: Option<String>,
     what_opt: Option<String>,
-    all_messages: bool,
+    mut all_messages: bool,
     offset: i64,
     page_size: i64,
   ) -> Vec<HashMap<String, String>>
@@ -563,8 +563,12 @@ impl Backend {
 
         let log_table = match task_status {
           Some(ref ts) => ts.to_table(),
-          None => "log_infos".to_string(),
+          None => {
+            all_messages = true;
+            "log_infos".to_string()
+          },
         };
+
         let task_status_raw = task_status.unwrap_or(TaskStatus::Fatal).raw();
         let status_clause = if !all_messages {
           String::from("status=$3")
