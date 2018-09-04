@@ -25,6 +25,12 @@ use models::{
 
 const BUFFER_SIZE: usize = 10_240;
 
+lazy_static! {
+  static ref MESSAGE_LINE_REGEX: Regex =
+    Regex::new(r"^([^ :]+):([^ :]+):([^ ]+)(\s(.*))?$").unwrap();
+  static ref LOADING_LINE_REGEX: Regex = Regex::new(r"^\(Loading (?:(?:.+)/)?([^/]+)...$").unwrap();
+}
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 /// An enumeration of the expected task statuses
 pub enum TaskStatus {
@@ -224,7 +230,8 @@ impl TaskStatus {
       "todo",
       "blocked",
       "queued",
-    ].iter()
+    ]
+      .iter()
       .map(|&x| x.to_string())
       .collect::<Vec<_>>()
   }
@@ -372,8 +379,6 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
   let mut messages: Vec<NewTaskMessage> = Vec::new();
   let mut in_details_mode = false;
 
-  // regexes:
-  let message_line_regex = Regex::new(r"^([^ :]+):([^ :]+):([^ ]+)(\s(.*))?$").unwrap();
   for line in log.lines() {
     // Skip empty lines
     if line.is_empty() {
@@ -399,47 +404,49 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
       }
     }
     // Since this isn't a details line, check if it's a message line:
-    match message_line_regex.captures(line) {
-      Some(cap) => {
-        // Indeed a message, so record it
-        // We'll need to do some manual truncations, since the POSTGRESQL wrapper prefers
-        //   panicking to auto-truncating (would not have been the Perl way, but Rust is Rust)
-        let mut truncated_severity = cap
-          .get(1)
-          .map_or("", |m| m.as_str())
-          .to_string()
-          .to_lowercase();
-        utf_truncate(&mut truncated_severity, 50);
-        let mut truncated_category = cap.get(2).map_or("", |m| m.as_str()).to_string();
-        utf_truncate(&mut truncated_category, 50);
-        let mut truncated_what = cap.get(3).map_or("", |m| m.as_str()).to_string();
-        utf_truncate(&mut truncated_what, 50);
-        let mut truncated_details = cap.get(5).map_or("", |m| m.as_str()).to_string();
-        utf_truncate(&mut truncated_details, 2000);
+    if let Some(cap) = MESSAGE_LINE_REGEX.captures(line) {
+      // Indeed a message, so record it
+      // We'll need to do some manual truncations, since the POSTGRESQL wrapper prefers
+      //   panicking to auto-truncating (would not have been the Perl way, but Rust is Rust)
+      let mut truncated_severity = cap
+        .get(1)
+        .map_or("", |m| m.as_str())
+        .to_string()
+        .to_lowercase();
+      utf_truncate(&mut truncated_severity, 50);
+      let mut truncated_category = cap.get(2).map_or("", |m| m.as_str()).to_string();
+      utf_truncate(&mut truncated_category, 50);
+      let mut truncated_what = cap.get(3).map_or("", |m| m.as_str()).to_string();
+      utf_truncate(&mut truncated_what, 50);
+      let mut truncated_details = cap.get(5).map_or("", |m| m.as_str()).to_string();
+      utf_truncate(&mut truncated_details, 2000);
 
-        if truncated_severity == "fatal" && truncated_category == "invalid" {
-          truncated_severity = "invalid".to_string();
-          truncated_category = truncated_what;
-          truncated_what = "all".to_string();
-        };
+      if truncated_severity == "fatal" && truncated_category == "invalid" {
+        truncated_severity = "invalid".to_string();
+        truncated_category = truncated_what;
+        truncated_what = "all".to_string();
+      };
 
-        let message = NewTaskMessage::new(
-          task_id,
-          &truncated_severity,
-          truncated_category,
-          truncated_what,
-          truncated_details,
-        );
-        // Prepare to record follow-up lines with the message details:
-        in_details_mode = true;
-        // Add to the array of parsed messages
-        messages.push(message);
-      },
-      None => {
+      let message = NewTaskMessage::new(
+        task_id,
+        &truncated_severity,
+        truncated_category,
+        truncated_what,
+        truncated_details,
+      );
+      // Prepare to record follow-up lines with the message details:
+      in_details_mode = true;
+      // Add to the array of parsed messages
+      messages.push(message);
+    } else {
+      in_details_mode = false; // not a details line.
+                               // Special case is a "Loading..." info messages
+      if let Some(cap) = LOADING_LINE_REGEX.captures(line) {
+
+      } else {
         // Otherwise line is just noise, continue...
-        in_details_mode = false;
-      },
-    };
+      }
+    }
   }
   messages
 }

@@ -32,6 +32,11 @@ use models::{
 };
 use reports::{AggregateReport, TaskDetailReport};
 
+lazy_static! {
+  static ref ENTRY_NAME_REGEX: Regex = Regex::new(r"^(.+)/[^/]+$").unwrap();
+  static ref TASK_REPORT_NAME_REGEX: Regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
+}
+
 /// The production database postgresql address, set from the .env configuration file
 pub const DEFAULT_DB_ADDRESS: &str = dotenv!("DATABASE_URL");
 /// The test database postgresql address, set from the .env configuration file
@@ -439,7 +444,6 @@ impl Backend {
       .filter(status.eq(task_status.raw()))
       .load(&self.connection)
       .unwrap_or_default();
-    let entry_name_regex = Regex::new(r"^(.+)/[^/]+$").unwrap();
     entries
       .into_iter()
       .map(|db_entry_val| {
@@ -447,7 +451,7 @@ impl Backend {
         if service.name == "import" {
           trimmed_entry
         } else {
-          entry_name_regex.replace(&trimmed_entry, "$1").to_string() + "/" + &service.name + ".zip"
+          ENTRY_NAME_REGEX.replace(&trimmed_entry, "$1").to_string() + "/" + &service.name + ".zip"
         }
       }).collect()
   }
@@ -503,7 +507,6 @@ impl Backend {
   {
     use diesel::sql_types::{BigInt, Text};
     use schema::tasks::dsl::{corpus_id, service_id, status};
-    let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
 
     // The final report, populated based on the specific selectors
     let mut report = Vec::new();
@@ -526,7 +529,9 @@ impl Backend {
         for &(ref entry_fixedwidth, entry_taskid) in &entry_rows {
           let mut entry_map = HashMap::new();
           let entry_trimmed = entry_fixedwidth.trim_right().to_string();
-          let entry_name = entry_name_regex.replace(&entry_trimmed, "$1").to_string();
+          let entry_name = TASK_REPORT_NAME_REGEX
+            .replace(&entry_trimmed, "$1")
+            .to_string();
 
           entry_map.insert("entry".to_string(), entry_trimmed);
           entry_map.insert("entry_name".to_string(), entry_name);
@@ -646,11 +651,11 @@ impl Backend {
             let no_message_tasks: Vec<Task> = no_messages_query
               .get_results(&self.connection)
               .unwrap_or_default();
-            let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
+
             for task in &no_message_tasks {
               let mut entry_map = HashMap::new();
               let entry = task.entry.trim_right().to_string();
-              let entry_name = entry_name_regex.replace(&entry, "$1").to_string();
+              let entry_name = TASK_REPORT_NAME_REGEX.replace(&entry, "$1").to_string();
 
               entry_map.insert("entry".to_string(), entry);
               entry_map.insert("entry_name".to_string(), entry_name);
@@ -719,11 +724,10 @@ impl Backend {
                 let details_report: Vec<TaskDetailReport> = details_report_query
                   .get_results(&self.connection)
                   .unwrap_or_default();
-                let entry_name_regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
                 for details_row in details_report {
                   let mut entry_map = HashMap::new();
                   let entry = details_row.entry.trim_right().to_string();
-                  let entry_name = entry_name_regex.replace(&entry, "$1").to_string();
+                  let entry_name = TASK_REPORT_NAME_REGEX.replace(&entry, "$1").to_string();
                   // TODO: Also use url-escape
                   entry_map.insert("entry".to_string(), entry);
                   entry_map.insert("entry_name".to_string(), entry_name);

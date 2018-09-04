@@ -28,6 +28,8 @@ extern crate regex;
 extern crate sys_info;
 #[macro_use]
 extern crate serde_derive;
+#[macro_use]
+extern crate lazy_static;
 extern crate serde_json;
 extern crate tempfile;
 extern crate time;

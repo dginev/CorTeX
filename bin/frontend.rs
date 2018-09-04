@@ -23,6 +23,8 @@ extern crate tokio_core;
 extern crate url;
 
 #[macro_use]
+extern crate lazy_static;
+#[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
 
@@ -59,6 +61,10 @@ use std::time::Duration;
 use cortex::backend::Backend;
 use cortex::models::{Corpus, Service, Task};
 use cortex::sysinfo;
+
+lazy_static! {
+  static ref STRIP_NAME_REGEX: Regex = Regex::new(r"/[^/]+$").unwrap();
+}
 
 pub struct CORS();
 
@@ -562,10 +568,7 @@ fn entry_fetch(
   let entry = task.entry;
   let zip_path = match service_name.as_str() {
     "import" => entry,
-    _ => {
-      let strip_name_regex = Regex::new(r"/[^/]+$").unwrap();
-      strip_name_regex.replace(&entry, "").to_string() + "/" + &service_name + ".zip"
-    },
+    _ => STRIP_NAME_REGEX.replace(&entry, "").to_string() + "/" + &service_name + ".zip",
   };
   if zip_path.is_empty() {
     Err(Redirect::to("/")) // TODO : Err(NotFound(format!("Service {:?} does not have a result for entry {:?}",
