@@ -208,16 +208,17 @@ impl TaskStatus {
     }
   }
   /// Maps from the raw severity log values into the enumeration
-  pub fn from_key(key: &str) -> Self {
+  pub fn from_key(key: &str) -> Option<Self> {
     match key.to_lowercase().as_str() {
-      "no_problem" => TaskStatus::NoProblem,
-      "warning" => TaskStatus::Warning,
-      "error" => TaskStatus::Error,
-      "todo" => TaskStatus::TODO,
-      "invalid" => TaskStatus::Invalid,
-      "blocked" => TaskStatus::Blocked(-6),
-      "queued" => TaskStatus::Queued(1),
-      "fatal" | _ => TaskStatus::Fatal,
+      "no_problem" => Some(TaskStatus::NoProblem),
+      "warning" => Some(TaskStatus::Warning),
+      "error" => Some(TaskStatus::Error),
+      "todo" => Some(TaskStatus::TODO),
+      "invalid" => Some(TaskStatus::Invalid),
+      "blocked" => Some(TaskStatus::Blocked(-6)),
+      "queued" => Some(TaskStatus::Queued(1)),
+      "fatal" => Some(TaskStatus::Fatal),
+      _ => None,
     }
   }
   /// Returns all raw severity strings as a vector

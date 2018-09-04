@@ -244,7 +244,9 @@ impl Backend {
         },
         None => {
           // All tasks in a certain status/severity
-          let status_to_rerun: i32 = TaskStatus::from_key(&severity).raw();
+          let status_to_rerun: i32 = TaskStatus::from_key(&severity)
+            .unwrap_or(TaskStatus::Fatal)
+            .raw();
           try!(
             update(tasks::table)
               .filter(corpus_id.eq(corpus.id))
@@ -515,12 +517,12 @@ impl Backend {
       let task_status = TaskStatus::from_key(&severity_name);
       // NoProblem report is a bit special, as it provides a simple list of entries - we assume no
       // logs of notability for this severity.
-      if task_status == TaskStatus::NoProblem {
+      if task_status == Some(TaskStatus::NoProblem) {
         let entry_rows: Vec<(String, i64)> = tasks::table
           .select((tasks::entry, tasks::id))
           .filter(service_id.eq(service.id))
           .filter(corpus_id.eq(corpus.id))
-          .filter(status.eq(task_status.raw()))
+          .filter(status.eq(task_status.unwrap().raw()))
           .order(tasks::entry.asc())
           .offset(offset as i64)
           .limit(page_size as i64)
@@ -559,17 +561,21 @@ impl Backend {
           .unwrap();
         let total_valid_count = total_count - invalid_count;
 
-        let log_table = task_status.to_table();
+        let log_table = match task_status {
+          Some(ref ts) => ts.to_table(),
+          None => "log_infos".to_string(),
+        };
+        let task_status_raw = task_status.unwrap_or(TaskStatus::Fatal).raw();
         let status_clause = if !all_messages {
           String::from("status=$3")
         } else {
           String::from("status < $3 and status > ") + &TaskStatus::Invalid.raw().to_string()
         };
         let bind_status = if !all_messages {
-          task_status.raw()
+          task_status_raw
         } else {
-          task_status.raw() + 1 // TODO: better would be a .prev() method or so, since this hardwires the assumption of
-                                // using adjacent negative integers
+          task_status_raw + 1 // TODO: better would be a .prev() method or so, since this hardwires the assumption of
+                              // using adjacent negative integers
         };
         match category_opt {
           None => {
@@ -594,7 +600,7 @@ impl Backend {
               tasks::table
                 .filter(service_id.eq(service.id))
                 .filter(corpus_id.eq(corpus.id))
-                .filter(status.eq(task_status.raw()))
+                .filter(status.eq(task_status_raw))
                 .count()
                 .get_result(&self.connection)
                 .unwrap_or(-1)
@@ -647,7 +653,7 @@ impl Backend {
               .bind::<BigInt, i64>(i64::from(service.id))
               .bind::<BigInt, i64>(i64::from(corpus.id))
               .bind::<BigInt, i64>(i64::from(bind_status))
-              .bind::<BigInt, i64>(i64::from(task_status.raw()));
+              .bind::<BigInt, i64>(i64::from(task_status_raw));
             let no_message_tasks: Vec<Task> = no_messages_query
               .get_results(&self.connection)
               .unwrap_or_default();

@@ -69,6 +69,7 @@
           </tr>
         </tbody>
       </table>
+      <div><a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/info">Explore Info-level messages</a></div>
     </div>
     <div class="col-md-4"></div>
   </div>

@@ -792,7 +792,7 @@ fn serve_report(
           "highlight".to_string(),
           aux_severity_highlight(&severity.clone().unwrap()).to_string(),
         );
-        template = if severity.is_some() && (severity.clone().unwrap() == "no_problem") {
+        template = if severity.is_some() && (severity.as_ref().unwrap() == "no_problem") {
           let entries = aux_task_report(
             &mut global,
             &corpus,
@@ -829,7 +829,7 @@ fn serve_report(
           aux_severity_highlight(&severity.clone().unwrap()).to_string(),
         );
         global.insert("category".to_string(), category.clone().unwrap());
-        if category.is_some() && (category.clone().unwrap() == "no_messages") {
+        if category.is_some() && (category.as_ref().unwrap() == "no_messages") {
           let entries = aux_task_report(
             &mut global,
             &corpus,
@@ -1322,7 +1322,7 @@ fn cache_worker() {
             // first cache the count for the next check:
             queued_cache.insert(key_base.clone(), queued_count);
             // each reported severity (fatal, warning, error)
-            for severity in &["invalid", "fatal", "error", "warning", "no_problem"] {
+            for severity in &["invalid", "fatal", "error", "warning", "no_problem", "info"] {
               // most importantly, DEL the key from Redis!
               let key_severity = key_base.clone() + "_" + severity;
               println!("[cache worker] DEL {:?}", key_severity);
