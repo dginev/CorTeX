@@ -23,6 +23,8 @@ extern crate tokio_core;
 extern crate url;
 
 #[macro_use]
+extern crate lazy_static;
+#[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
 
@@ -59,6 +61,10 @@ use std::time::Duration;
 use cortex::backend::Backend;
 use cortex::models::{Corpus, Service, Task};
 use cortex::sysinfo;
+
+lazy_static! {
+  static ref STRIP_NAME_REGEX: Regex = Regex::new(r"/[^/]+$").unwrap();
+}
 
 pub struct CORS();
 
@@ -562,10 +568,7 @@ fn entry_fetch(
   let entry = task.entry;
   let zip_path = match service_name.as_str() {
     "import" => entry,
-    _ => {
-      let strip_name_regex = Regex::new(r"/[^/]+$").unwrap();
-      strip_name_regex.replace(&entry, "").to_string() + "/" + &service_name + ".zip"
-    },
+    _ => STRIP_NAME_REGEX.replace(&entry, "").to_string() + "/" + &service_name + ".zip",
   };
   if zip_path.is_empty() {
     Err(Redirect::to("/")) // TODO : Err(NotFound(format!("Service {:?} does not have a result for entry {:?}",
@@ -789,7 +792,7 @@ fn serve_report(
           "highlight".to_string(),
           aux_severity_highlight(&severity.clone().unwrap()).to_string(),
         );
-        template = if severity.is_some() && (severity.clone().unwrap() == "no_problem") {
+        template = if severity.is_some() && (severity.as_ref().unwrap() == "no_problem") {
           let entries = aux_task_report(
             &mut global,
             &corpus,
@@ -826,7 +829,7 @@ fn serve_report(
           aux_severity_highlight(&severity.clone().unwrap()).to_string(),
         );
         global.insert("category".to_string(), category.clone().unwrap());
-        if category.is_some() && (category.clone().unwrap() == "no_messages") {
+        if category.is_some() && (category.as_ref().unwrap() == "no_messages") {
           let entries = aux_task_report(
             &mut global,
             &corpus,
@@ -1319,7 +1322,7 @@ fn cache_worker() {
             // first cache the count for the next check:
             queued_cache.insert(key_base.clone(), queued_count);
             // each reported severity (fatal, warning, error)
-            for severity in &["invalid", "fatal", "error", "warning", "no_problem"] {
+            for severity in &["invalid", "fatal", "error", "warning", "no_problem", "info"] {
               // most importantly, DEL the key from Redis!
               let key_severity = key_base.clone() + "_" + severity;
               println!("[cache worker] DEL {:?}", key_severity);
@@ -1332,44 +1335,42 @@ fn cache_worker() {
                 continue;
               }
 
-              if *report.get(*severity).unwrap_or(&zero) > 0.0 {
-                // cache category page
-                thread::sleep(Duration::new(1, 0)); // Courtesy sleep of 1 second.
-                let category_report = aux_task_report(
+              // cache category page
+              thread::sleep(Duration::new(1, 0)); // Courtesy sleep of 1 second.
+              let category_report = aux_task_report(
+                &mut global_stub,
+                corpus,
+                service,
+                Some(severity.to_string()),
+                None,
+                None,
+                &None,
+              );
+              // for each category, cache the what page
+              for cat_hash in &category_report {
+                let string_empty = String::new();
+                let category = cat_hash.get("name").unwrap_or(&string_empty);
+                if category.is_empty() || (category == "total") {
+                  continue;
+                }
+
+                let key_category = key_severity.clone() + "_" + category;
+                println!("[cache worker] DEL {:?}", key_category);
+                redis_connection.del(key_category.clone()).unwrap_or(());
+                // also the combined-severity page for this `what` class
+                let key_category_all = key_category + "_all_messages";
+                println!("[cache worker] DEL {:?}", key_category_all);
+                redis_connection.del(key_category_all.clone()).unwrap_or(());
+
+                let _ = aux_task_report(
                   &mut global_stub,
                   corpus,
                   service,
                   Some(severity.to_string()),
-                  None,
+                  Some(category.to_string()),
                   None,
                   &None,
                 );
-                // for each category, cache the what page
-                for cat_hash in &category_report {
-                  let string_empty = String::new();
-                  let category = cat_hash.get("name").unwrap_or(&string_empty);
-                  if category.is_empty() || (category == "total") {
-                    continue;
-                  }
-
-                  let key_category = key_severity.clone() + "_" + category;
-                  println!("[cache worker] DEL {:?}", key_category);
-                  redis_connection.del(key_category.clone()).unwrap_or(());
-                  // also the combined-severity page for this `what` class
-                  let key_category_all = key_category + "_all_messages";
-                  println!("[cache worker] DEL {:?}", key_category_all);
-                  redis_connection.del(key_category_all.clone()).unwrap_or(());
-
-                  let _ = aux_task_report(
-                    &mut global_stub,
-                    corpus,
-                    service,
-                    Some(severity.to_string()),
-                    Some(category.to_string()),
-                    None,
-                    &None,
-                  );
-                }
               }
             }
           }

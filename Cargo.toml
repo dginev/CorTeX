@@ -56,3 +56,4 @@ dotenv = "0.13"
 dotenv_codegen = "0.11"
 diesel = {version="=1.3.2", features = ["postgres"]}
 libxml = "0.2.2"
+lazy_static = "1.0.0"

@@ -25,6 +25,13 @@ use models::{
 
 const BUFFER_SIZE: usize = 10_240;
 
+lazy_static! {
+  static ref MESSAGE_LINE_REGEX: Regex =
+    Regex::new(r"^([^ :]+):([^ :]+):([^ ]+)(\s(.*))?$").unwrap();
+  static ref LOADING_LINE_REGEX: Regex =
+    Regex::new(r"^\(Loading\s(.+/)?([^/]+[^.])\.\.\.(\s|$)").unwrap();
+}
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 /// An enumeration of the expected task statuses
 pub enum TaskStatus {
@@ -201,16 +208,17 @@ impl TaskStatus {
     }
   }
   /// Maps from the raw severity log values into the enumeration
-  pub fn from_key(key: &str) -> Self {
+  pub fn from_key(key: &str) -> Option<Self> {
     match key.to_lowercase().as_str() {
-      "no_problem" => TaskStatus::NoProblem,
-      "warning" => TaskStatus::Warning,
-      "error" => TaskStatus::Error,
-      "todo" => TaskStatus::TODO,
-      "invalid" => TaskStatus::Invalid,
-      "blocked" => TaskStatus::Blocked(-6),
-      "queued" => TaskStatus::Queued(1),
-      "fatal" | _ => TaskStatus::Fatal,
+      "no_problem" => Some(TaskStatus::NoProblem),
+      "warning" => Some(TaskStatus::Warning),
+      "error" => Some(TaskStatus::Error),
+      "todo" => Some(TaskStatus::TODO),
+      "invalid" => Some(TaskStatus::Invalid),
+      "blocked" => Some(TaskStatus::Blocked(-6)),
+      "queued" => Some(TaskStatus::Queued(1)),
+      "fatal" => Some(TaskStatus::Fatal),
+      _ => None,
     }
   }
   /// Returns all raw severity strings as a vector
@@ -224,7 +232,8 @@ impl TaskStatus {
       "todo",
       "blocked",
       "queued",
-    ].iter()
+    ]
+      .iter()
       .map(|&x| x.to_string())
       .collect::<Vec<_>>()
   }
@@ -372,8 +381,6 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
   let mut messages: Vec<NewTaskMessage> = Vec::new();
   let mut in_details_mode = false;
 
-  // regexes:
-  let message_line_regex = Regex::new(r"^([^ :]+):([^ :]+):([^ ]+)(\s(.*))?$").unwrap();
   for line in log.lines() {
     // Skip empty lines
     if line.is_empty() {
@@ -399,47 +406,60 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
       }
     }
     // Since this isn't a details line, check if it's a message line:
-    match message_line_regex.captures(line) {
-      Some(cap) => {
-        // Indeed a message, so record it
-        // We'll need to do some manual truncations, since the POSTGRESQL wrapper prefers
-        //   panicking to auto-truncating (would not have been the Perl way, but Rust is Rust)
-        let mut truncated_severity = cap
-          .get(1)
-          .map_or("", |m| m.as_str())
-          .to_string()
-          .to_lowercase();
-        utf_truncate(&mut truncated_severity, 50);
-        let mut truncated_category = cap.get(2).map_or("", |m| m.as_str()).to_string();
-        utf_truncate(&mut truncated_category, 50);
-        let mut truncated_what = cap.get(3).map_or("", |m| m.as_str()).to_string();
-        utf_truncate(&mut truncated_what, 50);
-        let mut truncated_details = cap.get(5).map_or("", |m| m.as_str()).to_string();
-        utf_truncate(&mut truncated_details, 2000);
+    if let Some(cap) = MESSAGE_LINE_REGEX.captures(line) {
+      // Indeed a message, so record it
+      // We'll need to do some manual truncations, since the POSTGRESQL wrapper prefers
+      //   panicking to auto-truncating (would not have been the Perl way, but Rust is Rust)
+      let mut truncated_severity = cap
+        .get(1)
+        .map_or("", |m| m.as_str())
+        .to_string()
+        .to_lowercase();
+      utf_truncate(&mut truncated_severity, 50);
+      let mut truncated_category = cap.get(2).map_or("", |m| m.as_str()).to_string();
+      utf_truncate(&mut truncated_category, 50);
+      let mut truncated_what = cap.get(3).map_or("", |m| m.as_str()).to_string();
+      utf_truncate(&mut truncated_what, 50);
+      let mut truncated_details = cap.get(5).map_or("", |m| m.as_str()).to_string();
+      utf_truncate(&mut truncated_details, 2000);
 
-        if truncated_severity == "fatal" && truncated_category == "invalid" {
-          truncated_severity = "invalid".to_string();
-          truncated_category = truncated_what;
-          truncated_what = "all".to_string();
-        };
+      if truncated_severity == "fatal" && truncated_category == "invalid" {
+        truncated_severity = "invalid".to_string();
+        truncated_category = truncated_what;
+        truncated_what = "all".to_string();
+      }
 
-        let message = NewTaskMessage::new(
+      let message = NewTaskMessage::new(
+        task_id,
+        &truncated_severity,
+        truncated_category,
+        truncated_what,
+        truncated_details,
+      );
+      // Prepare to record follow-up lines with the message details:
+      in_details_mode = true;
+      // Add to the array of parsed messages
+      messages.push(message);
+    } else {
+      in_details_mode = false; // not a details line.
+      if let Some(cap) = LOADING_LINE_REGEX.captures(line) {
+        // Special case is a "Loading..." info messages
+        let mut filepath = cap.get(1).map_or("", |m| m.as_str()).to_string();
+        let mut filename = cap.get(2).map_or("", |m| m.as_str()).to_string();
+        utf_truncate(&mut filename, 50);
+        filepath += &filename;
+        utf_truncate(&mut filepath, 50);
+        messages.push(NewTaskMessage::new(
           task_id,
-          &truncated_severity,
-          truncated_category,
-          truncated_what,
-          truncated_details,
-        );
-        // Prepare to record follow-up lines with the message details:
-        in_details_mode = true;
-        // Add to the array of parsed messages
-        messages.push(message);
-      },
-      None => {
+          "info",
+          "loaded_file".to_string(),
+          filename,
+          filepath,
+        ));
+      } else {
         // Otherwise line is just noise, continue...
-        in_details_mode = false;
-      },
-    };
+      }
+    }
   }
   messages
 }
@@ -483,15 +503,15 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
                 + "\nStatus:conversion:3"
             },
           };
-          messages = parse_log(task.id, &log_string);
+
           // Look for the special status message - Fatal otherwise!
-          for message in &messages {
+          for message in parse_log(task.id, &log_string).into_iter() {
             // Invalids are a bit of a workaround for now, they're fatal messages in latexml, but
             // we want them separated out in cortex
-            match *message {
+            let mut skip_message = false;
+            match message {
               NewTaskMessage::Invalid(ref _log_invalid) => {
                 status = TaskStatus::Invalid;
-                break;
               },
               NewTaskMessage::Info(ref _log_info) => {
                 let message_what = message.what();
@@ -509,12 +529,17 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
                   };
                   let cortex_scheme_status = -(latexml_scheme_status + 1);
                   status = TaskStatus::from_raw(cortex_scheme_status);
-                  break;
+                  skip_message = true; // do not record the status message
                 }
               },
               _ => {},
+            };
+            if !skip_message {
+              messages.push(message);
             }
           }
+          // We recorded the messages, stop archive traversal
+          break;
         }
         drop(archive_reader);
       },

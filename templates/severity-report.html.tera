@@ -1,8 +1,7 @@
 {% extends "layout" %} {% block content %}
 <div class="center">
   <h1>{{global.severity}} categories</h1>
-
-  {% if global.all_messages_true %}
+  {% if global.severity != "info" %} {% if global.all_messages_true %}
   <h5>All Tasks</h5>
   <h5>
     <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}?all=false">(Click here to
@@ -14,7 +13,7 @@
     <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}?all=true">(Click here to
       see this report for all tasks)</a>
   </h5>
-  {% endif %}
+  {% endif %} {% endif %}
 
   <br>
   <div class="row">
