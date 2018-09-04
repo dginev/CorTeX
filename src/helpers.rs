@@ -28,7 +28,8 @@ const BUFFER_SIZE: usize = 10_240;
 lazy_static! {
   static ref MESSAGE_LINE_REGEX: Regex =
     Regex::new(r"^([^ :]+):([^ :]+):([^ ]+)(\s(.*))?$").unwrap();
-  static ref LOADING_LINE_REGEX: Regex = Regex::new(r"^\(Loading (?:(?:.+)/)?([^/]+)...$").unwrap();
+  static ref LOADING_LINE_REGEX: Regex =
+    Regex::new(r"^\(Loading\s(.+/)?([^/]+[^.])\.\.\.(\s|$)").unwrap();
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -425,7 +426,7 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
         truncated_severity = "invalid".to_string();
         truncated_category = truncated_what;
         truncated_what = "all".to_string();
-      };
+      }
 
       let message = NewTaskMessage::new(
         task_id,
@@ -440,9 +441,20 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
       messages.push(message);
     } else {
       in_details_mode = false; // not a details line.
-                               // Special case is a "Loading..." info messages
       if let Some(cap) = LOADING_LINE_REGEX.captures(line) {
-
+        // Special case is a "Loading..." info messages
+        let mut filepath = cap.get(1).map_or("", |m| m.as_str()).to_string();
+        let mut filename = cap.get(2).map_or("", |m| m.as_str()).to_string();
+        utf_truncate(&mut filename, 50);
+        filepath += &filename;
+        utf_truncate(&mut filepath, 50);
+        messages.push(NewTaskMessage::new(
+          task_id,
+          "info",
+          "loaded_file".to_string(),
+          filename,
+          filepath,
+        ));
       } else {
         // Otherwise line is just noise, continue...
       }
@@ -490,15 +502,15 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
                 + "\nStatus:conversion:3"
             },
           };
-          messages = parse_log(task.id, &log_string);
+
           // Look for the special status message - Fatal otherwise!
-          for message in &messages {
+          for message in parse_log(task.id, &log_string).into_iter() {
             // Invalids are a bit of a workaround for now, they're fatal messages in latexml, but
             // we want them separated out in cortex
-            match *message {
+            let mut skip_message = false;
+            match message {
               NewTaskMessage::Invalid(ref _log_invalid) => {
                 status = TaskStatus::Invalid;
-                break;
               },
               NewTaskMessage::Info(ref _log_info) => {
                 let message_what = message.what();
@@ -516,12 +528,17 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
                   };
                   let cortex_scheme_status = -(latexml_scheme_status + 1);
                   status = TaskStatus::from_raw(cortex_scheme_status);
-                  break;
+                  skip_message = true; // do not record the status message
                 }
               },
               _ => {},
+            };
+            if !skip_message {
+              messages.push(message);
             }
           }
+          // We recorded the messages, stop archive traversal
+          break;
         }
         drop(archive_reader);
       },
