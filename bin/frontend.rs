@@ -1335,44 +1335,42 @@ fn cache_worker() {
                 continue;
               }
 
-              if *report.get(*severity).unwrap_or(&zero) > 0.0 {
-                // cache category page
-                thread::sleep(Duration::new(1, 0)); // Courtesy sleep of 1 second.
-                let category_report = aux_task_report(
+              // cache category page
+              thread::sleep(Duration::new(1, 0)); // Courtesy sleep of 1 second.
+              let category_report = aux_task_report(
+                &mut global_stub,
+                corpus,
+                service,
+                Some(severity.to_string()),
+                None,
+                None,
+                &None,
+              );
+              // for each category, cache the what page
+              for cat_hash in &category_report {
+                let string_empty = String::new();
+                let category = cat_hash.get("name").unwrap_or(&string_empty);
+                if category.is_empty() || (category == "total") {
+                  continue;
+                }
+
+                let key_category = key_severity.clone() + "_" + category;
+                println!("[cache worker] DEL {:?}", key_category);
+                redis_connection.del(key_category.clone()).unwrap_or(());
+                // also the combined-severity page for this `what` class
+                let key_category_all = key_category + "_all_messages";
+                println!("[cache worker] DEL {:?}", key_category_all);
+                redis_connection.del(key_category_all.clone()).unwrap_or(());
+
+                let _ = aux_task_report(
                   &mut global_stub,
                   corpus,
                   service,
                   Some(severity.to_string()),
-                  None,
+                  Some(category.to_string()),
                   None,
                   &None,
                 );
-                // for each category, cache the what page
-                for cat_hash in &category_report {
-                  let string_empty = String::new();
-                  let category = cat_hash.get("name").unwrap_or(&string_empty);
-                  if category.is_empty() || (category == "total") {
-                    continue;
-                  }
-
-                  let key_category = key_severity.clone() + "_" + category;
-                  println!("[cache worker] DEL {:?}", key_category);
-                  redis_connection.del(key_category.clone()).unwrap_or(());
-                  // also the combined-severity page for this `what` class
-                  let key_category_all = key_category + "_all_messages";
-                  println!("[cache worker] DEL {:?}", key_category_all);
-                  redis_connection.del(key_category_all.clone()).unwrap_or(());
-
-                  let _ = aux_task_report(
-                    &mut global_stub,
-                    corpus,
-                    service,
-                    Some(severity.to_string()),
-                    Some(category.to_string()),
-                    None,
-                    &None,
-                  );
-                }
               }
             }
           }
