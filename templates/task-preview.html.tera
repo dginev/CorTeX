@@ -162,6 +162,31 @@
     return;
   });
   function final_main_content_write(data_url_map, conversion_report, main_content) {
+    // ensure main_content is a string if undefined
+    if (typeof (main_content) == "undefined") {
+      main_content = `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta http-equiv="Content-Type" content="text/html" />
+            <meta charset="utf-8" />
+            <title> Entry preview fallback | CorTeX Framework</title>
+            <link rel="stylesheet" type='text/css' href='/public/css/cortex.css'>
+            <link rel="icon" type="image/x-icon" href="/favicon.ico">
+            <meta name="language" content="English">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body>
+          <div class="ltx_page_main">
+            <div class="ltx_page_content">
+              <article class="ltx_document">
+              </article>
+            </div>
+          </div>
+        </body>
+        </html>`;
+    }
+
     // Add all assets as data URLs.
     $.each(data_url_map, function (filename, newurl) {
       let escaped_name = 'src=[\'"]' + filename.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1") + '[\'"]';
