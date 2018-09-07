@@ -60,7 +60,8 @@ fn main() {
   let entry_name_regex = Regex::new(r"([^/]+)/([^/]+)/([^/]+)\.zip$").unwrap();
   // Set the database archive file
   let mut total_dataset_entries = 0;
-  let mut archive_writer_new = Writer::new().unwrap()
+  let mut archive_writer_new = Writer::new()
+    .unwrap()
     .set_compression(ArchiveFilter::None) // could be imporoved later (libarchive-sys needs an upgrade ?)
     .set_format(ArchiveFormat::Zip);
   archive_writer_new
@@ -89,8 +90,7 @@ fn main() {
         while let Ok(e) = archive_reader.next_header() {
           // Which file are we looking at?
           let pathname = e.pathname();
-          let is_html = pathname.ends_with(".html");
-          if !is_html {
+          if !pathname.ends_with(".html") {
             continue;
           }
           let mut raw_entry_data = Vec::new();
