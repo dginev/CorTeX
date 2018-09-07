@@ -233,7 +233,7 @@ impl Backend {
         None => {
           // All tasks in a certain status/severity
           let status_to_rerun: i32 = TaskStatus::from_key(&severity)
-            .unwrap_or(TaskStatus::Fatal)
+            .unwrap_or(TaskStatus::NoProblem)
             .raw();
           try!(
             update(tasks::table)
@@ -560,7 +560,7 @@ impl Backend {
           },
         };
 
-        let task_status_raw = task_status.unwrap_or(TaskStatus::Fatal).raw();
+        let task_status_raw = task_status.unwrap_or(TaskStatus::NoProblem).raw();
         let status_clause = if !all_messages {
           String::from("status=$3")
         } else {
