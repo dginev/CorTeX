@@ -93,51 +93,39 @@ impl Backend {
   pub fn mark_done(&self, reports: &[TaskReport]) -> Result<(), Error> {
     use schema::tasks::{id, status};
 
-    try!(self.connection.transaction::<(), Error, _>(|| {
+    self.connection.transaction::<(), Error, _>(|| {
       for report in reports.iter() {
         // Update the status
-        try!(
-          update(tasks::table)
-            .filter(id.eq(report.task.id))
-            .set(status.eq(report.status.raw()))
-            .execute(&self.connection)
-        );
+        update(tasks::table)
+          .filter(id.eq(report.task.id))
+          .set(status.eq(report.status.raw()))
+          .execute(&self.connection)?;
         // Next, delete all previous log messages for this task.id
-        try!(
-          delete(log_infos::table)
-            .filter(log_infos::task_id.eq(report.task.id))
-            .execute(&self.connection)
-        );
-        try!(
-          delete(log_warnings::table)
-            .filter(log_warnings::task_id.eq(report.task.id))
-            .execute(&self.connection)
-        );
-        try!(
-          delete(log_errors::table)
-            .filter(log_errors::task_id.eq(report.task.id))
-            .execute(&self.connection)
-        );
-        try!(
-          delete(log_fatals::table)
-            .filter(log_fatals::task_id.eq(report.task.id))
-            .execute(&self.connection)
-        );
-        try!(
-          delete(log_invalids::table)
-            .filter(log_invalids::task_id.eq(report.task.id))
-            .execute(&self.connection)
-        );
+        delete(log_infos::table)
+          .filter(log_infos::task_id.eq(report.task.id))
+          .execute(&self.connection)?;
+        delete(log_warnings::table)
+          .filter(log_warnings::task_id.eq(report.task.id))
+          .execute(&self.connection)?;
+        delete(log_errors::table)
+          .filter(log_errors::task_id.eq(report.task.id))
+          .execute(&self.connection)?;
+        delete(log_fatals::table)
+          .filter(log_fatals::task_id.eq(report.task.id))
+          .execute(&self.connection)?;
+        delete(log_invalids::table)
+          .filter(log_invalids::task_id.eq(report.task.id))
+          .execute(&self.connection)?;
         // Clean slate, so proceed to add the new messages
         for message in &report.messages {
           if message.severity() != "status" {
-            try!(message.create(&self.connection));
+            message.create(&self.connection)?;
           }
         }
         // TODO: Update dependenct services, when integrated in DB
       }
       Ok(())
-    }));
+    })?;
     Ok(())
   }
 
@@ -431,6 +419,16 @@ impl Backend {
   }
 
   /// Returns a vector of tasks for a given Corpus, Service and status
+  pub fn tasks(&self, corpus: &Corpus, service: &Service, task_status: &TaskStatus) -> Vec<Task> {
+    use schema::tasks::dsl::{corpus_id, service_id, status};
+    tasks::table
+      .filter(service_id.eq(service.id))
+      .filter(corpus_id.eq(corpus.id))
+      .filter(status.eq(task_status.raw()))
+      .load(&self.connection)
+      .unwrap_or_default()
+  }
+  /// Returns a vector of task entry paths for a given Corpus, Service and status
   pub fn entries(
     &self,
     corpus: &Corpus,
@@ -438,18 +436,11 @@ impl Backend {
     task_status: &TaskStatus,
   ) -> Vec<String>
   {
-    use schema::tasks::dsl::{corpus_id, entry, service_id, status};
-    let entries: Vec<String> = tasks::table
-      .select(entry)
-      .filter(service_id.eq(service.id))
-      .filter(corpus_id.eq(corpus.id))
-      .filter(status.eq(task_status.raw()))
-      .load(&self.connection)
-      .unwrap_or_default();
-    entries
+    self
+      .tasks(corpus, service, task_status)
       .into_iter()
-      .map(|db_entry_val| {
-        let trimmed_entry = db_entry_val.trim_right().to_string();
+      .map(|task| {
+        let trimmed_entry = task.entry.trim_right().to_string();
         if service.name == "import" {
           trimmed_entry
         } else {

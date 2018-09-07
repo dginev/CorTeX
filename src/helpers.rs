@@ -28,7 +28,8 @@ const BUFFER_SIZE: usize = 10_240;
 lazy_static! {
   static ref MESSAGE_LINE_REGEX: Regex =
     Regex::new(r"^([^ :]+):([^ :]+):([^ ]+)(\s(.*))?$").unwrap();
-  static ref LOADING_LINE_REGEX: Regex =
+  /// "(Loading... file" message regex
+  pub static ref LOADING_LINE_REGEX: Regex =
     Regex::new(r"^\(Loading\s(.+/)?([^/]+[^.])\.\.\.(\s|$)").unwrap();
 }
 
@@ -560,7 +561,7 @@ pub fn prepare_input_stream(task: &Task) -> Result<File, io::Error> {
 }
 
 /// Utility functions, until they find a better place
-fn utf_truncate(input: &mut String, maxsize: usize) {
+pub fn utf_truncate(input: &mut String, maxsize: usize) {
   let mut utf_maxsize = input.len();
   if utf_maxsize >= maxsize {
     {
