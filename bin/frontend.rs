@@ -972,7 +972,7 @@ fn aux_severity_highlight(severity: &str) -> &str {
     "error" => "error",
     "fatal" => "danger",
     "invalid" => "info",
-    _ => "unknown",
+    _ => "info",
   }
 }
 fn aux_uri_unescape(param: Option<&str>) -> Option<String> {
