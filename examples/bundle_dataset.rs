@@ -5,6 +5,13 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// WARNING: So far this is just a conceptual example,
+// there are deficiencies in the Rust bindings for libarchive,
+// that need to be removed before it can be used in production
+// actual production bundling can be found as a bash script at:
+//
+// scripts/bundle-dataset-02legacy.sh
+
 extern crate Archive;
 extern crate cortex;
 extern crate libxml;
@@ -38,7 +45,7 @@ fn main() {
   };
   let dataset_path = match input_args.next() {
     Some(path) => path,
-    None => "./dataset.zip".to_string(),
+    None => "./dataset".to_string(),
   };
   let corpus = match Corpus::find_by_name(&corpus_name, &backend.connection) {
     Ok(c) => c,
@@ -60,13 +67,6 @@ fn main() {
   let entry_name_regex = Regex::new(r"([^/]+)/([^/]+)/([^/]+)\.zip$").unwrap();
   // Set the database archive file
   let mut total_dataset_entries = 0;
-  let mut archive_writer_new = Writer::new()
-    .unwrap()
-    .set_compression(ArchiveFilter::None) // could be imporoved later (libarchive-sys needs an upgrade ?)
-    .set_format(ArchiveFormat::Zip);
-  archive_writer_new
-    .open_filename(&dataset_path.clone())
-    .unwrap();
   // Bundle each usable status code:
   for status in vec![
     TaskStatus::NoProblem,
@@ -79,6 +79,17 @@ fn main() {
       status.to_key(),
       entries.len()
     );
+
+    // one writer per severity
+    let dataset_severity_path = format!("{}_{}.zip", dataset_path, status.to_key());
+    let mut writer = Writer::new()
+      .unwrap()
+      .set_compression(ArchiveFilter::None) // could be imporoved later (libarchive-sys needs an upgrade ?)
+      .set_format(ArchiveFormat::Zip);
+    writer
+      .open_filename(&dataset_severity_path.clone())
+      .unwrap();
+
     for entry in entries {
       // Let's open the zip file and grab the result from it
       if let Ok(archive_reader) = Reader::new()
@@ -119,15 +130,14 @@ fn main() {
               let dataset_path = status.to_key() + "/" + month_dir + "/" + paper_dir + ".html";
               println!("Writing: {:?} ", dataset_path);
               total_dataset_entries += 1;
-              match archive_writer_new.write_header_new(&dataset_path, raw_entry_data.len() as i64)
-              {
+              match writer.write_header_new(&dataset_path, raw_entry_data.len() as i64) {
                 Ok(_) => {},
                 Err(e) => {
                   println!("Couldn't write header: {:?}", e);
                   break;
                 },
               };
-              match archive_writer_new.write_data(raw_entry_data) {
+              match writer.write_data(raw_entry_data) {
                 Ok(_) => {},
                 Err(e) => println!(
                   "Failed to write data to {:?} because {:?}",
