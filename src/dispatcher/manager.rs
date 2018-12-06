@@ -5,20 +5,17 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-extern crate tempfile;
-extern crate zmq;
-
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
 
-use backend::DEFAULT_DB_ADDRESS;
-use dispatcher::finalize::Finalize;
-use dispatcher::sink::Sink;
-use dispatcher::ventilator::Ventilator;
-use helpers::{TaskProgress, TaskReport};
-use models::Service;
+use crate::backend::DEFAULT_DB_ADDRESS;
+use crate::dispatcher::finalize::Finalize;
+use crate::dispatcher::sink::Sink;
+use crate::dispatcher::ventilator::Ventilator;
+use crate::helpers::{TaskProgress, TaskReport};
+use crate::models::Service;
 use zmq::Error;
 
 /// Manager struct responsible for dispatching and receiving tasks

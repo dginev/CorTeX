@@ -5,11 +5,6 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-extern crate Archive;
-extern crate cortex;
-extern crate regex;
-extern crate time;
-
 use cortex::backend::Backend;
 use cortex::models::Corpus;
 use regex::Regex;

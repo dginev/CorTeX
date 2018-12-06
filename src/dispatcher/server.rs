@@ -1,6 +1,3 @@
-extern crate tempfile;
-extern crate zmq;
-
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -8,9 +5,9 @@ use std::thread;
 use std::time::Duration;
 use time;
 
-use backend::Backend;
-use helpers::{TaskProgress, TaskReport};
-use models::Service;
+use crate::backend::Backend;
+use crate::helpers::{TaskProgress, TaskReport};
+use crate::models::Service;
 
 /// Persists a shared vector of reports to the Task store
 pub fn mark_done_arc(
@@ -155,7 +152,8 @@ pub fn get_sync_service<S: ::std::hash::BuildHasher>(
         Ok(s) => Some(s),
         _ => None,
       },
-    ).clone()
+    )
+    .clone()
 }
 
 /// Getter for a `Service` stored inside an `Arc<Mutex<HashMap>`, with no DB access

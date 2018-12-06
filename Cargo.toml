@@ -1,6 +1,7 @@
 [package]
 name = "cortex"
-version = "0.3.1"
+version = "0.3.2"
+edition = "2018"
 authors = ["Deyan Ginev <d.ginev@jacobs-university.de>"]
 license = "MIT"
 repository = "https://github.com/dginev/cortex"
@@ -55,5 +56,5 @@ zmq-sys = "0.8.2"
 dotenv = "0.13"
 dotenv_codegen = "0.11"
 diesel = {version="=1.3.2", features = ["postgres"]}
-libxml = "0.2.2"
+libxml = "0.2.6"
 lazy_static = "1.0.0"

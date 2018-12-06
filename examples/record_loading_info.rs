@@ -4,13 +4,6 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
-
-extern crate Archive;
-extern crate cortex;
-extern crate diesel;
-extern crate libxml;
-extern crate time;
-
 use diesel::result::Error;
 use diesel::*;
 use std::env;

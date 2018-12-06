@@ -6,11 +6,6 @@
 // except according to those terms.
 
 //! Worker for performing corpus imports, when served as "init" tasks by the `CorTeX` dispatcher
-
-extern crate pericortex;
-extern crate rand;
-extern crate zmq;
-
 use rand::{thread_rng, Rng};
 use std::fs::File;
 use std::path::Path;
@@ -18,10 +13,10 @@ use std::thread;
 use std::time::Duration;
 use zmq::{Context, Error, Message, SNDMORE};
 
-use backend;
-use backend::DEFAULT_DB_ADDRESS;
-use importer::Importer;
-use models::{Corpus, NewCorpus, Task};
+use crate::backend;
+use crate::backend::DEFAULT_DB_ADDRESS;
+use crate::importer::Importer;
+use crate::models::{Corpus, NewCorpus, Task};
 use pericortex::worker::Worker;
 
 /// `Worker` for initializing/importing a new corpus into `CorTeX`

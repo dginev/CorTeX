@@ -7,15 +7,7 @@
 
 ///! Import a new corpus into `CorTeX` from the command line.
 ///! Example run: `$ ./target/release/examples/tex_to_html_import /data/arxmliv/ arXMLiv`
-extern crate cortex;
-extern crate pericortex;
-
-// use std::collections::HashMap;
-// use std::path::Path;
-// use std::fs;
 use std::env;
-// use std::io::Read;
-// use std::io::Error;
 
 use cortex::backend::{Backend, DEFAULT_DB_ADDRESS};
 use cortex::dispatcher::manager::TaskManager;
@@ -103,9 +95,7 @@ fn main() {
     },
   };
 
-  assert!(
-    backend
-      .register_service(&service_registered, &corpus_path)
-      .is_ok()
-  );
+  assert!(backend
+    .register_service(&service_registered, &corpus_path)
+    .is_ok());
 }

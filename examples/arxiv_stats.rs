@@ -4,10 +4,6 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
-extern crate gnuplot;
-extern crate serde;
-extern crate serde_json;
-
 use serde::ser::Serialize;
 use std::collections::HashMap;
 use std::env;
@@ -104,8 +100,8 @@ fn write_stats<K: Hash + Eq + Serialize, V: Serialize>(
   counts: &HashMap<K, V>,
 ) -> std::io::Result<()>
 {
-  let mut f = try!(File::create(name));
-  try!(f.write_all(serde_json::to_string(&counts).unwrap().as_bytes()));
+  let mut f = r#try!(File::create(name));
+  r#try!(f.write_all(serde_json::to_string(&counts).unwrap().as_bytes()));
   Ok(())
 }
 

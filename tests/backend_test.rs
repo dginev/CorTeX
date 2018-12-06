@@ -4,9 +4,6 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
-extern crate cortex;
-extern crate diesel;
-
 use cortex::backend;
 use cortex::helpers::{rand_in_range, random_mark, NewTaskMessage, TaskReport, TaskStatus};
 use cortex::models::{Corpus, NewLogInfo, NewTask, Service, Task};

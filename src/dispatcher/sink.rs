@@ -1,6 +1,3 @@
-extern crate tempfile;
-extern crate zmq;
-
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
@@ -14,10 +11,10 @@ use std::sync::Mutex;
 
 use time;
 
-use dispatcher::server;
-use helpers;
-use helpers::{TaskProgress, TaskReport, TaskStatus};
-use models::{Service, WorkerMetadata};
+use crate::dispatcher::server;
+use crate::helpers;
+use crate::helpers::{TaskProgress, TaskReport, TaskStatus};
+use crate::models::{Service, WorkerMetadata};
 
 /// Specifies the binding and operation parameters for a ZMQ sink component
 pub struct Sink {

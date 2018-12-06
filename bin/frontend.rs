@@ -8,30 +8,12 @@
 #![feature(plugin)]
 #![feature(custom_derive)]
 #![plugin(rocket_codegen)]
-#![allow(
-  unknown_lints,
-  needless_pass_by_value,
-  let_unit_value,
-  print_literal
-)]
-extern crate futures;
-extern crate hyper;
-extern crate hyper_tls;
-extern crate rocket;
-extern crate rocket_contrib;
-extern crate tokio_core;
-extern crate url;
+#![allow(unknown_lints, needless_pass_by_value, let_unit_value, print_literal)]
 
-#[macro_use]
-extern crate lazy_static;
 #[macro_use]
 extern crate serde_derive;
-extern crate serde_json;
-
-extern crate cortex;
-extern crate redis;
-extern crate regex;
-extern crate time;
+#[macro_use]
+extern crate lazy_static;
 
 use futures::{Future, Stream};
 use hyper::header::{ContentLength, ContentType};
@@ -284,7 +266,7 @@ fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
         .map(|s| s.to_hash())
         .collect::<Vec<_>>();
       let mut service_reports = Vec::new();
-      for mut service in services {
+      for service in services {
         // TODO: Report on the service status when we improve on the service report UX
         // service.insert("status".to_string(), "Running".to_string());
         service_reports.push(service);
@@ -602,10 +584,7 @@ fn rerun_corpus(
   serve_rerun(&corpus_name, &service_name, None, None, None, &data)
 }
 
-#[post(
-  "/rerun/<corpus_name>/<service_name>/<severity>",
-  data = "<data>"
-)]
+#[post("/rerun/<corpus_name>/<service_name>/<severity>", data = "<data>")]
 fn rerun_severity(
   corpus_name: String,
   service_name: String,
@@ -706,7 +685,8 @@ fn rocket() -> rocket::Rocket {
         rerun_what,
         expire_captcha
       ],
-    ).attach(Template::fairing())
+    )
+    .attach(Template::fairing())
     .attach(CORS())
 }
 
@@ -927,8 +907,9 @@ fn serve_rerun(
   let token = str::from_utf8(token_bytes).unwrap_or(UNKNOWN);
   let user_opt = config.rerun_tokens.get(token);
   let user = match user_opt {
-    None => return Err(NotFound("Access Denied".to_string())), /* TODO: response.error(Forbidden,
-                                                              * "Access denied"), */
+    None => return Err(NotFound("Access Denied".to_string())), /* TODO: response.
+                                                                 * error(Forbidden, */
+    // "Access denied"),
     Some(user) => user,
   };
   println!(
@@ -941,14 +922,16 @@ fn serve_rerun(
   let backend = Backend::default();
   // Build corpus and service objects
   let corpus = match Corpus::find_by_name(corpus_name, &backend.connection) {
-    Err(_) => return Err(NotFound("Access Denied".to_string())), /* TODO: response.error(Forbidden,
-                                                                * "Access denied"), */
+    Err(_) => return Err(NotFound("Access Denied".to_string())), /* TODO: response.
+                                                                   * error(Forbidden, */
+    // "Access denied"),
     Ok(corpus) => corpus,
   };
 
   let service = match Service::find_by_name(service_name, &backend.connection) {
-    Err(_) => return Err(NotFound("Access Denied".to_string())), /* TODO: response.error(Forbidden,
-                                                                * "Access denied"), */
+    Err(_) => return Err(NotFound("Access Denied".to_string())), /* TODO: response.
+                                                                   * error(Forbidden, */
+    // "Access denied"),
     Ok(service) => service,
   };
   let rerun_result = backend.mark_rerun(&corpus, &service, severity, category, what);
@@ -1006,7 +989,8 @@ fn aux_uri_escape(param: Option<String>) -> Option<String> {
       let mut param_encoded: String = url::percent_encoding::utf8_percent_encode(
         &param_pure,
         url::percent_encoding::DEFAULT_ENCODE_SET,
-      ).collect::<String>();
+      )
+      .collect::<String>();
       // TODO: This could/should be done faster by using lazy_static!
       for &(original, replacement) in &[
         (":", "%3A"),
@@ -1037,7 +1021,7 @@ fn aux_decorate_uri_encodings(context: &mut TemplateContext) {
     &mut context.whats,
   ] {
     if let Some(ref mut inner_vec_data) = **inner_vec {
-      for mut subhash in inner_vec_data {
+      for subhash in inner_vec_data {
         let mut uri_decorations = vec![];
         for (subkey, subval) in subhash.iter() {
           uri_decorations.push((

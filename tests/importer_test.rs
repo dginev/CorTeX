@@ -4,8 +4,6 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
-extern crate cortex;
-extern crate diesel;
 use cortex::backend;
 use cortex::importer::*;
 use cortex::models::{Corpus, NewCorpus};
@@ -20,7 +18,7 @@ fn assert_files(files: &[&str]) -> Result<(), std::io::Error> {
     assert!(meta.is_ok());
     assert!(meta.unwrap().is_file());
     // They're also temporary, so delete them
-    try!(fs::remove_file(file));
+    r#try!(fs::remove_file(file));
   }
   Ok(())
 }
@@ -31,7 +29,7 @@ fn assert_dirs(dirs: &[&str]) -> Result<(), std::io::Error> {
     assert!(meta.is_ok());
     assert!(meta.unwrap().is_dir());
     // They're also temporary, so delete them
-    try!(fs::remove_dir(dir));
+    r#try!(fs::remove_dir(dir));
   }
   Ok(())
 }

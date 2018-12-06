@@ -4,10 +4,6 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
-extern crate pericortex;
-extern crate rand;
-extern crate tempfile;
-extern crate zmq;
 
 use pericortex::worker::{TexToHtmlWorker, Worker};
 

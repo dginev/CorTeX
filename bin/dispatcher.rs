@@ -4,10 +4,6 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
-extern crate cortex;
-// extern crate libxml;
-extern crate zmq;
-
 use cortex::backend::DEFAULT_DB_ADDRESS;
 use cortex::dispatcher::manager::TaskManager;
 

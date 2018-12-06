@@ -14,26 +14,15 @@
 #![deny(missing_docs)]
 #![recursion_limit = "256"]
 #![feature(plugin)]
-extern crate Archive;
+
 #[macro_use]
 extern crate diesel;
 #[macro_use]
 extern crate dotenv_codegen;
-extern crate dotenv;
-extern crate glob;
-extern crate libxml;
-extern crate pericortex;
-extern crate rand;
-extern crate regex;
-extern crate sys_info;
 #[macro_use]
 extern crate serde_derive;
 #[macro_use]
 extern crate lazy_static;
-extern crate serde_json;
-extern crate tempfile;
-extern crate time;
-extern crate zmq;
 
 pub mod backend;
 pub mod concerns;

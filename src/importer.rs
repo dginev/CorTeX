@@ -6,15 +6,11 @@
 // except according to those terms.
 
 //! Import a new corpus into the framework
-
-extern crate Archive;
-extern crate glob;
-
 use glob::glob;
 // use regex::Regex;
-use backend::Backend;
-use helpers::TaskStatus;
-use models::{Corpus, NewCorpus, NewTask};
+use crate::backend::Backend;
+use crate::helpers::TaskStatus;
+use crate::models::{Corpus, NewCorpus, NewTask};
 use std::env;
 use std::fs;
 use std::io::Error;
@@ -60,15 +56,15 @@ impl Importer {
   pub fn cwd() -> PathBuf { env::current_dir().unwrap() }
   /// Top-level method for unpacking an arxiv-toplogy corpus from its tar-ed form
   fn unpack(&self) -> Result<(), Error> {
-    try!(self.unpack_arxiv_top());
-    try!(self.unpack_arxiv_months());
+    r#try!(self.unpack_arxiv_top());
+    r#try!(self.unpack_arxiv_months());
     Ok(())
   }
   fn unpack_extend(&self) -> Result<(), Error> {
-    try!(self.unpack_extend_arxiv_top());
+    r#try!(self.unpack_extend_arxiv_top());
     // We can reuse the monthly unpack, as it deletes all unpacked document archives
     // In other words, it always acts as a conservative extension
-    try!(self.unpack_arxiv_months());
+    r#try!(self.unpack_arxiv_months());
     Ok(())
   }
 
@@ -187,7 +183,8 @@ impl Importer {
           });
           // We'll write out a ZIP file for each entry
           let full_extract_path = entry_cp_dir.to_string() + "/" + base_name + ".zip";
-          let mut archive_writer_new = Writer::new().unwrap()
+          let mut archive_writer_new = Writer::new()
+            .unwrap()
             //.add_filter(ArchiveFilter::Lzip)
             // .set_compression(ArchiveFilter::None)
             .set_format(ArchiveFormat::Zip);
@@ -260,7 +257,7 @@ impl Importer {
     let mut import_counter = 0;
     while !walk_q.is_empty() {
       let current_path = walk_q.pop().unwrap();
-      let current_metadata = try!(fs::metadata(current_path.clone()));
+      let current_metadata = r#try!(fs::metadata(current_path.clone()));
       if current_metadata.is_dir() {
         println!("-- current path {:?}", current_path);
         // First, test if we just found an entry:
@@ -283,8 +280,8 @@ impl Importer {
           },
           Err(_) => {
             // No such entry found, traversing into the directory:
-            for subentry in try!(fs::read_dir(current_path.clone())) {
-              let subentry = try!(subentry);
+            for subentry in r#try!(fs::read_dir(current_path.clone())) {
+              let subentry = r#try!(subentry);
               walk_q.push(subentry.path());
             }
           },
@@ -321,10 +318,10 @@ impl Importer {
     // println!("Greetings from the import processor");
     if self.corpus.complex {
       // Complex setup has an unpack step:
-      try!(self.unpack());
+      r#try!(self.unpack());
     }
     // Walk the directory tree and import the files in the Task store:
-    try!(self.walk_import());
+    r#try!(self.walk_import());
 
     Ok(())
   }
@@ -334,11 +331,11 @@ impl Importer {
   pub fn extend_corpus(&self) -> Result<(), Error> {
     if self.corpus.complex {
       // Complex setup has an unpack step:
-      try!(self.unpack_extend());
+      r#try!(self.unpack_extend());
     }
     // Use the regular walk_import, at the cost of more database work,
     // the "Backend::mark_imported" ORM method allows us to insert only if new
-    try!(self.walk_import());
+    r#try!(self.walk_import());
     Ok(())
   }
 }

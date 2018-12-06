@@ -1,7 +1,3 @@
-extern crate tempfile;
-extern crate zmq;
-extern crate zmq_sys;
-
 use std::collections::HashMap;
 use std::io::Read;
 use std::mem::size_of;
@@ -10,11 +6,11 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use time;
 
-use backend;
-use dispatcher::server;
-use helpers;
-use helpers::{NewTaskMessage, TaskProgress, TaskReport, TaskStatus};
-use models::{Service, WorkerMetadata};
+use crate::backend;
+use crate::dispatcher::server;
+use crate::helpers;
+use crate::helpers::{NewTaskMessage, TaskProgress, TaskReport, TaskStatus};
+use crate::models::{Service, WorkerMetadata};
 use std::error::Error;
 use zmq::{Constants, SNDMORE};
 
@@ -84,7 +80,7 @@ impl Ventilator {
         if !queues.contains_key(&service_name) {
           queues.insert(service_name.clone(), Vec::new());
         }
-        let mut task_queue: &mut Vec<TaskProgress> = queues
+        let task_queue: &mut Vec<TaskProgress> = queues
           .get_mut(&service_name)
           .unwrap_or_else(|| panic!("Could not obtain queue mutex lock in main ventilator loop"));
         if task_queue.is_empty() {

@@ -6,8 +6,6 @@
 // except according to those terms.
 
 //! ORM-like capabilities for high- and mid-level operations on the Task store
-extern crate dotenv;
-extern crate rand;
 
 use std::collections::HashMap;
 // use std::thread;
@@ -18,19 +16,19 @@ use regex::Regex;
 // use diesel::pg::upsert::*;
 use diesel::dsl::sql;
 use diesel::result::Error;
-use schema::{
+use crate::schema::{
   corpora, log_errors, log_fatals, log_infos, log_invalids, log_warnings, services, tasks,
 };
 
 // use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
-use concerns::{CortexDeletable, CortexInsertable};
-use helpers::{random_mark, TaskReport, TaskStatus};
-use models;
-use models::{
+use crate::concerns::{CortexDeletable, CortexInsertable};
+use crate::helpers::{random_mark, TaskReport, TaskStatus};
+use crate::models;
+use crate::models::{
   Corpus, LogError, LogFatal, LogInfo, LogInvalid, LogRecord, LogWarning, MarkRerun, NewTask,
   Service, Task,
 };
-use reports::{AggregateReport, TaskDetailReport};
+use crate::reports::{AggregateReport, TaskDetailReport};
 
 lazy_static! {
   static ref ENTRY_NAME_REGEX: Regex = Regex::new(r"^(.+)/[^/]+$").unwrap();
@@ -91,7 +89,7 @@ impl Backend {
   /// Insert a vector of `TaskReport` reports into the Task store, also marking their tasks as
   /// completed with the correct status code.
   pub fn mark_done(&self, reports: &[TaskReport]) -> Result<(), Error> {
-    use schema::tasks::{id, status};
+    use crate::schema::tasks::{id, status};
 
     self.connection.transaction::<(), Error, _>(|| {
       for report in reports.iter() {
@@ -140,7 +138,7 @@ impl Backend {
     what_opt: Option<String>,
   ) -> Result<(), Error>
   {
-    use schema::tasks::{corpus_id, service_id, status};
+    use crate::schema::tasks::{corpus_id, service_id, status};
     // Rerun = set status to TODO for all tasks, deleting old logs
     let mark: i32 = random_mark();
 
@@ -149,7 +147,7 @@ impl Backend {
       Some(severity) => match category_opt {
         Some(category) => match what_opt {
           // All tasks in a "what" class
-          Some(what) => try!(match severity.to_lowercase().as_str() {
+          Some(what) => r#try!(match severity.to_lowercase().as_str() {
             "warning" => LogWarning::mark_rerun_by_what(
               mark,
               corpus.id,
@@ -192,7 +190,7 @@ impl Backend {
             ),
           }),
           // None: All tasks in a category
-          None => try!(match severity.to_lowercase().as_str() {
+          None => r#try!(match severity.to_lowercase().as_str() {
             "warning" => LogWarning::mark_rerun_by_category(
               mark,
               corpus.id,
@@ -235,7 +233,7 @@ impl Backend {
           let status_to_rerun: i32 = TaskStatus::from_key(&severity)
             .unwrap_or(TaskStatus::NoProblem)
             .raw();
-          try!(
+          r#try!(
             update(tasks::table)
               .filter(corpus_id.eq(corpus.id))
               .filter(service_id.eq(service.id))
@@ -247,7 +245,7 @@ impl Backend {
       },
       None => {
         // Entire corpus
-        try!(
+        r#try!(
           update(tasks::table)
             .filter(corpus_id.eq(corpus.id))
             .filter(service_id.eq(service.id))
@@ -268,22 +266,22 @@ impl Backend {
     let affected_tasks_ids = affected_tasks.select(tasks::id);
 
     let affected_log_infos = log_infos::table.filter(log_infos::task_id.eq_any(affected_tasks_ids));
-    try!(delete(affected_log_infos).execute(&self.connection));
+    r#try!(delete(affected_log_infos).execute(&self.connection));
     let affected_log_warnings =
       log_warnings::table.filter(log_warnings::task_id.eq_any(affected_tasks_ids));
-    try!(delete(affected_log_warnings).execute(&self.connection));
+    r#try!(delete(affected_log_warnings).execute(&self.connection));
     let affected_log_errors =
       log_errors::table.filter(log_errors::task_id.eq_any(affected_tasks_ids));
-    try!(delete(affected_log_errors).execute(&self.connection));
+    r#try!(delete(affected_log_errors).execute(&self.connection));
     let affected_log_fatals =
       log_fatals::table.filter(log_fatals::task_id.eq_any(affected_tasks_ids));
-    try!(delete(affected_log_fatals).execute(&self.connection));
+    r#try!(delete(affected_log_fatals).execute(&self.connection));
     let affected_log_invalids =
       log_invalids::table.filter(log_invalids::task_id.eq_any(affected_tasks_ids));
-    try!(delete(affected_log_invalids).execute(&self.connection));
+    r#try!(delete(affected_log_invalids).execute(&self.connection));
 
     // Lastly, switch all blocked tasks to TODO, and complete the rerun mark pass.
-    try!(
+    r#try!(
       update(affected_tasks)
         .set(status.eq(TaskStatus::TODO.raw()))
         .execute(&self.connection)
@@ -330,12 +328,12 @@ impl Backend {
   /// if the service has previously been registered, this call will `RESET` the service into a mint
   /// state also removing any related log messages.
   pub fn register_service(&self, service: &Service, corpus_path: &str) -> Result<(), Error> {
-    use schema::tasks::dsl::*;
-    let corpus = try!(Corpus::find_by_path(corpus_path, &self.connection));
+    use crate::schema::tasks::dsl::*;
+    let corpus = r#try!(Corpus::find_by_path(corpus_path, &self.connection));
     let todo_raw = TaskStatus::TODO.raw();
 
     // First, delete existing tasks for this <service, corpus> pair.
-    try!(
+    r#try!(
       delete(tasks)
         .filter(service_id.eq(service.id))
         .filter(corpus_id.eq(corpus.id))
@@ -345,15 +343,15 @@ impl Backend {
     // TODO: when we want to get completeness, also:
     // - also erase log entries
     // - update dependencies
-    let import_service = try!(Service::find_by_name("import", &self.connection));
-    let entries: Vec<String> = try!(
+    let import_service = r#try!(Service::find_by_name("import", &self.connection));
+    let entries: Vec<String> = r#try!(
       tasks
         .filter(service_id.eq(import_service.id))
         .filter(corpus_id.eq(corpus.id))
         .select(entry)
         .load(&self.connection)
     );
-    try!(self.connection.transaction::<(), Error, _>(|| {
+    r#try!(self.connection.transaction::<(), Error, _>(|| {
       for imported_entry in entries {
         let new_task = NewTask {
           entry: imported_entry,
@@ -373,21 +371,21 @@ impl Backend {
   /// if the service has previously been registered, this call will ignore existing entries and
   /// simply add newly encountered ones
   pub fn extend_service(&self, service: &Service, corpus_path: &str) -> Result<(), Error> {
-    use schema::tasks::dsl::*;
+    use crate::schema::tasks::dsl::*;
     let corpus = Corpus::find_by_path(corpus_path, &self.connection)?;
     let todo_raw = TaskStatus::TODO.raw();
 
     // TODO: when we want to get completeness, also:
     // - update dependencies
-    let import_service = try!(Service::find_by_name("import", &self.connection));
-    let entries: Vec<String> = try!(
+    let import_service = r#try!(Service::find_by_name("import", &self.connection));
+    let entries: Vec<String> = r#try!(
       tasks
         .filter(service_id.eq(import_service.id))
         .filter(corpus_id.eq(corpus.id))
         .select(entry)
         .load(&self.connection)
     );
-    try!(self.connection.transaction::<(), Error, _>(|| {
+    r#try!(self.connection.transaction::<(), Error, _>(|| {
       for imported_entry in entries {
         let new_task = NewTask {
           entry: imported_entry,
@@ -420,7 +418,7 @@ impl Backend {
 
   /// Returns a vector of tasks for a given Corpus, Service and status
   pub fn tasks(&self, corpus: &Corpus, service: &Service, task_status: &TaskStatus) -> Vec<Task> {
-    use schema::tasks::dsl::{corpus_id, service_id, status};
+    use crate::schema::tasks::dsl::{corpus_id, service_id, status};
     tasks::table
       .filter(service_id.eq(service.id))
       .filter(corpus_id.eq(corpus.id))
@@ -452,7 +450,7 @@ impl Backend {
   /// Provides a progress report, grouped by severity, for a given `Corpus` and `Service` pair
   pub fn progress_report(&self, corpus: &Corpus, service: &Service) -> HashMap<String, f64> {
     use diesel::sql_types::BigInt;
-    use schema::tasks::{corpus_id, service_id, status};
+    use crate::schema::tasks::{corpus_id, service_id, status};
 
     let mut stats_hash: HashMap<String, f64> = HashMap::new();
     for status_key in TaskStatus::keys() {
@@ -499,7 +497,7 @@ impl Backend {
   ) -> Vec<HashMap<String, String>>
   {
     use diesel::sql_types::{BigInt, Text};
-    use schema::tasks::dsl::{corpus_id, service_id, status};
+    use crate::schema::tasks::dsl::{corpus_id, service_id, status};
 
     // The final report, populated based on the specific selectors
     let mut report = Vec::new();

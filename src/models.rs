@@ -7,28 +7,28 @@
 
 //! Backend models and traits for the `CorTeX` "Task store"
 
-use helpers::TaskStatus;
+use crate::helpers::TaskStatus;
 use rand::{thread_rng, Rng};
 use std::collections::HashMap;
 use std::fmt;
 use std::thread;
 use std::time::SystemTime;
 
-use backend;
-use concerns::{CortexDeletable, CortexInsertable};
+use crate::backend;
+use crate::concerns::{CortexDeletable, CortexInsertable};
 use diesel::pg::PgConnection;
 use diesel::result::Error;
 use diesel::*;
 use diesel::{delete, insert_into, update};
-use schema::corpora;
-use schema::log_errors;
-use schema::log_fatals;
-use schema::log_infos;
-use schema::log_invalids;
-use schema::log_warnings;
-use schema::services;
-use schema::tasks;
-use schema::worker_metadata;
+use crate::schema::corpora;
+use crate::schema::log_errors;
+use crate::schema::log_fatals;
+use crate::schema::log_infos;
+use crate::schema::log_invalids;
+use crate::schema::log_warnings;
+use crate::schema::services;
+use crate::schema::tasks;
+use crate::schema::worker_metadata;
 
 // Tasks
 
@@ -83,19 +83,19 @@ impl CortexDeletable for Task {
 impl Task {
   /// Delete task by entry
   pub fn delete_by_entry(&self, connection: &PgConnection) -> Result<usize, Error> {
-    use schema::tasks::dsl::entry;
+    use crate::schema::tasks::dsl::entry;
     delete(tasks::table.filter(entry.eq(&self.entry))).execute(connection)
   }
 
   /// Delete all tasks matching this task's service id
   pub fn delete_by_service_id(&self, connection: &PgConnection) -> Result<usize, Error> {
-    use schema::tasks::dsl::service_id;
+    use crate::schema::tasks::dsl::service_id;
     delete(tasks::table.filter(service_id.eq(&self.service_id))).execute(connection)
   }
 
   /// Delete task by id
   pub fn delete_by_id(&self, connection: &PgConnection) -> Result<usize, Error> {
-    use schema::tasks::dsl::id;
+    use crate::schema::tasks::dsl::id;
     delete(tasks::table.filter(id.eq(self.id))).execute(connection)
   }
 
@@ -119,7 +119,7 @@ impl Task {
     connection: &PgConnection,
   ) -> Result<Task, Error>
   {
-    use schema::tasks::dsl::{corpus_id, service_id};
+    use crate::schema::tasks::dsl::{corpus_id, service_id};
     tasks::table
       .filter(corpus_id.eq(corpus.id))
       .filter(service_id.eq(service.id))
@@ -142,11 +142,11 @@ impl CortexDeletable for NewTask {
 
 impl NewTask {
   fn delete_by_entry(&self, connection: &PgConnection) -> Result<usize, Error> {
-    use schema::tasks::dsl::entry;
+    use crate::schema::tasks::dsl::entry;
     delete(tasks::table.filter(entry.eq(&self.entry))).execute(connection)
   }
   fn delete_by_service_id(&self, connection: &PgConnection) -> Result<usize, Error> {
-    use schema::tasks::dsl::service_id;
+    use crate::schema::tasks::dsl::service_id;
     delete(tasks::table.filter(service_id.eq(&self.service_id))).execute(connection)
   }
   /// Creates the task unless already present in the DB (entry conflict)
@@ -602,7 +602,7 @@ impl WorkerMetadata {
             Some(time) => time,
             None => now.clone(),
           };
-          use schema::worker_metadata;
+          use crate::schema::worker_metadata;
           update(&data)
             .set((
               worker_metadata::last_dispatched_task_id.eq(last_dispatched_task_id),
@@ -650,7 +650,7 @@ impl WorkerMetadata {
           Some(time) => time,
           None => now.clone(),
         };
-        use schema::worker_metadata;
+        use crate::schema::worker_metadata;
         update(&data)
           .set((
             worker_metadata::last_returned_task_id.eq(last_returned_task_id),
@@ -676,7 +676,7 @@ impl WorkerMetadata {
     connection: &PgConnection,
   ) -> Result<WorkerMetadata, Error>
   {
-    use schema::worker_metadata::{name, service_id};
+    use crate::schema::worker_metadata::{name, service_id};
     worker_metadata::table
       .filter(name.eq(identity))
       .filter(service_id.eq(sid))
@@ -741,7 +741,7 @@ impl CortexInsertable for NewService {
 impl Service {
   /// ORM-like until diesel.rs introduces finders for more fields
   pub fn find_by_name(name_query: &str, connection: &PgConnection) -> Result<Service, Error> {
-    use schema::services::name;
+    use crate::schema::services::name;
     services::table
       .filter(name.eq(name_query))
       .get_result(connection)
@@ -801,12 +801,12 @@ pub struct Corpus {
 impl Corpus {
   /// ORM-like until diesel.rs introduces finders for more fields
   pub fn find_by_name(name_query: &str, connection: &PgConnection) -> Result<Self, Error> {
-    use schema::corpora::name;
+    use crate::schema::corpora::name;
     corpora::table.filter(name.eq(name_query)).first(connection)
   }
   /// ORM-like until diesel.rs introduces finders for more fields
   pub fn find_by_path(path_query: &str, connection: &PgConnection) -> Result<Self, Error> {
-    use schema::corpora::path;
+    use crate::schema::corpora::path;
     corpora::table.filter(path.eq(path_query)).first(connection)
   }
   /// Return a hash representation of the corpus, usually for frontend reports
@@ -820,7 +820,7 @@ impl Corpus {
 
   /// Return a vector of services currently activated on this corpus
   pub fn select_services(&self, connection: &PgConnection) -> Result<Vec<Service>, Error> {
-    use schema::tasks::dsl::{corpus_id, service_id};
+    use crate::schema::tasks::dsl::{corpus_id, service_id};
     let corpus_service_ids_query = tasks::table
       .select(service_id)
       .distinct()
@@ -832,12 +832,12 @@ impl Corpus {
 
   /// Deletes a corpus and its dependent tasks from the DB, consuming the object
   pub fn destroy(self, connection: &PgConnection) -> Result<usize, Error> {
-    try!(
+    r#try!(
       delete(tasks::table)
         .filter(tasks::corpus_id.eq(self.id))
         .execute(connection)
     );
-    try!(
+    r#try!(
       delete(tasks::table)
         .filter(tasks::entry.eq(self.path))
         .execute(connection)
@@ -888,13 +888,13 @@ pub fn fetch_tasks(
   connection: &PgConnection,
 ) -> Result<Vec<Task>, Error>
 {
-  use schema::tasks::dsl::{service_id, status};
+  use crate::schema::tasks::dsl::{service_id, status};
   let mut rng = thread_rng();
   let mark: u16 = 1 + rng.gen::<u16>();
 
   let mut marked_tasks: Vec<Task> = Vec::new();
-  try!(connection.transaction::<(), Error, _>(|| {
-    let tasks_for_update = try!(
+  r#try!(connection.transaction::<(), Error, _>(|| {
+    let tasks_for_update = r#try!(
       tasks::table
         .for_update()
         .filter(service_id.eq(service.id))
@@ -917,7 +917,7 @@ pub fn fetch_tasks(
 
 /// Mark all "limbo" (= "in progress", assumed disconnected) tasks as TODO
 pub fn clear_limbo_tasks(connection: &PgConnection) -> Result<usize, Error> {
-  use schema::tasks::dsl::status;
+  use crate::schema::tasks::dsl::status;
   update(tasks::table)
     .filter(status.gt(&TaskStatus::TODO.raw()))
     .set(status.eq(&TaskStatus::TODO.raw()))
@@ -956,7 +956,7 @@ impl MarkRerun for LogInfo {
     connection: &PgConnection,
   ) -> Result<usize, Error>
   {
-    use schema::log_infos::dsl::{category, log_infos, task_id, what};
+    use crate::schema::log_infos::dsl::{category, log_infos, task_id, what};
     let task_ids_to_rerun = log_infos
       .filter(category.eq(rerun_category))
       .filter(what.eq(rerun_what))
@@ -979,7 +979,7 @@ impl MarkRerun for LogInfo {
     connection: &PgConnection,
   ) -> Result<usize, Error>
   {
-    use schema::log_infos::dsl::{category, log_infos, task_id};
+    use crate::schema::log_infos::dsl::{category, log_infos, task_id};
     let task_ids_to_rerun = log_infos
       .filter(category.eq(rerun_category))
       .select(task_id)
@@ -1005,7 +1005,7 @@ impl MarkRerun for LogWarning {
     connection: &PgConnection,
   ) -> Result<usize, Error>
   {
-    use schema::log_warnings::dsl::{category, log_warnings, task_id, what};
+    use crate::schema::log_warnings::dsl::{category, log_warnings, task_id, what};
     let task_ids_to_rerun = log_warnings
       .filter(category.eq(rerun_category))
       .filter(what.eq(rerun_what))
@@ -1028,7 +1028,7 @@ impl MarkRerun for LogWarning {
     connection: &PgConnection,
   ) -> Result<usize, Error>
   {
-    use schema::log_warnings::dsl::{category, log_warnings, task_id};
+    use crate::schema::log_warnings::dsl::{category, log_warnings, task_id};
     let task_ids_to_rerun = log_warnings
       .filter(category.eq(rerun_category))
       .select(task_id)
@@ -1054,7 +1054,7 @@ impl MarkRerun for LogError {
     connection: &PgConnection,
   ) -> Result<usize, Error>
   {
-    use schema::log_errors::dsl::{category, log_errors, task_id, what};
+    use crate::schema::log_errors::dsl::{category, log_errors, task_id, what};
     let task_ids_to_rerun = log_errors
       .filter(category.eq(rerun_category))
       .filter(what.eq(rerun_what))
@@ -1077,7 +1077,7 @@ impl MarkRerun for LogError {
     connection: &PgConnection,
   ) -> Result<usize, Error>
   {
-    use schema::log_errors::dsl::{category, log_errors, task_id};
+    use crate::schema::log_errors::dsl::{category, log_errors, task_id};
     let task_ids_to_rerun = log_errors
       .filter(category.eq(rerun_category))
       .select(task_id)
@@ -1102,7 +1102,7 @@ impl MarkRerun for LogFatal {
     connection: &PgConnection,
   ) -> Result<usize, Error>
   {
-    use schema::log_fatals::dsl::{category, log_fatals, task_id, what};
+    use crate::schema::log_fatals::dsl::{category, log_fatals, task_id, what};
     let task_ids_to_rerun = log_fatals
       .filter(category.eq(rerun_category))
       .filter(what.eq(rerun_what))
@@ -1126,7 +1126,7 @@ impl MarkRerun for LogFatal {
   ) -> Result<usize, Error>
   {
     use diesel::sql_types::BigInt;
-    use schema::log_fatals::dsl::{category, log_fatals, task_id};
+    use crate::schema::log_fatals::dsl::{category, log_fatals, task_id};
     if rerun_category == "no_messages" {
       let no_messages_query_string = "SELECT * FROM tasks t WHERE ".to_string()
         + "service_id=$1 and corpus_id=$2 and status=$3 and "
@@ -1171,7 +1171,7 @@ impl MarkRerun for LogInvalid {
     connection: &PgConnection,
   ) -> Result<usize, Error>
   {
-    use schema::log_invalids::dsl::{category, log_invalids, task_id, what};
+    use crate::schema::log_invalids::dsl::{category, log_invalids, task_id, what};
     let task_ids_to_rerun = log_invalids
       .filter(category.eq(rerun_category))
       .filter(what.eq(rerun_what))
@@ -1194,7 +1194,7 @@ impl MarkRerun for LogInvalid {
     connection: &PgConnection,
   ) -> Result<usize, Error>
   {
-    use schema::log_invalids::dsl::{category, log_invalids, task_id};
+    use crate::schema::log_invalids::dsl::{category, log_invalids, task_id};
     let task_ids_to_rerun = log_invalids
       .filter(category.eq(rerun_category))
       .select(task_id)

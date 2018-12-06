@@ -11,13 +11,6 @@
 // actual production bundling can be found as a bash script at:
 //
 // scripts/bundle-dataset-02legacy.sh
-
-extern crate Archive;
-extern crate cortex;
-extern crate libxml;
-extern crate regex;
-extern crate time;
-
 use cortex::backend::Backend;
 use cortex::helpers::TaskStatus;
 use cortex::models::{Corpus, Service};

@@ -7,9 +7,6 @@
 
 ///! Register a service with a given name on a corpus with a given path
 ///! Example run: `$ ./target/release/examples/register_service tex_to_html /data/arxmliv/`
-extern crate cortex;
-extern crate pericortex;
-
 use cortex::backend::Backend;
 use cortex::models::Service;
 use std::env;
@@ -40,9 +37,7 @@ fn main() {
   assert!(service_registered_result.is_ok());
   let service_registered = service_registered_result.unwrap();
 
-  assert!(
-    backend
-      .register_service(&service_registered, &corpus_path)
-      .is_ok()
-  );
+  assert!(backend
+    .register_service(&service_registered, &corpus_path)
+    .is_ok());
 }

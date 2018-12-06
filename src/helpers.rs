@@ -17,8 +17,8 @@ use Archive::*;
 use diesel::pg::PgConnection;
 use diesel::result::Error;
 
-use concerns::CortexInsertable;
-use models::{
+use crate::concerns::CortexInsertable;
+use crate::models::{
   LogError, LogFatal, LogInfo, LogInvalid, LogRecord, LogWarning, NewLogError, NewLogFatal,
   NewLogInfo, NewLogInvalid, NewLogWarning, Task,
 };
@@ -97,7 +97,7 @@ pub enum TaskMessage {
 }
 impl LogRecord for TaskMessage {
   fn task_id(&self) -> i64 {
-    use helpers::TaskMessage::*;
+    use crate::helpers::TaskMessage::*;
     match *self {
       Info(ref record) => record.task_id(),
       Warning(ref record) => record.task_id(),
@@ -107,7 +107,7 @@ impl LogRecord for TaskMessage {
     }
   }
   fn category(&self) -> &str {
-    use helpers::TaskMessage::*;
+    use crate::helpers::TaskMessage::*;
     match *self {
       Info(ref record) => record.category(),
       Warning(ref record) => record.category(),
@@ -117,7 +117,7 @@ impl LogRecord for TaskMessage {
     }
   }
   fn what(&self) -> &str {
-    use helpers::TaskMessage::*;
+    use crate::helpers::TaskMessage::*;
     match *self {
       Info(ref record) => record.what(),
       Warning(ref record) => record.what(),
@@ -127,7 +127,7 @@ impl LogRecord for TaskMessage {
     }
   }
   fn details(&self) -> &str {
-    use helpers::TaskMessage::*;
+    use crate::helpers::TaskMessage::*;
     match *self {
       Info(ref record) => record.details(),
       Warning(ref record) => record.details(),
@@ -137,7 +137,7 @@ impl LogRecord for TaskMessage {
     }
   }
   fn set_details(&mut self, new_details: String) {
-    use helpers::TaskMessage::*;
+    use crate::helpers::TaskMessage::*;
     match *self {
       Info(ref mut record) => record.set_details(new_details),
       Warning(ref mut record) => record.set_details(new_details),
@@ -147,7 +147,7 @@ impl LogRecord for TaskMessage {
     }
   }
   fn severity(&self) -> &str {
-    use helpers::TaskMessage::*;
+    use crate::helpers::TaskMessage::*;
     match *self {
       Info(ref record) => record.severity(),
       Warning(ref record) => record.severity(),
@@ -257,7 +257,7 @@ pub enum NewTaskMessage {
 }
 impl LogRecord for NewTaskMessage {
   fn task_id(&self) -> i64 {
-    use helpers::NewTaskMessage::*;
+    use crate::helpers::NewTaskMessage::*;
     match *self {
       Info(ref record) => record.task_id(),
       Warning(ref record) => record.task_id(),
@@ -267,7 +267,7 @@ impl LogRecord for NewTaskMessage {
     }
   }
   fn category(&self) -> &str {
-    use helpers::NewTaskMessage::*;
+    use crate::helpers::NewTaskMessage::*;
     match *self {
       Info(ref record) => record.category(),
       Warning(ref record) => record.category(),
@@ -277,7 +277,7 @@ impl LogRecord for NewTaskMessage {
     }
   }
   fn what(&self) -> &str {
-    use helpers::NewTaskMessage::*;
+    use crate::helpers::NewTaskMessage::*;
     match *self {
       Info(ref record) => record.what(),
       Warning(ref record) => record.what(),
@@ -287,7 +287,7 @@ impl LogRecord for NewTaskMessage {
     }
   }
   fn details(&self) -> &str {
-    use helpers::NewTaskMessage::*;
+    use crate::helpers::NewTaskMessage::*;
     match *self {
       Info(ref record) => record.details(),
       Warning(ref record) => record.details(),
@@ -297,7 +297,7 @@ impl LogRecord for NewTaskMessage {
     }
   }
   fn set_details(&mut self, new_details: String) {
-    use helpers::NewTaskMessage::*;
+    use crate::helpers::NewTaskMessage::*;
     match *self {
       Info(ref mut record) => record.set_details(new_details),
       Warning(ref mut record) => record.set_details(new_details),
@@ -308,7 +308,7 @@ impl LogRecord for NewTaskMessage {
   }
 
   fn severity(&self) -> &str {
-    use helpers::NewTaskMessage::*;
+    use crate::helpers::NewTaskMessage::*;
     match *self {
       Info(ref record) => record.severity(),
       Warning(ref record) => record.severity(),
@@ -320,7 +320,7 @@ impl LogRecord for NewTaskMessage {
 }
 impl CortexInsertable for NewTaskMessage {
   fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
-    use helpers::NewTaskMessage::*;
+    use crate::helpers::NewTaskMessage::*;
     match *self {
       Info(ref record) => record.create(connection),
       Warning(ref record) => record.create(connection),
