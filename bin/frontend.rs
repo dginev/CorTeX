@@ -4,27 +4,27 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
-
-#![feature(plugin)]
-#![feature(custom_derive)]
-#![plugin(rocket_codegen)]
-#![allow(unknown_lints, needless_pass_by_value, let_unit_value, print_literal)]
-
+#![feature(proc_macro_hygiene, decl_macro)]
+#![allow(unknown_lints, print_literal)]
 #[macro_use]
 extern crate serde_derive;
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate rocket;
 
 use futures::{Future, Stream};
 use hyper::header::{ContentLength, ContentType};
 use hyper::Client;
 use hyper::{Method, Request};
 use hyper_tls::HttpsConnector;
+use rocket::Data;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
+use rocket::request::Form;
 use rocket::response::status::{Accepted, NotFound};
 use rocket::response::{NamedFile, Redirect};
-use rocket_contrib::Template;
+use rocket_contrib::templates::Template;
 
 use tokio_core::reactor::Core;
 
@@ -47,6 +47,8 @@ use cortex::sysinfo;
 lazy_static! {
   static ref STRIP_NAME_REGEX: Regex = Regex::new(r"/[^/]+$").unwrap();
 }
+
+const TOKEN_LIMIT: u64 = 512;
 
 pub struct CORS();
 
@@ -306,12 +308,12 @@ fn severity_service_report(
     None,
   )
 }
-#[get("/corpus/<corpus_name>/<service_name>/<severity>?<params>")]
+#[get("/corpus/<corpus_name>/<service_name>/<severity>?<params..>")]
 fn severity_service_report_all(
   corpus_name: String,
   service_name: String,
   severity: String,
-  params: Option<ReportParams>,
+  params: Option<Form<ReportParams>>,
 ) -> Result<Template, NotFound<String>>
 {
   serve_report(
@@ -340,13 +342,13 @@ fn category_service_report(
     None,
   )
 }
-#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>?<params>")]
+#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>?<params..>")]
 fn category_service_report_all(
   corpus_name: String,
   service_name: String,
   severity: String,
   category: String,
-  params: Option<ReportParams>,
+  params: Option<Form<ReportParams>>,
 ) -> Result<Template, NotFound<String>>
 {
   serve_report(
@@ -377,14 +379,14 @@ fn what_service_report(
     None,
   )
 }
-#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>/<what>?<params>")]
+#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>/<what>?<params..>")]
 fn what_service_report_all(
   corpus_name: String,
   service_name: String,
   severity: String,
   category: String,
   what: String,
-  params: Option<ReportParams>,
+  params: Option<Form<ReportParams>>,
 ) -> Result<Template, NotFound<String>>
 {
   serve_report(
@@ -467,23 +469,19 @@ fn preview_entry(
   Ok(Template::render("task-preview", context))
 }
 
-// Note, the docs warn "data: Vec<u8>" is a DDoS vector - https://api.rocket.rs/rocket/data/trait.FromData.html
-// since this is a research-first implementation, i will abstain from doing this perfectly now and
-// run with the slurp.
 #[post("/entry/<service_name>/<entry_id>", data = "<data>")]
 fn entry_fetch(
   service_name: String,
   entry_id: usize,
-  data: Vec<u8>,
+  data: Data,
 ) -> Result<NamedFile, Redirect>
 {
   // Any secrets reside in config.json
   let cortex_config = aux_load_config();
-
+  let data = safe_data_to_string(data).unwrap_or_default(); // reuse old code by setting data to the String
   let g_recaptcha_response_string = if data.len() > 21 {
-    str::from_utf8(&data[21..])
-      .unwrap_or(UNKNOWN)
-      .replace("&g-recaptcha-response=", "")
+    let data = &data[21..];
+    data.replace("&g-recaptcha-response=", "")
   } else {
     UNKNOWN.to_owned()
   };
@@ -578,10 +576,10 @@ fn expire_captcha() -> Result<Template, NotFound<String>> {
 fn rerun_corpus(
   corpus_name: String,
   service_name: String,
-  data: Vec<u8>,
+  data: Data,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
-  serve_rerun(&corpus_name, &service_name, None, None, None, &data)
+  serve_rerun(&corpus_name, &service_name, None, None, None, data)
 }
 
 #[post("/rerun/<corpus_name>/<service_name>/<severity>", data = "<data>")]
@@ -589,7 +587,7 @@ fn rerun_severity(
   corpus_name: String,
   service_name: String,
   severity: String,
-  data: Vec<u8>,
+  data: Data,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
   serve_rerun(
@@ -598,7 +596,7 @@ fn rerun_severity(
     Some(severity),
     None,
     None,
-    &data,
+    data,
   )
 }
 
@@ -611,7 +609,7 @@ fn rerun_category(
   service_name: String,
   severity: String,
   category: String,
-  data: Vec<u8>,
+  data: Data,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
   serve_rerun(
@@ -620,7 +618,7 @@ fn rerun_category(
     Some(severity),
     Some(category),
     None,
-    &data,
+    data,
   )
 }
 
@@ -634,7 +632,7 @@ fn rerun_what(
   severity: String,
   category: String,
   what: String,
-  data: Vec<u8>,
+  data: Data,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
   serve_rerun(
@@ -643,7 +641,7 @@ fn rerun_what(
     Some(severity),
     Some(category),
     Some(what),
-    &data,
+    data,
   )
 }
 
@@ -703,7 +701,7 @@ fn serve_report(
   severity: Option<String>,
   category: Option<String>,
   what: Option<String>,
-  params: Option<ReportParams>,
+  params: Option<Form<ReportParams>>,
 ) -> Result<Template, NotFound<String>>
 {
   let report_start = time::get_time();
@@ -891,7 +889,7 @@ fn serve_rerun(
   severity: Option<String>,
   category: Option<String>,
   what: Option<String>,
-  token_bytes: &[u8],
+  data: Data,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
   let config = aux_load_config();
@@ -904,8 +902,8 @@ fn serve_rerun(
   // aux_uri_unescape(request.param("what"));
 
   // Ensure we're given a valid rerun token to rerun, or anyone can wipe the cortex results
-  let token = str::from_utf8(token_bytes).unwrap_or(UNKNOWN);
-  let user_opt = config.rerun_tokens.get(token);
+  let token = safe_data_to_string(data).unwrap_or(UNKNOWN.to_string()); // reuse old code by setting data to the String
+  let user_opt = config.rerun_tokens.get(&token);
   let user = match user_opt {
     None => return Err(NotFound("Access Denied".to_string())), /* TODO: response.
                                                                  * error(Forbidden, */
@@ -1136,7 +1134,7 @@ fn aux_task_report(
   severity: Option<String>,
   category: Option<String>,
   what: Option<String>,
-  params: &Option<ReportParams>,
+  params: &Option<Form<ReportParams>>,
 ) -> Vec<HashMap<String, String>>
 {
   let all_messages = match params {
@@ -1364,4 +1362,11 @@ fn cache_worker() {
     // Take two minutes before we recheck.
     thread::sleep(Duration::new(120, 0));
   }
+}
+
+fn safe_data_to_string(data: Data) -> Result<String, std::io::Error> {
+  let mut stream = data.open().take(TOKEN_LIMIT);
+  let mut string = String::with_capacity((TOKEN_LIMIT / 2) as usize);
+  stream.read_to_string(&mut string)?; // do we need str::from_utf8(token_bytes)
+  Ok(string)
 }

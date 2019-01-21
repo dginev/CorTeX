@@ -438,7 +438,7 @@ impl Backend {
       .tasks(corpus, service, task_status)
       .into_iter()
       .map(|task| {
-        let trimmed_entry = task.entry.trim_right().to_string();
+        let trimmed_entry = task.entry.trim_end().to_string();
         if service.name == "import" {
           trimmed_entry
         } else {
@@ -519,7 +519,7 @@ impl Backend {
           .unwrap_or_default();
         for &(ref entry_fixedwidth, entry_taskid) in &entry_rows {
           let mut entry_map = HashMap::new();
-          let entry_trimmed = entry_fixedwidth.trim_right().to_string();
+          let entry_trimmed = entry_fixedwidth.trim_end().to_string();
           let entry_name = TASK_REPORT_NAME_REGEX
             .replace(&entry_trimmed, "$1")
             .to_string();
@@ -653,7 +653,7 @@ impl Backend {
 
             for task in &no_message_tasks {
               let mut entry_map = HashMap::new();
-              let entry = task.entry.trim_right().to_string();
+              let entry = task.entry.trim_end().to_string();
               let entry_name = TASK_REPORT_NAME_REGEX.replace(&entry, "$1").to_string();
 
               entry_map.insert("entry".to_string(), entry);
@@ -725,7 +725,7 @@ impl Backend {
                   .unwrap_or_default();
                 for details_row in details_report {
                   let mut entry_map = HashMap::new();
-                  let entry = details_row.entry.trim_right().to_string();
+                  let entry = details_row.entry.trim_end().to_string();
                   let entry_name = TASK_REPORT_NAME_REGEX.replace(&entry, "$1").to_string();
                   // TODO: Also use url-escape
                   entry_map.insert("entry".to_string(), entry);
@@ -790,7 +790,7 @@ impl Backend {
 
     for row in report_rows {
       let stat_type: String = match row.report_name {
-        Some(ref name) => name.trim_right().to_string(),
+        Some(ref name) => name.trim_end().to_string(),
         None => String::new(),
       };
       if stat_type.is_empty() {
