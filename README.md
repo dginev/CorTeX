@@ -7,7 +7,7 @@
 
 **NEWS:** First datasets produced by CorTeX are now available for reuse via the [SIGMathLing interest group](https://sigmathling.kwarc.info/), see the [resource section](https://sigmathling.kwarc.info/resources/)
 
-**Nightly rust required**: minimal supported version currently `1.32.0-nightly (14997d56a 2018-12-05)`
+**Nightly rust required**: minimal supported version currently `rustc 1.33.0-nightly (c76f3c374 2019-01-18)`
 
 **Features**:
  - [x] Safe and speedy Rust implementation
