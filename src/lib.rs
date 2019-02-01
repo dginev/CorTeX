@@ -20,8 +20,6 @@ extern crate diesel;
 #[macro_use]
 extern crate dotenv_codegen;
 #[macro_use]
-extern crate serde_derive;
-#[macro_use]
 extern crate lazy_static;
 
 pub mod backend;

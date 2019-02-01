@@ -7,19 +7,20 @@
 
 //! Backend models and traits for the `CorTeX` "Task store"
 
-use crate::helpers::TaskStatus;
 use rand::{thread_rng, Rng};
 use std::collections::HashMap;
 use std::fmt;
 use std::thread;
 use std::time::SystemTime;
-
-use crate::backend;
-use crate::concerns::{CortexDeletable, CortexInsertable};
+use serde::Serialize;
 use diesel::pg::PgConnection;
 use diesel::result::Error;
 use diesel::*;
 use diesel::{delete, insert_into, update};
+
+use crate::backend;
+use crate::concerns::{CortexDeletable, CortexInsertable};
+use crate::helpers::TaskStatus;
 use crate::schema::corpora;
 use crate::schema::log_errors;
 use crate::schema::log_fatals;

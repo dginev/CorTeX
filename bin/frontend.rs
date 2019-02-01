@@ -7,16 +7,14 @@
 #![feature(proc_macro_hygiene, decl_macro)]
 #![allow(unknown_lints, print_literal)]
 #[macro_use]
-extern crate serde_derive;
-#[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate rocket;
 
 use futures::{Future, Stream};
-use hyper::header::{ContentLength, ContentType};
+use hyper::header::{HeaderValue, CONTENT_LENGTH, CONTENT_TYPE};
 use hyper::Client;
-use hyper::{Method, Request};
+use hyper::{Method, Request, Body};
 use hyper_tls::HttpsConnector;
 use rocket::Data;
 use rocket::fairing::{Fairing, Info, Kind};
@@ -25,7 +23,7 @@ use rocket::request::Form;
 use rocket::response::status::{Accepted, NotFound};
 use rocket::response::{NamedFile, Redirect};
 use rocket_contrib::templates::Template;
-
+use serde::{Serialize, Deserialize};
 use tokio_core::reactor::Core;
 
 use std::collections::HashMap;
@@ -1080,10 +1078,8 @@ fn aux_check_captcha(g_recaptcha_response: &str, captcha_secret: &str) -> bool {
     Ok(c) => c,
     _ => return false,
   };
-  let handle = core.handle();
-  let client = Client::configure()
-    .connector(HttpsConnector::new(4, &handle).unwrap())
-    .build(&handle);
+  let https = HttpsConnector::new(4).expect("TLS initialization failed");
+  let client = Client::builder().build::<_, hyper::Body>(https);
 
   let mut verified = false;
   let url_with_query = "https://www.google.com/recaptcha/api/siteverify?secret=".to_string()
@@ -1098,12 +1094,14 @@ fn aux_check_captcha(g_recaptcha_response: &str, captcha_secret: &str) -> bool {
     Ok(parsed) => parsed,
     _ => return false,
   };
-  let mut req = Request::new(Method::Post, req_url);
-  req.headers_mut().set(ContentType::json());
-  req.headers_mut().set(ContentLength(json_str.len() as u64));
-  req.set_body(json_str);
+  let json_len = json_str.len();
+  let mut req = Request::new(Body::from(json_str));
+  *req.method_mut() = Method::POST;
+  *req.uri_mut() = req_url;
+  req.headers_mut().insert(CONTENT_TYPE, HeaderValue::from_static("application/javascript"));
+  req.headers_mut().insert(CONTENT_LENGTH, HeaderValue::from(json_len));
 
-  let post = client.request(req).and_then(|res| res.body().concat2());
+  let post = client.request(req).and_then(|res| res.into_body().concat2());
   let posted = match core.run(post) {
     Ok(posted_data) => match str::from_utf8(&posted_data) {
       Ok(posted_str) => posted_str.to_string(),
