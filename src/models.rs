@@ -6,7 +6,7 @@
 // except according to those terms.
 
 //! Backend models and traits for the `CorTeX` "Task store"
-
+#![allow(clippy::implicit_hasher)]
 use rand::{thread_rng, Rng};
 use std::collections::HashMap;
 use std::fmt;
@@ -601,14 +601,14 @@ impl WorkerMetadata {
           // update with the appropriate fields.
           let session_seen = match data.session_seen {
             Some(time) => time,
-            None => now.clone(),
+            None => now,
           };
           use crate::schema::worker_metadata;
           update(&data)
             .set((
               worker_metadata::last_dispatched_task_id.eq(last_dispatched_task_id),
               worker_metadata::total_dispatched.eq(worker_metadata::total_dispatched + 1),
-              worker_metadata::time_last_dispatch.eq(now.clone()),
+              worker_metadata::time_last_dispatch.eq(now),
               worker_metadata::session_seen.eq(Some(session_seen)),
             )).execute(&backend.connection)
             .unwrap_or(0);
@@ -621,9 +621,9 @@ impl WorkerMetadata {
             last_returned_task_id: None,
             total_dispatched: 1,
             total_returned: 0,
-            first_seen: now.clone(),
-            session_seen: Some(now.clone()),
-            time_last_dispatch: now.clone(),
+            first_seen: now,
+            session_seen: Some(now),
+            time_last_dispatch: now,
             time_last_return: None,
           };
           insert_into(worker_metadata::table)
@@ -649,14 +649,14 @@ impl WorkerMetadata {
       if let Ok(data) = WorkerMetadata::find_by_name(&identity, service_id, &backend.connection) {
         let session_seen = match data.session_seen {
           Some(time) => time,
-          None => now.clone(),
+          None => now,
         };
         use crate::schema::worker_metadata;
         update(&data)
           .set((
             worker_metadata::last_returned_task_id.eq(last_returned_task_id),
             worker_metadata::total_returned.eq(worker_metadata::total_returned + 1),
-            worker_metadata::time_last_return.eq(now.clone()),
+            worker_metadata::time_last_return.eq(now),
             worker_metadata::session_seen.eq(Some(session_seen)),
           )).execute(&backend.connection)
           .unwrap_or(0);

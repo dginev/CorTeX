@@ -718,8 +718,8 @@ impl Backend {
                   .bind::<BigInt, i64>(i64::from(bind_status))
                   .bind::<Text, _>(category_name)
                   .bind::<Text, _>(what_name)
-                  .bind::<BigInt, i64>(i64::from(offset))
-                  .bind::<BigInt, i64>(i64::from(page_size));
+                  .bind::<BigInt, i64>(offset)
+                  .bind::<BigInt, i64>(page_size);
                 let details_report: Vec<TaskDetailReport> = details_report_query
                   .get_results(&self.connection)
                   .unwrap_or_default();

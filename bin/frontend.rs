@@ -5,7 +5,7 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 #![feature(proc_macro_hygiene, decl_macro)]
-#![allow(unknown_lints, print_literal)]
+#![allow(clippy::implicit_hasher, clippy::let_unit_value)]
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
@@ -900,7 +900,7 @@ fn serve_rerun(
   // aux_uri_unescape(request.param("what"));
 
   // Ensure we're given a valid rerun token to rerun, or anyone can wipe the cortex results
-  let token = safe_data_to_string(data).unwrap_or(UNKNOWN.to_string()); // reuse old code by setting data to the String
+  let token = safe_data_to_string(data).unwrap_or_else(|_| UNKNOWN.to_string()); // reuse old code by setting data to the String
   let user_opt = config.rerun_tokens.get(&token);
   let user = match user_opt {
     None => return Err(NotFound("Access Denied".to_string())), /* TODO: response.
