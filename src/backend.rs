@@ -14,11 +14,11 @@ use diesel::*;
 use dotenv::dotenv;
 use regex::Regex;
 // use diesel::pg::upsert::*;
-use diesel::dsl::sql;
-use diesel::result::Error;
 use crate::schema::{
   corpora, log_errors, log_fatals, log_infos, log_invalids, log_warnings, services, tasks,
 };
+use diesel::dsl::sql;
+use diesel::result::Error;
 
 // use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
 use crate::concerns::{CortexDeletable, CortexInsertable};
@@ -233,26 +233,22 @@ impl Backend {
           let status_to_rerun: i32 = TaskStatus::from_key(&severity)
             .unwrap_or(TaskStatus::NoProblem)
             .raw();
-          r#try!(
-            update(tasks::table)
-              .filter(corpus_id.eq(corpus.id))
-              .filter(service_id.eq(service.id))
-              .filter(status.eq(status_to_rerun))
-              .set(status.eq(mark))
-              .execute(&self.connection)
-          )
+          r#try!(update(tasks::table)
+            .filter(corpus_id.eq(corpus.id))
+            .filter(service_id.eq(service.id))
+            .filter(status.eq(status_to_rerun))
+            .set(status.eq(mark))
+            .execute(&self.connection))
         },
       },
       None => {
         // Entire corpus
-        r#try!(
-          update(tasks::table)
-            .filter(corpus_id.eq(corpus.id))
-            .filter(service_id.eq(service.id))
-            .filter(status.lt(0))
-            .set(status.eq(mark))
-            .execute(&self.connection)
-        )
+        r#try!(update(tasks::table)
+          .filter(corpus_id.eq(corpus.id))
+          .filter(service_id.eq(service.id))
+          .filter(status.lt(0))
+          .set(status.eq(mark))
+          .execute(&self.connection))
       },
     };
 
@@ -281,11 +277,9 @@ impl Backend {
     r#try!(delete(affected_log_invalids).execute(&self.connection));
 
     // Lastly, switch all blocked tasks to TODO, and complete the rerun mark pass.
-    r#try!(
-      update(affected_tasks)
-        .set(status.eq(TaskStatus::TODO.raw()))
-        .execute(&self.connection)
-    );
+    r#try!(update(affected_tasks)
+      .set(status.eq(TaskStatus::TODO.raw()))
+      .execute(&self.connection));
 
     Ok(())
   }
@@ -333,24 +327,20 @@ impl Backend {
     let todo_raw = TaskStatus::TODO.raw();
 
     // First, delete existing tasks for this <service, corpus> pair.
-    r#try!(
-      delete(tasks)
-        .filter(service_id.eq(service.id))
-        .filter(corpus_id.eq(corpus.id))
-        .execute(&self.connection)
-    );
+    r#try!(delete(tasks)
+      .filter(service_id.eq(service.id))
+      .filter(corpus_id.eq(corpus.id))
+      .execute(&self.connection));
 
     // TODO: when we want to get completeness, also:
     // - also erase log entries
     // - update dependencies
     let import_service = r#try!(Service::find_by_name("import", &self.connection));
-    let entries: Vec<String> = r#try!(
-      tasks
-        .filter(service_id.eq(import_service.id))
-        .filter(corpus_id.eq(corpus.id))
-        .select(entry)
-        .load(&self.connection)
-    );
+    let entries: Vec<String> = r#try!(tasks
+      .filter(service_id.eq(import_service.id))
+      .filter(corpus_id.eq(corpus.id))
+      .select(entry)
+      .load(&self.connection));
     r#try!(self.connection.transaction::<(), Error, _>(|| {
       for imported_entry in entries {
         let new_task = NewTask {
@@ -378,13 +368,11 @@ impl Backend {
     // TODO: when we want to get completeness, also:
     // - update dependencies
     let import_service = r#try!(Service::find_by_name("import", &self.connection));
-    let entries: Vec<String> = r#try!(
-      tasks
-        .filter(service_id.eq(import_service.id))
-        .filter(corpus_id.eq(corpus.id))
-        .select(entry)
-        .load(&self.connection)
-    );
+    let entries: Vec<String> = r#try!(tasks
+      .filter(service_id.eq(import_service.id))
+      .filter(corpus_id.eq(corpus.id))
+      .select(entry)
+      .load(&self.connection));
     r#try!(self.connection.transaction::<(), Error, _>(|| {
       for imported_entry in entries {
         let new_task = NewTask {
@@ -444,13 +432,14 @@ impl Backend {
         } else {
           ENTRY_NAME_REGEX.replace(&trimmed_entry, "$1").to_string() + "/" + &service.name + ".zip"
         }
-      }).collect()
+      })
+      .collect()
   }
 
   /// Provides a progress report, grouped by severity, for a given `Corpus` and `Service` pair
   pub fn progress_report(&self, corpus: &Corpus, service: &Service) -> HashMap<String, f64> {
-    use diesel::sql_types::BigInt;
     use crate::schema::tasks::{corpus_id, service_id, status};
+    use diesel::sql_types::BigInt;
 
     let mut stats_hash: HashMap<String, f64> = HashMap::new();
     for status_key in TaskStatus::keys() {
@@ -484,21 +473,20 @@ impl Backend {
 
   /// Given a complex selector, of a `Corpus`, `Service`, and the optional `severity`, `category`
   /// and `what`, Provide a progress report at the chosen granularity
-  pub fn task_report(
-    &self,
-    corpus: &Corpus,
-    service: &Service,
-    severity_opt: Option<String>,
-    category_opt: Option<String>,
-    what_opt: Option<String>,
-    mut all_messages: bool,
-    offset: i64,
-    page_size: i64,
-  ) -> Vec<HashMap<String, String>>
-  {
-    use diesel::sql_types::{BigInt, Text};
+  pub fn task_report(&self, options: TaskReportOptions) -> Vec<HashMap<String, String>> {
     use crate::schema::tasks::dsl::{corpus_id, service_id, status};
-
+    use diesel::sql_types::{BigInt, Text};
+    // destructure options
+    let TaskReportOptions {
+      corpus,
+      service,
+      severity_opt,
+      category_opt,
+      what_opt,
+      mut all_messages,
+      offset,
+      page_size,
+    } = options;
     // The final report, populated based on the specific selectors
     let mut report = Vec::new();
 
@@ -632,109 +620,111 @@ impl Backend {
               silent_task_count,
             )
           },
-          Some(category_name) => if category_name == "no_messages" {
-            let no_messages_query_string = "SELECT * FROM tasks t WHERE ".to_string()
-              + "service_id=$1 and corpus_id=$2 and "
-              + &status_clause
-              + " and "
-              + "NOT EXISTS (SELECT null FROM "
-              + &log_table
-              + " where "
-              + &log_table
-              + ".task_id=t.id) limit 100";
-            let no_messages_query = sql_query(no_messages_query_string)
-              .bind::<BigInt, i64>(i64::from(service.id))
-              .bind::<BigInt, i64>(i64::from(corpus.id))
-              .bind::<BigInt, i64>(i64::from(bind_status))
-              .bind::<BigInt, i64>(i64::from(task_status_raw));
-            let no_message_tasks: Vec<Task> = no_messages_query
-              .get_results(&self.connection)
-              .unwrap_or_default();
+          Some(category_name) => {
+            if category_name == "no_messages" {
+              let no_messages_query_string = "SELECT * FROM tasks t WHERE ".to_string()
+                + "service_id=$1 and corpus_id=$2 and "
+                + &status_clause
+                + " and "
+                + "NOT EXISTS (SELECT null FROM "
+                + &log_table
+                + " where "
+                + &log_table
+                + ".task_id=t.id) limit 100";
+              let no_messages_query = sql_query(no_messages_query_string)
+                .bind::<BigInt, i64>(i64::from(service.id))
+                .bind::<BigInt, i64>(i64::from(corpus.id))
+                .bind::<BigInt, i64>(i64::from(bind_status))
+                .bind::<BigInt, i64>(i64::from(task_status_raw));
+              let no_message_tasks: Vec<Task> = no_messages_query
+                .get_results(&self.connection)
+                .unwrap_or_default();
 
-            for task in &no_message_tasks {
-              let mut entry_map = HashMap::new();
-              let entry = task.entry.trim_end().to_string();
-              let entry_name = TASK_REPORT_NAME_REGEX.replace(&entry, "$1").to_string();
+              for task in &no_message_tasks {
+                let mut entry_map = HashMap::new();
+                let entry = task.entry.trim_end().to_string();
+                let entry_name = TASK_REPORT_NAME_REGEX.replace(&entry, "$1").to_string();
 
-              entry_map.insert("entry".to_string(), entry);
-              entry_map.insert("entry_name".to_string(), entry_name);
-              entry_map.insert("entry_taskid".to_string(), task.id.to_string());
-              entry_map.insert("details".to_string(), "OK".to_string());
-              report.push(entry_map);
-            }
-          } else {
-            match what_opt {
-              None => {
-                let what_report_query_string =
+                entry_map.insert("entry".to_string(), entry);
+                entry_map.insert("entry_name".to_string(), entry_name);
+                entry_map.insert("entry_taskid".to_string(), task.id.to_string());
+                entry_map.insert("details".to_string(), "OK".to_string());
+                report.push(entry_map);
+              }
+            } else {
+              match what_opt {
+                None => {
+                  let what_report_query_string =
               "SELECT what as report_name, count(*) as task_count, COALESCE(SUM(total_counts::integer),0) as message_count FROM ( ".to_string() +
                 "SELECT "+&log_table+".what, "+&log_table+".task_id, count(*) as total_counts FROM "+
                   "tasks LEFT OUTER JOIN "+&log_table+" ON (tasks.id="+&log_table+".task_id) "+
                   "WHERE service_id=$1 and corpus_id=$2 and "+&status_clause+" and category=$4 "+
                   "GROUP BY "+&log_table+".what, "+&log_table+".task_id) as tmp GROUP BY what ORDER BY task_count desc";
-                let what_report_query = sql_query(what_report_query_string)
-                  .bind::<BigInt, i64>(i64::from(service.id))
-                  .bind::<BigInt, i64>(i64::from(corpus.id))
-                  .bind::<BigInt, i64>(i64::from(bind_status))
-                  .bind::<Text, _>(category_name.clone());
-                let what_report: Vec<AggregateReport> = what_report_query
-                  .get_results(&self.connection)
-                  .unwrap_or_default();
-                // How many tasks and messages total in this category?
-                let this_category_report_query_string = "SELECT NULL as report_name, count(*) as task_count, COALESCE(SUM(inner_message_count::integer),0) as message_count FROM".to_string() +
+                  let what_report_query = sql_query(what_report_query_string)
+                    .bind::<BigInt, i64>(i64::from(service.id))
+                    .bind::<BigInt, i64>(i64::from(corpus.id))
+                    .bind::<BigInt, i64>(i64::from(bind_status))
+                    .bind::<Text, _>(category_name.clone());
+                  let what_report: Vec<AggregateReport> = what_report_query
+                    .get_results(&self.connection)
+                    .unwrap_or_default();
+                  // How many tasks and messages total in this category?
+                  let this_category_report_query_string = "SELECT NULL as report_name, count(*) as task_count, COALESCE(SUM(inner_message_count::integer),0) as message_count FROM".to_string() +
                 " (SELECT tasks.id, count(*) as inner_message_count "+
                 "FROM tasks, "+&log_table+" WHERE tasks.id="+&log_table+".task_id and "+
                   "service_id=$1 and corpus_id=$2 and "+&status_clause+" and category=$4 group by tasks.id) as tmp";
-                let this_category_report_query = sql_query(this_category_report_query_string)
-                  .bind::<BigInt, i64>(i64::from(service.id))
-                  .bind::<BigInt, i64>(i64::from(corpus.id))
-                  .bind::<BigInt, i64>(i64::from(bind_status))
-                  .bind::<Text, _>(category_name);
-                let this_category_report: AggregateReport = this_category_report_query
-                  .get_result(&self.connection)
-                  .unwrap();
+                  let this_category_report_query = sql_query(this_category_report_query_string)
+                    .bind::<BigInt, i64>(i64::from(service.id))
+                    .bind::<BigInt, i64>(i64::from(corpus.id))
+                    .bind::<BigInt, i64>(i64::from(bind_status))
+                    .bind::<Text, _>(category_name);
+                  let this_category_report: AggregateReport = this_category_report_query
+                    .get_result(&self.connection)
+                    .unwrap();
 
-                report = Backend::aux_task_rows_stats(
-                  &what_report,
-                  total_valid_count,
-                  this_category_report.task_count,
-                  this_category_report.message_count,
-                  None,
-                )
-              },
-              Some(what_name) => {
-                let details_report_query_string = "SELECT tasks.id, tasks.entry, ".to_string()
-                  + &log_table
-                  + ".details from tasks, "
-                  + &log_table
-                  + " WHERE tasks.id="
-                  + &log_table
-                  + ".task_id and service_id=$1 and corpus_id=$2 and "
-                  + &status_clause
-                  + "and category=$4 and what=$5 ORDER BY tasks.entry ASC offset $6 limit $7";
+                  report = Backend::aux_task_rows_stats(
+                    &what_report,
+                    total_valid_count,
+                    this_category_report.task_count,
+                    this_category_report.message_count,
+                    None,
+                  )
+                },
+                Some(what_name) => {
+                  let details_report_query_string = "SELECT tasks.id, tasks.entry, ".to_string()
+                    + &log_table
+                    + ".details from tasks, "
+                    + &log_table
+                    + " WHERE tasks.id="
+                    + &log_table
+                    + ".task_id and service_id=$1 and corpus_id=$2 and "
+                    + &status_clause
+                    + "and category=$4 and what=$5 ORDER BY tasks.entry ASC offset $6 limit $7";
 
-                let details_report_query = sql_query(details_report_query_string)
-                  .bind::<BigInt, i64>(i64::from(service.id))
-                  .bind::<BigInt, i64>(i64::from(corpus.id))
-                  .bind::<BigInt, i64>(i64::from(bind_status))
-                  .bind::<Text, _>(category_name)
-                  .bind::<Text, _>(what_name)
-                  .bind::<BigInt, i64>(offset)
-                  .bind::<BigInt, i64>(page_size);
-                let details_report: Vec<TaskDetailReport> = details_report_query
-                  .get_results(&self.connection)
-                  .unwrap_or_default();
-                for details_row in details_report {
-                  let mut entry_map = HashMap::new();
-                  let entry = details_row.entry.trim_end().to_string();
-                  let entry_name = TASK_REPORT_NAME_REGEX.replace(&entry, "$1").to_string();
-                  // TODO: Also use url-escape
-                  entry_map.insert("entry".to_string(), entry);
-                  entry_map.insert("entry_name".to_string(), entry_name);
-                  entry_map.insert("entry_taskid".to_string(), details_row.id.to_string());
-                  entry_map.insert("details".to_string(), details_row.details);
-                  report.push(entry_map);
-                }
-              },
+                  let details_report_query = sql_query(details_report_query_string)
+                    .bind::<BigInt, i64>(i64::from(service.id))
+                    .bind::<BigInt, i64>(i64::from(corpus.id))
+                    .bind::<BigInt, i64>(i64::from(bind_status))
+                    .bind::<Text, _>(category_name)
+                    .bind::<Text, _>(what_name)
+                    .bind::<BigInt, i64>(offset)
+                    .bind::<BigInt, i64>(page_size);
+                  let details_report: Vec<TaskDetailReport> = details_report_query
+                    .get_results(&self.connection)
+                    .unwrap_or_default();
+                  for details_row in details_report {
+                    let mut entry_map = HashMap::new();
+                    let entry = details_row.entry.trim_end().to_string();
+                    let entry_name = TASK_REPORT_NAME_REGEX.replace(&entry, "$1").to_string();
+                    // TODO: Also use url-escape
+                    entry_map.insert("entry".to_string(), entry);
+                    entry_map.insert("entry_name".to_string(), entry_name);
+                    entry_map.insert("entry_taskid".to_string(), details_row.id.to_string());
+                    entry_map.insert("details".to_string(), details_row.details);
+                    report.push(entry_map);
+                  }
+                },
+              }
             }
           },
         }
@@ -854,4 +844,25 @@ impl Backend {
     report.push(total_hash);
     report
   }
+}
+
+/// An options object describing a CorTeX report request
+#[derive(Debug, Clone)]
+pub struct TaskReportOptions<'a> {
+  /// Corpus object to report over
+  pub corpus: &'a Corpus,
+  /// Service object to report over
+  pub service: &'a Service,
+  /// Optional: severity level for report
+  pub severity_opt: Option<String>,
+  /// Optional: category name for report
+  pub category_opt: Option<String>,
+  /// Optional: `what` name for report
+  pub what_opt: Option<String>,
+  /// Optional: show messages from all severities?
+  pub all_messages: bool,
+  /// Offset fixed number of messages
+  pub offset: i64,
+  /// Size limit for report
+  pub page_size: i64,
 }

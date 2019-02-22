@@ -14,16 +14,16 @@ extern crate rocket;
 use futures::{Future, Stream};
 use hyper::header::{HeaderValue, CONTENT_LENGTH, CONTENT_TYPE};
 use hyper::Client;
-use hyper::{Method, Request, Body};
+use hyper::{Body, Method, Request};
 use hyper_tls::HttpsConnector;
-use rocket::Data;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
 use rocket::request::Form;
 use rocket::response::status::{Accepted, NotFound};
 use rocket::response::{NamedFile, Redirect};
+use rocket::Data;
 use rocket_contrib::templates::Template;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use tokio_core::reactor::Core;
 
 use std::collections::HashMap;
@@ -38,7 +38,7 @@ use regex::Regex;
 use std::thread;
 use std::time::Duration;
 
-use cortex::backend::Backend;
+use cortex::backend::{Backend, TaskReportOptions};
 use cortex::models::{Corpus, Service, Task};
 use cortex::sysinfo;
 
@@ -164,7 +164,7 @@ fn root() -> Template {
   let corpora = backend
     .corpora()
     .iter()
-    .map(|c| c.to_hash())
+    .map(Corpus::to_hash)
     .collect::<Vec<_>>();
 
   context.global = global;
@@ -226,7 +226,7 @@ fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
       .select_workers(&backend.connection)
       .unwrap()
       .into_iter()
-      .map(|w| w.into())
+      .map(Into::into)
       .collect();
     context.workers = Some(workers);
     Ok(Template::render("workers", context))
@@ -263,7 +263,7 @@ fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
     if let Ok(backend_services) = services_result {
       let services = backend_services
         .iter()
-        .map(|s| s.to_hash())
+        .map(Service::to_hash)
         .collect::<Vec<_>>();
       let mut service_reports = Vec::new();
       for service in services {
@@ -468,12 +468,7 @@ fn preview_entry(
 }
 
 #[post("/entry/<service_name>/<entry_id>", data = "<data>")]
-fn entry_fetch(
-  service_name: String,
-  entry_id: usize,
-  data: Data,
-) -> Result<NamedFile, Redirect>
-{
+fn entry_fetch(service_name: String, entry_id: usize, data: Data) -> Result<NamedFile, Redirect> {
   // Any secrets reside in config.json
   let cortex_config = aux_load_config();
   let data = safe_data_to_string(data).unwrap_or_default(); // reuse old code by setting data to the String
@@ -1098,10 +1093,17 @@ fn aux_check_captcha(g_recaptcha_response: &str, captcha_secret: &str) -> bool {
   let mut req = Request::new(Body::from(json_str));
   *req.method_mut() = Method::POST;
   *req.uri_mut() = req_url;
-  req.headers_mut().insert(CONTENT_TYPE, HeaderValue::from_static("application/javascript"));
-  req.headers_mut().insert(CONTENT_LENGTH, HeaderValue::from(json_len));
+  req.headers_mut().insert(
+    CONTENT_TYPE,
+    HeaderValue::from_static("application/javascript"),
+  );
+  req
+    .headers_mut()
+    .insert(CONTENT_LENGTH, HeaderValue::from(json_len));
 
-  let post = client.request(req).and_then(|res| res.into_body().concat2());
+  let post = client
+    .request(req)
+    .and_then(|res| res.into_body().concat2());
   let posted = match core.run(post) {
     Ok(posted_data) => match str::from_utf8(&posted_data) {
       Ok(posted_str) => posted_str.to_string(),
@@ -1197,16 +1199,16 @@ fn aux_task_report(
 
   if cached_report.is_empty() {
     let backend = Backend::default();
-    fetched_report = backend.task_report(
+    fetched_report = backend.task_report(TaskReportOptions {
       corpus,
       service,
-      severity.clone(),
-      category,
-      what.clone(),
+      severity_opt: severity.clone(),
+      category_opt: category,
+      what_opt: what.clone(),
       all_messages,
       offset,
       page_size,
-    );
+    });
     if what.is_none() && severity != Some("no_problem".to_string()) {
       let report_json: String = serde_json::to_string(&fetched_report).unwrap();
       // don't cache the task list pages

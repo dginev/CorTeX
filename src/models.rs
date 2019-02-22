@@ -909,7 +909,7 @@ pub fn fetch_tasks(
         status: i32::from(mark),
         ..task
       }).map(|task| task.save_changes(connection))
-      .filter_map(|saved| saved.ok())
+      .filter_map(Result::ok)
       .collect();
     Ok(())
   }));
