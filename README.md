@@ -3,7 +3,7 @@
 
 **A general purpose processing framework for corpora of scientific documents**
 
-[![Build Status](https://secure.travis-ci.org/dginev/CorTeX.png?branch=master)](http://travis-ci.org/dginev/CorTeX) [![Coverage Status](https://coveralls.io/repos/dginev/CorTeX/badge.svg?branch=master&service=github)](https://coveralls.io/github/dginev/CorTeX?branch=master) [![API Documentation](https://img.shields.io/badge/docs-API-blue.svg)](http://dginev.github.io/CorTeX/cortex/index.html) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/dginev/CorTeX/master/LICENSE) ![version](https://img.shields.io/badge/version-0.3.2-orange.svg)
+[![Build Status](https://secure.travis-ci.org/dginev/CorTeX.png?branch=master)](http://travis-ci.org/dginev/CorTeX) [![API Documentation](https://img.shields.io/badge/docs-API-blue.svg)](http://dginev.github.io/CorTeX/cortex/index.html) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/dginev/CorTeX/master/LICENSE) ![version](https://img.shields.io/badge/version-0.3.2-orange.svg)
 
 **NEWS:** First datasets produced by CorTeX are now available for reuse via the [SIGMathLing interest group](https://sigmathling.kwarc.info/), see the [resource section](https://sigmathling.kwarc.info/resources/)
 
@@ -34,7 +34,7 @@ For more details, consult the [Installation](INSTALL.md) instructions and the [M
 
 ---
 
-**Disclaimer**: 
+**Disclaimer**:
  - The CorTeX framework is recurringly converting >1 million articles from arXiv.org.
  - We consider the CorTeX job manager largely stable.
  - The backend has recently been rewritten in [diesel.rs](http://diesel.rs/), and the frontend has recently been rewritten in rocket.rs. Both are being retested in production in the last days of 2017.
