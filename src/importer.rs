@@ -133,6 +133,9 @@ impl Importer {
             .open_filename(path.to_str().unwrap(), BUFFER_SIZE)
             .unwrap();
           while let Ok(e) = archive_reader.next_header() {
+            if e.pathname().ends_with(".pdf") {
+              continue;
+            }
             let full_extract_path = path_str.to_string() + &e.pathname();
             match fs::metadata(full_extract_path.clone()) {
               Ok(_) => {}//println!("File {:?} exists, won't unpack.", e.pathname()),
