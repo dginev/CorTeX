@@ -8,8 +8,8 @@
 //! Virtual tables/ORM for reports produced by the `CorTeX` backend
 
 #![allow(missing_docs, unused_imports)]
-/// Table declaration for the return type for aggregate report queries
 table! {
+  /// Table declaration for the return type for aggregate report queries
   aggregate_reports (report_name) {
     report_name -> Nullable<Text>,
     task_count -> BigInt,
@@ -29,8 +29,8 @@ pub struct AggregateReport {
   pub message_count: i64,
 }
 
-/// Table declaration of the return type for "task details" report queries
 table! {
+  /// Table declaration of the return type for "task details" report queries
   task_detail_reports (id) {
     id -> BigInt,
     entry -> Text,
