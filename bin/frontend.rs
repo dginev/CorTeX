@@ -536,18 +536,24 @@ fn entry_fetch(service_name: String, entry_id: usize, data: Data) -> Result<Name
   }
 
   let backend = Backend::default();
-  let task = Task::find(entry_id as i64, &backend.connection).unwrap();
-
-  let entry = task.entry;
-  let zip_path = match service_name.as_str() {
-    "import" => entry,
-    _ => STRIP_NAME_REGEX.replace(&entry, "").to_string() + "/" + &service_name + ".zip",
-  };
-  if zip_path.is_empty() {
-    Err(Redirect::to("/")) // TODO : Err(NotFound(format!("Service {:?} does not have a result for entry {:?}",
-                           // service_name, entry_id)))
-  } else {
-    NamedFile::open(&zip_path).map_err(|_| Redirect::to("/"))
+  match Task::find(entry_id as i64, &backend.connection) {
+    Ok(task) => {
+      let entry = task.entry;
+      let zip_path = match service_name.as_str() {
+        "import" => entry,
+        _ => STRIP_NAME_REGEX.replace(&entry, "").to_string() + "/" + &service_name + ".zip",
+      };
+      if zip_path.is_empty() {
+        Err(Redirect::to("/")) // TODO : Err(NotFound(format!("Service {:?} does not have a result for entry {:?}",
+                               // service_name, entry_id)))
+      } else {
+        NamedFile::open(&zip_path).map_err(|_| Redirect::to("/"))
+      }
+    },
+    Err(e) => {
+      dbg!(e); // TODO: Handle these better
+      Err(Redirect::to("/"))
+    },
   }
 }
 

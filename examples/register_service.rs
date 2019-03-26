@@ -6,7 +6,7 @@
 // except according to those terms.
 
 ///! Register a service with a given name on a corpus with a given path
-///! Example run: `$ ./target/release/examples/register_service tex_to_html /data/arxmliv/`
+///! Example run: `cargo run --release --example register_service tex_to_html /data/arxmliv/`
 use cortex::backend::Backend;
 use cortex::models::Service;
 use std::env;
