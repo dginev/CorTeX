@@ -1,6 +1,7 @@
 {% extends "layout" %} {% block content %}
 <div class="center">
-  <form id="form-get-entry" class="form-get-entry" name="form-get-entry" method="post" accept-charset="UTF-8" action="{{global.download_url}}">
+  <form id="form-get-entry" class="form-get-entry" name="form-get-entry" method="post" accept-charset="UTF-8"
+    action="{{global.download_url}}">
     <div id="modal-get-entry" class="modal fade" tabindex="-1" role="dialog">
       <div class="modal-dialog">
         <div class="modal-content">
@@ -17,7 +18,8 @@
                 <li>Agree that this download is intended and authorized only for
                   <strong>research use</strong>,</li>
                 <li>Agree to
-                  <strong>purging all local copies</strong> of the data at the immediate end of the research experiment,</li>
+                  <strong>purging all local copies</strong> of the data at the immediate end of the research experiment,
+                </li>
                 <li>Agree to protecting the
                   <strong>original copyright</strong> of all implied data,</li>
                 <li>Agree to
@@ -99,7 +101,7 @@
             $.each(zip.files, function (filename, fileobject) {
               console.log("Unpacking: ", filename);
               // We only keep HTML and PNG files, discarding anything else that may have been preserved in the conversion result ZIP archive
-              if (filename.match(/\.(html|log)$/i)) {
+              if (filename.match(/\.(html|log|js|css)$/i)) {
                 filenames.push(filename);
                 promises.push(fileobject.async("text"));
               } else if (filename.match(/\.(png|jpg|svg)$/i)) {
@@ -112,6 +114,8 @@
             var main_content;
             var conversion_report = '';
             var data_url_map = {};
+            var js_collected = '';
+            var css_collected = '';
             Promise.all(promises).then(function (values) {
               $.each(filenames, function (i, filename) {
                 var data = values[i];
@@ -119,6 +123,10 @@
                   main_content = data;
                 } else if (filename.match(/\.log$/i)) {
                   conversion_report = data;
+                } else if (filename.match(/\.css$/i)) {
+                  css_collected += "\n" + data + "\n";
+                } else if (filename.match(/\.js$/i)) {
+                  js_collected += "\n" + data + "\n";
                 } else { // only image files in else case
                   var reader = new FileReader();
                   // Huge? Yes. But it survives document.write() in firefox,
@@ -127,7 +135,7 @@
                     data_url_map[filename] = reader.result;
                     if (Object.keys(data_url_map).length >= data_url_pending) {
                       console.log("Data URLs generated.");
-                      final_main_content_write(data_url_map, conversion_report, main_content);
+                      final_main_content_write(data_url_map, conversion_report, main_content, js_collected, css_collected);
                     }
                   });
                   var fileblob = new Blob([data], { type: 'image/png' });
@@ -136,7 +144,7 @@
               });
               if (data_url_pending == 0) { // simple paper with no data blobs, just render
                 console.log("No Data URLs present.");
-                final_main_content_write({}, conversion_report, main_content);
+                final_main_content_write({}, conversion_report, main_content, js_collected, css_collected);
               }
             });
           });
@@ -161,7 +169,7 @@
     }
     return;
   });
-  function final_main_content_write(data_url_map, conversion_report, main_content) {
+  function final_main_content_write(data_url_map, conversion_report, main_content, js_collected, css_collected) {
     // ensure main_content is a string if undefined
     if (typeof (main_content) == "undefined") {
       main_content = `
@@ -208,6 +216,10 @@
 
     // Apply a style of choice to the article, default is TeX.js
     let style = "texjs";
+    if (window.location.href.includes("/engrafo")) {
+      style = "engrafo";
+    } // can still be overridden by the ?style= parameter
+
     var sPageURL = decodeURIComponent(window.location.search.substring(1)),
       sURLVariables = sPageURL.split('&'),
       sParameterName,
@@ -246,6 +258,16 @@
         var simple_css = '<link media="all" rel="stylesheet" href="//latexml.mathweb.org/css/external/LaTeXML.css">' + "\n" + '<link media="all" rel="stylesheet" href="//latexml.mathweb.org/css/external/ltx-article.css">';
         main_content = main_content.replace(/<\/head>/, simple_css + "\n</head>");
         main_content = main_content.replace(/<\/body>/, "\n" + maybe_mathjax_js + "\n" + fire_loaded + "\n</body>");
+      } else if (style == "engrafo") {
+        // drop known local asset links, will re-insert dynamically.
+        main_content = main_content.replace(/<link rel\=\"stylesheet\" href=\"index\.css\" type=\"text\/css\">/, "")
+          .replace("<script src=\"index\.js\" type=\"text\/javascript\"><\/script>", "");
+        if (css_collected.length > 0) {
+          main_content = main_content.replace(/<\/head>/, "<style>\n" + css_collected + "\n</style>\n</head>");
+        }
+        if (js_collected.length > 0) {
+          main_content = main_content.replace(/<\/body>/, "\n<script>\n" + js_collected + "\n</" + "script>\n" + fire_loaded + "\n</body>");
+        }
       } else if (style && latexml_css.indexOf(style) !== -1) {
         var simple_css = '<link media="all" rel="stylesheet" href="//latexml.mathweb.org/css/external/LaTeXML.css">' + "\n" + '<link media="all" rel="stylesheet" href="//latexml.mathweb.org/css/external/ltx-' + style + '.css">';
         main_content = main_content.replace(/<\/head>/, simple_css + "\n</head>");

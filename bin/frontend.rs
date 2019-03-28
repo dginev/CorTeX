@@ -415,8 +415,11 @@ fn preview_entry(
     if let Ok(service) = service_result {
       // Assemble the Download URL from where we will gather the page contents (after captcha is
       // confirmed) First, we need the taskid
-      let task = Task::find_by_name(&entry_name, &corpus, &service, &backend.connection).unwrap();
-      let download_url = format!("/entry/{}/{}/", service_name, task.id.to_string());
+      let task = match Task::find_by_name(&entry_name, &corpus, &service, &backend.connection) {
+        Ok(t) => t,
+        Err(e) => return Err(NotFound(e.to_string())),
+      };
+      let download_url = format!("/entry/{}/{}", service_name, task.id.to_string());
       global.insert("download_url".to_string(), download_url);
 
       // Metadata for preview page
