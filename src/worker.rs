@@ -7,11 +7,13 @@
 
 //! Worker for performing corpus imports, when served as "init" tasks by the `CorTeX` dispatcher
 use rand::{thread_rng, Rng};
+use std::borrow::Cow;
+use std::error::Error;
 use std::fs::File;
 use std::path::Path;
 use std::thread;
 use std::time::Duration;
-use zmq::{Context, Error, Message, SNDMORE};
+use zmq::{Context, Message, SNDMORE};
 
 use crate::backend;
 use crate::backend::DEFAULT_DB_ADDRESS;
@@ -20,6 +22,7 @@ use crate::models::{Corpus, NewCorpus, Task};
 use pericortex::worker::Worker;
 
 /// `Worker` for initializing/importing a new corpus into `CorTeX`
+#[derive(Debug, Clone)]
 pub struct InitWorker {
   /// name of the service ("init")
   pub service: String,
@@ -35,6 +38,8 @@ pub struct InitWorker {
   /// (special case, only for the init service, third-party workers can't access the Task store
   /// directly)
   pub backend_address: String,
+  /// thread-local unique identifier
+  pub identity: String,
 }
 impl Default for InitWorker {
   fn default() -> InitWorker {
@@ -45,16 +50,19 @@ impl Default for InitWorker {
       source: "tcp://localhost:51695".to_string(),
       sink: "tcp://localhost:51696".to_string(),
       backend_address: DEFAULT_DB_ADDRESS.to_string(),
+      identity: String::new(),
     }
   }
 }
 impl Worker for InitWorker {
-  fn service(&self) -> String { self.service.clone() }
-  fn source(&self) -> String { self.source.clone() }
-  fn sink(&self) -> String { self.sink.clone() }
+  fn get_service(&self) -> &str { &self.service }
+  fn get_source_address(&self) -> Cow<str> { Cow::Borrowed(&self.source) }
+  fn get_sink_address(&self) -> Cow<str> { Cow::Borrowed(&self.sink) }
+  fn get_identity(&self) -> &str { &self.identity }
+  fn set_identity(&mut self, identity: String) { self.identity = identity; }
   fn message_size(&self) -> usize { self.message_size }
 
-  fn convert(&self, path_opt: &Path) -> Option<File> {
+  fn convert(&self, path_opt: &Path) -> Result<File, Box<Error>> {
     let path = path_opt.to_str().unwrap().to_string();
     let name = path.rsplitn(1, '/').next().unwrap_or(&path).to_lowercase(); // TODO: this is Unix path only
     let backend = backend::from_address(&self.backend_address);
@@ -78,10 +86,10 @@ impl Worker for InitWorker {
 
     importer.process().unwrap();
     // TODO: Stopgap, we should do the error-reporting well
-    None
+    Err(From::from("init worker does not return a file handle."))
   }
 
-  fn start(&self, limit: Option<usize>) -> Result<(), Error> {
+  fn start(&mut self, limit: Option<usize>) -> Result<(), Box<Error>> {
     let mut work_counter = 0;
     // Connect to a task ventilator
     let context_source = Context::new();
@@ -93,18 +101,18 @@ impl Worker for InitWorker {
     }
     source.set_identity(identity.as_bytes()).unwrap();
 
-    assert!(source.connect(&self.source()).is_ok());
+    assert!(source.connect(&self.get_source_address()).is_ok());
     // Connect to a task sink
     let context_sink = Context::new();
     let sink = context_sink.socket(zmq::PUSH).unwrap();
-    assert!(sink.connect(&self.sink()).is_ok());
+    assert!(sink.connect(&self.get_sink_address()).is_ok());
     let backend = backend::from_address(&self.backend_address);
     // Work in perpetuity
     loop {
-      let mut taskid_msg = Message::new().unwrap();
-      let mut recv_msg = Message::new().unwrap();
+      let mut taskid_msg = Message::new();
+      let mut recv_msg = Message::new();
 
-      source.send_str(&self.service(), 0).unwrap();
+      source.send(self.get_service(), 0).unwrap();
       source.recv(&mut taskid_msg, 0).unwrap();
       let taskid = taskid_msg.as_str().unwrap();
 
@@ -121,11 +129,11 @@ impl Worker for InitWorker {
         },
       };
 
-      self.convert(Path::new(&task.entry));
-      sink.send_str(&identity, SNDMORE).unwrap();
-      sink.send_str(&self.service(), SNDMORE).unwrap();
-      sink.send_str(taskid, SNDMORE).unwrap();
-      sink.send(&[], 0).unwrap();
+      self.convert(Path::new(&task.entry))?;
+      sink.send(&identity, SNDMORE).unwrap();
+      sink.send(&self.get_service(), SNDMORE).unwrap();
+      sink.send(taskid, SNDMORE).unwrap();
+      sink.send(&Vec::new(), 0).unwrap();
 
       work_counter += 1;
       if let Some(upper_bound) = limit {

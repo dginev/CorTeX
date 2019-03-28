@@ -52,10 +52,10 @@ impl Sink {
     let mut sink_job_count: usize = 0;
 
     loop {
-      let mut recv_msg = zmq::Message::new()?;
-      let mut identity_msg = zmq::Message::new()?;
-      let mut taskid_msg = zmq::Message::new()?;
-      let mut service_msg = zmq::Message::new()?;
+      let mut recv_msg = zmq::Message::new();
+      let mut identity_msg = zmq::Message::new();
+      let mut taskid_msg = zmq::Message::new();
+      let mut service_msg = zmq::Message::new();
 
       sink.recv(&mut identity_msg, 0)?;
       let identity = match identity_msg.as_str() {

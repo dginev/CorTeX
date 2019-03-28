@@ -99,7 +99,7 @@ fn mock_tex_to_html() {
     assert!(manager.start(job_limit).is_ok());
   });
   // Start up an tex to html worker
-  let worker = TexToHtmlWorker {
+  let mut worker = TexToHtmlWorker {
     source: "tcp://localhost:51695".to_string(),
     sink: "tcp://localhost:51696".to_string(),
     ..TexToHtmlWorker::default()

@@ -26,6 +26,7 @@ git = "https://github.com/dginev/libarchive-sys.git"
 
 [dependencies.pericortex]
 git = "https://github.com/dginev/cortex-peripherals.git"
+version = "0.2.3"
 
 [dependencies.rocket_contrib]
 version = "0.4.0"
@@ -50,8 +51,8 @@ hyper = "0.12"
 hyper-tls = "0.3"
 url="1.7"
 tokio-core = "0.1.17"
-zmq = "0.8.2"
-zmq-sys = "0.8.2"
+zmq = "0.9.0"
+zmq-sys = "0.9.0"
 dotenv = "0.13.0"
 dotenv_codegen = "0.11"
 diesel = {version="1.4.1", features = ["postgres"]}

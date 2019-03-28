@@ -61,13 +61,14 @@ fn main() {
   });
 
   // Start up an init worker
-  let worker = InitWorker {
+  let mut worker = InitWorker {
     service: "init".to_string(),
     version: 0.1,
     message_size: 100_000,
     source: "tcp://localhost:5757".to_string(),
     sink: "tcp://localhost:5758".to_string(),
     backend_address: DEFAULT_DB_ADDRESS.to_string(),
+    identity: "unknown:init:1".to_string()
   };
   // Perform a single echo task
   assert!(worker.start(Some(1)).is_ok());

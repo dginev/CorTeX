@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 use std::io::Read;
-use std::mem::size_of;
-use std::os::raw::c_int;
 use std::sync::Arc;
 use std::sync::Mutex;
 use time;
@@ -12,7 +10,7 @@ use crate::helpers;
 use crate::helpers::{NewTaskMessage, TaskProgress, TaskReport, TaskStatus};
 use crate::models::{Service, WorkerMetadata};
 use std::error::Error;
-use zmq::{Constants, SNDMORE};
+use zmq::SNDMORE;
 
 /// Specifies the binding and operation parameters for a ZMQ ventilator component
 pub struct Ventilator {
@@ -48,24 +46,16 @@ impl Ventilator {
     backend.clear_limbo_tasks()?;
     // Ok, let's bind to a port and start broadcasting
     let context = zmq::Context::new();
-    let mut ventilator = context.socket(zmq::ROUTER)?;
-    let mut one: c_int = 1;
-    unsafe {
-      let _rc = zmq_sys::zmq_setsockopt(
-        ventilator.as_mut_ptr(),
-        Constants::ZMQ_ROUTER_HANDOVER.to_raw(),
-        &mut one as *mut c_int as *mut _,
-        size_of::<c_int>(),
-      );
-    }
+    let ventilator = context.socket(zmq::ROUTER)?;
+    ventilator.set_router_handover(true)?;
 
     let address = format!("tcp://*:{}", self.port);
     assert!(ventilator.bind(&address).is_ok());
     let mut source_job_count: usize = 0;
 
     loop {
-      let mut msg = zmq::Message::new()?;
-      let mut identity = zmq::Message::new()?;
+      let mut msg = zmq::Message::new();
+      let mut identity = zmq::Message::new();
       ventilator.recv(&mut identity, 0)?;
       ventilator.recv(&mut msg, 0)?;
       let service_name = msg.as_str().unwrap_or_default().to_string();
@@ -131,7 +121,7 @@ impl Ventilator {
           }
         }
 
-        ventilator.send_msg(identity, SNDMORE)?;
+        ventilator.send(identity, SNDMORE)?;
         let mut taskid = -1;
         if let Some(current_task_progress) = task_queue.pop() {
           dispatched_task_opt = Some(current_task_progress.clone());
@@ -143,10 +133,10 @@ impl Ventilator {
             "vent {}: worker {:?} received task {:?}",
             source_job_count, identity_str, taskid
           );
-          ventilator.send_str(&taskid.to_string(), SNDMORE)?;
+          ventilator.send(&taskid.to_string(), SNDMORE)?;
           if serviceid == 1 {
             // No payload needed for init
-            ventilator.send(&[], 0)?;
+            ventilator.send(&Vec::new(), 0)?;
           } else {
             // Regular services fetch the task payload and transfer it to the worker
             let file_opt = helpers::prepare_input_stream(&current_task);
@@ -179,7 +169,7 @@ impl Ventilator {
             } else {
               println!("-- Failed to prepare input stream for taskid {:?}", taskid);
               taskid = -1;
-              ventilator.send(&[], 0)?;
+              ventilator.send(&Vec::new(), 0)?;
             }
           }
         } else {
@@ -187,8 +177,8 @@ impl Ventilator {
             "vent {:?}: worker {:?} received mock reply.",
             source_job_count, identity_str
           );
-          ventilator.send_str("0", SNDMORE)?;
-          ventilator.send(&[], 0)?;
+          ventilator.send("0", SNDMORE)?;
+          ventilator.send(&Vec::new(), 0)?;
         }
         // Update this worker's metadata
         WorkerMetadata::record_dispatched(
