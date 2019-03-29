@@ -7,9 +7,6 @@ use diesel::{delete, insert_into};
 use super::{Corpus, Service};
 use crate::concerns::{CortexDeletable, CortexInsertable};
 use crate::schema::tasks;
-use crate::helpers::TaskStatus;
-
-use rand::{thread_rng, Rng};
 
 // Tasks
 
@@ -137,49 +134,4 @@ impl NewTask {
       .on_conflict_do_nothing()
       .execute(connection)
   }
-}
-
-
-// Aggregate methods, to be used by backend
-
-/// Fetch a batch of `queue_size` TODO tasks for a given `service`.
-pub fn fetch_tasks(
-  service: &Service,
-  queue_size: usize,
-  connection: &PgConnection,
-) -> Result<Vec<Task>, Error>
-{
-  use crate::schema::tasks::dsl::{service_id, status};
-  let mut rng = thread_rng();
-  let mark: u16 = 1 + rng.gen::<u16>();
-
-  let mut marked_tasks: Vec<Task> = Vec::new();
-  r#try!(connection.transaction::<(), Error, _>(|| {
-    let tasks_for_update = r#try!(tasks::table
-      .for_update()
-      .filter(service_id.eq(service.id))
-      .filter(status.eq(TaskStatus::TODO.raw()))
-      .limit(queue_size as i64)
-      .load(connection));
-    marked_tasks = tasks_for_update
-      .into_iter()
-      .map(|task| Task {
-        status: i32::from(mark),
-        ..task
-      })
-      .map(|task| task.save_changes(connection))
-      .filter_map(Result::ok)
-      .collect();
-    Ok(())
-  }));
-  Ok(marked_tasks)
-}
-
-/// Mark all "limbo" (= "in progress", assumed disconnected) tasks as TODO
-pub fn clear_limbo_tasks(connection: &PgConnection) -> Result<usize, Error> {
-  use crate::schema::tasks::dsl::status;
-  update(tasks::table)
-    .filter(status.gt(&TaskStatus::TODO.raw()))
-    .set(status.eq(&TaskStatus::TODO.raw()))
-    .execute(connection)
 }
