@@ -1,5 +1,5 @@
 -- up.sql
-CREATE TABLE history (
+CREATE TABLE historical_runs (
   id SERIAL PRIMARY KEY,
   service_id INTEGER NOT NULL,
   corpus_id INTEGER NOT NULL,
@@ -18,5 +18,5 @@ CREATE TABLE history (
   owner varchar(200) NOT NULL,
   description TEXT NOT NULL DEFAULT ''
 );
-create index history_service_idx on history(service_id);
-create index history_corpus_idx on history(corpus_id);
+create index historical_runs_service_idx on historical_runs(service_id);
+create index historical_runs_corpus_idx on historical_runs(corpus_id);
