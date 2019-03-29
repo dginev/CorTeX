@@ -25,3 +25,5 @@ pub use corpora::*;
 mod mark_rerun;
 pub use mark_rerun::*;
 
+mod history;
+pub use history::*;
