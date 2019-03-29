@@ -1,13 +1,11 @@
 use diesel::pg::PgConnection;
 use diesel::result::Error;
+use diesel::update;
 use diesel::*;
-use diesel::{update};
 
-use crate::schema::tasks;
 use crate::helpers::TaskStatus;
-use super::tasks::Task;
-use super::messages::*;
-
+use crate::models::{LogError, LogFatal, LogInfo, LogInvalid, LogWarning, Task};
+use crate::schema::tasks;
 
 /// Task reruns by a variety of selector granularity
 pub trait MarkRerun {

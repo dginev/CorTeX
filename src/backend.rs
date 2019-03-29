@@ -21,11 +21,11 @@ use diesel::dsl::sql;
 use diesel::result::Error;
 
 // use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
-use crate::concerns::{CortexDeletable, CortexInsertable};
+use crate::concerns::{CortexDeletable, CortexInsertable, MarkRerun};
 use crate::helpers::{random_mark, TaskReport, TaskStatus};
 use crate::models;
 use crate::models::{
-  Corpus, LogError, LogFatal, LogInfo, LogInvalid, LogRecord, LogWarning, MarkRerun, NewTask,
+  Corpus, LogError, LogFatal, LogInfo, LogInvalid, LogRecord, LogWarning, NewTask,
   Service, Task,
 };
 use crate::reports::{AggregateReport, TaskDetailReport};
