@@ -1,7 +1,6 @@
 use diesel::pg::PgConnection;
 use diesel::result::Error;
 use diesel::*;
-use diesel::{delete, insert_into};
 use serde::Serialize;
 use std::collections::HashMap;
 
