@@ -5,10 +5,11 @@ use crate::models::{NewTask, Service, Corpus};
 use crate::helpers::TaskStatus;
 use crate::schema::{services};
 use crate::concerns::{CortexInsertable};
+use super::mark;
 
 pub(crate) fn register_service(connection: &PgConnection, service: &Service, corpus_path: &str) -> Result<(), Error> {
   use crate::schema::tasks::dsl::*;
-  let corpus = r#try!(Corpus::find_by_path(corpus_path, connection));
+  let corpus = Corpus::find_by_path(corpus_path, connection)?;
   let todo_raw = TaskStatus::TODO.raw();
 
   // First, delete existing tasks for this <service, corpus> pair.
@@ -37,7 +38,10 @@ pub(crate) fn register_service(connection: &PgConnection, service: &Service, cor
       new_task.create(connection)?;
     }
     Ok(())
-  })
+  })?;
+  // Finally, register a new run, completing potentially open ones for this pair
+  // TODO: When we add register service capacity for the UI, extend this with owner+description information
+  mark::mark_new_run(connection, &corpus, service, "admin".to_string(), "Newly registered service, initial run.".to_string())
 }
 
 pub(crate) fn extend_service(connection: &PgConnection,  service: &Service, corpus_path: &str) -> Result<(), Error> {

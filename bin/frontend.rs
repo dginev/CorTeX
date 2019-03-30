@@ -38,7 +38,7 @@ use regex::Regex;
 use std::thread;
 use std::time::Duration;
 
-use cortex::backend::{Backend, TaskReportOptions};
+use cortex::backend::{Backend, TaskReportOptions, RerunOptions};
 use cortex::models::{Corpus, Service, Task};
 use cortex::sysinfo;
 
@@ -934,7 +934,14 @@ fn serve_rerun(
     // "Access denied"),
     Ok(service) => service,
   };
-  let rerun_result = backend.mark_rerun(&corpus, &service, severity, category, what);
+  let rerun_result = backend.mark_rerun(RerunOptions{
+    corpus: &corpus,
+    service: &service,
+    severity_opt: severity,
+    category_opt: category,
+    what_opt: what,
+    description_opt: None,
+    owner_opt: None});
   let report_end = time::get_time();
   let report_duration = (report_end - report_start).num_milliseconds();
   println!(

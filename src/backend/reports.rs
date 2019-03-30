@@ -37,8 +37,8 @@ pub struct TaskReportOptions<'a> {
 
 pub(crate) fn progress_report(
   connection: &PgConnection,
-  corpus: &Corpus,
-  service: &Service,
+  corpus: i32,
+  service: i32,
 ) -> HashMap<String, f64>
 {
   use crate::schema::tasks::{corpus_id, service_id, status};
@@ -51,8 +51,8 @@ pub(crate) fn progress_report(
   stats_hash.insert("total".to_string(), 0.0);
   let rows: Vec<(i32, i64)> = tasks::table
     .select((status, sql::<BigInt>("count(*) AS status_count")))
-    .filter(service_id.eq(service.id))
-    .filter(corpus_id.eq(corpus.id))
+    .filter(service_id.eq(service))
+    .filter(corpus_id.eq(corpus))
     .group_by(tasks::status)
     .order(sql::<BigInt>("status_count").desc())
     .load(connection)

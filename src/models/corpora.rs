@@ -60,7 +60,7 @@ impl Corpus {
       .distinct()
       .filter(corpus_id.eq(self.id));
     let services_query = services::table.filter(services::id.eq_any(corpus_service_ids_query));
-    let services: Vec<Service> = services_query.get_results(connection).unwrap_or_default();
+    let services: Vec<Service> = services_query.get_results(connection)?;
     Ok(services)
   }
 

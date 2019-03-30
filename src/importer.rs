@@ -252,7 +252,7 @@ impl Importer {
   }
 
   /// Given a CorTeX-topology corpus, walk the file system and import it into the Task store
-  pub fn walk_import(&self) -> Result<(), Error> {
+  pub fn walk_import(&self) -> Result<usize, Error> {
     println!("-- Starting import walk");
     let import_extension = if self.corpus.complex { "zip" } else { "tex" };
     let mut walk_q: Vec<PathBuf> = vec![Path::new(&self.corpus.path).to_owned()];
@@ -296,7 +296,7 @@ impl Importer {
       self.backend.mark_imported(&import_q).unwrap();
     } // TODO: Proper Error-handling
     println!("--- Imported {:?} entries.", import_counter);
-    Ok(())
+    Ok(import_counter)
   }
 
   /// Create a new NoProblem task for the "import" service and the Importer-specified corpus
@@ -334,11 +334,13 @@ impl Importer {
   pub fn extend_corpus(&self) -> Result<(), Error> {
     if self.corpus.complex {
       // Complex setup has an unpack step:
-      r#try!(self.unpack_extend());
+      self.unpack_extend()?;
     }
     // Use the regular walk_import, at the cost of more database work,
     // the "Backend::mark_imported" ORM method allows us to insert only if new
-    r#try!(self.walk_import());
+    self.walk_import()?;
+    // TODO: Should we mark new runs in the metadata, on extending the corpus, for all services?
+    // Probably not?
     Ok(())
   }
 }

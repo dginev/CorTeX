@@ -99,7 +99,7 @@ impl Service {
     let workers_query = worker_metadata::table
       .filter(worker_metadata::service_id.eq(self.id))
       .order(worker_metadata::name.asc());
-    let workers: Vec<WorkerMetadata> = workers_query.get_results(connection).unwrap_or_default();
+    let workers: Vec<WorkerMetadata> = workers_query.get_results(connection)?;
     Ok(workers)
   }
 }
