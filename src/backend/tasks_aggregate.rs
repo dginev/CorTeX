@@ -1,11 +1,11 @@
 //! Aggregate methods, to be used by backend
-use rand::{thread_rng, Rng};
-use diesel::pg::PgConnection;
-use diesel::result::Error;
-use diesel::*;
 use crate::helpers::TaskStatus;
 use crate::models::{Service, Task};
 use crate::schema::tasks;
+use diesel::pg::PgConnection;
+use diesel::result::Error;
+use diesel::*;
+use rand::{thread_rng, Rng};
 
 pub(crate) fn fetch_tasks(
   connection: &PgConnection,
@@ -18,13 +18,13 @@ pub(crate) fn fetch_tasks(
   let mark: u16 = 1 + rng.gen::<u16>();
 
   let mut marked_tasks: Vec<Task> = Vec::new();
-  r#try!(connection.transaction::<(), Error, _>(|| {
-    let tasks_for_update = r#try!(tasks::table
+  connection.transaction::<(), Error, _>(|| {
+    let tasks_for_update = tasks::table
       .for_update()
       .filter(service_id.eq(service.id))
       .filter(status.eq(TaskStatus::TODO.raw()))
       .limit(queue_size as i64)
-      .load(connection));
+      .load(connection)?;
     marked_tasks = tasks_for_update
       .into_iter()
       .map(|task| Task {
@@ -35,7 +35,7 @@ pub(crate) fn fetch_tasks(
       .filter_map(Result::ok)
       .collect();
     Ok(())
-  }));
+  })?;
   Ok(marked_tasks)
 }
 

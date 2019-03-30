@@ -5,9 +5,9 @@ use serde::Serialize;
 use std::collections::HashMap;
 
 use crate::concerns::CortexInsertable;
-use crate::schema::tasks;
 use crate::schema::corpora;
 use crate::schema::services;
+use crate::schema::tasks;
 
 use super::services::Service;
 
@@ -66,12 +66,12 @@ impl Corpus {
 
   /// Deletes a corpus and its dependent tasks from the DB, consuming the object
   pub fn destroy(self, connection: &PgConnection) -> Result<usize, Error> {
-    r#try!(delete(tasks::table)
+    delete(tasks::table)
       .filter(tasks::corpus_id.eq(self.id))
-      .execute(connection));
-    r#try!(delete(tasks::table)
+      .execute(connection)?;
+    delete(tasks::table)
       .filter(tasks::entry.eq(self.path))
-      .execute(connection));
+      .execute(connection)?;
     delete(corpora::table)
       .filter(corpora::id.eq(self.id))
       .execute(connection)

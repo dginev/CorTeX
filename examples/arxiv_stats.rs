@@ -100,8 +100,8 @@ fn write_stats<K: Hash + Eq + Serialize, V: Serialize>(
   counts: &HashMap<K, V>,
 ) -> std::io::Result<()>
 {
-  let mut f = r#try!(File::create(name));
-  r#try!(f.write_all(serde_json::to_string(&counts).unwrap().as_bytes()));
+  let mut f = File::create(name)?;
+  f.write_all(serde_json::to_string(&counts).unwrap().as_bytes())?;
   Ok(())
 }
 
@@ -190,7 +190,8 @@ fn main() {
       ordered_month_xcoords.clone(),
       ordered_counts,
       &[PointSymbol('D'), Color("#ffaa77"), PointSize(0.5)],
-    ).set_x_label("arXiv month", &[Rotate(45.0)])
+    )
+    .set_x_label("arXiv month", &[Rotate(45.0)])
     .set_y_label("Submitted papers", &[Rotate(90.0)])
     .set_title("arXiv TeX submission counts", &[]);
 
@@ -210,7 +211,8 @@ fn main() {
       ordered_month_xcoords,
       ordered_sizes,
       &[PointSymbol('D'), Color("#ffaa77"), PointSize(0.5)],
-    ).set_x_label("arXiv month", &[Rotate(45.0)])
+    )
+    .set_x_label("arXiv month", &[Rotate(45.0)])
     .set_y_label("Submission size in MB", &[Rotate(90.0)])
     .set_title("arXiv TeX submission sizes by month", &[]);
 
@@ -232,7 +234,8 @@ fn main() {
       freq_keys,
       freq_values,
       &[PointSymbol('D'), Color("#ffaa77"), PointSize(0.5)],
-    ).set_x_label("Paper size in KB", &[Rotate(45.0)])
+    )
+    .set_x_label("Paper size in KB", &[Rotate(45.0)])
     .set_y_label("Paper count", &[Rotate(90.0)])
     .set_title("arXiv TeX paper sizes", &[]);
 
