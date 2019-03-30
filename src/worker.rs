@@ -84,7 +84,7 @@ impl Worker for InitWorker {
       cwd: Importer::cwd(),
     };
 
-    importer.process().unwrap();
+    importer.process()?;
     // TODO: Stopgap, we should do the error-reporting well
     Err(From::from("init worker does not return a file handle."))
   }

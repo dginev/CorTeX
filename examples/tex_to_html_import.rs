@@ -68,10 +68,12 @@ fn main() {
     source: "tcp://localhost:5757".to_string(),
     sink: "tcp://localhost:5758".to_string(),
     backend_address: DEFAULT_DB_ADDRESS.to_string(),
-    identity: "unknown:init:1".to_string()
+    identity: "unknown:init:1".to_string(),
   };
   // Perform a single echo task
-  assert!(worker.start(Some(1)).is_ok());
+  if let Err(e) = worker.start(Some(1)) {
+    println!("InitWorker result: {:?}", e);
+  }
   // Wait for the final finisher to persist to DB
   thread::sleep(Duration::new(2, 0)); // TODO: Can this be deterministic? Join?
 

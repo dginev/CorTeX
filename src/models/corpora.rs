@@ -66,12 +66,16 @@ impl Corpus {
 
   /// Deletes a corpus and its dependent tasks from the DB, consuming the object
   pub fn destroy(self, connection: &PgConnection) -> Result<usize, Error> {
+    // all tasks for entries of this corpus
     delete(tasks::table)
       .filter(tasks::corpus_id.eq(self.id))
       .execute(connection)?;
+    // the init task of this corpus
     delete(tasks::table)
       .filter(tasks::entry.eq(self.path))
+      .filter(tasks::service_id.eq(1))
       .execute(connection)?;
+    // the corpus registration
     delete(corpora::table)
       .filter(corpora::id.eq(self.id))
       .execute(connection)

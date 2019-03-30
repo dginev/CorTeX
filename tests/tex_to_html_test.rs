@@ -31,7 +31,7 @@ fn mock_tex_to_html() {
   let latexmlc_path = str::from_utf8(&which_result).unwrap();
   if latexmlc_path.is_empty() {
     println!("latexmlc not installed, skipping test");
-    return assert!(true);
+    return;
   }
   // Initialize a corpus, import a single task, and enable a service on it
   let test_backend = backend::testdb();
