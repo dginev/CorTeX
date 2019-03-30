@@ -12,8 +12,8 @@ use crate::backend::{Backend, RerunOptions};
 use crate::helpers::TaskStatus;
 use crate::models::{Corpus, NewCorpus, NewTask};
 use std::env;
-use std::fs;
 use std::error::Error;
+use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use Archive::*;
@@ -260,7 +260,7 @@ impl Importer {
     let mut import_counter = 0;
     while !walk_q.is_empty() {
       let current_path = walk_q.pop().unwrap();
-      let current_metadata = r#try!(fs::metadata(current_path.clone()));
+      let current_metadata = fs::metadata(current_path.clone())?;
       if current_metadata.is_dir() {
         println!("-- current path {:?}", current_path);
         // First, test if we just found an entry:
@@ -283,8 +283,8 @@ impl Importer {
           },
           Err(_) => {
             // No such entry found, traversing into the directory:
-            for subentry in r#try!(fs::read_dir(current_path.clone())) {
-              let subentry = r#try!(subentry);
+            for subentry in fs::read_dir(current_path.clone())? {
+              let subentry = subentry?;
               walk_q.push(subentry.path());
             }
           },
@@ -321,10 +321,10 @@ impl Importer {
     // println!("Greetings from the import processor");
     if self.corpus.complex {
       // Complex setup has an unpack step:
-      r#try!(self.unpack());
+      self.unpack()?;
     }
     // Walk the directory tree and import the files in the Task store:
-    r#try!(self.walk_import());
+    self.walk_import()?;
 
     Ok(())
   }
@@ -337,7 +337,12 @@ impl Importer {
       self.unpack_extend()?;
     }
     // Before we import, mark any current runs as completed.
-    for service in self.corpus.select_services(&self.backend.connection).unwrap_or_default().iter() {
+    for service in self
+      .corpus
+      .select_services(&self.backend.connection)
+      .unwrap_or_default()
+      .iter()
+    {
       self.backend.mark_rerun(RerunOptions {
         corpus: &self.corpus,
         service,
@@ -345,7 +350,7 @@ impl Importer {
         category_opt: None,
         what_opt: None,
         owner_opt: Some("cli-admin".to_string()), // command line interface only?
-        description_opt: Some("extending corpus with more entries".to_string())
+        description_opt: Some("extending corpus with more entries".to_string()),
       })?;
     }
     // Use the regular walk_import, at the cost of more database work,

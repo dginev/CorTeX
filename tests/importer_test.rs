@@ -18,7 +18,7 @@ fn assert_files(files: &[&str]) -> Result<(), std::io::Error> {
     assert!(meta.is_ok());
     assert!(meta.unwrap().is_file());
     // They're also temporary, so delete them
-    r#try!(fs::remove_file(file));
+    fs::remove_file(file)?;
   }
   Ok(())
 }
@@ -29,7 +29,7 @@ fn assert_dirs(dirs: &[&str]) -> Result<(), std::io::Error> {
     assert!(meta.is_ok());
     assert!(meta.unwrap().is_dir());
     // They're also temporary, so delete them
-    r#try!(fs::remove_dir(dir));
+    fs::remove_dir(dir)?;
   }
   Ok(())
 }
