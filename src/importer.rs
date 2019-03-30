@@ -8,12 +8,12 @@
 //! Import a new corpus into the framework
 use glob::glob;
 // use regex::Regex;
-use crate::backend::Backend;
+use crate::backend::{Backend, RerunOptions};
 use crate::helpers::TaskStatus;
 use crate::models::{Corpus, NewCorpus, NewTask};
 use std::env;
 use std::fs;
-use std::io::Error;
+use std::error::Error;
 use std::path::Path;
 use std::path::PathBuf;
 use Archive::*;
@@ -55,21 +55,21 @@ impl Importer {
   /// Convenience method for (recklessly?) obtaining the current working dir
   pub fn cwd() -> PathBuf { env::current_dir().unwrap() }
   /// Top-level method for unpacking an arxiv-toplogy corpus from its tar-ed form
-  fn unpack(&self) -> Result<(), Error> {
-    r#try!(self.unpack_arxiv_top());
-    r#try!(self.unpack_arxiv_months());
+  fn unpack(&self) -> Result<(), Box<Error>> {
+    self.unpack_arxiv_top()?;
+    self.unpack_arxiv_months()?;
     Ok(())
   }
-  fn unpack_extend(&self) -> Result<(), Error> {
-    r#try!(self.unpack_extend_arxiv_top());
+  fn unpack_extend(&self) -> Result<(), Box<Error>> {
+    self.unpack_extend_arxiv_top()?;
     // We can reuse the monthly unpack, as it deletes all unpacked document archives
     // In other words, it always acts as a conservative extension
-    r#try!(self.unpack_arxiv_months());
+    self.unpack_arxiv_months()?;
     Ok(())
   }
 
   /// Unpack the top-level tar files from an arxiv-topology corpus
-  fn unpack_arxiv_top(&self) -> Result<(), Error> {
+  fn unpack_arxiv_top(&self) -> Result<(), Box<Error>> {
     println!("-- Starting top-level unpack process");
     let path_str = self.corpus.path.clone();
     let tars_path = path_str.to_string() + "/*.tar";
@@ -118,7 +118,7 @@ impl Importer {
     Ok(())
   }
   /// Top-level extension unpacking for arxiv-topology corpora
-  fn unpack_extend_arxiv_top(&self) -> Result<(), Error> {
+  fn unpack_extend_arxiv_top(&self) -> Result<(), Box<Error>> {
     println!("-- Starting top-level unpack-extend process");
     let path_str = self.corpus.path.clone();
     let tars_path = path_str.to_string() + "/*.tar";
@@ -165,7 +165,7 @@ impl Importer {
   }
 
   /// Unpack the monthly sub-archives of an arxiv-topology corpus, into the CorTeX organization
-  fn unpack_arxiv_months(&self) -> Result<(), Error> {
+  fn unpack_arxiv_months(&self) -> Result<(), Box<Error>> {
     println!("-- Starting to unpack monthly .gz archives");
     let path_str = self.corpus.path.clone();
     let gzs_path = path_str.to_string() + "/*/*.gz";
@@ -252,7 +252,7 @@ impl Importer {
   }
 
   /// Given a CorTeX-topology corpus, walk the file system and import it into the Task store
-  pub fn walk_import(&self) -> Result<usize, Error> {
+  pub fn walk_import(&self) -> Result<usize, Box<Error>> {
     println!("-- Starting import walk");
     let import_extension = if self.corpus.complex { "zip" } else { "tex" };
     let mut walk_q: Vec<PathBuf> = vec![Path::new(&self.corpus.path).to_owned()];
@@ -317,7 +317,7 @@ impl Importer {
     }
   }
   /// Top-level import driver, performs an optional unpack, and then an import into the Task store
-  pub fn process(&self) -> Result<(), Error> {
+  pub fn process(&self) -> Result<(), Box<Error>> {
     // println!("Greetings from the import processor");
     if self.corpus.complex {
       // Complex setup has an unpack step:
@@ -331,16 +331,26 @@ impl Importer {
 
   /// Top-level corpus extension, performs a check for newly added documents and extracts+adds
   /// them to the existing corpus tasks
-  pub fn extend_corpus(&self) -> Result<(), Error> {
+  pub fn extend_corpus(&self) -> Result<(), Box<Error>> {
     if self.corpus.complex {
       // Complex setup has an unpack step:
       self.unpack_extend()?;
     }
+    // Before we import, mark any current runs as completed.
+    for service in self.corpus.select_services(&self.backend.connection).unwrap_or_default().iter() {
+      self.backend.mark_rerun(RerunOptions {
+        corpus: &self.corpus,
+        service,
+        severity_opt: None,
+        category_opt: None,
+        what_opt: None,
+        owner_opt: Some("cli-admin".to_string()), // command line interface only?
+        description_opt: Some("extending corpus with more entries".to_string())
+      })?;
+    }
     // Use the regular walk_import, at the cost of more database work,
     // the "Backend::mark_imported" ORM method allows us to insert only if new
     self.walk_import()?;
-    // TODO: Should we mark new runs in the metadata, on extending the corpus, for all services?
-    // Probably not?
     Ok(())
   }
 }
