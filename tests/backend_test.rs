@@ -5,6 +5,7 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 use cortex::backend;
+use cortex::backend::RerunOptions;
 use cortex::helpers::{rand_in_range, random_mark, NewTaskMessage, TaskReport, TaskStatus};
 use cortex::models::{Corpus, NewLogInfo, NewTask, Service, Task};
 use cortex::schema::log_infos::dsl::task_id;
@@ -211,7 +212,10 @@ fn batch_ops_test() {
     .get_result(&backend.connection);
   assert_eq!(pre_rerun_todo_count, Ok(0));
   // mark_rerun of all tasks
-  let mark_rerun_result = backend.mark_rerun(&mock_corpus, &mock_service, None, None, None);
+  let mark_rerun_result = backend.mark_rerun(RerunOptions {
+    corpus: &mock_corpus,
+    service: &mock_service,
+    severity_opt: None, category_opt: None, what_opt: None, owner_opt: None, description_opt: None});
   println!("debug : {:?}", mark_rerun_result);
   assert!(mark_rerun_result.is_ok());
 

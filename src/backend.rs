@@ -14,6 +14,7 @@ mod reports;
 mod services_aggregate;
 mod tasks_aggregate;
 pub use reports::TaskReportOptions;
+pub(crate) use reports::progress_report;
 
 use diesel::pg::PgConnection;
 use diesel::result::Error;
@@ -62,6 +63,25 @@ pub fn from_address(address: &str) -> Backend {
   }
 }
 
+/// Options container for relevant fields in requesting a `(corpus, service)` rerun
+pub struct RerunOptions<'a> {
+  /// corpus to rerun
+  pub corpus: &'a Corpus,
+  /// service to rerun
+  pub service: &'a Service,
+  /// optionally, severity level filter
+  pub severity_opt: Option<String>,
+  /// optionally, category level filter
+  pub category_opt: Option<String>,
+  /// optionally, what level filter
+  pub what_opt: Option<String>,
+  /// optionally, owner of the rerun (default is "admin")
+  pub owner_opt: Option<String>,
+  /// optionally, description of the rerun (default is "rerun")
+  pub description_opt: Option<String>,
+}
+
+
 /// Instance methods
 impl Backend {
   /// Insert a vector of new `NewTask` tasks into the Task store
@@ -76,23 +96,9 @@ impl Backend {
   }
   /// Given a complex selector, of a `Corpus`, `Service`, and the optional `severity`, `category`
   /// and `what` mark all matching tasks to be rerun
-  pub fn mark_rerun(
-    &self,
-    corpus: &Corpus,
-    service: &Service,
-    severity_opt: Option<String>,
-    category_opt: Option<String>,
-    what_opt: Option<String>,
-  ) -> Result<(), Error>
+  pub fn mark_rerun(&self, options: RerunOptions) -> Result<(), Error>
   {
-    mark::mark_rerun(
-      &self.connection,
-      corpus,
-      service,
-      severity_opt,
-      category_opt,
-      what_opt,
-    )
+    mark::mark_rerun(&self.connection, options)
   }
 
   /// Generic delete method, uses primary "id" field
@@ -170,6 +176,6 @@ impl Backend {
   }
   /// Provides a progress report, grouped by severity, for a given `Corpus` and `Service` pair
   pub fn progress_report(&self, corpus: &Corpus, service: &Service) -> HashMap<String, f64> {
-    reports::progress_report(&self.connection, corpus, service)
+    reports::progress_report(&self.connection, corpus.id, service.id)
   }
 }

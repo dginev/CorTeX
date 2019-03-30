@@ -3,10 +3,12 @@ use diesel::pg::PgConnection;
 use diesel::result::Error;
 use diesel::*;
 
+use super::RerunOptions;
 use crate::concerns::{CortexInsertable, MarkRerun};
 use crate::helpers::{random_mark, TaskReport, TaskStatus};
 use crate::models::{
-  Corpus, LogError, LogFatal, LogInfo, LogInvalid, LogRecord, LogWarning, NewTask, Service,
+  Corpus, HistoricalRun, LogError, LogFatal, LogInfo, LogInvalid, LogRecord, LogWarning,
+  NewHistoricalRun, NewTask, Service,
 };
 
 pub(crate) fn mark_imported(
@@ -60,16 +62,50 @@ pub(crate) fn mark_done(connection: &PgConnection, reports: &[TaskReport]) -> Re
   Ok(())
 }
 
-pub(crate) fn mark_rerun(
-  connection: &PgConnection,
-  corpus: &Corpus,
-  service: &Service,
-  severity_opt: Option<String>,
-  category_opt: Option<String>,
-  what_opt: Option<String>,
+pub(crate) fn mark_rerun<'a>(
+  connection: &'a PgConnection,
+  options: RerunOptions<'a>,
 ) -> Result<(), Error>
 {
+  let RerunOptions {
+    corpus,
+    service,
+    severity_opt,
+    category_opt,
+    what_opt,
+    owner_opt,
+    description_opt,
+  } = options;
   use crate::schema::tasks::{corpus_id, service_id, status};
+  // We are starting a new run, first catalog the current metadata in our historical records.
+  let mut description = description_opt.unwrap_or_default();
+  // auto-generate a report message from the selected filters
+  description.push_str("(filters:");
+  if severity_opt.is_none() && category_opt.is_none() && what_opt.is_none() {
+    description.push_str(" entire corpus");
+  } else {
+    if let Some(ref severity) = severity_opt {
+      description.push_str(" severity=");
+      description.push_str(severity);
+    }
+    if let Some(ref category) = category_opt {
+      description.push_str(" category=");
+      description.push_str(category);
+    }
+    if let Some(ref what) = what_opt {
+      description.push_str(" what=");
+      description.push_str(what);
+    }
+  }
+  description.push(')');
+
+  mark_new_run(
+    connection,
+    corpus,
+    service,
+    owner_opt.unwrap_or_else(|| "admin".to_string()),
+    description,
+  )?;
   // Rerun = set status to TODO for all tasks, deleting old logs
   let mark: i32 = random_mark();
 
@@ -165,5 +201,47 @@ pub(crate) fn mark_rerun(
     .set(status.eq(TaskStatus::TODO.raw()))
     .execute(connection));
 
+  Ok(())
+}
+
+pub(crate) fn mark_new_run(
+  connection: &PgConnection,
+  corpus: &Corpus,
+  service: &Service,
+  owner: String,
+  description: String,
+) -> Result<(), Error>
+{
+  // Step 1. Mark any open runs as completed.
+  mark_run_completed(connection, corpus, service)?;
+  // Step 2. Create this historical run
+  let hrun = NewHistoricalRun {
+    corpus_id: corpus.id,
+    service_id: service.id,
+    description,
+    owner,
+  };
+  hrun.create(&connection)?;
+  Ok(())
+}
+
+fn mark_run_completed(
+  connection: &PgConnection,
+  corpus: &Corpus,
+  service: &Service,
+) -> Result<(), Error>
+{
+  let to_finish: Vec<HistoricalRun> = HistoricalRun::find_by(corpus, service, connection)?
+    .into_iter()
+    .filter(|run| run.end_time.is_none())
+    .collect();
+  if !to_finish.is_empty() {
+    connection.transaction::<(), Error, _>(move || {
+      for run in to_finish.into_iter() {
+        run.mark_completed(connection)?;
+      }
+      Ok(())
+    })?;
+  }
   Ok(())
 }
