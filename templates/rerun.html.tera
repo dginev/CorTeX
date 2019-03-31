@@ -1,7 +1,8 @@
 <div id="modal-rerun" class="modal fade" tabindex="-1" role="dialog">
   <div class="modal-dialog">
     <div class="modal-content">
-      <form id="form-rerun" class="form-rerun" name="form-rerun" method="post" accept-charset="UTF-8" action="/rerun/{{global.corpus_name_uri}}/{{global.service_name_uri}}{%if global.severity_uri %}/{{global.severity}}{%if global.category_uri %}/{{global.category_uri}}{%if global.what_uri%}/{{global.what_uri}}{%endif%}{%endif%}{%endif%}">
+      <form id="form-rerun" class="form-rerun" name="form-rerun" method="post" accept-charset="UTF-8"
+        action="/rerun/{{global.corpus_name_uri}}/{{global.service_name_uri}}{%if global.severity_uri %}/{{global.severity}}{%if global.category_uri %}/{{global.category_uri}}{%if global.what_uri%}/{{global.what_uri}}{%endif%}{%endif%}{%endif%}">
         <div class="modal-header">
           <a class="close" data-dismiss="modal">×</a>
           <h3>Mark tasks for rerun</h3>
@@ -22,7 +23,11 @@
           </p>
         </div>
         <div class="modal-footer">
-          <input id="rerun-token" type="text" class="form-control" placeholder="Please enter your rerun token" name="token">
+          <input id="rerun-description" type="text" class="form-control" placeholder="Description of rerun"
+            name="description">
+          <br>
+          <input id="rerun-token" type="text" class="form-control" placeholder="Please enter your rerun token"
+            name="token">
           <br>
           <button type="button" id="btn-rerun" class="btn btn-primary disabled">Mark for rerun</buttont>
         </div>
@@ -39,7 +44,14 @@
     $("#btn-rerun").attr("class", "btn btn-primary disabled");
   });
   $("input#rerun-token").on('input', function () {
-    if ($(this).val().length == 0) {
+    if (($(this).val().length == 0) || ($("input#rerun-description").val().length == 0)) {
+      $("#btn-rerun").addClass("disabled");
+    } else {
+      $("#btn-rerun").removeClass("disabled");
+    }
+  });
+  $("input#rerun-description").on('input', function () {
+    if (($(this).val().length == 0) || ($("input#rerun-token").val().length == 0)) {
       $("#btn-rerun").addClass("disabled");
     } else {
       $("#btn-rerun").removeClass("disabled");
@@ -64,9 +76,12 @@
       }
     };
     xhr.open('POST', action);
-    xhr.setRequestHeader('Content-Type', 'application/json; charset=utf-8');
-    var xhr_payload = $("#rerun-token").val();
-    xhr.send(xhr_payload);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+
+    var data = {};
+    data['token'] = $("input#rerun-token").val();
+    data['description'] = $("input#rerun-description").val();
+    xhr.send(JSON.stringify(data));
     return false;
   });
 
