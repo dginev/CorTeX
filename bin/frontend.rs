@@ -22,6 +22,7 @@ use rocket::request::Form;
 use rocket::response::status::{Accepted, NotFound};
 use rocket::response::{NamedFile, Redirect};
 use rocket::Data;
+use rocket_contrib::json::Json;
 use rocket_contrib::templates::Template;
 use serde::{Deserialize, Serialize};
 use tokio_core::reactor::Core;
@@ -38,7 +39,7 @@ use regex::Regex;
 use std::thread;
 use std::time::Duration;
 
-use cortex::backend::{Backend, TaskReportOptions, RerunOptions};
+use cortex::backend::{Backend, RerunOptions, TaskReportOptions};
 use cortex::models::{Corpus, Service, Task};
 use cortex::sysinfo;
 
@@ -574,44 +575,52 @@ fn expire_captcha() -> Result<Template, NotFound<String>> {
 }
 
 // Rerun queries
-#[post("/rerun/<corpus_name>/<service_name>", data = "<data>")]
+#[derive(Serialize, Deserialize)]
+pub struct RerunRequest {
+  pub token: String,
+  pub description: String,
+}
+
+#[post(
+  "/rerun/<corpus_name>/<service_name>",
+  format = "application/json",
+  data = "<rr>"
+)]
 fn rerun_corpus(
   corpus_name: String,
   service_name: String,
-  data: Data,
+  rr: Json<RerunRequest>,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
-  serve_rerun(&corpus_name, &service_name, None, None, None, data)
+  serve_rerun(&corpus_name, &service_name, None, None, None, rr)
 }
 
-#[post("/rerun/<corpus_name>/<service_name>/<severity>", data = "<data>")]
+#[post(
+  "/rerun/<corpus_name>/<service_name>/<severity>",
+  format = "application/json",
+  data = "<rr>"
+)]
 fn rerun_severity(
   corpus_name: String,
   service_name: String,
   severity: String,
-  data: Data,
+  rr: Json<RerunRequest>,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
-  serve_rerun(
-    &corpus_name,
-    &service_name,
-    Some(severity),
-    None,
-    None,
-    data,
-  )
+  serve_rerun(&corpus_name, &service_name, Some(severity), None, None, rr)
 }
 
 #[post(
   "/rerun/<corpus_name>/<service_name>/<severity>/<category>",
-  data = "<data>"
+  format = "application/json",
+  data = "<rr>"
 )]
 fn rerun_category(
   corpus_name: String,
   service_name: String,
   severity: String,
   category: String,
-  data: Data,
+  rr: Json<RerunRequest>,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
   serve_rerun(
@@ -620,13 +629,14 @@ fn rerun_category(
     Some(severity),
     Some(category),
     None,
-    data,
+    rr,
   )
 }
 
 #[post(
   "/rerun/<corpus_name>/<service_name>/<severity>/<category>/<what>",
-  data = "<data>"
+  format = "application/json",
+  data = "<rr>"
 )]
 fn rerun_what(
   corpus_name: String,
@@ -634,7 +644,7 @@ fn rerun_what(
   severity: String,
   category: String,
   what: String,
-  data: Data,
+  rr: Json<RerunRequest>,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
   serve_rerun(
@@ -643,7 +653,7 @@ fn rerun_what(
     Some(severity),
     Some(category),
     Some(what),
-    data,
+    rr,
   )
 }
 
@@ -891,9 +901,11 @@ fn serve_rerun(
   severity: Option<String>,
   category: Option<String>,
   what: Option<String>,
-  data: Data,
+  rr: Json<RerunRequest>,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
+  let token = rr.token.clone();
+  let description = rr.description.clone();
   let config = aux_load_config();
   // let corpus_name =
   // aux_uri_unescape(request.param("corpus_name")).unwrap_or(UNKNOWN.to_string());
@@ -904,7 +916,8 @@ fn serve_rerun(
   // aux_uri_unescape(request.param("what"));
 
   // Ensure we're given a valid rerun token to rerun, or anyone can wipe the cortex results
-  let token = safe_data_to_string(data).unwrap_or_else(|_| UNKNOWN.to_string()); // reuse old code by setting data to the String
+  // let token = safe_data_to_string(data).unwrap_or_else(|_| UNKNOWN.to_string()); // reuse old
+  // code by setting data to the String
   let user_opt = config.rerun_tokens.get(&token);
   let user = match user_opt {
     None => return Err(NotFound("Access Denied".to_string())), /* TODO: response.
@@ -934,14 +947,15 @@ fn serve_rerun(
     // "Access denied"),
     Ok(service) => service,
   };
-  let rerun_result = backend.mark_rerun(RerunOptions{
+  let rerun_result = backend.mark_rerun(RerunOptions {
     corpus: &corpus,
     service: &service,
     severity_opt: severity,
     category_opt: category,
     what_opt: what,
-    description_opt: None,
-    owner_opt: None});
+    description_opt: Some(description),
+    owner_opt: Some(user.to_string()),
+  });
   let report_end = time::get_time();
   let report_duration = (report_end - report_start).num_milliseconds();
   println!(
