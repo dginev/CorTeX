@@ -65,17 +65,20 @@
                     </li>
                     {% if global.severity %}
                     <li class="nav-link" data-nav-name="{{global.severity}}">
-                        <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity_uri}}">
+                        <a
+                            href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity_uri}}">
                             <i class="fa fa-chevron-right fa-lg"></i>&nbsp;&nbsp;&nbsp;&nbsp;{{global.severity}}</a>
                     </li>
                     {% if global.category %}
                     <li class="nav-link" data-nav-name="{{global.category}}">
-                        <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity_uri}}/{{global.category_uri}}">
+                        <a
+                            href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity_uri}}/{{global.category_uri}}">
                             <i class="fa fa-chevron-right fa-lg"></i>&nbsp;&nbsp;&nbsp;&nbsp;{{global.category}}</a>
                     </li>
                     {% if global.what %}
                     <li class="nav-link" data-nav-name="{{global.what}}">
-                        <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity_uri}}/{{global.category_uri}}/{{global.what_uri}}">
+                        <a
+                            href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity_uri}}/{{global.category_uri}}/{{global.what_uri}}">
                             <i class="fa fa-chevron-right fa-lg"></i>&nbsp;&nbsp;&nbsp;&nbsp;{{global.what}}</a>
                     </li>
                     {% endif %} {% endif %} {% endif %} {% endif %}
@@ -97,9 +100,11 @@
         <nav class="navbar navbar-default navbar-fixed-bottom" role="navigation">
             {% if global.report_duration %}
             <div class="pull-right">
-                <span class="report-duration" data-report-duration="{{global.report_duration}}">Report generated in {{global.report_duration}}ms,
+                <span class="report-duration" data-report-duration="{{global.report_duration}}">Report generated in
+                    {{global.report_duration}}ms,
                     on {{global.report_time}}
-                    <a href="javascript:void(0);" data-toggle="modal" data-target="#modal-rerun" title="Mark reported tasks for rerun">
+                    <a href="#modal-rerun" data-toggle="modal" data-target="#modal-rerun"
+                        title="Mark reported tasks for rerun">
                         <i class="fa fa-refresh"></i>
                     </a><br>
                 </span>
@@ -113,8 +118,8 @@
             </div>
             {% else %}
             <div class="btn-github-star">
-                <iframe src="//ghbtns.com/github-btn.html?user=dginev&repo=CorTeX&type=star&count=false&size=large" frameborder="0" scrolling="0"
-                    width="75px" height="30px"></iframe>
+                <iframe src="//ghbtns.com/github-btn.html?user=dginev&repo=CorTeX&type=star&count=false&size=large"
+                    frameborder="0" scrolling="0" width="75px" height="30px"></iframe>
             </div>
             {% endif %} {%block footer_extra %}{% endblock footer_extra %}
         </nav>
