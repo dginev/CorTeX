@@ -69,7 +69,12 @@
           </tr>
         </tbody>
       </table>
-      <div><a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/info">Explore Info-level messages</a></div>
+      <div><a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/info">Explore Info-level
+          messages</a><br>
+        {% if global.run_description %}
+        <a href="/history/{{global.corpus_name_uri}}/{{global.service_name_uri}}">Explore History</a><br>
+        {% endif %}
+      </div>
     </div>
     <div class="col-md-4"></div>
   </div>

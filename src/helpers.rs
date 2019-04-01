@@ -182,7 +182,8 @@ impl TaskStatus {
       TaskStatus::Invalid => "invalid",
       TaskStatus::Blocked(_) => "blocked",
       TaskStatus::Queued(_) => "queued",
-    }.to_string()
+    }
+    .to_string()
   }
   /// Maps the enumeration into the Postgresql table name expected to hold messages for this
   /// status
@@ -193,7 +194,8 @@ impl TaskStatus {
       TaskStatus::Fatal => "log_fatals",
       TaskStatus::Invalid => "log_invalids",
       _ => "log_infos",
-    }.to_string()
+    }
+    .to_string()
   }
   /// Maps from the raw Task store value into the enumeration
   pub fn from_raw(num: i32) -> Self {
@@ -215,6 +217,7 @@ impl TaskStatus {
       "warning" => Some(TaskStatus::Warning),
       "error" => Some(TaskStatus::Error),
       "todo" => Some(TaskStatus::TODO),
+      "in_progress" => Some(TaskStatus::TODO),
       "invalid" => Some(TaskStatus::Invalid),
       "blocked" => Some(TaskStatus::Blocked(-6)),
       "queued" => Some(TaskStatus::Queued(1)),
@@ -234,9 +237,9 @@ impl TaskStatus {
       "blocked",
       "queued",
     ]
-      .iter()
-      .map(|&x| x.to_string())
-      .collect::<Vec<_>>()
+    .iter()
+    .map(|&x| x.to_string())
+    .collect::<Vec<_>>()
   }
 }
 
