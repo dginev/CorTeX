@@ -3,7 +3,7 @@
 
 **A general purpose processing framework for corpora of scientific documents**
 
-[![Build Status](https://secure.travis-ci.org/dginev/CorTeX.png?branch=master)](http://travis-ci.org/dginev/CorTeX) [![API Documentation](https://img.shields.io/badge/docs-API-blue.svg)](http://dginev.github.io/CorTeX/cortex/index.html) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/dginev/CorTeX/master/LICENSE) ![version](https://img.shields.io/badge/version-0.3.3-orange.svg)
+[![Build Status](https://secure.travis-ci.org/dginev/CorTeX.png?branch=master)](http://travis-ci.org/dginev/CorTeX) [![API Documentation](https://img.shields.io/badge/docs-API-blue.svg)](http://dginev.github.io/CorTeX/cortex/index.html) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/dginev/CorTeX/master/LICENSE) ![version](https://img.shields.io/badge/version-0.4.0-orange.svg)
 
 **NEWS:** First datasets produced by CorTeX are now available for reuse via the [SIGMathLing interest group](https://sigmathling.kwarc.info/), see the [resource section](https://sigmathling.kwarc.info/resources/)
 
@@ -12,14 +12,16 @@
 **Features**:
  - [x] Safe and speedy Rust implementation
  - [x] Distributed processing and streaming data transfers via **ZeroMQ**
- - [x] Backend support for Document (via FileSystem), Annotation (via ?) and Task (via PostgreSQL **≥9.5**) provenance.
+ - [x] Backend support for Document (via FileSystem) and Task (via PostgreSQL **≥9.5**) provenance.
  - [x] Representation-aware and -independent (TeX, HTML+RDFa, ePub, TEI, JATS, ...)
- - [ ] Automatic dependency management of registered Services (TODO)
  - [x] Powerful workflow management and development support through the CorTeX web interface
  - [x] Supports multi-corpora multi-service installations
  - [x] Centralized storage, with distributed computing, motivated to enable collaborations across institutional and national borders.
  - [x] Routinely tested on 1 million scientific TeX papers from arXiv.org
  - [x] Minimal dashboard frontend written in [Rocket](https://rocket.rs/)
+ - [x] Aggregate reports over prior runs to track incremental improvements and regressions
+ - [ ] Annotations backend and workflow (TODO)
+ - [ ] Automatic dependency management of registered Services (TODO)
 
 **History**:
  * Originally motivated by the desire to process any **Cor**-pus of **TeX** documents.
