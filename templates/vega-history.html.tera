@@ -5,25 +5,44 @@
   // Assign the specification to a local variable vlSpec.
   var vlSpec = {
     "$schema": "https://vega.github.io/schema/vega-lite/v3.json",
+    "autosize": {
+      "type": "pad",
+    },
     "data": {
       "values": {{ history_serialized | safe}}
     },
+  "title": {
+    "text": "Success rates from {{ global.history_length }} runs of {{global.service_name}} over {{global.corpus_name | safe}}",
+      "anchor": "start"
+  },
   "mark": "bar",
     "encoding": {
-    "x": { "field": "start_time", "type": "ordinal", "timeUnit": "yearmonthdatehoursminutes" },
+    "x": {
+      "field": "start_time", "type": "ordinal", "timeUnit": "yearmonthdatehoursminutes",
+        "axis": {
+        "labelAngle": -30,
+          "orient": "bottom"
+      }
+    },
     "y": {
       "aggregate": "sum", "field": "percent", "type": "quantitative",
     },
-    "color": {
+    "tooltip": [
+      { "field": "start_time", "type": "ordinal", "timeUnit": "yearmonthdate" },
+      { "field": "end_time", "type": "ordinal", "timeUnit": "yearmonthdate" },
+      { "field": "severity", "type": "nominal" },
+      { "field": "percent", "type": "quantitative", "format": ".2f" },
+      { "field": "total", "type": "ordinal" },
+    ],
+      "color": {
       "field": "severity", "type": "nominal",
         "scale": {
         "domain": ["invalid", "fatal", "error", "warning", "no_problem", "in_progress"],
-          "range": ["#f5f5f5", "#f2dede", "#FFE9BF", "#fcf8e3", "#dff0d8", "#d9edf7"],
+          "range": ["#D3D3D3", "#dc3545", "#FFA500", "#FFFACD", "#28a745", "#eaf7ff"]
       }
     },
     "order": { "field": "severity_numeric", "type": "quantitative", "sort": "ascending" }
   }};
-
   // Embed the visualization in the container with id `vis`
   vegaEmbed('#vis', vlSpec);
 </script>

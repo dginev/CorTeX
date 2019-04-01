@@ -41,7 +41,7 @@ use std::thread;
 use std::time::Duration;
 
 use cortex::backend::{Backend, RerunOptions, TaskReportOptions};
-use cortex::models::{Corpus, Service, Task, HistoricalRun, RunMetadata, RunMetadataStack};
+use cortex::models::{Corpus, HistoricalRun, RunMetadata, RunMetadataStack, Service, Task};
 use cortex::sysinfo;
 
 lazy_static! {
@@ -115,7 +115,7 @@ impl Default for TemplateContext {
       whats: None,
       workers: None,
       history: None,
-      history_serialized: None
+      history_serialized: None,
     }
   }
 }
@@ -415,9 +415,20 @@ fn historical_runs(
   if let Ok(corpus) = Corpus::find_by_name(&corpus_name, &backend.connection) {
     if let Ok(service) = Service::find_by_name(&service_name, &backend.connection) {
       if let Ok(runs) = HistoricalRun::find_by(&corpus, &service, &backend.connection) {
-        let runs_meta = runs.into_iter().map(Into::into).collect::<Vec<RunMetadata>>();
-        let runs_meta_stack : Vec<RunMetadataStack> = RunMetadataStack::transform(&runs_meta);
+        let runs_meta = runs
+          .into_iter()
+          .map(Into::into)
+          .collect::<Vec<RunMetadata>>();
+        let runs_meta_stack: Vec<RunMetadataStack> = RunMetadataStack::transform(&runs_meta);
         context.history_serialized = Some(serde_json::to_string(&runs_meta_stack).unwrap());
+        global.insert(
+          "history_length".to_string(),
+          runs_meta
+            .iter()
+            .filter(|run| !run.end_time.is_empty())
+            .count()
+            .to_string(),
+        );
         context.history = Some(runs_meta);
       }
     }
@@ -426,7 +437,10 @@ fn historical_runs(
   // Pass the globals(reports+metadata) onto the stash
   global.insert(
     "description".to_string(),
-    format!("Historical runs of service {} over corpus {}", service_name, corpus_name)
+    format!(
+      "Historical runs of service {} over corpus {}",
+      service_name, corpus_name
+    ),
   );
   global.insert("service_name".to_string(), service_name);
   global.insert("corpus_name".to_string(), corpus_name);
@@ -790,8 +804,16 @@ fn serve_report(
       global.insert("inputformat".to_string(), service.inputformat.clone());
       global.insert("outputformat".to_string(), service.outputformat.clone());
 
-      if let Ok(Some(historical_run)) = HistoricalRun::find_current(&corpus, &service, &backend.connection) {
-        global.insert("run_start_time".to_string(), historical_run.start_time.format("%Y-%m-%d %H:%M:%S").to_string())  ;
+      if let Ok(Some(historical_run)) =
+        HistoricalRun::find_current(&corpus, &service, &backend.connection)
+      {
+        global.insert(
+          "run_start_time".to_string(),
+          historical_run
+            .start_time
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string(),
+        );
         global.insert("run_owner".to_string(), historical_run.owner);
         global.insert("run_description".to_string(), historical_run.description);
       }
