@@ -20,7 +20,7 @@
     "x": {
       "field": "start_time", "type": "ordinal", "timeUnit": "yearmonthdatehoursminutes",
         "axis": {
-        "labelAngle": -30,
+        "labelAngle": -90,
           "orient": "bottom"
       }
     },
