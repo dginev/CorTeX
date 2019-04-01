@@ -28,11 +28,12 @@
       "aggregate": "sum", "field": "percent", "type": "quantitative",
     },
     "tooltip": [
-      { "field": "start_time", "type": "ordinal", "timeUnit": "yearmonthdate" },
-      { "field": "end_time", "type": "ordinal", "timeUnit": "yearmonthdate" },
+      { "field": "description", "type": "nominal" },
       { "field": "severity", "type": "nominal" },
       { "field": "percent", "type": "quantitative", "format": ".2f" },
       { "field": "total", "type": "ordinal" },
+      { "field": "start_time", "type": "ordinal", "timeUnit": "yearmonthdate" },
+      { "field": "end_time", "type": "ordinal", "timeUnit": "yearmonthdate" },
     ],
       "color": {
       "field": "severity", "type": "nominal",
