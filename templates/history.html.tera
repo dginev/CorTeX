@@ -18,7 +18,7 @@
   <br>
   {% include "vega-history" %}
   <div class="row">
-    <table class="table history-report">
+    <table class="table table-striped history-report">
       <thead>
         <tr>
           <th class="right">Total</th>
