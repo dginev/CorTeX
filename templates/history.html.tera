@@ -18,25 +18,42 @@
   <br>
   {% include "vega-history" %}
   <div class="row">
-    <div class="col-md-4"></div>
-    <div class="col-md-4" id="report-div">
-
-      <table id="corpus-report" class="table">
-        <thead>
-          <tr>
-            <th class="left">Status</th>
-            <th class="right">Percent</th>
-            <th class="right">Tasks</th>
-          </tr>
-        </thead>
-        <tbody>
-
-        </tbody>
-      </table>
-
-    </div>
-    <div class="col-md-4"></div>
+    <table class="table history-report">
+      <thead>
+        <tr>
+          <th class="right">Total</th>
+          <th class="right">Invalid</th>
+          <th class="right">Fatal</th>
+          <th class="right">Error</th>
+          <th class="right">Warning</th>
+          <th class="right">No problem</th>
+          <th class="right">In progress</th>
+          <th class="center">Start time</th>
+          <th class="center">End time</th>
+          <th class="left">Owner</th>
+          <th class="left">Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in history %}
+        <tr>
+          <td class="right">{{run.total}}</td>
+          <td class="right">{{run.invalid}}</td>
+          <td class="right">{{run.fatal}}</td>
+          <td class="right">{{run.error}}</td>
+          <td class="right">{{run.warning}}</td>
+          <td class="right">{{run.no_problem}}</td>
+          <td class="right">{{run.in_progress}}</td>
+          <td class="center">{{run.start_time}}</td>
+          <td class="center">{{run.end_time}}</td>
+          <td class="left">{{run.owner}}</td>
+          <td class="left">{{run.description}}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
+</div>
 </div>
 
 {% endblock content %}

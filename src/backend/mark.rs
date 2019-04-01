@@ -78,7 +78,7 @@ pub(crate) fn mark_rerun<'a>(
   } = options;
   use crate::schema::tasks::{corpus_id, service_id, status};
   // We are starting a new run, first catalog the current metadata in our historical records.
-  let mut description = description_opt.unwrap_or_default();
+  let mut description = description_opt.unwrap_or_else(|| String::from("mark for rerun "));
   // auto-generate a report message from the selected filters
   description.push_str("(filters:");
   if severity_opt.is_none() && category_opt.is_none() && what_opt.is_none() {
