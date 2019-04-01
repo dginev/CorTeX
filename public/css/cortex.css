@@ -253,3 +253,8 @@ table.history-report {
   font-size: 12px;
   margin-top: 125px;
 }
+
+span.history-footnote {
+  font-size: 12px;
+  text-align: left;
+}

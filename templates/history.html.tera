@@ -21,13 +21,13 @@
     <table class="table table-striped history-report">
       <thead>
         <tr>
+          <th class="right">No problem</th>
+          <th class="right">Warning</th>
+          <th class="right">Error</th>
+          <th class="right">Fatal</th>
+          <th class="right">In progress</th>
           <th class="right">Total</th>
           <th class="right">Invalid</th>
-          <th class="right">Fatal</th>
-          <th class="right">Error</th>
-          <th class="right">Warning</th>
-          <th class="right">No problem</th>
-          <th class="right">In progress</th>
           <th class="center">Start time</th>
           <th class="center">End time</th>
           <th class="left">Owner</th>
@@ -37,21 +37,29 @@
       <tbody>
         {% for run in history %}
         <tr>
+          <td class="right">{{run.no_problem}}</td>
+          <td class="right">{{run.warning}}</td>
+          <td class="right">{{run.error}}</td>
+          <td class="right">{{run.fatal}}</td>
+          <td class="right">{{run.in_progress}}</td>
           <td class="right">{{run.total}}</td>
           <td class="right">{{run.invalid}}</td>
-          <td class="right">{{run.fatal}}</td>
-          <td class="right">{{run.error}}</td>
-          <td class="right">{{run.warning}}</td>
-          <td class="right">{{run.no_problem}}</td>
-          <td class="right">{{run.in_progress}}</td>
           <td class="center">{{run.start_time}}</td>
-          <td class="center">{{run.end_time}}</td>
+          <td class="center">{% if run.end_time %} {{run.end_time}} {% else %} <em>ongoing</em> {% endif %}</td>
           <td class="left">{{run.owner}}</td>
           <td class="left">{{run.description}}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
+    <div class="text-left"">
+      <span class=" history-footnote">Note: <strong>invalid</strong> counts are not included in <strong>total</strong>,
+      and do not
+      play part in any ratios.</span><br>
+      <span class="history-footnote">Note: <strong>in_progress</strong> counts are included, and are non-zero when a
+        new rerun was started before the reported run was completed.
+      </span><br>
+    </div>
   </div>
 </div>
 </div>

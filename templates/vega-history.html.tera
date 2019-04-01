@@ -37,8 +37,8 @@
       "color": {
       "field": "severity", "type": "nominal",
         "scale": {
-        "domain": ["invalid", "fatal", "error", "warning", "no_problem", "in_progress"],
-          "range": ["#D3D3D3", "#dc3545", "#FFA500", "#FFFACD", "#28a745", "#eaf7ff"]
+        "domain": ["fatal", "error", "warning", "no_problem", "in_progress"],
+          "range": ["#dc3545", "#FFA500", "#FFFACD", "#28a745", "#eaf7ff"]
       }
     },
     "order": { "field": "severity_numeric", "type": "quantitative", "sort": "ascending" }
