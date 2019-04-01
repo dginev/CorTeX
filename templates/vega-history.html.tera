@@ -1,0 +1,29 @@
+<!-- Container for the visualization -->
+<div id="vis"></div>
+
+<script>
+  // Assign the specification to a local variable vlSpec.
+  var vlSpec = {
+    "$schema": "https://vega.github.io/schema/vega-lite/v3.json",
+    "data": {
+      "values": {{ history_serialized | safe}}
+    },
+  "mark": "bar",
+    "encoding": {
+    "x": { "field": "start_time", "type": "ordinal", "timeUnit": "yearmonthdatehoursminutes" },
+    "y": {
+      "aggregate": "sum", "field": "percent", "type": "quantitative",
+    },
+    "color": {
+      "field": "severity", "type": "nominal",
+        "scale": {
+        "domain": ["invalid", "fatal", "error", "warning", "no_problem", "in_progress"],
+          "range": ["#f5f5f5", "#f2dede", "#FFE9BF", "#fcf8e3", "#dff0d8", "#d9edf7"],
+      }
+    },
+    "order": { "field": "severity_numeric", "type": "quantitative", "sort": "ascending" }
+  }};
+
+  // Embed the visualization in the container with id `vis`
+  vegaEmbed('#vis', vlSpec);
+</script>

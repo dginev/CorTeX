@@ -25,6 +25,7 @@ use rocket::Data;
 use rocket_contrib::json::Json;
 use rocket_contrib::templates::Template;
 use serde::{Deserialize, Serialize};
+use serde_json;
 use tokio_core::reactor::Core;
 
 use std::collections::HashMap;
@@ -40,7 +41,7 @@ use std::thread;
 use std::time::Duration;
 
 use cortex::backend::{Backend, RerunOptions, TaskReportOptions};
-use cortex::models::{Corpus, Service, Task};
+use cortex::models::{Corpus, Service, Task, HistoricalRun, RunMetadata, RunMetadataStack};
 use cortex::sysinfo;
 
 lazy_static! {
@@ -100,6 +101,8 @@ struct TemplateContext {
   categories: Option<Vec<HashMap<String, String>>>,
   whats: Option<Vec<HashMap<String, String>>>,
   workers: Option<Vec<HashMap<String, String>>>,
+  history: Option<Vec<RunMetadata>>,
+  history_serialized: Option<String>,
 }
 impl Default for TemplateContext {
   fn default() -> Self {
@@ -111,6 +114,8 @@ impl Default for TemplateContext {
       categories: None,
       whats: None,
       workers: None,
+      history: None,
+      history_serialized: None
     }
   }
 }
@@ -396,6 +401,43 @@ fn what_service_report_all(
     Some(what),
     params,
   )
+}
+
+#[get("/history/<corpus_name>/<service_name>")]
+fn historical_runs(
+  corpus_name: String,
+  service_name: String,
+) -> Result<Template, NotFound<String>>
+{
+  let mut context = TemplateContext::default();
+  let mut global = HashMap::new();
+  let backend = Backend::default();
+  if let Ok(corpus) = Corpus::find_by_name(&corpus_name, &backend.connection) {
+    if let Ok(service) = Service::find_by_name(&service_name, &backend.connection) {
+      if let Ok(runs) = HistoricalRun::find_by(&corpus, &service, &backend.connection) {
+        let runs_meta = runs.into_iter().map(Into::into).collect::<Vec<RunMetadata>>();
+        let runs_meta_stack : Vec<RunMetadataStack> = RunMetadataStack::transform(&runs_meta);
+        context.history_serialized = Some(serde_json::to_string(&runs_meta_stack).unwrap());
+        context.history = Some(runs_meta);
+      }
+    }
+  }
+
+  // Pass the globals(reports+metadata) onto the stash
+  global.insert(
+    "description".to_string(),
+    format!("Historical runs of service {} over corpus {}", service_name, corpus_name)
+  );
+  global.insert("service_name".to_string(), service_name);
+  global.insert("corpus_name".to_string(), corpus_name);
+
+  context.global = global;
+  // And pass the handy lambdas
+  // And render the correct template
+  aux_decorate_uri_encodings(&mut context);
+
+  // Report also the query times
+  Ok(Template::render("history", context))
 }
 
 #[get("/preview/<corpus_name>/<service_name>/<entry_name>")]
@@ -693,7 +735,8 @@ fn rocket() -> rocket::Rocket {
         rerun_severity,
         rerun_category,
         rerun_what,
-        expire_captcha
+        expire_captcha,
+        historical_runs
       ],
     )
     .attach(Template::fairing())
@@ -747,6 +790,11 @@ fn serve_report(
       global.insert("inputformat".to_string(), service.inputformat.clone());
       global.insert("outputformat".to_string(), service.outputformat.clone());
 
+      if let Ok(Some(historical_run)) = HistoricalRun::find_current(&corpus, &service, &backend.connection) {
+        global.insert("run_start_time".to_string(), historical_run.start_time.format("%Y-%m-%d %H:%M:%S").to_string())  ;
+        global.insert("run_owner".to_string(), historical_run.owner);
+        global.insert("run_description".to_string(), historical_run.description);
+      }
       let all_messages = match params {
         None => false,
         Some(ref params) => *params.all.as_ref().unwrap_or(&false),
