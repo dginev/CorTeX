@@ -21,17 +21,17 @@
     <table class="table table-striped history-report">
       <thead>
         <tr>
-          <th class="right">No problem</th>
-          <th class="right">Warning</th>
-          <th class="right">Error</th>
-          <th class="right">Fatal</th>
-          <th class="right">In progress</th>
-          <th class="right">Total</th>
-          <th class="right">Invalid</th>
-          <th class="center">Start time</th>
-          <th class="center">End time</th>
-          <th class="left">Owner</th>
-          <th class="left">Description</th>
+          <th style="width:8%" class="right">No problem</th>
+          <th style="width:5%" class="right">Warning</th>
+          <th style="width:5%" class="right">Error</th>
+          <th style="width:5%" class="right">Fatal</th>
+          <th style="width:8%" class="right">In progress</th>
+          <th style="width:5%" class="right">Total</th>
+          <th style="width:5%" class="right">Invalid</th>
+          <th style="width:10%" class="center">Start time</th>
+          <th style="width:10%" class="center">End time</th>
+          <th style="width:5%" class="left">Owner</th>
+          <th style="width:34%" class="left">Description</th>
         </tr>
       </thead>
       <tbody>

@@ -233,11 +233,9 @@ impl From<HistoricalRun> for RunMetadata {
       start_time,
       end_time,
       description,
-      id: _,
-      service_id: _,
-      corpus_id: _,
       in_progress,
       owner,
+      ..
     } = run;
     RunMetadata {
       total,
@@ -247,9 +245,9 @@ impl From<HistoricalRun> for RunMetadata {
       error,
       no_problem,
       in_progress,
-      start_time: start_time.format("%Y-%m-%d %H:%M:%S").to_string(),
+      start_time: start_time.format("%Y-%m-%d").to_string(),
       end_time: match end_time {
-        Some(etime) => etime.format("%Y-%m-%d %H:%M:%S").to_string(),
+        Some(etime) => etime.format("%Y-%m-%d").to_string(),
         None => String::new(),
       },
       owner,
