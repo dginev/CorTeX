@@ -116,14 +116,7 @@ impl RunMetadataStack {
     let mut runs_meta_vega = Vec::new();
     for run in runs_meta.iter() {
       let total = run.field_f32("total");
-      for field in &[
-        "invalid",
-        "fatal",
-        "error",
-        "warning",
-        "no_problem",
-        "in_progress",
-      ] {
+      for field in &["fatal", "error", "warning", "no_problem", "in_progress"] {
         runs_meta_vega.push(RunMetadataStack {
           severity: field.to_string(),
           severity_numeric: TaskStatus::from_key(field).unwrap().raw(),

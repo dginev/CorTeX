@@ -1,8 +1,8 @@
 use diesel::dsl::sql;
 use diesel::pg::PgConnection;
 use diesel::*;
-use std::collections::HashMap;
 use regex::Regex;
+use std::collections::HashMap;
 
 use crate::helpers::TaskStatus;
 use crate::models::{Corpus, Service, Task};
