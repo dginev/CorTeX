@@ -719,6 +719,12 @@ fn favicon() -> Result<NamedFile, NotFound<String>> {
   NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {:?}", path)))
 }
 
+#[get("/robots.txt")]
+fn robots() -> Result<NamedFile, NotFound<String>> {
+  let path = Path::new("public/").join("robots.txt");
+  NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {:?}", path)))
+}
+
 #[get("/public/<file..>")]
 fn files(file: PathBuf) -> Result<NamedFile, NotFound<String>> {
   let path = Path::new("public/").join(file);
@@ -734,6 +740,7 @@ fn rocket() -> rocket::Rocket {
         admin,
         corpus,
         favicon,
+        robots,
         files,
         worker_report,
         top_service_report,
