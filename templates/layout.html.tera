@@ -118,9 +118,11 @@
                 <br> {% endif %}
             </div>
             {% else %}
-            <div class="btn-github-star">
-                <iframe src="//ghbtns.com/github-btn.html?user=dginev&repo=CorTeX&type=star&count=false&size=large"
-                    frameborder="0" scrolling="0" width="75px" height="30px"></iframe>
+            <div class="center arxmliv-kwarc-footer">
+                <span class="center">
+                    Created by the <a href="https://kwarc.info/projects/arXMLiv/">arXMLiv project at the KWARC Research
+                        Group</a>
+                </span><br>
             </div>
             {% endif %} {%block footer_extra %}{% endblock footer_extra %}
         </nav>

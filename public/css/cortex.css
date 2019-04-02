@@ -258,3 +258,9 @@ span.history-footnote {
   font-size: 12px;
   text-align: left;
 }
+
+div.arxmliv-kwarc-footer {
+  margin-top:0.8em;
+  font-size: 1em;
+  font-weight: bold;
+}
