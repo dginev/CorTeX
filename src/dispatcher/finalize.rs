@@ -25,6 +25,9 @@ impl Finalize {
       if server::mark_done_arc(&backend, done_queue_arc)? {
         // we did some work, on to the next iteration
         jobs_count += 1;
+        if jobs_count % 100 == 0 {
+          println!("-- finalize thread persisted {} jobs.", jobs_count);
+        }
       } else {
         // If we have no reports to process, sleep for a second and recheck
         thread::sleep(Duration::new(1, 0));

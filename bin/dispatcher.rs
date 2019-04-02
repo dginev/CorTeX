@@ -19,8 +19,7 @@ fn main() {
     message_size: 100_000,
     backend_address: DEFAULT_DB_ADDRESS.to_string(),
   };
-  let job_limit = None;
   manager
-    .start(job_limit)
+    .start(None)
     .unwrap_or_else(|_| panic!("Failed to start TaskManager"));
 }
