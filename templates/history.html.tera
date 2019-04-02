@@ -16,6 +16,11 @@
 <div class="center">
   <h1>Historical Runs</h1>
   <br>
+  {% if global.service_name == "import" %}
+  Import runs are not recorded separately.
+  {% elif global.history_length == "0" %}
+  No runs have been recorded yet.
+  {% else %}
   {% include "vega-history" %}
   <div class="row">
     <table class="table table-striped history-report">
@@ -63,7 +68,7 @@
   </div>
 </div>
 </div>
-
+{% endif %}
 {% endblock content %}
 
 <br> {% block footer_extra %} {% if global.corpus_description %}
