@@ -208,7 +208,6 @@ impl WorkerMetadata {
           Some(time) => time,
           None => now,
         };
-        use crate::schema::worker_metadata;
         update(&data)
           .set((
             worker_metadata::last_returned_task_id.eq(last_returned_task_id),
