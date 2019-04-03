@@ -1,6 +1,6 @@
+use std::collections::HashMap;
 use std::thread;
 use std::time::SystemTime;
-use std::collections::HashMap;
 
 use diesel::pg::PgConnection;
 use diesel::result::Error;
@@ -9,9 +9,8 @@ use diesel::{insert_into, update};
 
 use serde::Serialize;
 
-use crate::schema::worker_metadata;
 use crate::backend;
-
+use crate::schema::worker_metadata;
 
 #[derive(Insertable, Debug)]
 #[table_name = "worker_metadata"]
@@ -161,7 +160,6 @@ impl WorkerMetadata {
             Some(time) => time,
             None => now,
           };
-          use crate::schema::worker_metadata;
           update(&data)
             .set((
               worker_metadata::last_dispatched_task_id.eq(last_dispatched_task_id),
