@@ -42,6 +42,7 @@
       <tbody>
         {% for run in history %}
         <tr>
+          {% if run.end_time %}
           <td class="right">{{run.no_problem}}</td>
           <td class="right">{{run.warning}}</td>
           <td class="right">{{run.error}}</td>
@@ -50,9 +51,22 @@
           <td class="right">{{run.total}}</td>
           <td class="right">{{run.invalid}}</td>
           <td class="center">{{run.start_time}}</td>
-          <td class="center">{% if run.end_time %} {{run.end_time}} {% else %} <em>ongoing</em> {% endif %}</td>
+          <td class="center">{{run.end_time}} </td>
           <td class="left">{{run.owner}}</td>
           <td class="left">{{run.description}}</td>
+          {% else %}
+          <td class="right"></td>
+          <td class="right"></td>
+          <td class="right"></td>
+          <td class="right"></td>
+          <td class="right"></td>
+          <td class="right"></td>
+          <td class="right"></td>
+          <td class="center">{{run.start_time}}</td>
+          <td class="center"><em>ongoing</em> </td>
+          <td class="left">{{run.owner}}</td>
+          <td class="left">{{run.description}}</td>
+          {% endif %}
         </tr>
         {% endfor %}
       </tbody>

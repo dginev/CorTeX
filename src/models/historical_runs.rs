@@ -163,10 +163,11 @@ impl HistoricalRun {
     connection: &PgConnection,
   ) -> Result<Vec<HistoricalRun>, Error>
   {
-    use crate::schema::historical_runs::dsl::{corpus_id, service_id};
+    use crate::schema::historical_runs::dsl::{corpus_id, service_id, start_time};
     let runs: Vec<HistoricalRun> = historical_runs::table
       .filter(corpus_id.eq(corpus.id))
       .filter(service_id.eq(service.id))
+      .order(start_time.desc())
       .get_results(connection)?;
     Ok(runs)
   }
