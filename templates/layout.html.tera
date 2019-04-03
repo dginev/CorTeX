@@ -117,7 +117,7 @@
                 </span>
                 <br> {% endif %}
             </div>
-            {% else %}
+            {% elif not history %}
             <div class="center arxmliv-kwarc-footer">
                 <span class="center">
                     Created by the <a href="https://kwarc.info/projects/arXMLiv/">arXMLiv project at the KWARC Research
