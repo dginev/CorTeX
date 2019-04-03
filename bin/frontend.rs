@@ -294,7 +294,7 @@ fn top_service_report(
   service_name: String,
 ) -> Result<Template, NotFound<String>>
 {
-  serve_report(&corpus_name, &service_name, None, None, None, None)
+  serve_report(corpus_name, service_name, None, None, None, None)
 }
 #[get("/corpus/<corpus_name>/<service_name>/<severity>")]
 fn severity_service_report(
@@ -304,8 +304,8 @@ fn severity_service_report(
 ) -> Result<Template, NotFound<String>>
 {
   serve_report(
-    &corpus_name,
-    &service_name,
+    corpus_name,
+    service_name,
     Some(severity),
     None,
     None,
@@ -321,8 +321,8 @@ fn severity_service_report_all(
 ) -> Result<Template, NotFound<String>>
 {
   serve_report(
-    &corpus_name,
-    &service_name,
+    corpus_name,
+    service_name,
     Some(severity),
     None,
     None,
@@ -338,8 +338,8 @@ fn category_service_report(
 ) -> Result<Template, NotFound<String>>
 {
   serve_report(
-    &corpus_name,
-    &service_name,
+    corpus_name,
+    service_name,
     Some(severity),
     Some(category),
     None,
@@ -356,8 +356,8 @@ fn category_service_report_all(
 ) -> Result<Template, NotFound<String>>
 {
   serve_report(
-    &corpus_name,
-    &service_name,
+    corpus_name,
+    service_name,
     Some(severity),
     Some(category),
     None,
@@ -375,8 +375,8 @@ fn what_service_report(
 ) -> Result<Template, NotFound<String>>
 {
   serve_report(
-    &corpus_name,
-    &service_name,
+    corpus_name,
+    service_name,
     Some(severity),
     Some(category),
     Some(what),
@@ -394,8 +394,8 @@ fn what_service_report_all(
 ) -> Result<Template, NotFound<String>>
 {
   serve_report(
-    &corpus_name,
-    &service_name,
+    corpus_name,
+    service_name,
     Some(severity),
     Some(category),
     Some(what),
@@ -412,6 +412,7 @@ fn historical_runs(
   let mut context = TemplateContext::default();
   let mut global = HashMap::new();
   let backend = Backend::default();
+  let corpus_name = corpus_name.to_lowercase();
   if let Ok(corpus) = Corpus::find_by_name(&corpus_name, &backend.connection) {
     if let Ok(service) = Service::find_by_name(&service_name, &backend.connection) {
       if let Ok(runs) = HistoricalRun::find_by(&corpus, &service, &backend.connection) {
@@ -462,6 +463,7 @@ fn preview_entry(
 ) -> Result<Template, NotFound<String>>
 {
   let report_start = time::get_time();
+  let corpus_name = corpus_name.to_lowercase();
   let mut context = TemplateContext::default();
   let mut global = HashMap::new();
   let backend = Backend::default();
@@ -648,7 +650,8 @@ fn rerun_corpus(
   rr: Json<RerunRequest>,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
-  serve_rerun(&corpus_name, &service_name, None, None, None, rr)
+  let corpus_name = corpus_name.to_lowercase();
+  serve_rerun(corpus_name, service_name, None, None, None, rr)
 }
 
 #[post(
@@ -663,7 +666,7 @@ fn rerun_severity(
   rr: Json<RerunRequest>,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
-  serve_rerun(&corpus_name, &service_name, Some(severity), None, None, rr)
+  serve_rerun(corpus_name, service_name, Some(severity), None, None, rr)
 }
 
 #[post(
@@ -680,8 +683,8 @@ fn rerun_category(
 ) -> Result<Accepted<String>, NotFound<String>>
 {
   serve_rerun(
-    &corpus_name,
-    &service_name,
+    corpus_name,
+    service_name,
     Some(severity),
     Some(category),
     None,
@@ -704,8 +707,8 @@ fn rerun_what(
 ) -> Result<Accepted<String>, NotFound<String>>
 {
   serve_rerun(
-    &corpus_name,
-    &service_name,
+    corpus_name,
+    service_name,
     Some(severity),
     Some(category),
     Some(what),
@@ -772,8 +775,8 @@ fn main() {
 }
 
 fn serve_report(
-  corpus_name: &str,
-  service_name: &str,
+  corpus_name: String,
+  service_name: String,
   severity: Option<String>,
   category: Option<String>,
   what: Option<String>,
@@ -785,22 +788,24 @@ fn serve_report(
   let mut global = HashMap::new();
   let backend = Backend::default();
 
-  let corpus_result = Corpus::find_by_name(corpus_name, &backend.connection);
+  let corpus_name = corpus_name.to_lowercase();
+  let service_name = service_name.to_lowercase();
+  let corpus_result = Corpus::find_by_name(&corpus_name, &backend.connection);
   if let Ok(corpus) = corpus_result {
-    let service_result = Service::find_by_name(service_name, &backend.connection);
+    let service_result = Service::find_by_name(&service_name, &backend.connection);
     if let Ok(service) = service_result {
       // Metadata in all reports
       global.insert(
         "title".to_string(),
-        "Corpus Report for ".to_string() + corpus_name,
+        "Corpus Report for ".to_string() + &corpus_name,
       );
       global.insert(
         "description".to_string(),
         "An analysis framework for corpora of TeX/LaTeX documents - statistical reports for "
           .to_string()
-          + corpus_name,
+          + &corpus_name,
       );
-      global.insert("corpus_name".to_string(), corpus_name.to_string());
+      global.insert("corpus_name".to_string(), corpus_name);
       global.insert("corpus_description".to_string(), corpus.description.clone());
       global.insert("service_name".to_string(), service_name.to_string());
       global.insert(
@@ -973,8 +978,8 @@ fn serve_report(
 }
 
 fn serve_rerun(
-  corpus_name: &str,
-  service_name: &str,
+  corpus_name: String,
+  service_name: String,
   severity: Option<String>,
   category: Option<String>,
   what: Option<String>,
@@ -984,13 +989,8 @@ fn serve_rerun(
   let token = rr.token.clone();
   let description = rr.description.clone();
   let config = aux_load_config();
-  // let corpus_name =
-  // aux_uri_unescape(request.param("corpus_name")).unwrap_or(UNKNOWN.to_string());
-  // let service_name =
-  // aux_uri_unescape(request.param("service_name")).unwrap_or(UNKNOWN.to_string()); let severity
-  // = aux_uri_unescape(request.param("severity")); let category =
-  // aux_uri_unescape(request.param("category")); let what =
-  // aux_uri_unescape(request.param("what"));
+  let corpus_name = corpus_name.to_lowercase();
+  let service_name = service_name.to_lowercase();
 
   // Ensure we're given a valid rerun token to rerun, or anyone can wipe the cortex results
   // let token = safe_data_to_string(data).unwrap_or_else(|_| UNKNOWN.to_string()); // reuse old
@@ -1011,14 +1011,14 @@ fn serve_rerun(
   let report_start = time::get_time();
   let backend = Backend::default();
   // Build corpus and service objects
-  let corpus = match Corpus::find_by_name(corpus_name, &backend.connection) {
+  let corpus = match Corpus::find_by_name(&corpus_name, &backend.connection) {
     Err(_) => return Err(NotFound("Access Denied".to_string())), /* TODO: response.
                                                                    * error(Forbidden, */
     // "Access denied"),
     Ok(corpus) => corpus,
   };
 
-  let service = match Service::find_by_name(service_name, &backend.connection) {
+  let service = match Service::find_by_name(&service_name, &backend.connection) {
     Err(_) => return Err(NotFound("Access Denied".to_string())), /* TODO: response.
                                                                    * error(Forbidden, */
     // "Access denied"),
