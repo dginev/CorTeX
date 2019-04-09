@@ -5,12 +5,9 @@
 
 [![Build Status](https://secure.travis-ci.org/dginev/CorTeX.png?branch=master)](http://travis-ci.org/dginev/CorTeX) [![API Documentation](https://img.shields.io/badge/docs-API-blue.svg)](http://dginev.github.io/CorTeX/cortex/index.html) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/dginev/CorTeX/master/LICENSE) ![version](https://img.shields.io/badge/version-0.4.1-orange.svg)
 
-
-**2019:** The CorTeX framework is recurringly converting >1.3 million articles from arXiv.org at [![arXMLiv Homepage](https://img.shields.io/badge/web-corpora.mathweb.org-red.svg?style=flat&label=https&colorB=d33847)](https://corpora.mathweb.org)
-
-**2018:** First datasets produced by CorTeX are now available for reuse via the [SIGMathLing interest group](https://sigmathling.kwarc.info/), see the [resource section](https://sigmathling.kwarc.info/resources/)
-
-**Nightly rust required**: minimal supported version currently `rustc 1.33.0-nightly (bf669d1e3 2019-01-25)`
+**News**:
+  - **2019:** [![arXMLiv Homepage](https://img.shields.io/badge/web-corpora.mathweb.org-red.svg?style=flat&label=https&colorB=d33847)](https://corpora.mathweb.org) The CorTeX framework is recurringly converting >1.3 million articles from arXiv.org
+  - **2018:** [![SIGMathLing resources](https://img.shields.io/badge/web-sigmathling.kwarc.info-blue.svg?style=flat&label=https&colorB=3895d3)](https://sigmathling.kwarc.info/resources/) First datasets produced by CorTeX are now available for reuse via the SIGMathLing interest group
 
 **Features**:
  - [x] Safe and speedy Rust implementation

@@ -1,6 +1,7 @@
 ### System-level prerequisites:
- Note: for up-to-date instructions, it may be best to consult the [.travis.yml](https://github.com/dginev/CorTeX/blob/master/.travis.yml) file used in continuous integration. A docker image may be a good long-term solution (feel free to contribute one!).
+Note: for up-to-date instructions, it may be best to consult the [.travis.yml](https://github.com/dginev/CorTeX/blob/master/.travis.yml) file used in continuous integration. A docker image may be a good long-term solution (feel free to contribute one!).
 
+**Nightly rust required**: minimal supported version currently `rustc 1.33.0-nightly (bf669d1e3 2019-01-25)`
 
  * A Postgres installation, with the dev client-side bindings for diesel
 ```
