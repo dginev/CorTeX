@@ -6,7 +6,7 @@ if [[ "${TRAVIS_BRANCH}" != 'master' ]] || [[ "${TRAVIS_PULL_REQUEST}" = 'true' 
    exit 0
 fi
 
-cargo doc
+cargo doc --no-deps
 
 # Add an automatic redirect
 repo_name=$(echo "${TRAVIS_REPO_SLUG}" | cut -d '/' -f 2 | sed 's/-/_/')
