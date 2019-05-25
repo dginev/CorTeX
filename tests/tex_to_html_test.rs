@@ -94,14 +94,16 @@ fn mock_tex_to_html() {
   let manager_thread = thread::spawn(move || {
     let manager = TaskManager {
       backend_address: TEST_DB_ADDRESS.to_string(),
+      source_port: 52695,
+      result_port: 52696,
       ..TaskManager::default()
     };
     assert!(manager.start(job_limit).is_ok());
   });
   // Start up an tex to html worker
   let mut worker = TexToHtmlWorker {
-    source: "tcp://localhost:51695".to_string(),
-    sink: "tcp://localhost:51696".to_string(),
+    source: "tcp://localhost:52695".to_string(),
+    sink: "tcp://localhost:52696".to_string(),
     ..TexToHtmlWorker::default()
   };
   // Perform a single echo task

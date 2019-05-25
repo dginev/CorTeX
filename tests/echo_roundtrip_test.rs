@@ -89,8 +89,8 @@ fn mock_round_trip() {
   // Start up a ventilator/sink pair
   let manager_thread = thread::spawn(move || {
     let manager = TaskManager {
-      source_port: 51695,
-      result_port: 51696,
+      source_port: 52695,
+      result_port: 52696,
       queue_size: 100,
       message_size: 100,
       backend_address: TEST_DB_ADDRESS.to_string(),
@@ -99,7 +99,14 @@ fn mock_round_trip() {
   });
 
   // Start up an echo worker
-  let mut worker = EchoWorker::default();
+  let mut worker = EchoWorker {
+    service: "echo_service".to_string(),
+    version: 0.1,
+    message_size: 100_000,
+    source: "tcp://127.0.0.1:52695".to_string(),
+    sink: "tcp://127.0.0.1:52696".to_string(),
+    identity: "echo worker".to_string(),
+  };
   // Perform a single echo task
   assert!(worker.start(job_limit).is_ok());
   assert!(manager_thread.join().is_ok());
