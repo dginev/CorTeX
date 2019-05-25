@@ -40,8 +40,9 @@ for severity in $severitylist; do
     done
 
     # Create the final dataset archive
-    zip -9 -r $DTPATH/$CORPUSNAME-$severity.zip $DTPATH/$severity/ || exit 1;
-
+    cd $DTPATH
+    zip -9 -v -r $CORPUSNAME-$severity.zip $severity  || exit 1;
+    cd ..
     rm -rf $DTPATH/$severity
 done
 
