@@ -532,7 +532,11 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
                     },
                   };
                   let cortex_scheme_status = -(latexml_scheme_status + 1);
-                  status = TaskStatus::from_raw(cortex_scheme_status);
+                  if status != TaskStatus::Invalid {
+                    // Invalid status is final, and derived, all others are set directly from the
+                    // log.
+                    status = TaskStatus::from_raw(cortex_scheme_status);
+                  }
                   skip_message = true; // do not record the status message
                 }
               },
