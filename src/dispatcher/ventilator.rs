@@ -168,6 +168,7 @@ impl Ventilator {
               );
             } else {
               println!("-- Failed to prepare input stream for taskid {:?}", taskid);
+              println!("-- task details: {:?}", current_task);
               taskid = -1;
               ventilator.send(&Vec::new(), 0)?;
             }

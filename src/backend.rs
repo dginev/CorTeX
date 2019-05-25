@@ -13,8 +13,8 @@ mod mark;
 mod reports;
 mod services_aggregate;
 mod tasks_aggregate;
-pub use reports::TaskReportOptions;
 pub(crate) use reports::progress_report;
+pub use reports::TaskReportOptions;
 
 use diesel::pg::PgConnection;
 use diesel::result::Error;
@@ -81,7 +81,6 @@ pub struct RerunOptions<'a> {
   pub description_opt: Option<String>,
 }
 
-
 /// Instance methods
 impl Backend {
   /// Insert a vector of new `NewTask` tasks into the Task store
@@ -96,9 +95,26 @@ impl Backend {
   }
   /// Given a complex selector, of a `Corpus`, `Service`, and the optional `severity`, `category`
   /// and `what` mark all matching tasks to be rerun
-  pub fn mark_rerun(&self, options: RerunOptions) -> Result<(), Error>
-  {
+  pub fn mark_rerun(&self, options: RerunOptions) -> Result<(), Error> {
     mark::mark_rerun(&self.connection, options)
+  }
+
+  /// While not changing any status information for Tasks, add a new historical run bookmark
+  pub fn mark_new_run(
+    &self,
+    corpus: &Corpus,
+    service: &Service,
+    owner: String,
+    description: String,
+  ) -> Result<(), Error>
+  {
+    mark::mark_new_run(
+      &self.connection,
+      corpus,
+      service,
+      owner,
+      description,
+    )
   }
 
   /// Generic delete method, uses primary "id" field

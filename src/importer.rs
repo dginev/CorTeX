@@ -8,7 +8,7 @@
 //! Import a new corpus into the framework
 use glob::glob;
 // use regex::Regex;
-use crate::backend::{Backend, RerunOptions};
+use crate::backend::Backend;
 use crate::helpers::TaskStatus;
 use crate::models::{Corpus, NewCorpus, NewTask};
 use std::env;
@@ -343,15 +343,12 @@ impl Importer {
       .unwrap_or_default()
       .iter()
     {
-      self.backend.mark_rerun(RerunOptions {
-        corpus: &self.corpus,
+      self.backend.mark_new_run(
+        &self.corpus,
         service,
-        severity_opt: None,
-        category_opt: None,
-        what_opt: None,
-        owner_opt: Some("cli-admin".to_string()), // command line interface only?
-        description_opt: Some("extending corpus with more entries".to_string()),
-      })?;
+        "cli-admin".to_string(), // command line interface only?
+        "extending corpus with more entries".to_string(),
+      )?;
     }
     // Use the regular walk_import, at the cost of more database work,
     // the "Backend::mark_imported" ORM method allows us to insert only if new
