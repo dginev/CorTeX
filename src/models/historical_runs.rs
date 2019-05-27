@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use chrono::prelude::*;
 use diesel::result::Error;
 use diesel::*;
@@ -113,8 +114,18 @@ pub struct RunMetadataStack {
 impl RunMetadataStack {
   /// Transforms to a vega-lite Stack -near representation
   pub fn transform(runs_meta: &[RunMetadata]) -> Vec<RunMetadataStack> {
+    let mut start_time_guard = HashSet::new();
     let mut runs_meta_vega = Vec::new();
     for run in runs_meta.iter() {
+      // Avoid adding more than one run at a given start_time for the vega metadata stack,
+      // as vega wrongly combines the data into a single entry.
+      if !run.start_time.is_empty() && !run.end_time.is_empty() {
+        if start_time_guard.contains(&run.start_time) {
+          continue;
+        } else {
+          start_time_guard.insert(run.start_time.clone());
+        }
+      }
       let total = run.field_f32("total");
       for field in &["fatal", "error", "warning", "no_problem", "in_progress"] {
         runs_meta_vega.push(RunMetadataStack {
