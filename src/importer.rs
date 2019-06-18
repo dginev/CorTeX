@@ -55,12 +55,12 @@ impl Importer {
   /// Convenience method for (recklessly?) obtaining the current working dir
   pub fn cwd() -> PathBuf { env::current_dir().unwrap() }
   /// Top-level method for unpacking an arxiv-toplogy corpus from its tar-ed form
-  fn unpack(&self) -> Result<(), Box<Error>> {
+  fn unpack(&self) -> Result<(), Box<dyn Error>> {
     self.unpack_arxiv_top()?;
     self.unpack_arxiv_months()?;
     Ok(())
   }
-  fn unpack_extend(&self) -> Result<(), Box<Error>> {
+  fn unpack_extend(&self) -> Result<(), Box<dyn Error>> {
     self.unpack_extend_arxiv_top()?;
     // We can reuse the monthly unpack, as it deletes all unpacked document archives
     // In other words, it always acts as a conservative extension
@@ -69,7 +69,7 @@ impl Importer {
   }
 
   /// Unpack the top-level tar files from an arxiv-topology corpus
-  fn unpack_arxiv_top(&self) -> Result<(), Box<Error>> {
+  fn unpack_arxiv_top(&self) -> Result<(), Box<dyn Error>> {
     println!("-- Starting top-level unpack process");
     let path_str = self.corpus.path.clone();
     let tars_path = path_str.to_string() + "/*.tar";
@@ -118,7 +118,7 @@ impl Importer {
     Ok(())
   }
   /// Top-level extension unpacking for arxiv-topology corpora
-  fn unpack_extend_arxiv_top(&self) -> Result<(), Box<Error>> {
+  fn unpack_extend_arxiv_top(&self) -> Result<(), Box<dyn Error>> {
     println!("-- Starting top-level unpack-extend process");
     let path_str = self.corpus.path.clone();
     let tars_path = path_str.to_string() + "/*.tar";
@@ -165,7 +165,7 @@ impl Importer {
   }
 
   /// Unpack the monthly sub-archives of an arxiv-topology corpus, into the CorTeX organization
-  fn unpack_arxiv_months(&self) -> Result<(), Box<Error>> {
+  fn unpack_arxiv_months(&self) -> Result<(), Box<dyn Error>> {
     println!("-- Starting to unpack monthly .gz archives");
     let path_str = self.corpus.path.clone();
     let gzs_path = path_str.to_string() + "/*/*.gz";
@@ -252,7 +252,7 @@ impl Importer {
   }
 
   /// Given a CorTeX-topology corpus, walk the file system and import it into the Task store
-  pub fn walk_import(&self) -> Result<usize, Box<Error>> {
+  pub fn walk_import(&self) -> Result<usize, Box<dyn Error>> {
     println!("-- Starting import walk");
     let import_extension = if self.corpus.complex { "zip" } else { "tex" };
     let mut walk_q: Vec<PathBuf> = vec![Path::new(&self.corpus.path).to_owned()];
@@ -317,7 +317,7 @@ impl Importer {
     }
   }
   /// Top-level import driver, performs an optional unpack, and then an import into the Task store
-  pub fn process(&self) -> Result<(), Box<Error>> {
+  pub fn process(&self) -> Result<(), Box<dyn Error>> {
     // println!("Greetings from the import processor");
     if self.corpus.complex {
       // Complex setup has an unpack step:
@@ -331,7 +331,7 @@ impl Importer {
 
   /// Top-level corpus extension, performs a check for newly added documents and extracts+adds
   /// them to the existing corpus tasks
-  pub fn extend_corpus(&self) -> Result<(), Box<Error>> {
+  pub fn extend_corpus(&self) -> Result<(), Box<dyn Error>> {
     if self.corpus.complex {
       // Complex setup has an unpack step:
       self.unpack_extend()?;

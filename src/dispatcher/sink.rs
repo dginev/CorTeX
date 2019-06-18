@@ -41,7 +41,7 @@ impl Sink {
     progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>,
     done_queue_arc: &Arc<Mutex<Vec<TaskReport>>>,
     job_limit: Option<usize>,
-  ) -> Result<(), Box<Error>>
+  ) -> Result<(), Box<dyn Error>>
   {
     // Ok, let's bind to a port and start broadcasting
     let context = zmq::Context::new();

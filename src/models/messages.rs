@@ -188,10 +188,10 @@ pub trait LogRecord {
     )
   }
 }
-impl fmt::Debug for LogRecord {
+impl fmt::Debug for dyn LogRecord {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { self.debug(f) }
 }
-impl fmt::Display for LogRecord {
+impl fmt::Display for dyn LogRecord {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { self.debug(f) }
 }
 

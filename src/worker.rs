@@ -6,7 +6,8 @@
 // except according to those terms.
 
 //! Worker for performing corpus imports, when served as "init" tasks by the `CorTeX` dispatcher
-use rand::{thread_rng, Rng};
+use rand::{thread_rng};
+use rand::seq::SliceRandom;
 use std::borrow::Cow;
 use std::error::Error;
 use std::fs::File;
@@ -62,7 +63,7 @@ impl Worker for InitWorker {
   fn set_identity(&mut self, identity: String) { self.identity = identity; }
   fn message_size(&self) -> usize { self.message_size }
 
-  fn convert(&self, path_opt: &Path) -> Result<File, Box<Error>> {
+  fn convert(&self, path_opt: &Path) -> Result<File, Box<dyn Error>> {
     let path = path_opt.to_str().unwrap().to_string();
     let name = path.rsplitn(1, '/').next().unwrap_or(&path).to_lowercase(); // TODO: this is Unix path only
     let backend = backend::from_address(&self.backend_address);
@@ -89,15 +90,16 @@ impl Worker for InitWorker {
     Err(From::from("init worker does not return a file handle."))
   }
 
-  fn start(&mut self, limit: Option<usize>) -> Result<(), Box<Error>> {
+  fn start(&mut self, limit: Option<usize>) -> Result<(), Box<dyn Error>> {
     let mut work_counter = 0;
+    let mut rng = thread_rng();
     // Connect to a task ventilator
     let context_source = Context::new();
     let source = context_source.socket(zmq::DEALER).unwrap();
     let letters: Vec<_> = "abcdefghijklmonpqrstuvwxyz".chars().collect();
     let mut identity = String::new();
     for _step in 1..20 {
-      identity.push(*thread_rng().choose(&letters).unwrap());
+      identity.push(*letters.choose(&mut rng).unwrap());
     }
     source.set_identity(identity.as_bytes()).unwrap();
 

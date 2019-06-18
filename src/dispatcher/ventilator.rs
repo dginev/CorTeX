@@ -37,7 +37,7 @@ impl Ventilator {
     progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>,
     done_queue_arc: &Arc<Mutex<Vec<TaskReport>>>,
     job_limit: Option<usize>,
-  ) -> Result<(), Box<Error>>
+  ) -> Result<(), Box<dyn Error>>
   {
     // We have a Ventilator-exclusive "queues" stack for tasks to be dispatched
     let mut queues: HashMap<String, Vec<TaskProgress>> = HashMap::new();

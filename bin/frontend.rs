@@ -84,7 +84,7 @@ impl Fairing for CORS {
   }
 }
 
-static UNKNOWN: &'static str = "_unknown_";
+static UNKNOWN: &str = "_unknown_";
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 struct CortexConfig {
@@ -303,14 +303,7 @@ fn severity_service_report(
   severity: String,
 ) -> Result<Template, NotFound<String>>
 {
-  serve_report(
-    corpus_name,
-    service_name,
-    Some(severity),
-    None,
-    None,
-    None,
-  )
+  serve_report(corpus_name, service_name, Some(severity), None, None, None)
 }
 #[get("/corpus/<corpus_name>/<service_name>/<severity>?<params..>")]
 fn severity_service_report_all(
