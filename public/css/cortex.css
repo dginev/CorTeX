@@ -264,3 +264,8 @@ div.arxmliv-kwarc-footer {
   font-size: 1em;
   font-weight: bold;
 }
+
+div.main-report-bottom {
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+}

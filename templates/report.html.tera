@@ -69,7 +69,8 @@
           </tr>
         </tbody>
       </table>
-      <div><a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/info">Explore Info-level
+      <div class="main-report-bottom"><a
+          href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/info">Explore Info-level
           messages</a><br>
         <a href="/history/{{global.corpus_name_uri}}/{{global.service_name_uri}}">Explore History</a><br>
       </div>
