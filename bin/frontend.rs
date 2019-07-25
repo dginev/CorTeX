@@ -1067,7 +1067,7 @@ fn aux_uri_unescape(param: Option<&str>) -> Option<String> {
         param_decoded = param_decoded.replace(original, replacement);
       }
       Some(
-        url::percent_encoding::percent_decode(param_decoded.as_bytes())
+        percent_encoding::percent_decode(param_decoded.as_bytes())
           .decode_utf8_lossy()
           .into_owned(),
       )
@@ -1078,9 +1078,9 @@ fn aux_uri_escape(param: Option<String>) -> Option<String> {
   match param {
     None => None,
     Some(param_pure) => {
-      let mut param_encoded: String = url::percent_encoding::utf8_percent_encode(
+      let mut param_encoded: String = percent_encoding::utf8_percent_encode(
         &param_pure,
-        url::percent_encoding::DEFAULT_ENCODE_SET,
+        percent_encoding::NON_ALPHANUMERIC,
       )
       .collect::<String>();
       // TODO: This could/should be done faster by using lazy_static!
