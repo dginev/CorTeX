@@ -535,23 +535,24 @@ fn entry_fetch(service_name: String, entry_id: usize, data: Data) -> Result<Name
   };
   let g_recaptcha_response = &g_recaptcha_response_string;
   // Check if we hve the g_recaptcha_response in Redis, then reuse
-  let redis_opt;
+  let mut redis_opt;
   let quota: usize = match redis::Client::open("redis://127.0.0.1/") {
-    Err(_) => {return Err(Redirect::to("/"))}// TODO: Err(NotFound(format!("redis unreachable")))},
+    Err(_) => return Err(Redirect::to("/")), // TODO: Err(NotFound(format!("redis unreachable")))},
     Ok(redis_client) => match redis_client.get_connection() {
-      Err(_) => {return Err(Redirect::to("/"))}//TODO: Err(NotFound(format!("redis unreachable")))},
-      Ok(redis_connection) => {
+      Err(_) => return Err(Redirect::to("/")), /* TODO: Err(NotFound(format!("redis
+                                                 * unreachable")))}, */
+      Ok(mut redis_connection) => {
         let quota = redis_connection.get(g_recaptcha_response).unwrap_or(0);
         redis_opt = Some(redis_connection);
         quota
-      }
-    }
+      },
+    },
   };
 
   println!("Response: {:?}", g_recaptcha_response);
   println!("Quota: {:?}", quota);
   let captcha_verified = if quota > 0 {
-    if let Some(ref redis_connection) = redis_opt {
+    if let Some(ref mut redis_connection) = redis_opt {
       println!("Using local redis quota.");
       if quota == 1 {
         // Remove if last
@@ -572,7 +573,7 @@ fn entry_fetch(service_name: String, entry_id: usize, data: Data) -> Result<Name
     let check_val = aux_check_captcha(g_recaptcha_response, &cortex_config.captcha_secret);
     println!("Google validity: {:?}", check_val);
     if check_val {
-      if let Some(ref redis_connection) = redis_opt {
+      if let Some(ref mut redis_connection) = redis_opt {
         // Add a reuse quota if things check out, 19 more downloads
         redis_connection.set(g_recaptcha_response, 19).unwrap_or(());
       }
@@ -1285,7 +1286,7 @@ fn aux_task_report(
       } + if all_messages { "_all_messages" } else { "" };
       cache_key = corpus.id.to_string() + "_" + &service.id.to_string() + &key_tail;
       cache_key_time = cache_key.clone() + "_time";
-      let cache_val: String = if let Some(ref rc) = redis_connection {
+      let cache_val: String = if let Some(ref mut rc) = redis_connection {
         rc.get(cache_key.clone()).unwrap_or_default()
       } else {
         String::new()
@@ -1369,7 +1370,7 @@ fn cache_worker() {
     Ok(client) => client,
     _ => panic!("Redis connection failed, please boot up redis and restart the frontend!"),
   };
-  let redis_connection = match redis_client.get_connection() {
+  let mut redis_connection = match redis_client.get_connection() {
     Ok(conn) => conn,
     _ => panic!("Redis connection failed, please boot up redis and restart the frontend!"),
   };
