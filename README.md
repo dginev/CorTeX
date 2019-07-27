@@ -25,10 +25,8 @@
 **History**:
  * Originally motivated by the desire to process any **Cor**-pus of **TeX** documents.
  * Rust reimplementation of the original Perl [CorTeX](https://github.com/dginev/deprecated-CorTeX) stack.
- * Builds on the expertise developed during the [arXMLiv project](https://www.researchgate.net/profile/Deyan_Ginev/publication/216797030_Transforming_Large_Collections_of_Scientific_Publications_to_XML/links/0fcfd5061a2004a213000000.pdf) at Jacobs University.
+ * Builds on the expertise developed during the [arXMLiv project](https://kwarc.info/projects/arXMLiv/) at Jacobs University.
  * In particular, CorTeX is a successor to the [build system](https://link.springer.com/article/10.1007/s11786-010-0024-7) originally developed by Heinrich Stamerjohanns.
- * The architecture tiered towards generic processing with conversion, analysis and aggregation services was motivated by the [LLaMaPUn](https://github.com/KWARC/llamapun)
-   project at Jacobs University.
- * The messaging conventions are motivated by work on standardizing [LaTeXML](http://dlmf.nist.gov/LaTeXML)'s log reports with Bruce Miller.
+ * The messaging conventions are adopted from work on standardizing [LaTeXML](http://dlmf.nist.gov/LaTeXML)'s log reports with Bruce Miller.
 
-For more details, consult the [Installation](INSTALL.md) instructions and the [Manual](MANUAL.md).
+For more details, consult the [Installation](INSTALL.md) instructions and the [Manual](MANUAL.md). The system is not ready for "off-the-shelf" third party use -- but there is a desire to prepare that, given community interest. Please feel invited to open an issue with a description of your target workflow!
