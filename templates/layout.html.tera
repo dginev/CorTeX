@@ -127,7 +127,7 @@
             {% endif %} {%block footer_extra %}{% endblock footer_extra %}
         </nav>
     </footer>
-    <script src='//privacy.kwarc.info/policy.js'></script>
+    <script async src='//privacy.kwarc.info/policy.js'></script>
 </body>
 
 </html>
