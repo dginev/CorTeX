@@ -19,8 +19,13 @@ psql -h $PGADDRESS -U cortex -t -o "$DTPATH/$CORPUSNAME-no_problem-tasks.txt" -c
 psql -h $PGADDRESS -U cortex -t -o "$DTPATH/$CORPUSNAME-warning-tasks.txt" -c "SELECT entry FROM tasks WHERE corpus_id=$CORPUSID and service_id=$SERVICEID and status=-2"
 psql -h $PGADDRESS -U cortex -t -o "$DTPATH/$CORPUSNAME-error-tasks.txt" -c "SELECT entry FROM tasks WHERE corpus_id=$CORPUSID and service_id=$SERVICEID and status=-3"
 
+# Specific to the 08.2019 dataset
+split -l 500000 arxmliv-warning-tasks.txt
+mv xaa arxmliv-warning_1-tasks.txt
+mv xab arxmliv-warning_2-tasks.txt
+
 # For each severity, prepare a dataset archive of HTML files
-severitylist="no_problem warning error"
+severitylist="no_problem warning_1 warning_2 error"
 
 for severity in $severitylist; do
     mkdir $DTPATH/$severity
