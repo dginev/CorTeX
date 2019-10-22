@@ -196,7 +196,7 @@ fn main() {
     .set_title("arXiv TeX submission counts", &[]);
 
   fg.set_terminal("pngcairo", "arxiv_submission_counts.png");
-  fg.show();
+  fg.show().unwrap();
 
   // Plot of submission counts by month:
   let ordered_sizes = ORDERED_MONTHS
@@ -217,7 +217,7 @@ fn main() {
     .set_title("arXiv TeX submission sizes by month", &[]);
 
   fg.set_terminal("pngcairo", "arxiv_submission_sizes.png");
-  fg.show();
+  fg.show().unwrap();
 
   // Plot average paper size in KB
   // Plot of submission size by month:
@@ -240,5 +240,5 @@ fn main() {
     .set_title("arXiv TeX paper sizes", &[]);
 
   fg.set_terminal("pngcairo", "arxiv_paper_sizes.png");
-  fg.show();
+  fg.show().unwrap();
 }

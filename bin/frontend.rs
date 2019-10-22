@@ -258,7 +258,7 @@ fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
         .to_string()
         + &corpus_name,
     );
-    global.insert("corpus_name".to_string(), corpus_name.to_string());
+    global.insert("corpus_name".to_string(), corpus_name);
     global.insert("corpus_description".to_string(), corpus.description.clone());
     let mut context = TemplateContext {
       global,
@@ -485,9 +485,9 @@ fn preview_entry(
           .to_string()
           + &corpus_name,
       );
-      global.insert("corpus_name".to_string(), corpus_name.clone());
-      global.insert("corpus_description".to_string(), corpus.description.clone());
-      global.insert("service_name".to_string(), service_name.clone());
+      global.insert("corpus_name".to_string(), corpus_name);
+      global.insert("corpus_description".to_string(), corpus.description);
+      global.insert("service_name".to_string(), service_name);
       global.insert(
         "service_description".to_string(),
         service.description.clone(),
@@ -504,7 +504,7 @@ fn preview_entry(
       global.insert("report_time".to_string(), time::now().rfc822().to_string());
     }
     global.insert("severity".to_string(), entry_name.clone());
-    global.insert("entry_name".to_string(), entry_name.clone());
+    global.insert("entry_name".to_string(), entry_name);
   }
 
   // Pass the globals(reports+metadata) onto the stash
@@ -600,8 +600,9 @@ fn entry_fetch(service_name: String, entry_id: usize, data: Data) -> Result<Name
         _ => STRIP_NAME_REGEX.replace(&entry, "").to_string() + "/" + &service_name + ".zip",
       };
       if zip_path.is_empty() {
-        Err(Redirect::to("/")) // TODO : Err(NotFound(format!("Service {:?} does not have a result for entry {:?}",
-                               // service_name, entry_id)))
+        Err(Redirect::to("/")) // TODO : Err(NotFound(format!("Service {:?} does not have a result
+                               // for entry {:?}", service_name,
+                               // entry_id)))
       } else {
         NamedFile::open(&zip_path).map_err(|_| Redirect::to("/"))
       }
@@ -801,7 +802,7 @@ fn serve_report(
       );
       global.insert("corpus_name".to_string(), corpus_name);
       global.insert("corpus_description".to_string(), corpus.description.clone());
-      global.insert("service_name".to_string(), service_name.to_string());
+      global.insert("service_name".to_string(), service_name);
       global.insert(
         "service_description".to_string(),
         service.description.clone(),
@@ -1078,11 +1079,9 @@ fn aux_uri_escape(param: Option<String>) -> Option<String> {
   match param {
     None => None,
     Some(param_pure) => {
-      let mut param_encoded: String = percent_encoding::utf8_percent_encode(
-        &param_pure,
-        percent_encoding::NON_ALPHANUMERIC,
-      )
-      .collect::<String>();
+      let mut param_encoded: String =
+        percent_encoding::utf8_percent_encode(&param_pure, percent_encoding::NON_ALPHANUMERIC)
+          .collect::<String>();
       // TODO: This could/should be done faster by using lazy_static!
       for &(original, replacement) in &[
         (":", "%3A"),
