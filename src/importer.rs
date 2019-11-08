@@ -138,23 +138,25 @@ impl Importer {
             }
             let full_extract_path = path_str.to_string() + &e.pathname();
             match fs::metadata(full_extract_path.clone()) {
-              Ok(_) => {}//println!("File {:?} exists, won't unpack.", e.pathname()),
+              Ok(_) => {}, //println!("File {:?} exists, won't unpack.", e.pathname()),
               Err(_) => {
-                // Archive entries end in .gz, let's try that as well, to check if the directory is there
+                // Archive entries end in .gz, let's try that as well, to check if the directory is
+                // there
                 let dir_extract_path = &full_extract_path[0..full_extract_path.len() - 3];
                 match fs::metadata(dir_extract_path) {
-                  Ok(_) => {}//println!("Directory for {:?} already exists, won't unpack.", e.pathname()),
+                  Ok(_) => {}, /* println!("Directory for {:?} already exists, won't unpack.",
+                                 * e.pathname()), */
                   Err(_) => {
                     // println!("To unpack: {:?}", full_extract_path);
                     match e.extract_to(&full_extract_path, Vec::new()) {
-                      Ok(_) => {}
+                      Ok(_) => {},
                       _ => {
                         println!("Failed to extract {:?}", full_extract_path);
-                      }
+                      },
                     }
-                  }
+                  },
                 }
-              }
+              },
             }
           }
         },
@@ -168,7 +170,7 @@ impl Importer {
   fn unpack_arxiv_months(&self) -> Result<(), Box<dyn Error>> {
     println!("-- Starting to unpack monthly .gz archives");
     let path_str = self.corpus.path.clone();
-    let gzs_path = path_str.to_string() + "/*/*.gz";
+    let gzs_path = path_str + "/*/*.gz";
     for entry in glob(&gzs_path).unwrap() {
       match entry {
         Ok(path) => {

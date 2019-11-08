@@ -6,8 +6,8 @@
 // except according to those terms.
 
 //! Worker for performing corpus imports, when served as "init" tasks by the `CorTeX` dispatcher
-use rand::{thread_rng};
 use rand::seq::SliceRandom;
+use rand::thread_rng;
 use std::borrow::Cow;
 use std::error::Error;
 use std::fs::File;
@@ -68,8 +68,8 @@ impl Worker for InitWorker {
     let name = path.rsplitn(1, '/').next().unwrap_or(&path).to_lowercase(); // TODO: this is Unix path only
     let backend = backend::from_address(&self.backend_address);
     let corpus = NewCorpus {
+      name,
       path: path.clone(),
-      name: name.clone(),
       complex: true,
       description: String::new(),
     };

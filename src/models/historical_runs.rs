@@ -1,8 +1,8 @@
-use std::collections::HashSet;
 use chrono::prelude::*;
 use diesel::result::Error;
 use diesel::*;
 use serde::Serialize;
+use std::collections::HashSet;
 
 // use super::messages::*;
 // use super::tasks::Task;
@@ -127,9 +127,9 @@ impl RunMetadataStack {
         }
       }
       let total = run.field_f32("total");
-      for field in &["fatal", "error", "warning", "no_problem", "in_progress"] {
+      for field in ["fatal", "error", "warning", "no_problem", "in_progress"].iter() {
         runs_meta_vega.push(RunMetadataStack {
-          severity: field.to_string(),
+          severity: (*field).to_string(),
           severity_numeric: TaskStatus::from_key(field).unwrap().raw(),
           percent: (100.0 * run.field_f32(field)) / total,
           total: run.total,

@@ -120,7 +120,7 @@ impl From<WorkerMetadata> for HashMap<String, String> {
       "fresh".to_string(),
       if fresh { "fresh" } else { "stale" }.to_string(),
     );
-    wh.insert("name".to_string(), worker.name.to_string());
+    wh.insert("name".to_string(), worker.name);
     wh
   }
 }

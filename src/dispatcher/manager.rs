@@ -101,10 +101,10 @@ impl TaskManager {
     let result_message_size = self.message_size;
     let result_backend_address = self.backend_address.clone();
 
-    let sink_services_arc = services_arc.clone();
-    let sink_progress_queue_arc = progress_queue_arc.clone();
+    let sink_services_arc = services_arc;
+    let sink_progress_queue_arc = progress_queue_arc;
 
-    let sink_done_queue_arc = done_queue_arc.clone();
+    let sink_done_queue_arc = done_queue_arc;
     let sink_thread = thread::spawn(move || {
       Sink {
         port: result_port,
