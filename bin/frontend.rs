@@ -12,15 +12,14 @@ extern crate lazy_static;
 extern crate rocket;
 
 use std::collections::HashMap;
-use std::fs::File;
 use std::io::Cursor;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::str;
 use std::thread;
 
 use redis::Commands;
 use regex::Regex;
+
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
 use rocket::request::Form;
@@ -29,13 +28,13 @@ use rocket::response::{NamedFile, Redirect};
 use rocket::Data;
 use rocket_contrib::json::Json;
 use rocket_contrib::templates::Template;
-use serde::{Deserialize, Serialize};
-use serde_json;
 
-use cortex::backend::{Backend, RerunOptions};
-use cortex::frontend::cached::{cache_worker, task_report};
+use cortex::backend::Backend;
+use cortex::frontend::cached::cache_worker;
 use cortex::frontend::captcha::{check_captcha, safe_data_to_string};
-use cortex::frontend::params::ReportParams;
+use cortex::frontend::concerns::{serve_report, serve_rerun};
+use cortex::frontend::helpers::*;
+use cortex::frontend::params::{ReportParams, RerunRequestParams, TemplateContext};
 use cortex::models::{Corpus, HistoricalRun, RunMetadata, RunMetadataStack, Service, Task};
 use cortex::sysinfo;
 
@@ -79,66 +78,6 @@ impl Fairing for CORS {
 
 static UNKNOWN: &str = "_unknown_";
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
-struct CortexConfig {
-  captcha_secret: String,
-  rerun_tokens: HashMap<String, String>,
-}
-
-#[derive(Serialize)]
-struct TemplateContext {
-  global: HashMap<String, String>,
-  corpora: Option<Vec<HashMap<String, String>>>,
-  services: Option<Vec<HashMap<String, String>>>,
-  entries: Option<Vec<HashMap<String, String>>>,
-  categories: Option<Vec<HashMap<String, String>>>,
-  whats: Option<Vec<HashMap<String, String>>>,
-  workers: Option<Vec<HashMap<String, String>>>,
-  history: Option<Vec<RunMetadata>>,
-  history_serialized: Option<String>,
-}
-impl Default for TemplateContext {
-  fn default() -> Self {
-    TemplateContext {
-      global: HashMap::new(),
-      corpora: None,
-      services: None,
-      entries: None,
-      categories: None,
-      whats: None,
-      workers: None,
-      history: None,
-      history_serialized: None,
-    }
-  }
-}
-
-fn aux_load_config() -> CortexConfig {
-  let mut config_file = match File::open("config.json") {
-    Ok(cfg) => cfg,
-    Err(e) => panic!(
-      "You need a well-formed JSON config.json file to run the frontend. Error: {}",
-      e
-    ),
-  };
-  let mut config_buffer = String::new();
-  match config_file.read_to_string(&mut config_buffer) {
-    Ok(_) => {},
-    Err(e) => panic!(
-      "You need a well-formed JSON config.json file to run the frontend. Error: {}",
-      e
-    ),
-  };
-
-  match serde_json::from_str(&config_buffer) {
-    Ok(decoded) => decoded,
-    Err(e) => panic!(
-      "You need a well-formed JSON config.json file to run the frontend. Error: {}",
-      e
-    ),
-  }
-}
-
 #[get("/")]
 fn root() -> Template {
   let mut context = TemplateContext::default();
@@ -161,7 +100,7 @@ fn root() -> Template {
 
   context.global = global;
   context.corpora = Some(corpora);
-  aux_decorate_uri_encodings(&mut context);
+  decorate_uri_encodings(&mut context);
 
   Template::render("overview", context)
 }
@@ -190,7 +129,7 @@ fn admin() -> Template {
 #[get("/workers/<service_name>")]
 fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
   let backend = Backend::default();
-  let service_name = aux_uri_unescape(Some(&service_name)).unwrap_or_else(|| UNKNOWN.to_string());
+  let service_name = uri_unescape(Some(&service_name)).unwrap_or_else(|| UNKNOWN.to_string());
   if let Ok(service) = Service::find_by_name(&service_name, &backend.connection) {
     let mut global = HashMap::new();
     global.insert(
@@ -230,7 +169,7 @@ fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
 #[get("/corpus/<corpus_name>")]
 fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
   let backend = Backend::default();
-  let corpus_name = aux_uri_unescape(Some(&corpus_name)).unwrap_or_else(|| UNKNOWN.to_string());
+  let corpus_name = uri_unescape(Some(&corpus_name)).unwrap_or_else(|| UNKNOWN.to_string());
   let corpus_result = Corpus::find_by_name(&corpus_name, &backend.connection);
   if let Ok(corpus) = corpus_result {
     let mut global = HashMap::new();
@@ -265,7 +204,7 @@ fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
       }
       context.services = Some(service_reports);
     }
-    aux_decorate_uri_encodings(&mut context);
+    decorate_uri_encodings(&mut context);
     return Ok(Template::render("services", context));
   }
   Err(NotFound(format!(
@@ -428,7 +367,7 @@ fn historical_runs(
   context.global = global;
   // And pass the handy lambdas
   // And render the correct template
-  aux_decorate_uri_encodings(&mut context);
+  decorate_uri_encodings(&mut context);
 
   // Report also the query times
   Ok(Template::render("history", context))
@@ -497,7 +436,7 @@ fn preview_entry(
   context.global = global;
   // And pass the handy lambdas
   // And render the correct template
-  aux_decorate_uri_encodings(&mut context);
+  decorate_uri_encodings(&mut context);
 
   // Report also the query times
   let report_end = time::get_time();
@@ -511,7 +450,7 @@ fn preview_entry(
 #[post("/entry/<service_name>/<entry_id>", data = "<data>")]
 fn entry_fetch(service_name: String, entry_id: usize, data: Data) -> Result<NamedFile, Redirect> {
   // Any secrets reside in config.json
-  let cortex_config = aux_load_config();
+  let cortex_config = load_config();
   let data = safe_data_to_string(data).unwrap_or_default(); // reuse old code by setting data to the String
   let g_recaptcha_response_string = if data.len() > 21 {
     let data = &data[21..];
@@ -613,13 +552,6 @@ fn expire_captcha() -> Result<Template, NotFound<String>> {
   Ok(Template::render("expire_captcha", context))
 }
 
-// Rerun queries
-#[derive(Serialize, Deserialize)]
-pub struct RerunRequest {
-  pub token: String,
-  pub description: String,
-}
-
 #[post(
   "/rerun/<corpus_name>/<service_name>",
   format = "application/json",
@@ -628,7 +560,7 @@ pub struct RerunRequest {
 fn rerun_corpus(
   corpus_name: String,
   service_name: String,
-  rr: Json<RerunRequest>,
+  rr: Json<RerunRequestParams>,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
   let corpus_name = corpus_name.to_lowercase();
@@ -644,7 +576,7 @@ fn rerun_severity(
   corpus_name: String,
   service_name: String,
   severity: String,
-  rr: Json<RerunRequest>,
+  rr: Json<RerunRequestParams>,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
   serve_rerun(corpus_name, service_name, Some(severity), None, None, rr)
@@ -660,7 +592,7 @@ fn rerun_category(
   service_name: String,
   severity: String,
   category: String,
-  rr: Json<RerunRequest>,
+  rr: Json<RerunRequestParams>,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
   serve_rerun(
@@ -684,7 +616,7 @@ fn rerun_what(
   severity: String,
   category: String,
   what: String,
-  rr: Json<RerunRequest>,
+  rr: Json<RerunRequestParams>,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
   serve_rerun(
@@ -754,398 +686,4 @@ fn main() {
     cache_worker();
   });
   rocket().launch();
-}
-
-fn serve_report(
-  corpus_name: String,
-  service_name: String,
-  severity: Option<String>,
-  category: Option<String>,
-  what: Option<String>,
-  params: Option<Form<ReportParams>>,
-) -> Result<Template, NotFound<String>>
-{
-  let report_start = time::get_time();
-  let mut context = TemplateContext::default();
-  let mut global = HashMap::new();
-  let backend = Backend::default();
-
-  let corpus_name = corpus_name.to_lowercase();
-  let service_name = service_name.to_lowercase();
-  let corpus_result = Corpus::find_by_name(&corpus_name, &backend.connection);
-  if let Ok(corpus) = corpus_result {
-    let service_result = Service::find_by_name(&service_name, &backend.connection);
-    if let Ok(service) = service_result {
-      // Metadata in all reports
-      global.insert(
-        "title".to_string(),
-        "Corpus Report for ".to_string() + &corpus_name,
-      );
-      global.insert(
-        "description".to_string(),
-        "An analysis framework for corpora of TeX/LaTeX documents - statistical reports for "
-          .to_string()
-          + &corpus_name,
-      );
-      global.insert("corpus_name".to_string(), corpus_name);
-      global.insert("corpus_description".to_string(), corpus.description.clone());
-      global.insert("service_name".to_string(), service_name);
-      global.insert(
-        "service_description".to_string(),
-        service.description.clone(),
-      );
-      global.insert("type".to_string(), "Conversion".to_string());
-      global.insert("inputformat".to_string(), service.inputformat.clone());
-      global.insert("outputformat".to_string(), service.outputformat.clone());
-
-      if let Ok(Some(historical_run)) =
-        HistoricalRun::find_current(&corpus, &service, &backend.connection)
-      {
-        global.insert(
-          "run_start_time".to_string(),
-          historical_run
-            .start_time
-            .format("%Y-%m-%d %H:%M:%S")
-            .to_string(),
-        );
-        global.insert("run_owner".to_string(), historical_run.owner);
-        global.insert("run_description".to_string(), historical_run.description);
-      }
-      let all_messages = match params {
-        None => false,
-        Some(ref params) => *params.all.as_ref().unwrap_or(&false),
-      };
-      global.insert("all_messages".to_string(), all_messages.to_string());
-      if all_messages {
-        // Handlebars has a weird limitation on its #if conditional, can only test for field
-        // presence. So...
-        global.insert("all_messages_true".to_string(), all_messages.to_string());
-      }
-      match service.inputconverter {
-        Some(ref ic_service_name) => {
-          global.insert("inputconverter".to_string(), ic_service_name.clone())
-        },
-        None => global.insert("inputconverter".to_string(), "missing?".to_string()),
-      };
-
-      let report;
-      let template;
-      if severity.is_none() {
-        // Top-level report
-        report = backend.progress_report(&corpus, &service);
-        // Record the report into the globals
-        for (key, val) in report {
-          global.insert(key.clone(), val.to_string());
-        }
-        global.insert("report_time".to_string(), time::now().rfc822().to_string());
-        template = "report";
-      } else if category.is_none() {
-        // Severity-level report
-        global.insert("severity".to_string(), severity.clone().unwrap());
-        global.insert(
-          "highlight".to_string(),
-          aux_severity_highlight(&severity.clone().unwrap()).to_string(),
-        );
-        template = if severity.is_some() && (severity.as_ref().unwrap() == "no_problem") {
-          let entries = task_report(
-            &mut global,
-            &corpus,
-            &service,
-            severity,
-            None,
-            None,
-            &params,
-          );
-          // Record the report into "entries" vector
-          context.entries = Some(entries);
-          // And set the task list template
-          "task-list-report"
-        } else {
-          let categories = task_report(
-            &mut global,
-            &corpus,
-            &service,
-            severity,
-            None,
-            None,
-            &params,
-          );
-          // Record the report into "categories" vector
-          context.categories = Some(categories);
-          // And set the severity template
-          "severity-report"
-        };
-      } else if what.is_none() {
-        // Category-level report
-        global.insert("severity".to_string(), severity.clone().unwrap());
-        global.insert(
-          "highlight".to_string(),
-          aux_severity_highlight(&severity.clone().unwrap()).to_string(),
-        );
-        global.insert("category".to_string(), category.clone().unwrap());
-        if category.is_some() && (category.as_ref().unwrap() == "no_messages") {
-          let entries = task_report(
-            &mut global,
-            &corpus,
-            &service,
-            severity,
-            category,
-            None,
-            &params,
-          );
-          // Record the report into "entries" vector
-          context.entries = Some(entries);
-          // And set the task list template
-          template = "task-list-report";
-        } else {
-          let whats = task_report(
-            &mut global,
-            &corpus,
-            &service,
-            severity,
-            category,
-            None,
-            &params,
-          );
-          // Record the report into "whats" vector
-          context.whats = Some(whats);
-          // And set the category template
-          template = "category-report";
-        }
-      } else {
-        // What-level report
-        global.insert("severity".to_string(), severity.clone().unwrap());
-        global.insert(
-          "highlight".to_string(),
-          aux_severity_highlight(&severity.clone().unwrap()).to_string(),
-        );
-        global.insert("category".to_string(), category.clone().unwrap());
-        global.insert("what".to_string(), what.clone().unwrap());
-        let entries = task_report(
-          &mut global,
-          &corpus,
-          &service,
-          severity,
-          category,
-          what,
-          &params,
-        );
-        // Record the report into "entries" vector
-        context.entries = Some(entries);
-        // And set the task list template
-        template = "task-list-report";
-      }
-      // Pass the globals(reports+metadata) onto the stash
-      context.global = global;
-      // And pass the handy lambdas
-      // And render the correct template
-      aux_decorate_uri_encodings(&mut context);
-
-      // Report also the query times
-      let report_end = time::get_time();
-      let report_duration = (report_end - report_start).num_milliseconds();
-      context
-        .global
-        .insert("report_duration".to_string(), report_duration.to_string());
-      Ok(Template::render(template, context))
-    } else {
-      Err(NotFound(format!(
-        "Service {} does not exist.",
-        &service_name
-      )))
-    }
-  } else {
-    Err(NotFound(format!("Corpus {} does not exist.", &corpus_name)))
-  }
-}
-
-fn serve_rerun(
-  corpus_name: String,
-  service_name: String,
-  severity: Option<String>,
-  category: Option<String>,
-  what: Option<String>,
-  rr: Json<RerunRequest>,
-) -> Result<Accepted<String>, NotFound<String>>
-{
-  let token = rr.token.clone();
-  let description = rr.description.clone();
-  let config = aux_load_config();
-  let corpus_name = corpus_name.to_lowercase();
-  let service_name = service_name.to_lowercase();
-
-  // Ensure we're given a valid rerun token to rerun, or anyone can wipe the cortex results
-  // let token = safe_data_to_string(data).unwrap_or_else(|_| UNKNOWN.to_string()); // reuse old
-  // code by setting data to the String
-  let user_opt = config.rerun_tokens.get(&token);
-  let user = match user_opt {
-    None => return Err(NotFound("Access Denied".to_string())), /* TODO: response.
-                                                                 * error(Forbidden, */
-    // "Access denied"),
-    Some(user) => user,
-  };
-  println!(
-    "-- User {:?}: Mark for rerun on {:?}/{:?}/{:?}/{:?}/{:?}",
-    user, corpus_name, service_name, severity, category, what
-  );
-
-  // Run (and measure) the three rerun queries
-  let report_start = time::get_time();
-  let backend = Backend::default();
-  // Build corpus and service objects
-  let corpus = match Corpus::find_by_name(&corpus_name, &backend.connection) {
-    Err(_) => return Err(NotFound("Access Denied".to_string())), /* TODO: response.
-                                                                   * error(Forbidden, */
-    // "Access denied"),
-    Ok(corpus) => corpus,
-  };
-
-  let service = match Service::find_by_name(&service_name, &backend.connection) {
-    Err(_) => return Err(NotFound("Access Denied".to_string())), /* TODO: response.
-                                                                   * error(Forbidden, */
-    // "Access denied"),
-    Ok(service) => service,
-  };
-  let rerun_result = backend.mark_rerun(RerunOptions {
-    corpus: &corpus,
-    service: &service,
-    severity_opt: severity,
-    category_opt: category,
-    what_opt: what,
-    description_opt: Some(description),
-    owner_opt: Some(user.to_string()),
-  });
-  let report_end = time::get_time();
-  let report_duration = (report_end - report_start).num_milliseconds();
-  println!(
-    "-- User {:?}: Mark for rerun took {:?}ms",
-    user, report_duration
-  );
-  match rerun_result {
-    Err(_) => Err(NotFound("Access Denied".to_string())), // TODO: better error message?
-    Ok(_) => Ok(Accepted(None)),
-  }
-}
-
-fn aux_severity_highlight(severity: &str) -> &str {
-  match severity {
-    // Bootstrap highlight classes
-    "no_problem" => "success",
-    "warning" => "warning",
-    "error" => "error",
-    "fatal" => "danger",
-    "invalid" => "info",
-    _ => "info",
-  }
-}
-fn aux_uri_unescape(param: Option<&str>) -> Option<String> {
-  match param {
-    None => None,
-    Some(param_encoded) => {
-      let mut param_decoded: String = param_encoded.to_owned();
-      // TODO: This could/should be done faster by using lazy_static!
-      for &(original, replacement) in &[
-        ("%3A", ":"),
-        ("%2F", "/"),
-        ("%24", "$"),
-        ("%2E", "."),
-        ("%21", "!"),
-        ("%40", "@"),
-      ] {
-        param_decoded = param_decoded.replace(original, replacement);
-      }
-      Some(
-        percent_encoding::percent_decode(param_decoded.as_bytes())
-          .decode_utf8_lossy()
-          .into_owned(),
-      )
-    },
-  }
-}
-fn aux_uri_escape(param: Option<String>) -> Option<String> {
-  match param {
-    None => None,
-    Some(param_pure) => {
-      let mut param_encoded: String =
-        percent_encoding::utf8_percent_encode(&param_pure, percent_encoding::NON_ALPHANUMERIC)
-          .collect::<String>();
-      // TODO: This could/should be done faster by using lazy_static!
-      for &(original, replacement) in &[
-        (":", "%3A"),
-        ("/", "%2F"),
-        ("\\", "%5C"),
-        ("$", "%24"),
-        (".", "%2E"),
-        ("!", "%21"),
-        ("@", "%40"),
-      ] {
-        param_encoded = param_encoded.replace(original, replacement);
-      }
-      // if param_pure != param_encoded {
-      //   println!("Encoded {:?} to {:?}", param_pure, param_encoded);
-      // } else {
-      //   println!("No encoding needed: {:?}", param_pure);
-      // }
-      Some(param_encoded)
-    },
-  }
-}
-fn aux_decorate_uri_encodings(context: &mut TemplateContext) {
-  for inner_vec in &mut [
-    &mut context.corpora,
-    &mut context.services,
-    &mut context.entries,
-    &mut context.categories,
-    &mut context.whats,
-  ] {
-    if let Some(ref mut inner_vec_data) = **inner_vec {
-      for subhash in inner_vec_data {
-        let mut uri_decorations = vec![];
-        for (subkey, subval) in subhash.iter() {
-          uri_decorations.push((
-            subkey.to_string() + "_uri",
-            aux_uri_escape(Some(subval.to_string())).unwrap(),
-          ));
-        }
-        for (decoration_key, decoration_val) in uri_decorations {
-          subhash.insert(decoration_key, decoration_val);
-        }
-      }
-    }
-  }
-  // global is handled separately
-  let mut uri_decorations = vec![];
-  for (subkey, subval) in &context.global {
-    uri_decorations.push((
-      subkey.to_string() + "_uri",
-      aux_uri_escape(Some(subval.to_string())).unwrap(),
-    ));
-  }
-  for (decoration_key, decoration_val) in uri_decorations {
-    context.global.insert(decoration_key, decoration_val);
-  }
-  let mut current_link = String::new();
-  {
-    if let Some(corpus_name) = context.global.get("corpus_name_uri") {
-      if let Some(service_name) = context.global.get("service_name_uri") {
-        current_link = format!("/corpus/{}/{}/", corpus_name, service_name);
-        if let Some(severity) = context.global.get("severity_uri") {
-          current_link.push_str(severity);
-          current_link.push('/');
-          if let Some(category) = context.global.get("category_uri") {
-            current_link.push_str(category);
-            current_link.push('/');
-            if let Some(what) = context.global.get("what_uri") {
-              current_link.push_str(what);
-            }
-          }
-        }
-      }
-    }
-  }
-  if !current_link.is_empty() {
-    context
-      .global
-      .insert("current_link_uri".to_string(), current_link);
-  }
 }
