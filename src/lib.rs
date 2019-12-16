@@ -21,10 +21,13 @@ extern crate diesel;
 extern crate dotenv_codegen;
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate rocket;
 
 pub mod backend;
 pub mod concerns;
 pub mod dispatcher;
+pub mod frontend;
 pub mod helpers;
 pub mod importer;
 pub mod models;
