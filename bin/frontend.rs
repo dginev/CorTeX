@@ -11,11 +11,16 @@ extern crate lazy_static;
 #[macro_use]
 extern crate rocket;
 
-use futures::{Future, Stream};
-use hyper::header::{HeaderValue, CONTENT_LENGTH, CONTENT_TYPE};
-use hyper::Client;
-use hyper::{Body, Method, Request};
-use hyper_tls::HttpsConnector;
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::Cursor;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use std::str;
+use std::thread;
+
+use redis::Commands;
+use regex::Regex;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
 use rocket::request::Form;
@@ -26,29 +31,17 @@ use rocket_contrib::json::Json;
 use rocket_contrib::templates::Template;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use tokio_core::reactor::Core;
 
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::Cursor;
-use std::io::Read;
-use std::path::{Path, PathBuf};
-use std::str;
-
-use redis::Commands;
-use regex::Regex;
-use std::thread;
-use std::time::Duration;
-
-use cortex::backend::{Backend, RerunOptions, TaskReportOptions};
+use cortex::backend::{Backend, RerunOptions};
+use cortex::frontend::cached::{cache_worker, task_report};
+use cortex::frontend::captcha::{check_captcha, safe_data_to_string};
+use cortex::frontend::params::ReportParams;
 use cortex::models::{Corpus, HistoricalRun, RunMetadata, RunMetadataStack, Service, Task};
 use cortex::sysinfo;
 
 lazy_static! {
   static ref STRIP_NAME_REGEX: Regex = Regex::new(r"/[^/]+$").unwrap();
 }
-
-const TOKEN_LIMIT: u64 = 512;
 
 pub struct CORS();
 
@@ -144,13 +137,6 @@ fn aux_load_config() -> CortexConfig {
       e
     ),
   }
-}
-
-#[derive(FromForm)]
-struct ReportParams {
-  all: Option<bool>,
-  offset: Option<i64>,
-  page_size: Option<i64>,
 }
 
 #[get("/")]
@@ -570,7 +556,7 @@ fn entry_fetch(service_name: String, entry_id: usize, data: Data) -> Result<Name
     }
   } else {
     // expired quota, check with google
-    let check_val = aux_check_captcha(g_recaptcha_response, &cortex_config.captcha_secret);
+    let check_val = check_captcha(g_recaptcha_response, &cortex_config.captcha_secret);
     println!("Google validity: {:?}", check_val);
     if check_val {
       if let Some(ref mut redis_connection) = redis_opt {
@@ -763,6 +749,7 @@ fn rocket() -> rocket::Rocket {
 }
 
 fn main() {
+  // cache worker in parallel to the main service thread
   let _ = thread::spawn(move || {
     cache_worker();
   });
@@ -860,7 +847,7 @@ fn serve_report(
           aux_severity_highlight(&severity.clone().unwrap()).to_string(),
         );
         template = if severity.is_some() && (severity.as_ref().unwrap() == "no_problem") {
-          let entries = aux_task_report(
+          let entries = task_report(
             &mut global,
             &corpus,
             &service,
@@ -874,7 +861,7 @@ fn serve_report(
           // And set the task list template
           "task-list-report"
         } else {
-          let categories = aux_task_report(
+          let categories = task_report(
             &mut global,
             &corpus,
             &service,
@@ -897,7 +884,7 @@ fn serve_report(
         );
         global.insert("category".to_string(), category.clone().unwrap());
         if category.is_some() && (category.as_ref().unwrap() == "no_messages") {
-          let entries = aux_task_report(
+          let entries = task_report(
             &mut global,
             &corpus,
             &service,
@@ -911,7 +898,7 @@ fn serve_report(
           // And set the task list template
           template = "task-list-report";
         } else {
-          let whats = aux_task_report(
+          let whats = task_report(
             &mut global,
             &corpus,
             &service,
@@ -934,7 +921,7 @@ fn serve_report(
         );
         global.insert("category".to_string(), category.clone().unwrap());
         global.insert("what".to_string(), what.clone().unwrap());
-        let entries = aux_task_report(
+        let entries = task_report(
           &mut global,
           &corpus,
           &service,
@@ -1161,312 +1148,4 @@ fn aux_decorate_uri_encodings(context: &mut TemplateContext) {
       .global
       .insert("current_link_uri".to_string(), current_link);
   }
-}
-
-#[derive(Deserialize)]
-struct IsSuccess {
-  success: bool,
-}
-
-fn aux_check_captcha(g_recaptcha_response: &str, captcha_secret: &str) -> bool {
-  let mut core = match Core::new() {
-    Ok(c) => c,
-    _ => return false,
-  };
-  let https = HttpsConnector::new(4).expect("TLS initialization failed");
-  let client = Client::builder().build::<_, hyper::Body>(https);
-
-  let mut verified = false;
-  let url_with_query = "https://www.google.com/recaptcha/api/siteverify?secret=".to_string()
-    + captcha_secret
-    + "&response="
-    + g_recaptcha_response;
-  let json_str = format!(
-    "{{\"secret\":\"{:?}\",\"response\":\"{:?}\"}}",
-    captcha_secret, g_recaptcha_response
-  );
-  let req_url = match url_with_query.parse() {
-    Ok(parsed) => parsed,
-    _ => return false,
-  };
-  let json_len = json_str.len();
-  let mut req = Request::new(Body::from(json_str));
-  *req.method_mut() = Method::POST;
-  *req.uri_mut() = req_url;
-  req.headers_mut().insert(
-    CONTENT_TYPE,
-    HeaderValue::from_static("application/javascript"),
-  );
-  req
-    .headers_mut()
-    .insert(CONTENT_LENGTH, HeaderValue::from(json_len));
-
-  let post = client
-    .request(req)
-    .and_then(|res| res.into_body().concat2());
-  let posted = match core.run(post) {
-    Ok(posted_data) => match str::from_utf8(&posted_data) {
-      Ok(posted_str) => posted_str.to_string(),
-      Err(e) => {
-        println!("err: {}", e);
-        return false;
-      },
-    },
-    Err(e) => {
-      println!("err: {}", e);
-      return false;
-    },
-  };
-  let json_decoded: Result<IsSuccess, _> = serde_json::from_str(&posted);
-  if let Ok(response_json) = json_decoded {
-    if response_json.success {
-      verified = true;
-    }
-  }
-
-  verified
-}
-
-fn aux_task_report(
-  global: &mut HashMap<String, String>,
-  corpus: &Corpus,
-  service: &Service,
-  severity: Option<String>,
-  category: Option<String>,
-  what: Option<String>,
-  params: &Option<Form<ReportParams>>,
-) -> Vec<HashMap<String, String>>
-{
-  let all_messages = match params {
-    None => false,
-    Some(ref params) => *params.all.as_ref().unwrap_or(&false),
-  };
-  let offset = match params {
-    None => 0,
-    Some(ref params) => *params.offset.as_ref().unwrap_or(&0),
-  };
-  let page_size = match params {
-    None => 100,
-    Some(ref params) => *params.page_size.as_ref().unwrap_or(&100),
-  };
-  let fetched_report;
-  let mut time_val: String = time::now().rfc822().to_string();
-
-  let mut redis_connection = match redis::Client::open("redis://127.0.0.1/") {
-    Ok(redis_client) => match redis_client.get_connection() {
-      Ok(rc) => Some(rc),
-      _ => None,
-    },
-    _ => None,
-  };
-
-  let mut cache_key = String::new();
-  let mut cache_key_time = String::new();
-  let cached_report: Vec<HashMap<String, String>> =
-    if what.is_some() || severity == Some("no_problem".to_string()) {
-      vec![]
-    } else {
-      // Levels 1-3 get cached, except no_problem pages
-      let key_tail = match severity.clone() {
-        Some(severity) => {
-          let cat_tail = match category.clone() {
-            Some(category) => {
-              let what_tail = match what.clone() {
-                Some(what) => "_".to_string() + &what,
-                None => String::new(),
-              };
-              "_".to_string() + &category + &what_tail
-            },
-            None => String::new(),
-          };
-          "_".to_string() + &severity + &cat_tail
-        },
-        None => String::new(),
-      } + if all_messages { "_all_messages" } else { "" };
-      cache_key = corpus.id.to_string() + "_" + &service.id.to_string() + &key_tail;
-      cache_key_time = cache_key.clone() + "_time";
-      let cache_val: String = if let Some(ref mut rc) = redis_connection {
-        rc.get(cache_key.clone()).unwrap_or_default()
-      } else {
-        String::new()
-      };
-      if cache_val.is_empty() {
-        vec![]
-      } else {
-        serde_json::from_str(&cache_val).unwrap_or_default()
-      }
-    };
-
-  if cached_report.is_empty() {
-    let backend = Backend::default();
-    fetched_report = backend.task_report(TaskReportOptions {
-      corpus,
-      service,
-      severity_opt: severity.clone(),
-      category_opt: category,
-      what_opt: what.clone(),
-      all_messages,
-      offset,
-      page_size,
-    });
-    if what.is_none() && severity != Some("no_problem".to_string()) {
-      let report_json: String = serde_json::to_string(&fetched_report).unwrap();
-      // don't cache the task list pages
-
-      if let Some(ref mut rc) = redis_connection {
-        let _: () = rc.set(cache_key, report_json).unwrap();
-      }
-
-      if let Some(ref mut rc) = redis_connection {
-        let _: () = rc.set(cache_key_time, time_val.clone()).unwrap();
-      }
-    }
-  } else {
-    // Get the report time, so that the user knows where the data is coming from
-    time_val = if let Some(ref mut rc) = redis_connection {
-      match rc.get(cache_key_time) {
-        Ok(tval) => tval,
-        Err(_) => time::now().rfc822().to_string(),
-      }
-    } else {
-      time::now().rfc822().to_string()
-    };
-    fetched_report = cached_report;
-  }
-
-  // Setup the return
-
-  let from_offset = offset;
-  let to_offset = offset + page_size;
-  global.insert("from_offset".to_string(), from_offset.to_string());
-  if from_offset >= page_size {
-    // TODO: properly do tera ifs?
-    global.insert("offset_min_false".to_string(), "true".to_string());
-    global.insert(
-      "prev_offset".to_string(),
-      (from_offset - page_size).to_string(),
-    );
-  }
-
-  if fetched_report.len() >= page_size as usize {
-    global.insert("offset_max_false".to_string(), "true".to_string());
-  }
-  global.insert(
-    "next_offset".to_string(),
-    (from_offset + page_size).to_string(),
-  );
-
-  global.insert("offset".to_string(), offset.to_string());
-  global.insert("page_size".to_string(), page_size.to_string());
-  global.insert("to_offset".to_string(), to_offset.to_string());
-  global.insert("report_time".to_string(), time_val);
-
-  fetched_report
-}
-
-fn cache_worker() {
-  let redis_client = match redis::Client::open("redis://127.0.0.1/") {
-    Ok(client) => client,
-    _ => panic!("Redis connection failed, please boot up redis and restart the frontend!"),
-  };
-  let mut redis_connection = match redis_client.get_connection() {
-    Ok(conn) => conn,
-    _ => panic!("Redis connection failed, please boot up redis and restart the frontend!"),
-  };
-  let mut queued_cache: HashMap<String, usize> = HashMap::new();
-  loop {
-    // Keep a fresh backend connection on each invalidation pass.
-    let backend = Backend::default();
-    let mut global_stub: HashMap<String, String> = HashMap::new();
-    // each corpus+service (non-import)
-    for corpus in &backend.corpora() {
-      if let Ok(services) = corpus.select_services(&backend.connection) {
-        for service in &services {
-          if service.name == "import" {
-            continue;
-          }
-          println!(
-            "[cache worker] Examining corpus {:?}, service {:?}",
-            corpus.name, service.name
-          );
-          // Pages we'll cache:
-          let report = backend.progress_report(corpus, service);
-          let zero: f64 = 0.0;
-          let huge: usize = 999_999;
-          let queued_count_f64: f64 =
-            report.get("queued").unwrap_or(&zero) + report.get("todo").unwrap_or(&zero);
-          let queued_count: usize = queued_count_f64 as usize;
-          let key_base: String = corpus.id.to_string() + "_" + &service.id.to_string();
-          // Only recompute the inner pages if we are seeing a change / first visit, on the top
-          // corpus+service level
-          if *queued_cache.get(&key_base).unwrap_or(&huge) != queued_count {
-            println!("[cache worker] state changed, invalidating ...");
-            // first cache the count for the next check:
-            queued_cache.insert(key_base.clone(), queued_count);
-            // each reported severity (fatal, warning, error)
-            for severity in &["invalid", "fatal", "error", "warning", "no_problem", "info"] {
-              // most importantly, DEL the key from Redis!
-              let key_severity = key_base.clone() + "_" + severity;
-              println!("[cache worker] DEL {:?}", key_severity);
-              redis_connection.del(key_severity.clone()).unwrap_or(());
-              // also the combined-severity page for this category
-              let key_severity_all = key_severity.clone() + "_all_messages";
-              println!("[cache worker] DEL {:?}", key_severity_all);
-              redis_connection.del(key_severity_all.clone()).unwrap_or(());
-              if "no_problem" == *severity {
-                continue;
-              }
-
-              // cache category page
-              thread::sleep(Duration::new(1, 0)); // Courtesy sleep of 1 second.
-              let category_report = aux_task_report(
-                &mut global_stub,
-                corpus,
-                service,
-                Some((*severity).to_string()),
-                None,
-                None,
-                &None,
-              );
-              // for each category, cache the what page
-              for cat_hash in &category_report {
-                let string_empty = String::new();
-                let category = cat_hash.get("name").unwrap_or(&string_empty);
-                if category.is_empty() || (category == "total") {
-                  continue;
-                }
-
-                let key_category = key_severity.clone() + "_" + category;
-                println!("[cache worker] DEL {:?}", key_category);
-                redis_connection.del(key_category.clone()).unwrap_or(());
-                // also the combined-severity page for this `what` class
-                let key_category_all = key_category + "_all_messages";
-                println!("[cache worker] DEL {:?}", key_category_all);
-                redis_connection.del(key_category_all.clone()).unwrap_or(());
-
-                let _ = aux_task_report(
-                  &mut global_stub,
-                  corpus,
-                  service,
-                  Some((*severity).to_string()),
-                  Some((*category).to_string()),
-                  None,
-                  &None,
-                );
-              }
-            }
-          }
-        }
-      }
-    }
-    // Take two minutes before we recheck.
-    thread::sleep(Duration::new(120, 0));
-  }
-}
-
-fn safe_data_to_string(data: Data) -> Result<String, std::io::Error> {
-  let mut stream = data.open().take(TOKEN_LIMIT);
-  let mut string = String::with_capacity((TOKEN_LIMIT / 2) as usize);
-  stream.read_to_string(&mut string)?; // do we need str::from_utf8(token_bytes)
-  Ok(string)
 }
