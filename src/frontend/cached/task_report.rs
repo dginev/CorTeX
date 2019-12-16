@@ -95,11 +95,13 @@ pub fn task_report(
       // don't cache the task list pages
 
       if let Some(ref mut rc) = redis_connection {
-        let _: () = rc.set(cache_key, report_json).unwrap();
+        rc.set::<String, String, ()>(cache_key, report_json)
+          .unwrap();
       }
 
       if let Some(ref mut rc) = redis_connection {
-        let _: () = rc.set(cache_key_time, time_val.clone()).unwrap();
+        rc.set::<String, String, ()>(cache_key_time, time_val.clone())
+          .unwrap();
       }
     }
   } else {

@@ -28,7 +28,7 @@ use cortex::frontend::concerns::{
 use cortex::frontend::cors::CORS;
 use cortex::frontend::helpers::*;
 use cortex::frontend::params::{ReportParams, RerunRequestParams, TemplateContext};
-use cortex::models::{Corpus, HistoricalRun, RunMetadata, RunMetadataStack, Service, Task};
+use cortex::models::{Corpus, HistoricalRun, RunMetadata, RunMetadataStack, Service};
 use cortex::sysinfo;
 
 #[get("/")]
