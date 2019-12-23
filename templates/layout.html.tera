@@ -51,8 +51,8 @@
                     </span>
                 </span>
             </div>
-            {% if global.corpus_name %}
             <nav class="collapse navbar-collapse bs-navbar-collapse" role="navigation">
+                {% if global.corpus_name %}
                 <ul class="nav navbar-nav">
                     <li class="nav-link" data-nav-name="{{global.corpus_name}}">
                         <a href="/corpus/{{global.corpus_name_uri}}">
@@ -83,8 +83,13 @@
                     </li>
                     {% endif %} {% endif %} {% endif %} {% endif %}
                 </ul>
+                {% endif %}
+                <div class="pull-right">
+                    <span class="signin-button">
+                        <a class="info" href="/signin">Sign in</a>
+                    </span>
+                </div>
             </nav>
-            {% endif %}
         </div>
     </header>
 

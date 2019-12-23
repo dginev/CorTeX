@@ -78,6 +78,21 @@ fn admin() -> Template {
   Template::render("admin", context)
 }
 
+#[get("/signin")]
+fn signin() -> Template {
+  let mut global = HashMap::new();
+  global.insert(
+    "description".to_string(),
+    "sign into cortex for additional access".to_string(),
+  );
+  global.insert("title".to_string(), "Signin page".to_string());
+  let context = TemplateContext {
+    global,
+    ..TemplateContext::default()
+  };
+  Template::render("signin", context)
+}
+
 #[get("/workers/<service_name>")]
 fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
   let backend = Backend::default();
@@ -460,6 +475,7 @@ fn rocket() -> rocket::Rocket {
       routes![
         root,
         admin,
+        signin,
         corpus,
         favicon,
         robots,

@@ -269,3 +269,11 @@ div.main-report-bottom {
   padding-bottom: 20px;
   margin-bottom: 20px;
 }
+
+span.signin-button {
+  padding-top: 15px;
+  padding-bottom: 15px;
+  font-size: 14px;
+  line-height: 20px;
+  display: block;
+}
