@@ -263,10 +263,18 @@ div.main-report-bottom {
   margin-bottom: 20px;
 }
 
-span.signin-button {
+div.signin-buttons {
   padding-top: 15px;
   padding-bottom: 15px;
   font-size: 14px;
   line-height: 20px;
   display: block;
+}
+
+img.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  z-index: 0;
+  margin-right: 8px;
 }
