@@ -9,16 +9,14 @@
 #[macro_use]
 extern crate rocket;
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::thread;
-
 use rocket::request::Form;
 use rocket::response::status::{Accepted, NotFound};
 use rocket::response::NamedFile;
 use rocket::Data;
 use rocket_contrib::json::Json;
 use rocket_contrib::templates::Template;
+use std::path::{Path, PathBuf};
+use std::thread;
 
 use cortex::backend::Backend;
 use cortex::frontend::cached::cache_worker;
@@ -34,7 +32,7 @@ use cortex::sysinfo;
 #[get("/")]
 fn root() -> Template {
   let mut context = TemplateContext::default();
-  let mut global = HashMap::new();
+  let mut global = global_defaults();
   global.insert(
     "title".to_string(),
     "Overview of available Corpora".to_string(),
@@ -60,7 +58,7 @@ fn root() -> Template {
 
 #[get("/admin")]
 fn admin() -> Template {
-  let mut global = HashMap::new();
+  let mut global = global_defaults();
   global.insert("title".to_string(), "Admin Interface".to_string());
   global.insert(
     "description".to_string(),
@@ -80,7 +78,7 @@ fn admin() -> Template {
 
 #[get("/signin")]
 fn signin() -> Template {
-  let mut global = HashMap::new();
+  let mut global = global_defaults();
   global.insert(
     "description".to_string(),
     "sign into cortex for additional access".to_string(),
@@ -98,7 +96,7 @@ fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
   let backend = Backend::default();
   let service_name = uri_unescape(Some(&service_name)).unwrap_or_else(|| UNKNOWN.to_string());
   if let Ok(service) = Service::find_by_name(&service_name, &backend.connection) {
-    let mut global = HashMap::new();
+    let mut global = global_defaults();
     global.insert(
       "title".to_string(),
       format!("Worker report for service {} ", &service_name),
@@ -139,7 +137,7 @@ fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
   let corpus_name = uri_unescape(Some(&corpus_name)).unwrap_or_else(|| UNKNOWN.to_string());
   let corpus_result = Corpus::find_by_name(&corpus_name, &backend.connection);
   if let Ok(corpus) = corpus_result {
-    let mut global = HashMap::new();
+    let mut global = global_defaults();
     global.insert(
       "title".to_string(),
       "Registered services for ".to_string() + &corpus_name,
@@ -295,7 +293,7 @@ fn historical_runs(
 ) -> Result<Template, NotFound<String>>
 {
   let mut context = TemplateContext::default();
-  let mut global = HashMap::new();
+  let mut global = global_defaults();
   let backend = Backend::default();
   let corpus_name = corpus_name.to_lowercase();
   if let Ok(corpus) = Corpus::find_by_name(&corpus_name, &backend.connection) {
@@ -364,7 +362,7 @@ fn entry_fetch(
 #[get("/expire_captcha")]
 fn expire_captcha() -> Result<Template, NotFound<String>> {
   let mut context = TemplateContext::default();
-  let mut global = HashMap::new();
+  let mut global = global_defaults();
   global.insert(
     "description".to_string(),
     "Expire captcha cache for CorTeX.".to_string(),

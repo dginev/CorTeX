@@ -7,6 +7,7 @@
     <meta charset="utf-8" />
     <meta name="language" content="English">
     <meta name="description" content="{{global.description}}">
+    <meta name="google-signin-client_id" content="{{global.google_oauth_id}}.apps.googleusercontent.com">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" type='text/css' href='/public/css/cortex.css'>
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -74,9 +75,7 @@
                 </ul>
                 {% endif %}
                 <div class="pull-right">
-                    <span class="signin-button">
-                        <a class="info" href="/signin">Sign in</a>
-                    </span>
+                    {# <div class="g-signin2" data-onsuccess="onSignIn"></div> #}
                 </div>
             </nav>
         </div>
@@ -122,8 +121,16 @@
         </nav>
     </footer>
     <script src='//privacy.kwarc.info/policy.js' async defer></script>
+    <script type="text/javascript">
+        function onSignIn(googleUser) {
+            var profile = googleUser.getBasicProfile();
+            console.log('ID: ' + profile.getId()); // Do not send to your backend! Use an ID token instead.
+            console.log('Name: ' + profile.getName());
+            console.log('Image URL: ' + profile.getImageUrl());
+            console.log('Email: ' + profile.getEmail()); // This is null if the 'email' scope is not present.
+        }
+    </script>
     <script src="https://apis.google.com/js/platform.js" async defer></script>
-
 </body>
 
 </html>

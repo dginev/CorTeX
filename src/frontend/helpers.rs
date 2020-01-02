@@ -2,8 +2,20 @@
 //! tending to minor tasks
 use crate::frontend::params::{FrontendConfig, TemplateContext};
 use serde_json;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
+
+/// Provides default global fields for tera templates which may be needed at every page
+pub fn global_defaults() -> HashMap<String, String> {
+  let mut global = HashMap::new();
+  global.insert(
+    "google_oauth_id".to_owned(),
+    dotenv!("GOOGLE_OAUTH_ID").to_owned(),
+  );
+  // dotenv!("GOOGLE_OAUTH_SECRET");
+  global
+}
 
 /// Maps a cortex message severity into a bootstrap class for color highlight
 pub fn severity_highlight(severity: &str) -> &str {

@@ -36,7 +36,7 @@ pub fn serve_report(
 {
   let report_start = time::get_time();
   let mut context = TemplateContext::default();
-  let mut global = HashMap::new();
+  let mut global = global_defaults();
   let backend = Backend::default();
 
   let corpus_name = corpus_name.to_lowercase();
