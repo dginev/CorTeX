@@ -61,13 +61,6 @@ tr.error {
   transform: translate(-50%, -50%);
 }
 
-.description {
-  padding: 20px;
-  display: block;
-  text-align: left;
-  font-family: 'Roboto Slab', serif;
-}
-
 .vertical-middle-align {
   display: inline-block;
   vertical-align: middle;

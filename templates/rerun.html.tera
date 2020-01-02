@@ -29,7 +29,7 @@
           <input id="rerun-token" type="text" class="form-control" placeholder="Please enter your rerun token"
             name="token">
           <br>
-          <button type="button" id="btn-rerun" class="btn btn-primary disabled">Mark for rerun</buttont>
+          <button type="button" id="btn-rerun" class="btn btn-primary disabled">Mark for rerun</button>
         </div>
       </form>
     </div>
