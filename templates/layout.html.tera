@@ -34,7 +34,7 @@
             <div class="row">
                 <div class="col-9">
                     {% if global.corpus_name %}
-                    <nav class="navbar navbar-expand-lg navbar-white bg-white">
+                    <nav class="navbar navbar-expand-md navbar-white bg-white">
                         <a class="navbar-brand quietlink" href="/">
                             <span class="d-sm-none d-md-block"><img src="/public/img/logo.jpg" width="80">
                                 Framework</span>
@@ -42,7 +42,7 @@
                                     width="80">
                                 Framework</span>
                         </a>
-                        <ul class="navbar-nav">
+                        <ul class="navbar-nav mr-auto nav">
                             <li class="nav-item" data-nav-name="{{global.corpus_name}}">
                                 <a class="nav-link quietlink" href="/corpus/{{global.corpus_name_uri}}">
                                     <i
