@@ -6,11 +6,11 @@
     <table id="service-report" class="table">
       <thead>
         <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>From</th>
-          <th>To</th>
-          <th>Description</th>
+          <th class="left">Name</th>
+          <th class="left">Type</th>
+          <th class="left">From</th>
+          <th class="left">To</th>
+          <th class="left">Description</th>
         </tr>
       </thead>
       <tbody>

@@ -7,7 +7,6 @@ use rocket::response::NamedFile;
 use rocket::Data;
 use rocket_contrib::json::Json;
 use rocket_contrib::templates::Template;
-use std::collections::HashMap;
 use std::str;
 
 use crate::backend::Backend;
@@ -399,7 +398,7 @@ pub fn serve_entry_preview(
   let report_start = time::get_time();
   let corpus_name = corpus_name.to_lowercase();
   let mut context = TemplateContext::default();
-  let mut global = HashMap::new();
+  let mut global = global_defaults();
   let backend = Backend::default();
 
   let corpus_result = Corpus::find_by_name(&corpus_name, &backend.connection);

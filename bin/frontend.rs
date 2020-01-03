@@ -56,8 +56,8 @@ fn root() -> Template {
   Template::render("overview", context)
 }
 
-#[get("/admin")]
-fn admin() -> Template {
+#[get("/dashboard")]
+fn admin_dashboard() -> Template {
   let mut global = global_defaults();
   global.insert("title".to_string(), "Admin Interface".to_string());
   global.insert(
@@ -108,16 +108,19 @@ fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
         &service_name
       ),
     );
+    global.insert("corpus_name".to_string(), "all".to_string());
     global.insert("service_name".to_string(), service_name.to_string());
     global.insert(
       "service_description".to_string(),
       service.description.clone(),
     );
+    // uri links lead to root, since this is a global overview
+    global.insert("corpus_name_uri".to_string(), "../".to_string());
+    global.insert("service_name_uri".to_string(), "../".to_string());
     let mut context = TemplateContext {
       global,
       ..TemplateContext::default()
     };
-
     let workers = service
       .select_workers(&backend.connection)
       .unwrap()
@@ -472,7 +475,7 @@ fn rocket() -> rocket::Rocket {
       "/",
       routes![
         root,
-        admin,
+        admin_dashboard,
         signin,
         corpus,
         favicon,

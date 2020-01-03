@@ -8,82 +8,92 @@
     <meta name="language" content="English">
     <meta name="description" content="{{global.description}}">
     <meta name="google-signin-client_id" content="{{global.google_oauth_id}}.apps.googleusercontent.com">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <link rel="stylesheet" type='text/css' href='/public/css/cortex.css'>
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
-    <link rel='stylesheet' type='text/css' href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.1/css/bootstrap.min.css">
-    <link rel='stylesheet' type='text/css' href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.1/css/bootstrap-theme.min.css">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css"
+        integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
     <link rel="stylesheet" type='text/css' href="//maxcdn.bootstrapcdn.com/font-awesome/4.4.0/css/font-awesome.min.css">
-    <script src='//code.jquery.com/jquery-2.1.4.min.js'></script>
+
+    <script src="https://code.jquery.com/jquery-3.4.1.slim.min.js"
+        integrity="sha384-J6qa4849blE2+poT4WnyKhv5vZF5SrPo0iEjwBvKU7imGFAV0wwj1yYfoRSJoZ+n"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js"
+        integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo"
+        crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js"
+        integrity="sha384-wfSDF2E50Y2D1uUdj0O3uMBJnjuUD4Ih7YwaYd1iqfktj0Uod8GCExl3Og8ifwB6"
+        crossorigin="anonymous"></script>
     <script src="//maxcdn.bootstrapcdn.com/bootstrap/3.3.1/js/bootstrap.min.js"></script>
     {% block head_extra %} {% endblock head_extra %}
 </head>
 
 <body>
-    <header class="navbar navbar-default bs-docs-nav" role="banner">
+    <header>
         <div class="container">
-            <div class="navbar-header">
-                <button class="navbar-toggle" type="button" data-toggle="collapse" data-target=".bs-navbar-collapse">
-                    <span class="sr-only">Toggle navigation</span>
-                    <span class="icon-bar"></span>
-                    <span class="icon-bar"></span>
-                    <span class="icon-bar"></span>
-                </button>
-                <span class="navbar-brand">
-                    <span class="hidden-xs">
-                        <a href="/" class="quietlink">
-                            <img src="/public/img/logo.jpg" width="80"> Framework</a>
-                    </span>
-                    <span class="hidden-sm hidden-md hidden-lg">
-                        <a href="/" class="quietlink">
-                            <img src="/public/img/logo.jpg" width="80">
+            <div class="row">
+                <div class="col-9">
+                    {% if global.corpus_name %}
+                    <nav class="navbar navbar-expand-lg navbar-white bg-white">
+                        <a class="navbar-brand quietlink" href="/">
+                            <span class="d-sm-none d-md-block"><img src="/public/img/logo.jpg" width="80">
+                                Framework</span>
+                            <span class="d-sm-block d-md-none d-lg-none d-xl-none"><img src="/public/img/logo.jpg"
+                                    width="80">
+                                Framework</span>
                         </a>
-                    </span>
-                </span>
-            </div>
-            <nav class="collapse navbar-collapse bs-navbar-collapse" role="navigation">
-                {% if global.corpus_name %}
-                <ul class="nav navbar-nav">
-                    <li class="nav-link" data-nav-name="{{global.corpus_name}}">
-                        <a href="/corpus/{{global.corpus_name_uri}}">
-                            <i class="fa fa-chevron-right fa-lg"></i>&nbsp;&nbsp;&nbsp;&nbsp;{{global.corpus_name}}</a>
-                    </li>
-                    {% if global.service_name %}
-                    <li class="nav-link" data-nav-name="{{global.service_name}}">
-                        <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}">
-                            <i class="fa fa-chevron-right fa-lg"></i>&nbsp;&nbsp;&nbsp;&nbsp;{{global.service_name}}</a>
-                    </li>
-                    {% if global.severity %}
-                    <li class="nav-link" data-nav-name="{{global.severity}}">
-                        <a
-                            href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity_uri}}">
-                            <i class="fa fa-chevron-right fa-lg"></i>&nbsp;&nbsp;&nbsp;&nbsp;{{global.severity}}</a>
-                    </li>
-                    {% if global.category %}
-                    <li class="nav-link" data-nav-name="{{global.category}}">
-                        <a
-                            href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity_uri}}/{{global.category_uri}}">
-                            <i class="fa fa-chevron-right fa-lg"></i>&nbsp;&nbsp;&nbsp;&nbsp;{{global.category}}</a>
-                    </li>
-                    {% if global.what %}
-                    <li class="nav-link" data-nav-name="{{global.what}}">
-                        <a
-                            href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity_uri}}/{{global.category_uri}}/{{global.what_uri}}">
-                            <i class="fa fa-chevron-right fa-lg"></i>&nbsp;&nbsp;&nbsp;&nbsp;{{global.what}}</a>
-                    </li>
-                    {% endif %} {% endif %} {% endif %} {% endif %}
-                </ul>
-                {% endif %}
-                <div class="pull-right">
-                    <div class="signin-buttons">
-                        <div class="g-signin2" data-onsuccess="onSignIn"></div>
-                        <span class="g-signout2" style="display:none;">
-                            <img class="user-avatar" src="">
-                            <a href="#" onclick="signOut();">Sign
-                                out</a></span>
+                        <ul class="navbar-nav">
+                            <li class="nav-item" data-nav-name="{{global.corpus_name}}">
+                                <a class="nav-link quietlink" href="/corpus/{{global.corpus_name_uri}}">
+                                    <i
+                                        class="fa fa-chevron-right fa-md"></i>&nbsp;&nbsp;&nbsp;&nbsp;{{global.corpus_name}}</a>
+                            </li>
+                            {% if global.service_name %}
+                            <li class="nav-item" data-nav-name="{{global.service_name}}">
+                                <a class="nav-link quietlink"
+                                    href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}">
+                                    <i
+                                        class="fa fa-chevron-right fa-md"></i>&nbsp;&nbsp;&nbsp;&nbsp;{{global.service_name}}</a>
+                            </li>
+                            {% if global.severity %}
+                            <li class="nav-item" data-nav-name="{{global.severity}}">
+                                <a class="nav-link quietlink"
+                                    href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity_uri}}">
+                                    <i
+                                        class="fa fa-chevron-right fa-md"></i>&nbsp;&nbsp;&nbsp;&nbsp;{{global.severity}}</a>
+                            </li>
+                            {% if global.category %}
+                            <li class="nav-item" data-nav-name="{{global.category}}">
+                                <a class="nav-link quietlink"
+                                    href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity_uri}}/{{global.category_uri}}">
+                                    <i
+                                        class="fa fa-chevron-right fa-md"></i>&nbsp;&nbsp;&nbsp;&nbsp;{{global.category}}</a>
+                            </li>
+                            {% if global.what %}
+                            <li class="nav-item" data-nav-name="{{global.what}}">
+                                <a class="nav-link quietlink"
+                                    href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity_uri}}/{{global.category_uri}}/{{global.what_uri}}">
+                                    <i class="fa fa-chevron-right fa-md"></i>&nbsp;&nbsp;&nbsp;&nbsp;{{global.what}}</a>
+                            </li>
+                            {% endif %} {% endif %} {% endif %} {% endif %}
+                        </ul>
+                    </nav>
+                    {% endif %}
+                </div>
+                <div class="col-3">
+                    <div class="float-right">
+                        <div class="signin-buttons">
+                            <div class="g-signin2" data-onsuccess="onSignIn"></div>
+                            <span class="g-signout2" style="display:none;">
+                                <img class="user-avatar" src="">
+                                <button type="button" class="btn btn-outline-secondary"
+                                    id="admin-dashboard">Dashboard</button>
+                                <button type="button" class="btn btn-outline-secondary" onclick="signOut();">Sign
+                                    out</button></span>
+                        </div>
                     </div>
                 </div>
-            </nav>
+            </div>
         </div>
     </header>
 
@@ -96,9 +106,9 @@
     {% if global.report_duration %} {% include "rerun" %} {% endif %}
 
     <footer>
-        <nav class="navbar navbar-default navbar-fixed-bottom" role="navigation">
+        <div class="container-fluid bg-light border-top align-middle align-text-middle fixed-bottom">
             {% if global.report_duration %}
-            <div class="pull-right">
+            <div class="float-right report-footer">
                 <span class="report-duration" data-report-duration="{{global.report_duration}}">Report generated in
                     {{global.report_duration}}ms,
                     on {{global.report_time}}
@@ -119,21 +129,22 @@
             {% elif not history %}
             <div class="center arxmliv-kwarc-footer">
                 <span class="center">
-                    Created by the <a href="https://kwarc.info/projects/arXMLiv/">arXMLiv project at the KWARC Research
+                    Created by the <a href="https://kwarc.info/projects/arXMLiv/">arXMLiv project at the KWARC
+                        Research
                         Group</a>
                 </span><br>
             </div>
             {% endif %} {%block footer_extra %}{% endblock footer_extra %}
-        </nav>
+        </div>
     </footer>
     <script src='//privacy.kwarc.info/policy.js' async defer></script>
     <script type="text/javascript">
         function onSignIn(googleUser) {
             var profile = googleUser.getBasicProfile();
-            console.log('ID: ' + profile.getId()); // Do not send to your backend! Use an ID token instead.
-            console.log('Name: ' + profile.getName());
+            var id_token = googleUser.getAuthResponse().id_token;
+            localStorage.setItem("oauth_session_token", id_token);
             $("img.user-avatar").attr('src', profile.getImageUrl());
-            console.log('Email: ' + profile.getEmail()); // This is null if the 'email' scope is not present.
+            $("button#admin-dashboard").attr("onclick", 'location.href = "/dashboard?token=' + id_token + '"');
             $(".g-signin2").hide();
             $("span.g-signout2").show();
         }

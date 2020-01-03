@@ -19,7 +19,13 @@ body {
   /* Pad bottom by footer height */
   padding: 0 0 15px;
 }
+header {
+  margin-top: 1em;
+  margin-bottom: 2em;
+}
 footer {
+  margin-top: 2em;
+  margin-bottom: 1em;
   height: 15px;
 }
 
@@ -34,6 +40,7 @@ tr.error {
   font-size: 1.5em;
   font-weight: normal;
   font-style: italic;
+  margin-bottom: 2em;
 }
 
 .contact-list {
@@ -254,9 +261,16 @@ span.history-footnote {
 
 div.arxmliv-kwarc-footer {
   margin-top:0.8em;
+  margin-bottom:0.8em;
   font-size: 1em;
   font-weight: bold;
 }
+
+div.report-footer {
+  margin-top:0.8em;
+  margin-bottom:0.8em;
+}
+
 
 div.main-report-bottom {
   padding-bottom: 20px;
@@ -277,4 +291,29 @@ img.user-avatar {
   border-radius: 50%;
   z-index: 0;
   margin-right: 8px;
+}
+
+.cortex-link {
+  margin-top: 20px;
+}
+
+tr.success > td {
+  background-color: #dff0d8;
+}
+tr.warning > td {
+  background-color: #fcf8e3;
+}
+tr.danger > td {
+  background-color: #f2dede;
+}
+tr.info > td {
+  background-color: #d9edf7;
+}
+tr.active > td {
+  background-color: #f5f5f5;
+}
+
+td > a {
+  color:#337ab7;
+  text-decoration: none;
 }

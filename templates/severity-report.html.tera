@@ -4,7 +4,8 @@
   {% if global.severity != "info" %} {% if global.all_messages_true %}
   <h5>All Tasks</h5>
   <h5>
-    <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}?all=false">(Click here to
+    <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}?all=false">(Click here
+      to
       switch to {{global.severity}} only)</a>
   </h5>
   {% else %}
@@ -17,8 +18,8 @@
 
   <br>
   <div class="row">
-    <div class="col-md-3"></div>
-    <div class="col-md-6">
+    <div class="col-3"></div>
+    <div class="col-6">
       <table id="corpus-report" class="table">
         <thead>
           <tr>
@@ -33,7 +34,8 @@
           {% for category in categories %}
           <tr class="{{global.highlight}} corpus-report-{{global.severity}}">
             <td class="left">
-              <a class="link-{{category.name}}" href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity_uri}}/{{category.name_uri}}?all={{global.all_messages}}">{{category.name}}</a>
+              <a class="link-{{category.name}}"
+                href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity_uri}}/{{category.name_uri}}?all={{global.all_messages}}">{{category.name}}</a>
             </td>
             <td class="right">{{category.tasks_percent}}%</td>
             <td class="right">{{category.tasks}}</td>
@@ -44,7 +46,7 @@
         </tbody>
       </table>
     </div>
-    <div class="col-md-3"></div>
+    <div class="col-3"></div>
   </div>
 </div>
 {% endblock content %}
