@@ -82,7 +82,7 @@ fn mock_tex_to_html() {
   let tex_to_html_service = service_result.unwrap();
 
   let conversion_task = NewTask {
-    entry: abs_entry.clone(),
+    entry: abs_entry,
     service_id: tex_to_html_service.id,
     corpus_id: registered_corpus.id,
     status: TaskStatus::TODO.raw(),

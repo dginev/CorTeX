@@ -151,7 +151,7 @@ fn batch_ops_test() {
     status: TaskStatus::TODO.raw(),
   };
   // mark_imported on `mock_task_count` tasks
-  let names: Vec<String> = (1..mock_task_count + 1)
+  let names: Vec<String> = (1..=mock_task_count)
     .map(|index| format!("{}{}", mock_new_task.entry, index.to_string()))
     .collect();
   let new_tasks: Vec<NewTask> = (0..mock_task_count)
@@ -215,7 +215,12 @@ fn batch_ops_test() {
   let mark_rerun_result = backend.mark_rerun(RerunOptions {
     corpus: &mock_corpus,
     service: &mock_service,
-    severity_opt: None, category_opt: None, what_opt: None, owner_opt: None, description_opt: None});
+    severity_opt: None,
+    category_opt: None,
+    what_opt: None,
+    owner_opt: None,
+    description_opt: None,
+  });
   println!("debug : {:?}", mark_rerun_result);
   assert!(mark_rerun_result.is_ok());
 

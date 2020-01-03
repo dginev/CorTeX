@@ -79,7 +79,7 @@ fn mock_round_trip() {
   assert!(import_task_result.is_ok());
 
   let add_echo_task_result = test_backend.add(&NewTask {
-    entry: abs_entry.clone(),
+    entry: abs_entry,
     service_id: echo_service.id,
     corpus_id: mock_corpus.id,
     status: TaskStatus::TODO.raw(),
