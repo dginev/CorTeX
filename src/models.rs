@@ -22,5 +22,15 @@ pub use services::*;
 mod corpora;
 pub use corpora::*;
 
+mod users;
+pub use users::*;
+
+mod user_actions;
+pub use user_actions::*;
+
+mod user_permissions;
+pub use user_permissions::*;
+
+
 mod historical_runs;
 pub use historical_runs::*;

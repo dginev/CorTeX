@@ -8,6 +8,7 @@
 #![allow(clippy::implicit_hasher, clippy::let_unit_value)]
 #[macro_use]
 extern crate rocket;
+extern crate google_signin;
 
 use rocket::request::Form;
 use rocket::response::status::{Accepted, NotFound};
@@ -25,9 +26,10 @@ use cortex::frontend::concerns::{
 };
 use cortex::frontend::cors::CORS;
 use cortex::frontend::helpers::*;
-use cortex::frontend::params::{ReportParams, RerunRequestParams, TemplateContext};
+use cortex::frontend::params::{
+  DashboardParams, ReportParams, RerunRequestParams, TemplateContext,
+};
 use cortex::models::{Corpus, HistoricalRun, RunMetadata, RunMetadataStack, Service};
-use cortex::sysinfo;
 
 #[get("/")]
 fn root() -> Template {
@@ -56,24 +58,41 @@ fn root() -> Template {
   Template::render("overview", context)
 }
 
-#[get("/dashboard")]
-fn admin_dashboard() -> Template {
+#[get("/dashboard?<params..>")]
+fn admin_dashboard(params: Form<DashboardParams>) -> Result<Template, Redirect> {
+  // Recommended: Let the crate handle everything for you
+  let mut client = google_signin::Client::new();
   let mut global = global_defaults();
-  global.insert("title".to_string(), "Admin Interface".to_string());
-  global.insert(
-    "description".to_string(),
-    "An analysis framework for corpora of TeX/LaTeX documents - admin interface.".to_string(),
-  );
-  match sysinfo::report(&mut global) {
-    Ok(_) => {},
-    Err(e) => println!("Sys report failed: {:?}", e),
-  };
+  let oauth_registry =
+    global.get("google_oauth_id").unwrap().to_owned() + ".apps.googleusercontent.com";
+  client.audiences.push(oauth_registry); // required
+  if let Ok(id_info) = client.verify(&params.token) {
+    if let Some(ref email) = id_info.email {
+      println!("Success! {:?} has signed in", email);
 
-  let context = TemplateContext {
-    global,
-    ..TemplateContext::default()
-  };
-  Template::render("admin", context)
+      global.insert("title".to_string(), "Admin Interface".to_string());
+      global.insert(
+        "description".to_string(),
+        "An analysis framework for corpora of TeX/LaTeX documents - admin interface.".to_string(),
+      );
+      match cortex::sysinfo::report(&mut global) {
+        Ok(_) => {},
+        Err(e) => println!("Sys report failed: {:?}", e),
+      };
+
+      let context = TemplateContext {
+        global,
+        ..TemplateContext::default()
+      };
+      Ok(Template::render("admin", context))
+    } else {
+      // TODO: Notify of error?
+      Err(Redirect::to("/"))
+    }
+  } else {
+    // TODO: Notify of error?
+    Err(Redirect::to("/"))
+  }
 }
 
 #[get("/signin")]

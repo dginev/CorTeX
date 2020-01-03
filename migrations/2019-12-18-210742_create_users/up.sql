@@ -12,14 +12,13 @@ create index users_email_idx on users(email);
 CREATE TABLE user_permissions(
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL,
-  corpus_id INTEGER NOT NULL,
-  service_id INTEGER NOT NULL,
-  owner boolean,
-  runner boolean,
-  viewer boolean
+  corpus_id INTEGER,
+  service_id INTEGER,
+  owner boolean NOT NULL,
+  developer boolean NOT NULL,
+  viewer boolean NOT NULL
 );
 create index user_permissions_triple_idx on user_permissions(user_id, corpus_id, service_id);
-
 
 CREATE TABLE user_actions(
   id SERIAL PRIMARY KEY,

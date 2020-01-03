@@ -14,6 +14,13 @@ pub struct ReportParams {
   pub page_size: Option<i64>,
 }
 
+#[derive(FromForm)]
+/// Configuration parameters for the frontend admin dashboard
+pub struct DashboardParams {
+  /// mandatory authentication token via oauth
+  pub token: String,
+}
+
 /// Configuration in URL query parameter for rerun requests
 #[derive(Serialize, Deserialize)]
 pub struct RerunRequestParams {

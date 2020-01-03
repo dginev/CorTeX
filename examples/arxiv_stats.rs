@@ -19,7 +19,7 @@ use std::u64;
 
 // arXiv months in order
 // TODO: Only current as of 1808, you'll have to extend manually next time this is run
-static ORDERED_MONTHS: [&'static str; 326] = [
+static ORDERED_MONTHS: [&str; 326] = [
   "9107", "9108", "9109", "9110", "9111", "9112", "9201", "9202", "9203", "9204", "9205", "9206",
   "9207", "9208", "9209", "9210", "9211", "9212", "9301", "9302", "9303", "9304", "9305", "9306",
   "9307", "9308", "9309", "9310", "9311", "9312", "9401", "9402", "9403", "9404", "9405", "9406",
@@ -182,7 +182,7 @@ fn main() {
     Some(counts) => counts,
     None => &zero,
   });
-  let ordered_month_xcoords = 1..ORDERED_MONTHS.len() + 1;
+  let ordered_month_xcoords = 1..=ORDERED_MONTHS.len();
 
   let mut fg = Figure::new();
   fg.axes2d()
