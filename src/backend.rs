@@ -13,6 +13,7 @@ mod mark;
 mod reports;
 mod services_aggregate;
 mod tasks_aggregate;
+mod users_aggregate;
 pub(crate) use reports::progress_report;
 pub use reports::TaskReportOptions;
 
@@ -24,7 +25,7 @@ use std::collections::HashMap;
 
 use crate::concerns::{CortexDeletable, CortexInsertable};
 use crate::helpers::{TaskReport, TaskStatus};
-use crate::models::{Corpus, NewTask, Service, Task};
+use crate::models::{Corpus, NewTask, Service, Task, User};
 
 /// The production database postgresql address, set from the .env configuration file
 pub const DEFAULT_DB_ADDRESS: &str = dotenv!("DATABASE_URL");
@@ -108,13 +109,7 @@ impl Backend {
     description: String,
   ) -> Result<(), Error>
   {
-    mark::mark_new_run(
-      &self.connection,
-      corpus,
-      service,
-      owner,
-      description,
-    )
+    mark::mark_new_run(&self.connection, corpus, service, owner, description)
   }
 
   /// Generic delete method, uses primary "id" field
@@ -169,6 +164,10 @@ impl Backend {
 
   /// Returns a vector of currently available corpora in the Task store
   pub fn corpora(&self) -> Vec<Corpus> { corpora_aggregate::list_corpora(&self.connection) }
+
+  /// Returns a vector of currently registered users
+  /// (currently we expect only few admin/dev users, so this should be a very fast query)
+  pub fn users(&self) -> Vec<User> { users_aggregate::list_users(&self.connection) }
 
   /// Returns a vector of tasks for a given Corpus, Service and status
   pub fn tasks(&self, corpus: &Corpus, service: &Service, task_status: &TaskStatus) -> Vec<Task> {

@@ -5,7 +5,7 @@ CREATE TABLE users (
   email varchar(200) NOT NULL,
   first_seen TIMESTAMP NOT NULL,
   last_seen TIMESTAMP NOT NULL,
-  admin boolean
+  admin boolean NOT NULL
 );
 create index users_email_idx on users(email);
 

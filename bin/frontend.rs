@@ -18,6 +18,7 @@ use rocket_contrib::json::Json;
 use rocket_contrib::templates::Template;
 use std::path::{Path, PathBuf};
 use std::thread;
+use std::time::SystemTime;
 
 use cortex::backend::Backend;
 use cortex::frontend::cached::cache_worker;
@@ -29,7 +30,7 @@ use cortex::frontend::helpers::*;
 use cortex::frontend::params::{
   DashboardParams, ReportParams, RerunRequestParams, TemplateContext,
 };
-use cortex::models::{Corpus, HistoricalRun, RunMetadata, RunMetadataStack, Service};
+use cortex::models::{Corpus, HistoricalRun, NewUser, RunMetadata, RunMetadataStack, Service};
 
 #[get("/")]
 fn root() -> Template {
@@ -69,6 +70,29 @@ fn admin_dashboard(params: Form<DashboardParams>) -> Result<Template, Redirect> 
   if let Ok(id_info) = client.verify(&params.token) {
     if let Some(ref email) = id_info.email {
       println!("Success! {:?} has signed in", email);
+      let backend = Backend::default();
+      let users = backend.users();
+      if users.is_empty() {
+        let display = if let Some(ref name) = id_info.name {
+          name.to_owned()
+        } else {
+          String::new()
+        };
+        let first_admin = NewUser {
+          admin: true,
+          email: email.to_owned(),
+          display,
+          first_seen: SystemTime::now(),
+          last_seen: SystemTime::now(),
+        };
+        let message = if backend.add(&first_admin).is_ok() {
+          "Added first user as administrator."
+        } else {
+          "Failed to create user"
+        };
+      } else {
+        // is this user known?
+      }
 
       global.insert("title".to_string(), "Admin Interface".to_string());
       global.insert(

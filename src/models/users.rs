@@ -14,17 +14,17 @@ use crate::schema::users;
 /// A `CorTeX` frontend user
 pub struct User {
   /// user primary key, auto-incremented by postgresql
-  pub id: i64,
+  pub id: i32,
   /// display name for the user
   pub display: String,
   /// email with which the oauth service identifies this user
   pub email: String,
   /// user creation date
-  first_seen: SystemTime,
+  pub first_seen: SystemTime,
   /// last registered activity with the backend
-  last_seen: SystemTime,
+  pub last_seen: SystemTime,
   /// is the user an admin?
-  admin: bool,
+  pub admin: bool,
 }
 
 #[derive(Insertable, Debug, Clone)]
@@ -36,11 +36,11 @@ pub struct NewUser {
   /// email with which the oauth service identifies this user
   pub email: String,
   /// user creation date
-  first_seen: SystemTime,
+  pub first_seen: SystemTime,
   /// last registered activity with the backend
-  last_seen: SystemTime,
+  pub last_seen: SystemTime,
   /// is the user an admin?
-  admin: bool,
+  pub admin: bool,
 }
 
 impl CortexInsertable for NewUser {
