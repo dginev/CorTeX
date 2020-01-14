@@ -30,7 +30,9 @@ use cortex::frontend::helpers::*;
 use cortex::frontend::params::{
   DashboardParams, ReportParams, RerunRequestParams, TemplateContext,
 };
-use cortex::models::{Corpus, HistoricalRun, NewUser, RunMetadata, RunMetadataStack, Service};
+use cortex::models::{
+  Corpus, HistoricalRun, NewUser, RunMetadata, RunMetadataStack, Service, User,
+};
 
 #[get("/")]
 fn root() -> Template {
@@ -67,12 +69,12 @@ fn admin_dashboard(params: Form<DashboardParams>) -> Result<Template, Redirect> 
   let oauth_registry =
     global.get("google_oauth_id").unwrap().to_owned() + ".apps.googleusercontent.com";
   client.audiences.push(oauth_registry); // required
+  let backend = Backend::default();
   if let Ok(id_info) = client.verify(&params.token) {
     if let Some(ref email) = id_info.email {
-      println!("Success! {:?} has signed in", email);
-      let backend = Backend::default();
+      println!("Success! {:?} has signed in with google oauth", email);
       let users = backend.users();
-      if users.is_empty() {
+      let message = if users.is_empty() {
         let display = if let Some(ref name) = id_info.name {
           name.to_owned()
         } else {
@@ -85,15 +87,20 @@ fn admin_dashboard(params: Form<DashboardParams>) -> Result<Template, Redirect> 
           first_seen: SystemTime::now(),
           last_seen: SystemTime::now(),
         };
-        let message = if backend.add(&first_admin).is_ok() {
-          "Added first user as administrator."
+        if backend.add(&first_admin).is_ok() {
+          format!("Registered admin user for {:?}", email)
         } else {
-          "Failed to create user"
-        };
+          format!("Failed to create user for {:?}", email)
+        }
       } else {
         // is this user known?
-      }
-
+        if let Ok(u) = User::find_by_email(email, &backend.connection) {
+          format!("Signed in as {:?}", u.email)
+        } else {
+          format!("Registered viewer user for {:?}", email)
+        }
+      };
+      global.insert("message".to_string(), message);
       global.insert("title".to_string(), "Admin Interface".to_string());
       global.insert(
         "description".to_string(),

@@ -26,7 +26,9 @@ pub struct Corpus {
   /// a human-readable name for this corpus
   pub name: String,
   /// are we using multiple files to represent a document entry?
-  /// (if unsure, always use "true")
+  /// currently a "complex" setup is assumed in the arXiv organization,
+  /// and will be imported following the arXiv convention.
+  /// This can be revisited in the future.
   pub complex: bool,
   /// a human-readable description of the corpus, maybe allow markdown here?
   pub description: String,

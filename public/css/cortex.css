@@ -285,6 +285,12 @@ div.signin-buttons {
   display: block;
 }
 
+div.message {
+  margin-top: 15px;
+  margin-bottom: 15px;
+  line-height: 15px;
+}
+
 img.user-avatar {
   width: 32px;
   height: 32px;

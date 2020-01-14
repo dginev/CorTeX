@@ -1,4 +1,10 @@
-{% extends "layout" %} {% block content %}
+{% extends "layout" %}
+{% block nav_extra %}
+<div class="alert alert-info message">
+  <span class="center align-middle">{{ global.message }}</span>
+</div>
+{% endblock nav_extra %}
+{% block content %}
 <h2>Add Corpus</h2>
 <form action="/add_corpus" method="get">
   <table class="add-corpus">

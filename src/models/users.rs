@@ -61,14 +61,21 @@ impl CortexDeletable for User {
 }
 
 impl User {
-  fn delete_by_email(&self, connection: &PgConnection) -> Result<usize, Error> {
+  /// custom ORM-like for now, until diesel has a best practice
+  pub fn find_by_email(email_query: &str, connection: &PgConnection) -> Result<Self, Error> {
+    use users::dsl::email;
+    users::table.filter(email.eq(email_query)).first(connection)
+  }
+  /// custom ORM-like for now, until diesel has a best practice
+  pub fn delete_by_email(&self, connection: &PgConnection) -> Result<usize, Error> {
     use users::dsl::email;
     delete(users::table.filter(email.eq(&self.email))).execute(connection)
   }
 }
 
 impl NewUser {
-  fn delete_by_email(&self, connection: &PgConnection) -> Result<usize, Error> {
+  /// custom ORM-like for now, until diesel has a best practice
+  pub fn delete_by_email(&self, connection: &PgConnection) -> Result<usize, Error> {
     use users::dsl::email;
     delete(users::table.filter(email.eq(&self.email))).execute(connection)
   }
