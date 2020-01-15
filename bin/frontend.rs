@@ -12,7 +12,7 @@ extern crate google_signin;
 
 use rocket::request::Form;
 use rocket::response::status::{Accepted, NotFound};
-use rocket::response::NamedFile;
+use rocket::response::{NamedFile, Redirect};
 use rocket::Data;
 use rocket_contrib::json::Json;
 use rocket_contrib::templates::Template;

@@ -323,3 +323,20 @@ td > a {
   color:#337ab7;
   text-decoration: none;
 }
+
+table.system-report > tbody > tr > td {
+  text-align: right
+}
+
+form.form-outline {
+  position: relative;
+  padding: 1rem;
+  margin: 1rem -15px 0;
+  margin-right: -15px;
+  margin-left: -15px;
+  border: solid #f7f7f9;
+  border-top-width: medium;
+  border-right-width: medium;
+  border-bottom-width: medium;
+  border-left-width: medium;
+}

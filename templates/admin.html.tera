@@ -5,106 +5,224 @@
 </div>
 {% endblock nav_extra %}
 {% block content %}
-<h2>Add Corpus</h2>
-<form action="/add_corpus" method="get">
-  <table class="add-corpus">
-    <tr>
-      <td>Path: </td>
-      <td>
-        <input type="text" name="path">
-      </td>
-    </tr>
-    <tr>
-      <td>Setup:</td>
-      <td>
+<div id="accordion">
+  <div class="card">
+    <div class="card-header" id="headingOne">
+      <h3 class="mb-0">
+        <button class="btn btn-info" data-toggle="collapse" data-target="#collapseOne" aria-expanded="false"
+          aria-controls="collapseOne">
+          Dashboard
+        </button>
+      </h3>
+    </div>
+    <div id="collapseOne" class="collapse" aria-labelledby="headingOne" data-parent="#accordion">
+      <div class="card-body">
+        <form class="form-outline" _lpchecked="1">
+          <fieldset>
+            <legend>Example legend</legend>
 
-        <input type="radio" name="setup" value="canonical" checked>Canonical
-        <br>
-        <input type="radio" name="setup" value="complex">arXiv</td>
-    </tr>
-    <tr>
-      <td colspan="2">
-        <input type="submit" value="Queue Corpus Import">
-      </td>
-    </tr>
-  </table>
-</form>
+            <p>
+              <label for="input">Example input</label>
+              <input type="text" id="input" placeholder="Example input">
+            </p>
 
-<h2>System Report</h2>
-<h3>Frontend Server</h3>
-<table class="system-report">
-  <tr>
-    <td>OS</td>
-    <td>{{global.sys_os_type }}</td>
-  </tr>
-  <tr>
-    <td>Release</td>
-    <td>{{global.sys_os_release }}</td>
-  </tr>
-  <tr>
-    <td>CPU</td>
-    <td>{{global.sys_cpu }} cores</td>
-  </tr>
-  <tr>
-    <td>CPU Speed</td>
-    <td>{{global.sys_cpu_speed }} MHz</td>
-  </tr>
-  <tr>
-    <td>Total processes</td>
-    <td>{{global.sys_proc_total }}</td>
-  </tr>
-  <tr>
-    <td>Load 1</td>
-    <td>{{global.sys_load_one}}</td>
-  </tr>
-  <tr>
-    <td>Load 5</td>
-    <td>{{global.sys_load_five}}</td>
-  </tr>
-  <tr>
-    <td>Load 15</td>
-    <td>{{global.sys_load_fifteen}}</td>
-  </tr>
-  <tr>
-    <td>Memory total</td>
-    <td>{{global.sys_mem_total}}</td>
-  </tr>
-  <tr>
-    <td>Memory free</td>
-    <td>{{global.sys_mem_free}}</td>
-  </tr>
-  <tr>
-    <td>Memory available</td>
-    <td>{{global.sys_mem_avail}}</td>
-  </tr>
-  <tr>
-    <td>Memory buffers</td>
-    <td>{{global.sys_mem_buffers}}</td>
-  </tr>
-  <tr>
-    <td>Memory cached</td>
-    <td>{{global.sys_mem_cached}}</td>
-  </tr>
-  <tr>
-    <td>Swap total</td>
-    <td>{{global.sys_mem_swap_total}}</td>
-  </tr>
-  <tr>
-    <td>Swap free</td>
-    <td>{{global.sys_mem_swap_free}}</td>
-  </tr>
-  <tr>
-    <td>Disk total</td>
-    <td>{{global.sys_disk_total}}</td>
-  </tr>
-  <tr>
-    <td>Disk free</td>
-    <td>{{global.sys_disk_free}}</td>
-  </tr>
-  <tr>
-    <td>Hostname</td>
-    <td>{{global.sys_hostname}}</td>
-  </tr>
-</table>
+            <p>
+              <label for="select">Example select</label>
+              <select id="select">
+                <option value="">Choose...</option>
+                <optgroup label="Option group 1">
+                  <option value="">Option 1</option>
+                  <option value="">Option 2</option>
+                  <option value="">Option 3</option>
+                </optgroup>
+                <optgroup label="Option group 2">
+                  <option value="">Option 4</option>
+                  <option value="">Option 5</option>
+                  <option value="">Option 6</option>
+                </optgroup>
+              </select>
+            </p>
 
+            <p>
+              <label>
+                <input type="checkbox" value="">
+                Check this checkbox
+              </label>
+            </p>
+
+            <p>
+              <label>
+                <input type="radio" name="optionsRadios" id="optionsRadios1" value="option1" checked="">
+                Option one is this and that
+              </label>
+              <label>
+                <input type="radio" name="optionsRadios" id="optionsRadios2" value="option2">
+                Option two is something else that's also super long to demonstrate the wrapping of these fancy form
+                controls.
+              </label>
+              <label>
+                <input type="radio" name="optionsRadios" id="optionsRadios3" value="option3" disabled="">
+                Option three is disabled
+              </label>
+            </p>
+
+            <p>
+              <label for="textarea">Example textarea</label>
+              <textarea id="textarea" rows="3"></textarea>
+            </p>
+
+            <p>
+              <label for="date">Example date</label>
+              <input type="date" id="date">
+            </p>
+
+            <p>
+              <label for="time">Example time</label>
+              <input type="time" id="time">
+            </p>
+
+            <p>
+              <label for="output">Example output</label>
+              <output name="result" id="output">100</output>
+            </p>
+
+            <p>
+              <button type="submit">Button submit</button>
+              <input type="submit" value="Input submit button">
+              <input type="button" value="Input button">
+            </p>
+
+            <p>
+              <button type="submit" disabled="">Button submit</button>
+              <input type="submit" value="Input submit button" disabled="">
+              <input type="button" value="Input button" disabled="">
+            </p>
+          </fieldset>
+        </form>
+
+        <div class="row">
+          <form action="/add_corpus" method="get" class="form-outline">
+            <fieldset>
+              <legend>Add Corpus</legend>
+              <table class="add-corpus">
+                <tr>
+                  <td>Path: </td>
+                  <td>
+                    <input type="text" name="path">
+                  </td>
+                </tr>
+                <tr>
+                  <td>Setup:</td>
+                  <td>
+
+                    <input type="radio" name="setup" value="canonical" checked>Canonical
+                    <br>
+                    <input type="radio" name="setup" value="complex">arXiv</td>
+                </tr>
+                <tr>
+                  <td colspan="2">
+                    <input type="submit" value="Queue Corpus Import">
+                  </td>
+                </tr>
+              </table>
+            </fieldset>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header" id="headingTwo">
+      <h5 class="mb-0">
+        <button class="btn btn-info" data-toggle="collapse" data-target="#collapseTwo" aria-expanded="false"
+          aria-controls="collapseTwo">
+          Reports
+        </button>
+      </h5>
+    </div>
+    <div id="collapseTwo" class="collapse" aria-labelledby="headingTwo" data-parent="#accordion">
+      <div class="card-body">
+        <div class="col-3">
+          <table class="system-report table table-striped table-bordered table-hover table-sm">
+            <caption>Server Details</caption>
+            <tbody>
+              <tr>
+                <th scope="row">OS</th>
+                <td>{{global.sys_os_type }}</td>
+              </tr>
+              <tr>
+                <th scope="row">Release</th>
+                <td>{{global.sys_os_release }}</td>
+              </tr>
+              <tr>
+                <th scope="row">CPU</th>
+                <td>{{global.sys_cpu }} cores</td>
+              </tr>
+              <tr>
+                <th scope="row">CPU Speed</th>
+                <td>{{global.sys_cpu_speed }} MHz</td>
+              </tr>
+              <tr>
+                <th scope="row">Total processes</th>
+                <td>{{global.sys_proc_total }}</td>
+              </tr>
+              <tr>
+                <th scope="row">Load 1</th>
+                <td>{{global.sys_load_one}}</td>
+              </tr>
+              <tr>
+                <th scope="row">Load 5</th>
+                <td>{{global.sys_load_five}}</td>
+              </tr>
+              <tr>
+                <th scope="row">Load 15</th>
+                <td>{{global.sys_load_fifteen}}</td>
+              </tr>
+              <tr>
+                <th scope="row">Memory total</th>
+                <td>{{global.sys_mem_total}}</td>
+              </tr>
+              <tr>
+                <th scope="row">Memory free</th>
+                <td>{{global.sys_mem_free}}</td>
+              </tr>
+              <tr>
+                <th scope="row">Memory available</th>
+                <td>{{global.sys_mem_avail}}</td>
+              </tr>
+              <tr>
+                <th scope="row">Memory buffers</th>
+                <td>{{global.sys_mem_buffers}}</td>
+              </tr>
+              <tr>
+                <th scope="row">Memory cached</th>
+                <td>{{global.sys_mem_cached}}</td>
+              </tr>
+              <tr>
+                <th scope="row">Swap total</th>
+                <td>{{global.sys_mem_swap_total}}</td>
+              </tr>
+              <tr>
+                <th scope="row">Swap free</th>
+                <td>{{global.sys_mem_swap_free}}</td>
+              </tr>
+              <tr>
+                <th scope="row">Disk total</th>
+                <td>{{global.sys_disk_total}}</td>
+              </tr>
+              <tr>
+                <th scope="row">Disk free</th>
+                <td>{{global.sys_disk_free}}</td>
+              </tr>
+              <tr>
+                <th scope="row">Hostname</th>
+                <td>{{global.sys_hostname}}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock content %}
