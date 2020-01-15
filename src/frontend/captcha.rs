@@ -10,7 +10,7 @@ use std::io::Read;
 use std::str;
 use tokio_core::reactor::Core;
 
-const TOKEN_LIMIT: u64 = 512;
+const TOKEN_LIMIT: u64 = 1024;
 /// Safely cast a rocket Data input into a String (is this still needed?)
 pub fn safe_data_to_string(data: Data) -> Result<String, std::io::Error> {
   let mut stream = data.open().take(TOKEN_LIMIT);

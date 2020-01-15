@@ -15,7 +15,7 @@ use std::thread;
 
 use rocket::request::Form;
 use rocket::response::status::{Accepted, NotFound};
-use rocket::response::{NamedFile, Redirect};
+use rocket::response::NamedFile;
 use rocket::Data;
 use rocket_contrib::json::Json;
 use rocket_contrib::templates::Template;
@@ -336,7 +336,12 @@ fn preview_entry(
 }
 
 #[post("/entry/<service_name>/<entry_id>", data = "<data>")]
-fn entry_fetch(service_name: String, entry_id: usize, data: Data) -> Result<NamedFile, Redirect> {
+fn entry_fetch(
+  service_name: String,
+  entry_id: usize,
+  data: Data,
+) -> Result<NamedFile, NotFound<String>>
+{
   serve_entry(service_name, entry_id, data)
 }
 

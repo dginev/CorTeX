@@ -3,7 +3,7 @@ use redis::Commands;
 use regex::Regex;
 use rocket::request::Form;
 use rocket::response::status::{Accepted, NotFound};
-use rocket::response::{NamedFile, Redirect};
+use rocket::response::NamedFile;
 use rocket::Data;
 use rocket_contrib::json::Json;
 use rocket_contrib::templates::Template;
@@ -302,11 +302,12 @@ pub fn serve_entry(
   service_name: String,
   entry_id: usize,
   data: Data,
-) -> Result<NamedFile, Redirect>
+) -> Result<NamedFile, NotFound<String>>
 {
   // Any secrets reside in config.json
   let cortex_config = load_config();
   let data = safe_data_to_string(data).unwrap_or_default(); // reuse old code by setting data to the String
+  println!("data 1: {:?}", data);
   let g_recaptcha_response_string = if data.len() > 21 {
     let data = &data[21..];
     data.replace("&g-recaptcha-response=", "")
@@ -317,10 +318,9 @@ pub fn serve_entry(
   // Check if we hve the g_recaptcha_response in Redis, then reuse
   let mut redis_opt;
   let quota: usize = match redis::Client::open("redis://127.0.0.1/") {
-    Err(_) => return Err(Redirect::to("/")), // TODO: Err(NotFound(format!("redis unreachable")))},
+    Err(_) => return Err(NotFound(format!("redis unreachable"))),
     Ok(redis_client) => match redis_client.get_connection() {
-      Err(_) => return Err(Redirect::to("/")), /* TODO: Err(NotFound(format!("redis
-                                                 * unreachable")))}, */
+      Err(_) => return Err(NotFound(format!("redis unreachable"))),
       Ok(mut redis_connection) => {
         let quota = redis_connection.get(g_recaptcha_response).unwrap_or(0);
         redis_opt = Some(redis_connection);
@@ -364,11 +364,7 @@ pub fn serve_entry(
 
   // If you are not human, you have no business here.
   if !captcha_verified {
-    if g_recaptcha_response != UNKNOWN {
-      return Err(Redirect::to("/expire_captcha"));
-    } else {
-      return Err(Redirect::to("/"));
-    }
+    return Err(NotFound("Captcha was invalid".to_string()));
   }
 
   let backend = Backend::default();
@@ -380,17 +376,16 @@ pub fn serve_entry(
         _ => STRIP_NAME_REGEX.replace(&entry, "").to_string() + "/" + &service_name + ".zip",
       };
       if zip_path.is_empty() {
-        Err(Redirect::to("/")) // TODO : Err(NotFound(format!("Service {:?} does not have a result
-                               // for entry {:?}", service_name,
-                               // entry_id)))
+        Err(NotFound(format!(
+          "Service {:?} does not have a result
+                               for entry {:?}",
+          service_name, entry_id
+        )))
       } else {
-        NamedFile::open(&zip_path).map_err(|_| Redirect::to("/"))
+        NamedFile::open(&zip_path).map_err(|_| NotFound("Invalid Zip at path".to_string()))
       }
     },
-    Err(e) => {
-      dbg!(e); // TODO: Handle these better
-      Err(Redirect::to("/"))
-    },
+    Err(e) => Err(NotFound(format!("Task not found: {}", e))),
   }
 }
 
