@@ -56,7 +56,7 @@ zmq-sys = "0.11.0"
 dotenv = "0.15.0"
 dotenv_codegen = "0.15"
 chrono = "0.4.0"
-diesel = {version="1.4.1", features = ["postgres", "chrono"]}
-libxml = "0.2.6"
+diesel = {version="1.4", features = ["postgres", "chrono"]}
+libxml = "0.2.13"
 lazy_static = "1.0.0"
 google-signin = "0.3"
