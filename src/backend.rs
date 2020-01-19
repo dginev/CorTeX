@@ -26,10 +26,12 @@ use diesel::*;
 use dotenv::dotenv;
 use std::collections::HashMap;
 use std::process::Command;
+use std::time::SystemTime;
+use sysinfo::{System, SystemExt};
 
 use crate::concerns::{CortexDeletable, CortexInsertable};
 use crate::helpers::{TaskReport, TaskStatus};
-use crate::models::{Corpus, NewTask, Service, Task, User};
+use crate::models::{Corpus, DaemonProcess, NewDaemonProcess, NewTask, Service, Task, User};
 
 /// The production database postgresql address, set from the .env configuration file
 pub const DEFAULT_DB_ADDRESS: &str = dotenv!("DATABASE_URL");
@@ -199,20 +201,38 @@ impl Backend {
   }
 
   /// Ensure a named daemon is running, or spin it up if not
-  pub fn ensure_daemon(daemon: &str) -> Result<(), Box<dyn std::error::Error>> {
+  pub fn ensure_daemon(name: &str) -> Result<(), Box<dyn std::error::Error>> {
     // whitelist available daemons, not meant for general purpose calls..
-    if daemon != "cache_worker" && daemon != "dispatcher" {
+    if name != "cache_worker" && name != "dispatcher" {
       Err("only supported cortex binaries can be executed as daemons".into())
     } else {
-      match Command::new("cargo")
-        .args(&["run", "--bin", daemon])
-        .spawn()
-      {
-        Ok(child) => {
-          dbg!(child.id());
-          Ok(())
-        }, // register pid with lookup table
-        Err(e) => Err(e.into()),
+      let mut is_running = false;
+      let backend = Backend::default();
+      if let Ok(process_record) = DaemonProcess::find_by_name(name, &backend.connection) {
+        // we have a record, check if it is running with the OS
+        if let Some(process) = System::new().get_process(process_record.pid) {
+          is_running = true;
+        } else {
+          // in the case the record is stale, remove it
+          process_record.destroy(&backend.connection)?;
+        }
+      }
+      if is_running {
+        Ok(()) // already running, nothing to do
+      } else {
+        match Command::new("cargo").args(&["run", "--bin", name]).spawn() {
+          Ok(child) => {
+            NewDaemonProcess {
+              name: name.to_owned(),
+              pid: child.id() as i32,
+              first_seen: SystemTime::now(),
+              last_seen: SystemTime::now(),
+            }
+            .create(&backend.connection)?;
+            Ok(())
+          }, // register pid with lookup table
+          Err(e) => Err(e.into()),
+        }
       }
     }
   }

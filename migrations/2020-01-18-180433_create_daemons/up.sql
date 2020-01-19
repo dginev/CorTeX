@@ -5,4 +5,4 @@ CREATE TABLE daemons (
   last_seen TIMESTAMP NOT NULL,
   name varchar(200) NOT NULL
 );
-create index daemon_name_idx on daemons(name);
+create unique index daemon_name_idx on daemons(name);

@@ -29,7 +29,7 @@ pub struct User {
 
 #[derive(Insertable, Debug, Clone)]
 #[table_name = "users"]
-/// A new task, to be inserted into `CorTeX`
+/// A new user, to be inserted into `CorTeX`
 pub struct NewUser {
   /// display name for the user
   pub display: String,
@@ -54,7 +54,7 @@ impl CortexDeletable for User {
     match field {
       "email" => self.delete_by_email(connection),
       _ => Err(Error::QueryBuilderError(
-        format!("unknown Task model field: {}", field).into(),
+        format!("unknown User model field: {}", field).into(),
       )),
     }
   }
