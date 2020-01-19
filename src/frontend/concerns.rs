@@ -9,9 +9,8 @@ use rocket_contrib::json::Json;
 use rocket_contrib::templates::Template;
 use std::str;
 
-use crate::backend::Backend;
-use crate::backend::RerunOptions;
-use crate::frontend::cached::task_report;
+use crate::backend::cached_task_report;
+use crate::backend::{Backend, RerunOptions};
 use crate::frontend::captcha::{check_captcha, safe_data_to_string};
 use crate::frontend::helpers::*;
 use crate::frontend::params::{ReportParams, RerunRequestParams, TemplateContext};
@@ -115,7 +114,7 @@ pub fn serve_report(
           severity_highlight(&severity.clone().unwrap()).to_string(),
         );
         template = if severity.is_some() && (severity.as_ref().unwrap() == "no_problem") {
-          let entries = task_report(
+          let entries = cached_task_report(
             &mut global,
             &corpus,
             &service,
@@ -129,7 +128,7 @@ pub fn serve_report(
           // And set the task list template
           "task-list-report"
         } else {
-          let categories = task_report(
+          let categories = cached_task_report(
             &mut global,
             &corpus,
             &service,
@@ -152,7 +151,7 @@ pub fn serve_report(
         );
         global.insert("category".to_string(), category.clone().unwrap());
         if category.is_some() && (category.as_ref().unwrap() == "no_messages") {
-          let entries = task_report(
+          let entries = cached_task_report(
             &mut global,
             &corpus,
             &service,
@@ -166,7 +165,7 @@ pub fn serve_report(
           // And set the task list template
           template = "task-list-report";
         } else {
-          let whats = task_report(
+          let whats = cached_task_report(
             &mut global,
             &corpus,
             &service,
@@ -189,7 +188,7 @@ pub fn serve_report(
         );
         global.insert("category".to_string(), category.clone().unwrap());
         global.insert("what".to_string(), what.clone().unwrap());
-        let entries = task_report(
+        let entries = cached_task_report(
           &mut global,
           &corpus,
           &service,

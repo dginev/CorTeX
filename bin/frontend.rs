@@ -17,11 +17,9 @@ use rocket::Data;
 use rocket_contrib::json::Json;
 use rocket_contrib::templates::Template;
 use std::path::{Path, PathBuf};
-use std::thread;
 use std::time::SystemTime;
 
 use cortex::backend::Backend;
-use cortex::frontend::cached::cache_worker;
 use cortex::frontend::concerns::{
   serve_entry, serve_entry_preview, serve_report, serve_rerun, UNKNOWN,
 };
@@ -554,9 +552,11 @@ fn rocket() -> rocket::Rocket {
 }
 
 fn main() {
-  // cache worker in parallel to the main service thread
-  let _ = thread::spawn(move || {
-    cache_worker();
-  });
+  // Ensure all cortex daemon services are running in parallel before we sping up the frontend
+  // Redis cache expiration logic, for report pages
+  Backend::ensure_daemon("cache_worker").expect("Couldn't spin up cache worker");
+  // Dispatcher manager, for service execution logic
+  Backend::ensure_daemon("dispatcher").expect("Couldn't spin up dispatcher");
+  // Finally, start up the web service
   rocket().launch();
 }

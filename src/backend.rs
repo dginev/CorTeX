@@ -8,12 +8,15 @@
 //! All aggregate operations over the CorTeX PostgresQL store are accessed through the connection of
 //! a `Backend` object.
 
+mod cached;
 mod corpora_aggregate;
 mod mark;
 mod reports;
 mod services_aggregate;
 mod tasks_aggregate;
 mod users_aggregate;
+pub use cached::cache_worker;
+pub use cached::task_report as cached_task_report;
 pub(crate) use reports::progress_report;
 pub use reports::TaskReportOptions;
 
@@ -22,6 +25,7 @@ use diesel::result::Error;
 use diesel::*;
 use dotenv::dotenv;
 use std::collections::HashMap;
+use std::process::Command;
 
 use crate::concerns::{CortexDeletable, CortexInsertable};
 use crate::helpers::{TaskReport, TaskStatus};
@@ -192,5 +196,24 @@ impl Backend {
   /// Provides a progress report, grouped by severity, for a given `Corpus` and `Service` pair
   pub fn progress_report(&self, corpus: &Corpus, service: &Service) -> HashMap<String, f64> {
     reports::progress_report(&self.connection, corpus.id, service.id)
+  }
+
+  /// Ensure a named daemon is running, or spin it up if not
+  pub fn ensure_daemon(daemon: &str) -> Result<(), Box<dyn std::error::Error>> {
+    // whitelist available daemons, not meant for general purpose calls..
+    if daemon != "cache_worker" && daemon != "dispatcher" {
+      Err("only supported cortex binaries can be executed as daemons".into())
+    } else {
+      match Command::new("cargo")
+        .args(&["run", "--bin", daemon])
+        .spawn()
+      {
+        Ok(child) => {
+          dbg!(child.id());
+          Ok(())
+        }, // register pid with lookup table
+        Err(e) => Err(e.into()),
+      }
+    }
   }
 }

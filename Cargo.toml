@@ -21,6 +21,12 @@ path = "bin/frontend.rs"
 name = "dispatcher"
 path = "bin/dispatcher.rs"
 
+
+[[bin]]
+name = "cache_worker"
+path = "bin/cache_worker.rs"
+
+
 [dependencies.libarchive-sys]
 git = "https://github.com/dginev/libarchive-sys.git"
 
