@@ -1,0 +1,79 @@
+<div class="col-3">
+  <table class="system-report table table-striped table-bordered table-hover table-sm">
+    <caption>Server Details</caption>
+    <tbody>
+      <tr>
+        <th scope="row">OS</th>
+        <td>{{global.sys_os_type }}</td>
+      </tr>
+      <tr>
+        <th scope="row">Release</th>
+        <td>{{global.sys_os_release }}</td>
+      </tr>
+      <tr>
+        <th scope="row">CPU</th>
+        <td>{{global.sys_cpu }} cores</td>
+      </tr>
+      <tr>
+        <th scope="row">CPU Speed</th>
+        <td>{{global.sys_cpu_speed }} MHz</td>
+      </tr>
+      <tr>
+        <th scope="row">Total processes</th>
+        <td>{{global.sys_proc_total }}</td>
+      </tr>
+      <tr>
+        <th scope="row">Load 1</th>
+        <td>{{global.sys_load_one}}</td>
+      </tr>
+      <tr>
+        <th scope="row">Load 5</th>
+        <td>{{global.sys_load_five}}</td>
+      </tr>
+      <tr>
+        <th scope="row">Load 15</th>
+        <td>{{global.sys_load_fifteen}}</td>
+      </tr>
+      <tr>
+        <th scope="row">Memory total</th>
+        <td>{{global.sys_mem_total}}</td>
+      </tr>
+      <tr>
+        <th scope="row">Memory free</th>
+        <td>{{global.sys_mem_free}}</td>
+      </tr>
+      <tr>
+        <th scope="row">Memory available</th>
+        <td>{{global.sys_mem_avail}}</td>
+      </tr>
+      <tr>
+        <th scope="row">Memory buffers</th>
+        <td>{{global.sys_mem_buffers}}</td>
+      </tr>
+      <tr>
+        <th scope="row">Memory cached</th>
+        <td>{{global.sys_mem_cached}}</td>
+      </tr>
+      <tr>
+        <th scope="row">Swap total</th>
+        <td>{{global.sys_mem_swap_total}}</td>
+      </tr>
+      <tr>
+        <th scope="row">Swap free</th>
+        <td>{{global.sys_mem_swap_free}}</td>
+      </tr>
+      <tr>
+        <th scope="row">Disk total</th>
+        <td>{{global.sys_disk_total}}</td>
+      </tr>
+      <tr>
+        <th scope="row">Disk free</th>
+        <td>{{global.sys_disk_free}}</td>
+      </tr>
+      <tr>
+        <th scope="row">Hostname</th>
+        <td>{{global.sys_hostname}}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
