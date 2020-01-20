@@ -105,15 +105,10 @@ fn admin_dashboard(params: Form<DashboardParams>) -> Result<Template, Redirect> 
         "description".to_string(),
         "An analysis framework for corpora of TeX/LaTeX documents - admin interface.".to_string(),
       );
-      if let Err(e) = cortex::sysinfo::report(&mut global) {
-        println!("Sys report failed: {:?}", e);
-      }
-
-      let context = TemplateContext {
-        global,
-        ..TemplateContext::default()
-      };
-      Ok(Template::render("admin", context))
+      Ok(Template::render(
+        "admin",
+        dashboard_context(backend, global),
+      ))
     } else {
       // TODO: Notify of error?
       Err(Redirect::to("/"))

@@ -2,6 +2,7 @@
 use diesel::pg::PgConnection;
 use diesel::result::Error;
 use diesel::*;
+use serde::Serialize;
 use std::time::SystemTime;
 
 use crate::concerns::{CortexDeletable, CortexInsertable};
@@ -9,7 +10,9 @@ use crate::schema::users;
 
 // users
 
-#[derive(Identifiable, Queryable, AsChangeset, Clone, Debug, PartialEq, Eq, QueryableByName)]
+#[derive(
+  Identifiable, Queryable, AsChangeset, Clone, Debug, PartialEq, Eq, QueryableByName, Serialize,
+)]
 #[table_name = "users"]
 /// A `CorTeX` frontend user
 pub struct User {

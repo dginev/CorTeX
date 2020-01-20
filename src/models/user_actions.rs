@@ -1,9 +1,10 @@
 use diesel::*;
-
-use crate::schema::user_actions;
+use serde::Serialize;
 use std::time::SystemTime;
 
-#[derive(Identifiable, Queryable, Clone, Debug, PartialEq, Eq, QueryableByName)]
+use crate::schema::user_actions;
+
+#[derive(Identifiable, Queryable, Clone, Debug, PartialEq, Eq, QueryableByName, Serialize)]
 #[table_name = "user_actions"]
 /// A `CorTeX` frontend user
 pub struct UserAction {

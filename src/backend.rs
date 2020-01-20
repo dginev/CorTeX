@@ -207,12 +207,11 @@ impl Backend {
       Err("only supported cortex binaries can be executed as daemons".into())
     } else {
       let mut is_running = false;
-      if let Ok(mut process_record) = DaemonProcess::find_by_name(name, &self.connection) {
+      if let Ok(process_record) = DaemonProcess::find_by_name(name, &self.connection) {
         // println!("Found record for {:?}: {:?}", name, process_record);
         // we have a record, check if it is running with the OS
         if let Some(_process) = System::new().get_process(process_record.pid) {
           is_running = true;
-          process_record.last_seen = SystemTime::now();
           process_record.touch(&self.connection)?;
         // println!("Record pid {:?} is still alive!", process_record.pid);
         } else {

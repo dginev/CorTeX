@@ -1,6 +1,8 @@
 //! General purpose auxiliary routines that do not fit the MVC web service paradigm,
 //! tending to minor tasks
-use crate::frontend::params::{FrontendConfig, TemplateContext};
+use crate::backend::Backend;
+use crate::frontend::params::{DashboardContext, FrontendConfig, TemplateContext};
+use crate::models::DaemonProcess;
 use serde_json;
 use std::collections::HashMap;
 use std::fs::File;
@@ -171,5 +173,22 @@ pub fn load_config() -> FrontendConfig {
       "You need a well-formed JSON config.json file to run the frontend. Error: {}",
       e
     ),
+  }
+}
+
+/// Prepare the context for the admin dashboard
+pub fn dashboard_context(
+  backend: Backend,
+  mut global: HashMap<String, String>,
+) -> DashboardContext
+{
+  if let Err(e) = crate::sysinfo::report(&mut global) {
+    println!("Sys report failed: {:?}", e);
+  }
+
+  DashboardContext {
+    global,
+    daemons: DaemonProcess::all(&backend.connection).unwrap_or_default(),
+    ..DashboardContext::default()
   }
 }

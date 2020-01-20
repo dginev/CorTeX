@@ -1,5 +1,5 @@
 //! Various parameter data structures for the Rocket frontend routes
-use crate::models::RunMetadata;
+use crate::models::{DaemonProcess, RunMetadata, User, UserAction, UserPermission};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -73,6 +73,32 @@ impl Default for TemplateContext {
       workers: None,
       history: None,
       history_serialized: None,
+    }
+  }
+}
+
+/// A backend-retrieved report for the admin dashboard
+#[derive(Serialize)]
+pub struct DashboardContext {
+  /// global data, as per Rocket examples
+  pub global: HashMap<String, String>,
+  /// admin-oriented view over the DB data
+  pub users: Vec<User>,
+  /// admin-oriented view over the DB data
+  pub user_permissions: Vec<UserPermission>,
+  /// admin-oriented view over the DB data
+  pub user_actions: Vec<UserAction>,
+  /// admin-oriented view over the DB data
+  pub daemons: Vec<DaemonProcess>,
+}
+impl Default for DashboardContext {
+  fn default() -> Self {
+    DashboardContext {
+      global: HashMap::new(),
+      users: Vec::new(),
+      user_permissions: Vec::new(),
+      user_actions: Vec::new(),
+      daemons: Vec::new(),
     }
   }
 }

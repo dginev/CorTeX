@@ -1,7 +1,8 @@
 use crate::schema::user_permissions;
 use diesel::*;
+use serde::Serialize;
 
-#[derive(Identifiable, Queryable, Clone, Debug, PartialEq, Eq)]
+#[derive(Identifiable, Queryable, Clone, Debug, PartialEq, Eq, Serialize)]
 #[table_name = "user_permissions"]
 /// A `CorTeX` frontend user
 pub struct UserPermission {
