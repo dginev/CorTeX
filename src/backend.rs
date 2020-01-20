@@ -25,7 +25,7 @@ use diesel::result::Error;
 use diesel::*;
 use dotenv::dotenv;
 use std::collections::HashMap;
-use std::process::Command;
+use std::process::{Child, Command};
 use std::time::SystemTime;
 use sysinfo::{System, SystemExt};
 
@@ -201,39 +201,69 @@ impl Backend {
   }
 
   /// Ensure a named daemon is running, or spin it up if not
-  pub fn ensure_daemon(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+  pub fn ensure_daemon(&self, name: &str) -> Result<Option<Child>, Box<dyn std::error::Error>> {
     // whitelist available daemons, not meant for general purpose calls..
     if name != "cache_worker" && name != "dispatcher" {
       Err("only supported cortex binaries can be executed as daemons".into())
     } else {
       let mut is_running = false;
-      let backend = Backend::default();
-      if let Ok(process_record) = DaemonProcess::find_by_name(name, &backend.connection) {
+      if let Ok(mut process_record) = DaemonProcess::find_by_name(name, &self.connection) {
+        // println!("Found record for {:?}: {:?}", name, process_record);
         // we have a record, check if it is running with the OS
-        if let Some(process) = System::new().get_process(process_record.pid) {
+        if let Some(_process) = System::new().get_process(process_record.pid) {
           is_running = true;
+          process_record.last_seen = SystemTime::now();
+          process_record.touch(&self.connection)?;
+        // println!("Record pid {:?} is still alive!", process_record.pid);
         } else {
           // in the case the record is stale, remove it
-          process_record.destroy(&backend.connection)?;
+          // println!(
+          //   "Record pid {:?} is stale - removing from DB.",
+          //   process_record.pid
+          // );
+          process_record.destroy(&self.connection)?;
         }
       }
       if is_running {
-        Ok(()) // already running, nothing to do
+        Ok(None) // already running, nothing to do
       } else {
         match Command::new("cargo").args(&["run", "--bin", name]).spawn() {
           Ok(child) => {
+            let pid = child.id() as i32;
+            println!(
+              "Registering new {:?} record at freshly created process id {:?}",
+              name, pid
+            );
             NewDaemonProcess {
               name: name.to_owned(),
-              pid: child.id() as i32,
+              pid,
               first_seen: SystemTime::now(),
               last_seen: SystemTime::now(),
             }
-            .create(&backend.connection)?;
-            Ok(())
+            .create(&self.connection)?;
+            Ok(Some(child))
           }, // register pid with lookup table
           Err(e) => Err(e.into()),
         }
       }
     }
+  }
+
+  /// When we start the cortex daemons ourselves, outside of the frontend logic,
+  /// one has to register them with the DB, so that the frontend is aware of them
+  pub fn override_daemon_record(&self, name: String, pid: u32) -> Result<usize, Error> {
+    // delete any existing record, then add the new one.
+    if let Ok(process_record) = DaemonProcess::find_by_name(&name, &self.connection) {
+      // we have a record, check if it is running with the OS
+      process_record.destroy(&self.connection)?;
+    }
+
+    NewDaemonProcess {
+      name,
+      pid: pid as i32,
+      first_seen: SystemTime::now(),
+      last_seen: SystemTime::now(),
+    }
+    .create(&self.connection)
   }
 }

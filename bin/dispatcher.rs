@@ -4,11 +4,17 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
-use cortex::backend::DEFAULT_DB_ADDRESS;
+use cortex::backend::{self, DEFAULT_DB_ADDRESS};
 use cortex::dispatcher::manager::TaskManager;
+use std::process;
 
 /// A dispatcher executable for `CorTeX` distributed processing with ZMQ
 fn main() {
+  let backend = backend::from_address(DEFAULT_DB_ADDRESS);
+  backend
+    .override_daemon_record("dispatcher".to_owned(), process::id())
+    .expect("Could not register the process id with the backend, aborting...");
+
   let manager = TaskManager {
     source_port: 51695,
     result_port: 51696,

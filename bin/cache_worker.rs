@@ -7,5 +7,13 @@
 
 //! A daemon for Redis cache expirationq
 use cortex::backend::cache_worker;
+use cortex::backend::Backend;
+use std::process;
 
-fn main() { cache_worker() }
+fn main() {
+  let backend = Backend::default();
+  backend
+    .override_daemon_record("cache_worker".to_owned(), process::id())
+    .expect("Could not register the process id with the backend, aborting...");
+  cache_worker()
+}

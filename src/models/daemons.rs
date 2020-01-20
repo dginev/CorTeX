@@ -4,9 +4,9 @@ use diesel::result::Error;
 use diesel::*;
 use std::time::SystemTime;
 
+/// A daemon process record
 #[derive(Identifiable, Queryable, Clone, Debug, PartialEq, Eq)]
 #[table_name = "daemons"]
-/// A daemon process record
 pub struct DaemonProcess {
   /// primary key, auto-incremented by postgresql
   pub id: i32,
@@ -20,9 +20,9 @@ pub struct DaemonProcess {
   pub name: String,
 }
 
+/// A new daemon process record
 #[derive(Insertable, Debug, Clone)]
 #[table_name = "daemons"]
-/// A new daemon process record
 pub struct NewDaemonProcess {
   /// target for this permissions set
   pub pid: i32,
@@ -51,6 +51,13 @@ impl DaemonProcess {
   pub fn destroy(self, connection: &PgConnection) -> Result<usize, Error> {
     delete(daemons::table)
       .filter(daemons::id.eq(self.id))
+      .execute(connection)
+  }
+
+  /// Increment the `last_seen` field to the current time
+  pub fn touch(&self, connection: &PgConnection) -> Result<usize, Error> {
+    diesel::update(self)
+      .set(daemons::last_seen.eq(SystemTime::now()))
       .execute(connection)
   }
 }

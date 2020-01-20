@@ -16,6 +16,7 @@ use rocket::response::{NamedFile, Redirect};
 use rocket::Data;
 use rocket_contrib::json::Json;
 use rocket_contrib::templates::Template;
+use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -104,10 +105,9 @@ fn admin_dashboard(params: Form<DashboardParams>) -> Result<Template, Redirect> 
         "description".to_string(),
         "An analysis framework for corpora of TeX/LaTeX documents - admin interface.".to_string(),
       );
-      match cortex::sysinfo::report(&mut global) {
-        Ok(_) => {},
-        Err(e) => println!("Sys report failed: {:?}", e),
-      };
+      if let Err(e) = cortex::sysinfo::report(&mut global) {
+        println!("Sys report failed: {:?}", e);
+      }
 
       let context = TemplateContext {
         global,
@@ -551,12 +551,28 @@ fn rocket() -> rocket::Rocket {
     .attach(CORS())
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
+  let backend = Backend::default();
   // Ensure all cortex daemon services are running in parallel before we sping up the frontend
   // Redis cache expiration logic, for report pages
-  Backend::ensure_daemon("cache_worker").expect("Couldn't spin up cache worker");
+  let cw_opt = backend
+    .ensure_daemon("cache_worker")
+    .expect("Couldn't spin up cache worker");
   // Dispatcher manager, for service execution logic
-  Backend::ensure_daemon("dispatcher").expect("Couldn't spin up dispatcher");
+  let dispatcher_opt = backend
+    .ensure_daemon("dispatcher")
+    .expect("Couldn't spin up dispatcher");
   // Finally, start up the web service
-  rocket().launch();
+  let rocket_error = rocket().launch();
+  // If we failed to boot / exited dirty, destroy the children
+  if let Some(mut cw) = cw_opt {
+    cw.kill()?;
+    cw.wait()?;
+  }
+  if let Some(mut dispatcher) = dispatcher_opt {
+    dispatcher.kill()?;
+    dispatcher.wait()?;
+  }
+  drop(rocket_error);
+  Ok(())
 }
