@@ -1,18 +1,18 @@
 use std::collections::HashMap;
 
+use diesel::insert_into;
 use diesel::pg::PgConnection;
 use diesel::result::Error;
 use diesel::*;
-use diesel::{insert_into};
+use serde::Serialize;
 
+use super::worker_metadata::WorkerMetadata;
+use crate::concerns::CortexInsertable;
 use crate::schema::services;
 use crate::schema::worker_metadata;
 
-use crate::concerns::CortexInsertable;
-use super::worker_metadata::WorkerMetadata;
-
 // Services
-#[derive(Identifiable, Queryable, AsChangeset, Clone, Debug)]
+#[derive(Identifiable, Queryable, AsChangeset, Clone, Debug, Serialize)]
 /// A `CorTeX` processing service
 pub struct Service {
   /// auto-incremented postgres id
@@ -101,5 +101,10 @@ impl Service {
       .order(worker_metadata::name.asc());
     let workers: Vec<WorkerMetadata> = workers_query.get_results(connection)?;
     Ok(workers)
+  }
+
+  /// Return all services in the database, ordered by name
+  pub fn all(connection: &PgConnection) -> Result<Vec<Service>, Error> {
+    services::table.order(services::name.asc()).load(connection)
   }
 }

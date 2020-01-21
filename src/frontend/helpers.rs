@@ -191,6 +191,9 @@ pub fn dashboard_context(
     global,
     current_user: current_user.unwrap_or_default(),
     daemons: DaemonProcess::all(&backend.connection).unwrap_or_default(),
+    corpora: backend.corpora(),
+    services: backend.services(),
+    users: backend.users(),
     ..DashboardContext::default()
   }
 }

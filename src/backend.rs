@@ -9,7 +9,6 @@
 //! a `Backend` object.
 
 mod cached;
-mod corpora_aggregate;
 mod mark;
 mod reports;
 mod services_aggregate;
@@ -168,8 +167,11 @@ impl Backend {
     services_aggregate::delete_service_by_name(&self.connection, name)
   }
 
-  /// Returns a vector of currently available corpora in the Task store
-  pub fn corpora(&self) -> Vec<Corpus> { corpora_aggregate::list_corpora(&self.connection) }
+  /// Returns a vector of currently available corpora in the DB
+  pub fn corpora(&self) -> Vec<Corpus> { Corpus::all(&self.connection).unwrap_or_default() }
+
+  /// Returns a vector of currently available services in the DB
+  pub fn services(&self) -> Vec<Service> { Service::all(&self.connection).unwrap_or_default() }
 
   /// Returns a vector of currently registered users
   /// (currently we expect only few admin/dev users, so this should be a very fast query)

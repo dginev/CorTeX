@@ -79,3 +79,9 @@
   CorTeX deployment with your email "{{current_user.email}}".</div>
 {% endif %}
 {% endblock content %}
+
+
+{% block footer_extra %}
+<div class="center text-danger arxmliv-kwarc-footer">Experimental interface, feedback is welcome at <a
+    href="https://github.com/dginev/CorTeX/issues/62">#62</a></div>
+{% endblock footer_extra %}

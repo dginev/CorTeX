@@ -1,5 +1,7 @@
 //! Various parameter data structures for the Rocket frontend routes
-use crate::models::{DaemonProcess, RunMetadata, User, UserAction, UserPermission};
+use crate::models::{
+  Corpus, DaemonProcess, RunMetadata, Service, User, UserAction, UserPermission,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -92,6 +94,10 @@ pub struct DashboardContext {
   pub user_actions: Vec<UserAction>,
   /// admin-oriented view over the DB data
   pub daemons: Vec<DaemonProcess>,
+  /// admin-oriented view over the DB data
+  pub corpora: Vec<Corpus>,
+  /// admin-oriented view over the DB data
+  pub services: Vec<Service>,
 }
 impl Default for DashboardContext {
   fn default() -> Self {
@@ -102,6 +108,8 @@ impl Default for DashboardContext {
       user_permissions: Vec::new(),
       user_actions: Vec::new(),
       daemons: Vec::new(),
+      corpora: Vec::new(),
+      services: Vec::new(),
     }
   }
 }

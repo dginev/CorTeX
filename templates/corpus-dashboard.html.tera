@@ -44,90 +44,22 @@
   </fieldset>
 </form>
 
-
-
-<form action="/dashboard_task" method="post" class="form-outline" _lpchecked="1">
-  <fieldset>
-    <legend>Add Service</legend>
-    <div class="form-group row">
-      <div class="col-1">
-        <label for="service_name_input">Name</label>
-      </div>
-      <div class="col-10">
-        <input type="text" name="name" id="service_name_input" placeholder="My Service">
-      </div>
-    </div>
-
-    <div class="form-group row">
-      <div class="col-1">
-        <label for="service_version_input">Version</label>
-      </div>
-      <div class="col-10">
-        <input type="text" name="version" id="service_version_input" placeholder="0.1">
-      </div>
-    </div>
-
-    <div class="form-group row">
-      <div class="col-1">
-        <label for="service_inputformat_input">Input Format</label>
-      </div>
-      <div class="col-10">
-        <input type="text" name="inputformat" id="service_inputformat_input" placeholder="tex">
-      </div>
-    </div>
-
-    <div class="form-group row">
-      <div class="col-1">
-        <label for="service_outputformat_input">Output Format</label>
-      </div>
-      <div class="col-10">
-        <input type="text" name="outputformat" id="service_outputformat_input" placeholder="html">
-      </div>
-    </div>
-
-    <div class="form-group row">
-      <div class="col-1">
-        <label for="service_inputconverter_input">Base Service</label>
-      </div>
-      <div class="col-10">
-        <input type="text" name="inputconverter" id="service_inputconverter_input" placeholder="import">
-      </div>
-    </div>
-
-    <div class="form-group row">
-      <div class="col-1">
-        <label for="service_description_input">Description</label>
-      </div>
-      <div class="col-10">
-        <input type="text" name="description" id="service_description_input"
-          placeholder="a convertsion servoce from X to Y, based on Software A">
-      </div>
-    </div>
-
-    <div class="form-group row">
-      <div class="col-1"></div>
-      <div class="col-10">
-        <select id="service_complex_input" name="complex">
-          <label for="service_complex_input">Document requirements</label>
-          <option value="">Choose...</option>
-          <optgroup label="document setup">
-            <option value="canonical">Single file (e.g. analyzing a unimodal web page)</option>
-            <option value="complex">Multi-file (e.g. conversions with assets)</option>
-          </optgroup>
-        </select>
-      </div>
-    </div>
-    <!-- <label>
-        <input type="checkbox" value="">
-        Check this checkbox
-      </label> -->
-    <div class="form-group row">
-      <div class="col-1"></div>
-      <div class="col-10">
-        <input type="hidden" name="task" value="add_service">
-        <button type="submit" class="btn btn-primary mb-2">Add Service</button>
-      </div>
-    </div>
-
-  </fieldset>
-</form>
+<table class="table table-striped table-bordered table-hover table-sm">
+  <caption>Registered Corpora</caption>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Path</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for corpus in corpora %}
+    <tr>
+      <td>{{ corpus.name }}</td>
+      <td>{{ corpus.path }}</td>
+      <td>{{ corpus.description }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

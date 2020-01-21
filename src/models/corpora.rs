@@ -82,6 +82,11 @@ impl Corpus {
       .filter(corpora::id.eq(self.id))
       .execute(connection)
   }
+
+  /// Return all corpora in the database, ordered by name
+  pub fn all(connection: &PgConnection) -> Result<Vec<Corpus>, Error> {
+    corpora::table.order(corpora::name.asc()).load(connection)
+  }
 }
 
 /// Insertable `Corpus` struct

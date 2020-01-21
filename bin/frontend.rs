@@ -18,6 +18,7 @@ use rocket_contrib::json::Json;
 use rocket_contrib::templates::Template;
 use std::error::Error;
 use std::path::{Path, PathBuf};
+use std::process;
 use std::time::SystemTime;
 
 use cortex::backend::Backend;
@@ -118,6 +119,10 @@ fn admin_dashboard(params: Form<DashboardParams>) -> Result<Template, Redirect> 
         if let Ok(u) = User::find_by_email(email, &backend.connection) {
           current_user = Some(u);
         }
+      }
+      // having a registered user, mark as seen
+      if let Some(ref u) = current_user {
+        u.touch(&backend.connection).expect("DB ran away");
       }
       global.insert("message".to_string(), message);
       global.insert("title".to_string(), "Admin Interface".to_string());
@@ -577,6 +582,10 @@ fn main() -> Result<(), Box<dyn Error>> {
   let dispatcher_opt = backend
     .ensure_daemon("dispatcher")
     .expect("Couldn't spin up dispatcher");
+  backend
+    .override_daemon_record("frontend".to_owned(), process::id())
+    .expect("Could not register the process id with the backend, aborting...");
+
   // Finally, start up the web service
   let rocket_error = rocket().launch();
   // If we failed to boot / exited dirty, destroy the children

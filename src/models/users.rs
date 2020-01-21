@@ -1,4 +1,5 @@
 #![allow(clippy::implicit_hasher)]
+use chrono::prelude::*;
 use diesel::pg::PgConnection;
 use diesel::result::Error;
 use diesel::*;
@@ -10,9 +11,7 @@ use crate::schema::users;
 
 // users
 
-#[derive(
-  Identifiable, Queryable, AsChangeset, Clone, Debug, PartialEq, Eq, QueryableByName, Serialize,
-)]
+#[derive(Identifiable, Queryable, AsChangeset, Clone, Debug, PartialEq, Eq, Serialize)]
 #[table_name = "users"]
 /// A `CorTeX` frontend user
 pub struct User {
@@ -23,9 +22,9 @@ pub struct User {
   /// email with which the oauth service identifies this user
   pub email: String,
   /// user creation date
-  pub first_seen: SystemTime,
+  pub first_seen: NaiveDateTime,
   /// last registered activity with the backend
-  pub last_seen: SystemTime,
+  pub last_seen: NaiveDateTime,
   /// is the user an admin?
   pub admin: bool,
 }
@@ -63,6 +62,20 @@ impl CortexDeletable for User {
   }
 }
 
+impl Default for User {
+  fn default() -> Self {
+    let now = Local::now().naive_local();
+    User {
+      id: -1,
+      display: "mock user".to_owned(),
+      email: "mock.email@example.com".to_owned(),
+      first_seen: now.clone(),
+      last_seen: now,
+      admin: false,
+    }
+  }
+}
+
 impl User {
   /// custom ORM-like for now, until diesel has a best practice
   pub fn find_by_email(email_query: &str, connection: &PgConnection) -> Result<Self, Error> {
@@ -73,6 +86,15 @@ impl User {
   pub fn delete_by_email(&self, connection: &PgConnection) -> Result<usize, Error> {
     use users::dsl::email;
     delete(users::table.filter(email.eq(&self.email))).execute(connection)
+  }
+
+  /// mark User as seen at the current time
+  pub fn touch(&self, connection: &PgConnection) -> Result<usize, Error> {
+    use users::dsl::{id, last_seen};
+    update(users::table)
+      .filter(id.eq(self.id))
+      .set(last_seen.eq(SystemTime::now()))
+      .execute(connection)
   }
 }
 

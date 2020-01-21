@@ -1,1 +1,23 @@
-user dashboard
+<table class="table table-striped table-bordered table-hover table-sm">
+  <caption>Registered Users</caption>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Email</th>
+      <th>Admin?</th>
+      <th>Joined</th>
+      <th>Last Seen</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for user in users %}
+    <tr>
+      <td>{{ user.display }}</td>
+      <td>{{ user.email }}</td>
+      <td>{{ user.admin }}</td>
+      <td>{{ user.first_seen }}</td>
+      <td>{{ user.last_seen }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
