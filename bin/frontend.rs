@@ -69,16 +69,17 @@ fn admin_dashboard(params: Form<DashboardParams>) -> Result<Template, Redirect> 
     global.get("google_oauth_id").unwrap().to_owned() + ".apps.googleusercontent.com";
   client.audiences.push(oauth_registry); // required
   let backend = Backend::default();
+  let mut current_user = None;
   if let Ok(id_info) = client.verify(&params.token) {
+    let display = if let Some(ref name) = id_info.name {
+      name.to_owned()
+    } else {
+      String::new()
+    };
     if let Some(ref email) = id_info.email {
       println!("Success! {:?} has signed in with google oauth", email);
       let users = backend.users();
       let message = if users.is_empty() {
-        let display = if let Some(ref name) = id_info.name {
-          name.to_owned()
-        } else {
-          String::new()
-        };
         let first_admin = NewUser {
           admin: true,
           email: email.to_owned(),
@@ -94,11 +95,30 @@ fn admin_dashboard(params: Form<DashboardParams>) -> Result<Template, Redirect> 
       } else {
         // is this user known?
         if let Ok(u) = User::find_by_email(email, &backend.connection) {
-          format!("Signed in as {:?}", u.email)
+          let is_admin = if u.admin { "(admin)" } else { "" };
+          current_user = Some(u);
+          format!("Signed in as {:?} {}", email, is_admin)
         } else {
-          format!("Registered viewer user for {:?}", email)
+          let new_viewer = NewUser {
+            admin: false,
+            email: email.to_owned(),
+            display,
+            first_seen: SystemTime::now(),
+            last_seen: SystemTime::now(),
+          };
+          if backend.add(&new_viewer).is_ok() {
+            format!("Registered viewer-level user for {:?}", email)
+          } else {
+            format!("Failed to create user for {:?}", email)
+          }
         }
       };
+      if current_user.is_none() {
+        // did we end up registering a new user? If so, look it up
+        if let Ok(u) = User::find_by_email(email, &backend.connection) {
+          current_user = Some(u);
+        }
+      }
       global.insert("message".to_string(), message);
       global.insert("title".to_string(), "Admin Interface".to_string());
       global.insert(
@@ -107,7 +127,7 @@ fn admin_dashboard(params: Form<DashboardParams>) -> Result<Template, Redirect> 
       );
       Ok(Template::render(
         "admin",
-        dashboard_context(backend, global),
+        dashboard_context(backend, current_user, global),
       ))
     } else {
       // TODO: Notify of error?

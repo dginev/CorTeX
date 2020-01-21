@@ -5,8 +5,8 @@
 </div>
 {% endblock nav_extra %}
 {% block content %}
+{% if current_user.admin %}
 <div id="accordion">
-
   <div class="card">
     <div class="card-header" id="headingUsers">
       <h3 class="mb-0">
@@ -72,4 +72,10 @@
     </div>
   </div>
 </div>
+{% else %}
+<div class="center">
+  Currently this is an admin-only interface. If you want to request admin access, please contact the administrator of
+  the
+  CorTeX deployment with your email "{{current_user.email}}".</div>
+{% endif %}
 {% endblock content %}

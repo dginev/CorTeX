@@ -2,7 +2,7 @@
 //! tending to minor tasks
 use crate::backend::Backend;
 use crate::frontend::params::{DashboardContext, FrontendConfig, TemplateContext};
-use crate::models::DaemonProcess;
+use crate::models::{DaemonProcess, User};
 use serde_json;
 use std::collections::HashMap;
 use std::fs::File;
@@ -179,6 +179,7 @@ pub fn load_config() -> FrontendConfig {
 /// Prepare the context for the admin dashboard
 pub fn dashboard_context(
   backend: Backend,
+  current_user: Option<User>,
   mut global: HashMap<String, String>,
 ) -> DashboardContext
 {
@@ -188,6 +189,7 @@ pub fn dashboard_context(
 
   DashboardContext {
     global,
+    current_user: current_user.unwrap_or_default(),
     daemons: DaemonProcess::all(&backend.connection).unwrap_or_default(),
     ..DashboardContext::default()
   }

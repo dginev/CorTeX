@@ -82,6 +82,8 @@ impl Default for TemplateContext {
 pub struct DashboardContext {
   /// global data, as per Rocket examples
   pub global: HashMap<String, String>,
+  /// current viewer of the dashboard
+  pub current_user: User,
   /// admin-oriented view over the DB data
   pub users: Vec<User>,
   /// admin-oriented view over the DB data
@@ -95,6 +97,7 @@ impl Default for DashboardContext {
   fn default() -> Self {
     DashboardContext {
       global: HashMap::new(),
+      current_user: User::default(),
       users: Vec::new(),
       user_permissions: Vec::new(),
       user_actions: Vec::new(),
