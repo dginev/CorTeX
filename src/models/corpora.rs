@@ -32,6 +32,8 @@ pub struct Corpus {
   pub complex: bool,
   /// a human-readable description of the corpus, maybe allow markdown here?
   pub description: String,
+  /// the importable file extension for a canonically organized corpus directory
+  pub import_extension: String,
 }
 
 impl Corpus {

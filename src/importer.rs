@@ -144,8 +144,8 @@ impl Importer {
                 // there
                 let dir_extract_path = &full_extract_path[0..full_extract_path.len() - 3];
                 match fs::metadata(dir_extract_path) {
-                  Ok(_) => {}, /* println!("Directory for {:?} already exists, won't unpack.",
-                                 * e.pathname()), */
+                  Ok(_) => {}, /* println!("Directory for {:?} already exists, won't unpack.", */
+                  // e.pathname()),
                   Err(_) => {
                     // println!("To unpack: {:?}", full_extract_path);
                     match e.extract_to(&full_extract_path, Vec::new()) {
@@ -256,7 +256,6 @@ impl Importer {
   /// Given a CorTeX-topology corpus, walk the file system and import it into the Task store
   pub fn walk_import(&self) -> Result<usize, Box<dyn Error>> {
     println!("-- Starting import walk");
-    let import_extension = if self.corpus.complex { "zip" } else { "tex" };
     let mut walk_q: Vec<PathBuf> = vec![Path::new(&self.corpus.path).to_owned()];
     let mut import_q: Vec<NewTask> = Vec::new();
     let mut import_counter = 0;
@@ -268,7 +267,7 @@ impl Importer {
         // First, test if we just found an entry:
         let current_local_dir = current_path.file_name().unwrap();
         let current_entry =
-          current_local_dir.to_str().unwrap().to_string() + "." + import_extension;
+          current_local_dir.to_str().unwrap().to_string() + "." + &self.corpus.import_extension;
         let current_entry_path = current_path.to_str().unwrap().to_string() + "/" + &current_entry;
         match fs::metadata(&current_entry_path) {
           Ok(_) => {

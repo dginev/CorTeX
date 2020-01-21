@@ -18,6 +18,14 @@
       </div>
     </div>
     <div class="form-group row">
+      <div class="col-1">
+        <label for="corpus_import_extension_input">Import Extension</label>
+      </div>
+      <div class="col-10">
+        <input type="text" name="import_extension" id="corpus_import_extension_input" placeholder="zip">
+      </div>
+    </div>
+    <div class="form-group row">
       <div class="col-1"></div>
       <div class="col-10">
         <select id="corpus_setup">
@@ -50,6 +58,7 @@
     <tr>
       <th>Name</th>
       <th>Path</th>
+      <th>File Extension</th>
       <th>Description</th>
     </tr>
   </thead>
@@ -58,6 +67,7 @@
     <tr>
       <td>{{ corpus.name }}</td>
       <td>{{ corpus.path }}</td>
+      <td>{{ corpus.import_extension }}</td>
       <td>{{ corpus.description }}</td>
     </tr>
     {% endfor %}
