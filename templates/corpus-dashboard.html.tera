@@ -3,10 +3,11 @@
     <legend>Add Corpus</legend>
     <div class="form-group row">
       <div class="col-1">
-        <label for="corpus_path_input">Path</label>
+        <label for="corpus_path_input">Path </label>
       </div>
       <div class="col-10">
         <input type="text" name="path" id="corpus_path_input" placeholder="/path/to/corpus/">
+        {{ macros::footnote(content="We can not use the file picker widget as it is a security vulnerability to provide path information through the browser. Please provide it by hand for now.") }}
       </div>
     </div>
     <div class="form-group row">
@@ -15,6 +16,7 @@
       </div>
       <div class="col-10">
         <input type="text" name="name" id="corpus_name_input" placeholder="My Corpus">
+        {{ macros::footnote(content="A human-readable name for displaying the corpus in the browser") }}
       </div>
     </div>
     <div class="form-group row">
@@ -23,6 +25,7 @@
       </div>
       <div class="col-10">
         <input type="text" name="import_extension" id="corpus_import_extension_input" placeholder="zip">
+        {{ macros::footnote(content="If unsure leave this empty. The regular simple import uses 'tex' as an extension, and all multi-file corpora (such as arXiv), use 'zip' - the default.") }}
       </div>
     </div>
     <div class="form-group row">

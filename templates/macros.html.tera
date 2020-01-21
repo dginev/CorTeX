@@ -1,0 +1,5 @@
+{% macro footnote(content, type="text") %}
+<span data-toggle="tooltip" data-placement="top" title="{{ content }}">
+  <i class="fa fa-question-circle" aria-hidden="true"></i>
+</span>
+{% endmacro footnote %}
