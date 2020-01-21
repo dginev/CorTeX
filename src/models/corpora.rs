@@ -105,6 +105,8 @@ pub struct NewCorpus {
   pub complex: bool,
   /// frontend-facing description of the corpus, maybe allow markdown here?
   pub description: String,
+  /// the importable file extension for a canonically organized corpus directory
+  pub import_extension: String,
 }
 impl Default for NewCorpus {
   fn default() -> Self {
@@ -112,6 +114,7 @@ impl Default for NewCorpus {
       name: "mock corpus".to_string(),
       path: ".".to_string(),
       complex: true,
+      import_extension: "zip".to_owned(),
       description: String::new(),
     }
   }

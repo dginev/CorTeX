@@ -47,6 +47,7 @@ fn can_import_simple() {
     name: name.to_string(),
     path: "tests/data/".to_string(),
     complex: false,
+    import_extension: "tex".to_owned(),
     description: String::new(),
   };
   let add_corpus_result = test_backend.add(&new_corpus);
@@ -89,6 +90,7 @@ fn can_import_complex() {
     name: name.to_string(),
     path: "tests/data/".to_string(),
     complex: true,
+    import_extension: "zip".to_owned(),
     description: String::new(),
   };
   let add_corpus_result = test_backend.add(&new_corpus);

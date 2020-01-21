@@ -71,6 +71,7 @@ impl Worker for InitWorker {
       name,
       path: path.clone(),
       complex: true,
+      import_extension: "zip".to_owned(),
       description: String::new(),
     };
     // Add the new corpus.

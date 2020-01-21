@@ -38,6 +38,7 @@ impl Default for Importer {
         path: ".".to_string(),
         name: name.to_string(),
         complex: false,
+        import_extension: "tex".to_owned(),
         description: String::new(),
       })
       .expect("Failed to create new corpus.");

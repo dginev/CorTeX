@@ -61,6 +61,7 @@ fn mock_tex_to_html() {
     name: corpus_name.to_string(),
     path: "tests/data/".to_string(),
     complex: true,
+    import_extension: "zip".to_owned(),
     description: String::new(),
   });
   assert!(add_corpus_result.is_ok());
