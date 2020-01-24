@@ -22,16 +22,16 @@ use std::process;
 use std::time::SystemTime;
 
 use cortex::backend::Backend;
+use cortex::concerns::CortexInsertable;
 use cortex::frontend::concerns::{
   serve_entry, serve_entry_preview, serve_report, serve_rerun, UNKNOWN,
 };
 use cortex::frontend::cors::CORS;
 use cortex::frontend::helpers::*;
-use cortex::frontend::params::{
-  DashboardParams, ReportParams, RerunRequestParams, TemplateContext,
-};
+use cortex::frontend::params::{AuthParams, ReportParams, RerunRequestParams, TemplateContext};
 use cortex::models::{
-  Corpus, HistoricalRun, NewUser, RunMetadata, RunMetadataStack, Service, User,
+  Corpus, HistoricalRun, NewCorpus, NewService, NewUser, RunMetadata, RunMetadataStack, Service,
+  User,
 };
 
 #[get("/")]
@@ -62,85 +62,110 @@ fn root() -> Template {
 }
 
 #[get("/dashboard?<params..>")]
-fn admin_dashboard(params: Form<DashboardParams>) -> Result<Template, Redirect> {
+fn admin_dashboard(params: Form<AuthParams>) -> Result<Template, Redirect> {
   // Recommended: Let the crate handle everything for you
-  let mut client = google_signin::Client::new();
-  let mut global = global_defaults();
-  let oauth_registry =
-    global.get("google_oauth_id").unwrap().to_owned() + ".apps.googleusercontent.com";
-  client.audiences.push(oauth_registry); // required
-  let backend = Backend::default();
   let mut current_user = None;
-  if let Ok(id_info) = client.verify(&params.token) {
-    let display = if let Some(ref name) = id_info.name {
-      name.to_owned()
-    } else {
-      String::new()
+  let id_info = match verify_oauth(&params.token) {
+    None => return Err(Redirect::to("/")),
+    Some(id_info) => id_info,
+  };
+  let display = if let Some(ref name) = id_info.name {
+    name.to_owned()
+  } else {
+    String::new()
+  };
+  let email = id_info.email.unwrap();
+  // TODO: If we ever have too many users, this will be too slow. For now, simple enough.
+  let backend = Backend::default();
+  let users = backend.users();
+  let message = if users.is_empty() {
+    let first_admin = NewUser {
+      admin: true,
+      email: email.to_owned(),
+      display,
+      first_seen: SystemTime::now(),
+      last_seen: SystemTime::now(),
     };
-    if let Some(ref email) = id_info.email {
-      println!("Success! {:?} has signed in with google oauth", email);
-      let users = backend.users();
-      let message = if users.is_empty() {
-        let first_admin = NewUser {
-          admin: true,
-          email: email.to_owned(),
-          display,
-          first_seen: SystemTime::now(),
-          last_seen: SystemTime::now(),
-        };
-        if backend.add(&first_admin).is_ok() {
-          format!("Registered admin user for {:?}", email)
-        } else {
-          format!("Failed to create user for {:?}", email)
-        }
-      } else {
-        // is this user known?
-        if let Ok(u) = User::find_by_email(email, &backend.connection) {
-          let is_admin = if u.admin { "(admin)" } else { "" };
-          current_user = Some(u);
-          format!("Signed in as {:?} {}", email, is_admin)
-        } else {
-          let new_viewer = NewUser {
-            admin: false,
-            email: email.to_owned(),
-            display,
-            first_seen: SystemTime::now(),
-            last_seen: SystemTime::now(),
-          };
-          if backend.add(&new_viewer).is_ok() {
-            format!("Registered viewer-level user for {:?}", email)
-          } else {
-            format!("Failed to create user for {:?}", email)
-          }
-        }
-      };
-      if current_user.is_none() {
-        // did we end up registering a new user? If so, look it up
-        if let Ok(u) = User::find_by_email(email, &backend.connection) {
-          current_user = Some(u);
-        }
-      }
-      // having a registered user, mark as seen
-      if let Some(ref u) = current_user {
-        u.touch(&backend.connection).expect("DB ran away");
-      }
-      global.insert("message".to_string(), message);
-      global.insert("title".to_string(), "Admin Interface".to_string());
-      global.insert(
-        "description".to_string(),
-        "An analysis framework for corpora of TeX/LaTeX documents - admin interface.".to_string(),
-      );
-      Ok(Template::render(
-        "admin",
-        dashboard_context(backend, current_user, global),
-      ))
+    if backend.add(&first_admin).is_ok() {
+      format!("Registered admin user for {:?}", email)
     } else {
-      // TODO: Notify of error?
-      Err(Redirect::to("/"))
+      format!("Failed to create user for {:?}", email)
     }
   } else {
-    // TODO: Notify of error?
-    Err(Redirect::to("/"))
+    // is this user known?
+    if let Ok(u) = User::find_by_email(&email, &backend.connection) {
+      let is_admin = if u.admin { "(admin)" } else { "" };
+      current_user = Some(u);
+      format!("Signed in as {:?} {}", email, is_admin)
+    } else {
+      let new_viewer = NewUser {
+        admin: false,
+        email: email.to_owned(),
+        display,
+        first_seen: SystemTime::now(),
+        last_seen: SystemTime::now(),
+      };
+      if backend.add(&new_viewer).is_ok() {
+        format!("Registered viewer-level user for {:?}", email)
+      } else {
+        format!("Failed to create user for {:?}", email)
+      }
+    }
+  };
+  if current_user.is_none() {
+    // did we end up registering a new user? If so, look it up
+    if let Ok(u) = User::find_by_email(&email, &backend.connection) {
+      current_user = Some(u);
+    }
+  }
+  // having a registered user, mark as seen
+  if let Some(ref u) = current_user {
+    u.touch(&backend.connection).expect("DB ran away");
+  }
+  let mut global = global_defaults();
+  global.insert("message".to_string(), message);
+  global.insert("title".to_string(), "Admin Interface".to_string());
+  global.insert(
+    "description".to_string(),
+    "An analysis framework for corpora of TeX/LaTeX documents - admin interface.".to_string(),
+  );
+  Ok(Template::render(
+    "admin",
+    dashboard_context(backend, current_user, global),
+  ))
+}
+
+#[post(
+  "/dashboard_task/add_corpus?<params..>",
+  format = "application/json",
+  data = "<corpus_spec>"
+)]
+fn dashboard_task_add_corpus(
+  params: Form<AuthParams>,
+  corpus_spec: Json<NewCorpus>,
+) -> Result<Accepted<String>, NotFound<String>>
+{
+  println!("who: {:?}", params);
+  let id_info = match verify_oauth(&params.token) {
+    None => return Err(NotFound("could not verify OAuth login".to_owned())),
+    Some(id_info) => id_info,
+  };
+  let backend = Backend::default();
+  let user = match User::find_by_email(id_info.email.as_ref().unwrap(), &backend.connection) {
+    Ok(u) => u,
+    _ => return Err(NotFound("no registered user for your email".to_owned())),
+  };
+  if user.admin {
+    println!("dashboard task data: {:?}", corpus_spec);
+    let message = match corpus_spec.create(&backend.connection) {
+      Ok(_) => "successfully added corpus to DB",
+      Err(_) => "failed to create corpus in DB",
+    };
+    Ok(Accepted(Some(message.to_owned())))
+  } else {
+    Err(NotFound(
+      "User must be admin to execute dashboard actions".to_owned(),
+    ))
   }
 }
 
@@ -529,6 +554,7 @@ fn rocket() -> rocket::Rocket {
       routes![
         root,
         admin_dashboard,
+        dashboard_task_add_corpus,
         corpus,
         favicon,
         robots,
