@@ -16,9 +16,9 @@ pub struct ReportParams {
   pub page_size: Option<i64>,
 }
 
-#[derive(FromForm)]
+#[derive(Debug, FromForm)]
 /// Configuration parameters for the frontend admin dashboard
-pub struct DashboardParams {
+pub struct AuthParams {
   /// mandatory authentication token via oauth
   pub token: String,
 }
@@ -98,6 +98,8 @@ pub struct DashboardContext {
   pub corpora: Vec<Corpus>,
   /// admin-oriented view over the DB data
   pub services: Vec<Service>,
+  /* admin-oriented view over the recorded actions
+   * pub actions: Vec<UserActionReport>, */
 }
 impl Default for DashboardContext {
   fn default() -> Self {
@@ -110,6 +112,7 @@ impl Default for DashboardContext {
       daemons: Vec::new(),
       corpora: Vec::new(),
       services: Vec::new(),
+      // actions: Vec::new(),
     }
   }
 }

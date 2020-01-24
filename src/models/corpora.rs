@@ -1,7 +1,7 @@
 use diesel::pg::PgConnection;
 use diesel::result::Error;
 use diesel::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::concerns::CortexInsertable;
@@ -37,6 +37,10 @@ pub struct Corpus {
 }
 
 impl Corpus {
+  /// ORM-like until diesel has a best practice
+  pub fn find(corpus_id: i32, connection: &PgConnection) -> Result<Self, Error> {
+    corpora::table.find(corpus_id).get_result(connection)
+  }
   /// ORM-like until diesel.rs introduces finders for more fields
   pub fn find_by_name(name_query: &str, connection: &PgConnection) -> Result<Self, Error> {
     use crate::schema::corpora::name;
@@ -92,7 +96,7 @@ impl Corpus {
 }
 
 /// Insertable `Corpus` struct
-#[derive(Insertable)]
+#[derive(Debug, Insertable, Serialize, Deserialize)]
 #[table_name = "corpora"]
 pub struct NewCorpus {
   /// file system path to corpus root

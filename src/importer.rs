@@ -256,7 +256,7 @@ impl Importer {
 
   /// Given a CorTeX-topology corpus, walk the file system and import it into the Task store
   pub fn walk_import(&self) -> Result<usize, Box<dyn Error>> {
-    println!("-- Starting import walk");
+    println!("-- Starting import walk over {:?}", &self.corpus.path);
     let mut walk_q: Vec<PathBuf> = vec![Path::new(&self.corpus.path).to_owned()];
     let mut import_q: Vec<NewTask> = Vec::new();
     let mut import_counter = 0;

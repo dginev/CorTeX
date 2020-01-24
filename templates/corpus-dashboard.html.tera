@@ -1,4 +1,4 @@
-<form action="/dashboard_task" method="post" class="form-outline" _lpchecked="1">
+<form action="/dashboard_task/add_corpus" method="post" class="form-outline">
   <fieldset>
     <legend>Add Corpus</legend>
     <div class="form-group row">
@@ -21,6 +21,16 @@
     </div>
     <div class="form-group row">
       <div class="col-1">
+        <label for="corpus_description_input">Description</label>
+      </div>
+      <div class="col-10">
+        <input type="text" name="description" id="corpus_description_input"
+          placeholder="A collection of documents for ...">
+        {{ macros::footnote(content="A human-readable description for displaying the corpus in the browser") }}
+      </div>
+    </div>
+    <div class="form-group row">
+      <div class="col-1">
         <label for="corpus_import_extension_input">Import Extension</label>
       </div>
       <div class="col-10">
@@ -31,24 +41,19 @@
     <div class="form-group row">
       <div class="col-1"></div>
       <div class="col-10">
-        <select id="corpus_setup">
-          <label for="corpus_setup">Document setup</label>
+        <select id="corpus_setup" name="complex">
+          <label for="complex">Document setup</label>
           <option value="">Choose...</option>
           <optgroup label="document setup">
-            <option value="canonical">CorTeX Canonical</option>
-            <option value="complex">arXiv sources</option>
+            <option value="false">CorTeX Canonical</option>
+            <option value="true">arXiv sources</option>
           </optgroup>
         </select>
       </div>
     </div>
-    <!-- <label>
-        <input type="checkbox" value="">
-        Check this checkbox
-      </label> -->
     <div class="form-group row">
       <div class="col-1"></div>
       <div class="col-10">
-        <input type="hidden" name="task" value="add_corpus">
         <button type="submit" class="btn btn-primary mb-2">Add Corpus</button>
       </div>
     </div>

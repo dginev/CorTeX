@@ -1,28 +1,12 @@
 {% extends "layout" %}
 {% block nav_extra %}
 <div class="alert alert-info message">
-  <span class="center align-middle">{{ global.message }}</span>
+  <span class="center align-middle" id="message">{{ global.message }}</span>
 </div>
 {% endblock nav_extra %}
 {% block content %}
 {% if current_user.admin %}
 <div id="accordion">
-  <div class="card">
-    <div class="card-header" id="headingUsers">
-      <h3 class="mb-0">
-        <button class="btn btn-info" data-toggle="collapse" data-target="#collapseUsers" aria-expanded="false"
-          aria-controls="collapseUsers">
-          Users
-        </button>
-      </h3>
-    </div>
-    <div id="collapseUsers" class="collapse" aria-labelledby="headingUsers" data-parent="#accordion">
-      <div class="card-body">
-        {% include "user-dashboard" %}
-      </div>
-    </div>
-  </div>
-
   <div class="card">
     <div class="card-header" id="headingCorpora">
       <h3 class="mb-0">
@@ -55,6 +39,21 @@
     </div>
   </div>
 
+  <div class="card">
+    <div class="card-header" id="headingUsers">
+      <h3 class="mb-0">
+        <button class="btn btn-info" data-toggle="collapse" data-target="#collapseUsers" aria-expanded="false"
+          aria-controls="collapseUsers">
+          Users
+        </button>
+      </h3>
+    </div>
+    <div id="collapseUsers" class="collapse" aria-labelledby="headingUsers" data-parent="#accordion">
+      <div class="card-body">
+        {% include "user-dashboard" %}
+      </div>
+    </div>
+  </div>
 
   <div class="card">
     <div class="card-header" id="headingServer">
@@ -78,6 +77,44 @@
   the
   CorTeX deployment with your email "{{current_user.email}}".</div>
 {% endif %}
+
+<script>
+  $("button[type='submit']").click(function (e) {
+    e.preventDefault();
+    $("body").css("cursor", "progress");
+    var form = $(this).closest("form");
+    var action = form.attr("action");
+    var urlParams = new URLSearchParams(window.location.search);
+    token = urlParams.get("token");
+    var action_with_params = action + "?token=" + token;
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', action_with_params);
+    xhr.setRequestHeader("Content-type", "application/json; charset=utf-8");
+    xhr.onreadystatechange = function () {
+      if (this.readyState == 4) { // Only process when done.
+        $("body").css("cursor", "default");
+        if (this.status != 200 && this.status != 202) {
+          // Something went wrong, throw out the localStorage and re-auth (Redis could've fallen, etc)
+          $("span#message").text('Failed, with status ' + this.status);
+        } else {
+          $("span#message").text('Action successfully started.');
+        }
+      }
+    };
+
+    var data = $(form).serializeArray().reduce(function (obj, item) {
+      obj[item.name] = item.value;
+      return obj;
+    }, {});;
+    if (data["complex"] == "true") {
+      data["complex"] = true;
+    } else {
+      data["complex"] = false;
+    }
+    xhr.send(JSON.stringify(data));
+    return false;
+  });
+</script>
 {% endblock content %}
 
 

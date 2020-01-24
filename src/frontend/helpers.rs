@@ -3,6 +3,7 @@
 use crate::backend::Backend;
 use crate::frontend::params::{DashboardContext, FrontendConfig, TemplateContext};
 use crate::models::{DaemonProcess, User};
+use google_signin::IdInfo;
 use serde_json;
 use std::collections::HashMap;
 use std::fs::File;
@@ -193,7 +194,26 @@ pub fn dashboard_context(
     daemons: DaemonProcess::all(&backend.connection).unwrap_or_default(),
     corpora: backend.corpora(),
     services: backend.services(),
+    // actions: UserActionReport::all(&backend.connection).unwrap_or_default(),
     users: backend.users(),
     ..DashboardContext::default()
+  }
+}
+
+/// Verify an OAuth token stands for an owned email
+pub fn verify_oauth(token: &str) -> Option<IdInfo> {
+  let oauth_registry = dotenv!("GOOGLE_OAUTH_ID").to_owned() + ".apps.googleusercontent.com";
+  let mut client = google_signin::Client::new();
+  client.audiences.push(oauth_registry); // required
+
+  if let Ok(id_info) = client.verify(token) {
+    if let Some(ref email) = id_info.email {
+      println!("Success! {:?} has signed in with google oauth", email);
+      Some(id_info)
+    } else {
+      None
+    }
+  } else {
+    None
   }
 }

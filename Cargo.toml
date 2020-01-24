@@ -8,6 +8,7 @@ repository = "https://github.com/dginev/cortex"
 description = """
 A general purpose processing framework for corpora of scientific documents
 """
+default-run = "frontend"
 
 [lib]
 name = "cortex"

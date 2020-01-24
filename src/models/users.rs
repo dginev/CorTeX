@@ -69,7 +69,7 @@ impl Default for User {
       id: -1,
       display: "mock user".to_owned(),
       email: "mock.email@example.com".to_owned(),
-      first_seen: now.clone(),
+      first_seen: now,
       last_seen: now,
       admin: false,
     }
@@ -77,6 +77,10 @@ impl Default for User {
 }
 
 impl User {
+  /// custom ORM-like for now, until diesel has a best practice
+  pub fn find(user_id: i32, connection: &PgConnection) -> Result<Self, Error> {
+    users::table.find(user_id).get_result(connection)
+  }
   /// custom ORM-like for now, until diesel has a best practice
   pub fn find_by_email(email_query: &str, connection: &PgConnection) -> Result<Self, Error> {
     use users::dsl::email;

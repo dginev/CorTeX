@@ -7,7 +7,7 @@ use serde::Serialize;
 /// A `CorTeX` frontend user
 pub struct UserPermission {
   /// primary key, auto-incremented by postgresql
-  pub id: i64,
+  pub id: i32,
   /// target for this permissions set
   pub user_id: i32,
   /// permissions scoped to a given corpus - no scope means ALL
