@@ -205,7 +205,7 @@ impl Backend {
   /// Ensure a named daemon is running, or spin it up if not
   pub fn ensure_daemon(&self, name: &str) -> Result<Option<Child>, Box<dyn std::error::Error>> {
     // whitelist available daemons, not meant for general purpose calls..
-    if name != "cache_worker" && name != "dispatcher" {
+    if name != "cache_worker" && name != "dispatcher" && name != "init_worker" {
       Err("only supported cortex binaries can be executed as daemons".into())
     } else {
       let mut is_running = false;

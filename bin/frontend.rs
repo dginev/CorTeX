@@ -588,6 +588,11 @@ fn main() -> Result<(), Box<dyn Error>> {
   let cw_opt = backend
     .ensure_daemon("cache_worker")
     .expect("Couldn't spin up cache worker");
+  // Corpus registration init worker, should run on the machine storing the data (currently same as frontend machine)
+  let initw_opt = backend
+    .ensure_daemon("init_worker")
+    .expect("Couldn't spin up init worker");
+
   // Dispatcher manager, for service execution logic
   let dispatcher_opt = backend
     .ensure_daemon("dispatcher")
@@ -602,6 +607,10 @@ fn main() -> Result<(), Box<dyn Error>> {
   if let Some(mut cw) = cw_opt {
     cw.kill()?;
     cw.wait()?;
+  }
+  if let Some(mut iw) = initw_opt {
+    iw.kill()?;
+    iw.wait()?;
   }
   if let Some(mut dispatcher) = dispatcher_opt {
     dispatcher.kill()?;
