@@ -7,7 +7,7 @@
 
 
 **News**:
-  - **2019:** [![arXMLiv Homepage](https://img.shields.io/badge/web-corpora.mathweb.org-red.svg?style=flat&label=https&colorB=d33847)](https://corpora.mathweb.org) The CorTeX framework is recurringly converting >1.3 million articles from arXiv.org
+  - **2019:** [![arXMLiv Homepage](https://img.shields.io/badge/web-corpora.mathweb.org-red.svg?style=flat&label=https&colorB=d33847)](https://corpora.mathweb.org) The CorTeX framework is recurringly converting >1.5 million articles from arXiv.org
   - **2018:** [![SIGMathLing resources](https://img.shields.io/badge/web-sigmathling.kwarc.info-blue.svg?style=flat&label=https&colorB=3895d3)](https://sigmathling.kwarc.info/resources/) First datasets produced by CorTeX are now available for reuse via the SIGMathLing interest group
 
 **Features**:
