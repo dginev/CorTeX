@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Ventilator","Specifies the binding and operation parameters for a ZMQ ventilator component"]]});

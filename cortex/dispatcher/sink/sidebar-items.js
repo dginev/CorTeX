@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Sink","Specifies the binding and operation parameters for a ZMQ sink component"]]});

@@ -1,0 +1,1 @@
+initSidebarItems({"mod":[["finalize","Finalize thread responsible for registering the returned tasks and messages in the database"],["manager","Manager orchestrating all dispatcher threads"],["server","Shared server utility functions between all dispatcher components"],["sink","Receiver ZMQ sink component"],["ventilator","Emitter ZMQ ventilator component"]]});

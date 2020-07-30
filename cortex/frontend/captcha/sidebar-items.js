@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["check_captcha","validate a recaptcha response against the captcha secret"],["safe_data_to_string","Safely cast a rocket Data input into a String (is this still needed?)"]]});

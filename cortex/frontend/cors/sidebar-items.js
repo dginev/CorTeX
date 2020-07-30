@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["CORS","Rocket solution for Cross-origin resource sharing"]]});

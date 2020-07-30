@@ -1,0 +1,1 @@
+initSidebarItems({"trait":[["CortexDeletable","A minimalistic ORM trait for `CorTeX` data items"],["CortexInsertable","A minimalistic ORM trait for `CorTeX` data items"],["MarkRerun","Task reruns by a variety of selector granularity"]]});

@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["cortex"] = [{"text":"impl&lt;'__f&gt; <a class=\"trait\" href=\"https://api.rocket.rs/v0.4/rocket/request/form/from_form/trait.FromForm.html\" title=\"trait rocket::request::form::from_form::FromForm\">FromForm</a>&lt;'__f&gt; for <a class=\"struct\" href=\"cortex/frontend/params/struct.ReportParams.html\" title=\"struct cortex::frontend::params::ReportParams\">ReportParams</a>","synthetic":false,"types":["cortex::frontend::params::ReportParams"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

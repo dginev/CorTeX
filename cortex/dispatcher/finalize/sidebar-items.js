@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Finalize","Specifies the binding and operation parameters for a thread that saves finalized tasks to the DB"]]});

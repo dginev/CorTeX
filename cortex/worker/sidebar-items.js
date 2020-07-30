@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["InitWorker","`Worker` for initializing/importing a new corpus into `CorTeX`"]]});

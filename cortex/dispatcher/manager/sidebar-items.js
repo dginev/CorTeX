@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["TaskManager","Manager struct responsible for dispatching and receiving tasks"]]});

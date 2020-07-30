@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["single_file_transfer","Transfer the data contained within `Reader` to a `Writer`, assuming it was a single file"]],"struct":[["Importer","Struct for performing corpus imports into `CorTeX`"]]});

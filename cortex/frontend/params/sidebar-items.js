@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["FrontendConfig","Global configuration for the frontend executable, read in at boot"],["ReportParams","Configuration parameters for a frontend reports page"],["RerunRequestParams","Configuration in URL query parameter for rerun requests"],["TemplateContext","A backend-retrieved report used for filling in Tera-templated pages"]]});

@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["foundation","The `foundation` column of the `dependencies` table."],["master","The `master` column of the `dependencies` table."],["star","Represents `table_name.*`, which is sometimes needed for efficient count queries. It cannot be used in place of `all_columns`, and has a `SqlType` of `()` to prevent it being used that way"]]});

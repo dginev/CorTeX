@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["cortex"] = [{"text":"impl <a class=\"trait\" href=\"https://dginev.github.io/rust-cortex-peripherals/pericortex/worker/trait.Worker.html\" title=\"trait pericortex::worker::Worker\">Worker</a> for <a class=\"struct\" href=\"cortex/worker/struct.InitWorker.html\" title=\"struct cortex::worker::InitWorker\">InitWorker</a>","synthetic":false,"types":["cortex::worker::InitWorker"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

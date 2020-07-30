@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["main","A dispatcher executable for `CorTeX` distributed processing with ZMQ"]]});
