@@ -4,7 +4,6 @@ use crate::backend::Backend;
 use crate::frontend::params::{DashboardContext, FrontendConfig, TemplateContext};
 use crate::models::{DaemonProcess, User};
 use google_signin::IdInfo;
-use serde_json;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;

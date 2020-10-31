@@ -9,8 +9,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use time;
-
 use crate::dispatcher::server;
 use crate::helpers;
 use crate::helpers::{TaskProgress, TaskReport, TaskStatus};
@@ -135,7 +133,7 @@ impl Sink {
                               continue;
                             },
                           };
-                          while let Ok(_) = sink.recv(&mut recv_msg, 0) {
+                          while sink.recv(&mut recv_msg, 0).is_ok() {
                             match file.write(recv_msg.deref()) {
                               Ok(written_bytes) => total_incoming += written_bytes,
                               Err(e) => {
@@ -175,7 +173,7 @@ impl Sink {
                 "-- Mismatch between requested service id {:?} and task's service id {:?} for task {:?}, discarding response",
                 service.id, task.service_id, taskid
               );
-              while let Ok(_) = sink.recv(&mut recv_msg, 0) {
+              while sink.recv(&mut recv_msg, 0).is_ok() {
                 if !sink.get_rcvmore()? {
                   break;
                 }
@@ -186,7 +184,7 @@ impl Sink {
       } else {
         // No such task, just discard the next message from the sink
         println!("-- No such task id found in dispatcher queue: {:?}", taskid);
-        while let Ok(_) = sink.recv(&mut recv_msg, 0) {
+        while sink.recv(&mut recv_msg, 0).is_ok() {
           if !sink.get_rcvmore()? {
             break;
           }

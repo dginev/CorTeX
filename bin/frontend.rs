@@ -30,7 +30,7 @@ use cortex::frontend::cors::CORS;
 use cortex::frontend::helpers::*;
 use cortex::frontend::params::{AuthParams, ReportParams, RerunRequestParams, TemplateContext};
 use cortex::models::{
-  Corpus, HistoricalRun, NewCorpus, NewService, NewUser, RunMetadata, RunMetadataStack, Service,
+  Corpus, HistoricalRun, NewCorpus, NewUser, RunMetadata, RunMetadataStack, Service,
   User,
 };
 
