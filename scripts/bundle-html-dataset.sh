@@ -14,41 +14,53 @@
 
 mkdir -p $DTPATH
 
-## Obtain the task lists
-psql -h $PGADDRESS -U cortex -t -o "$DTPATH/$CORPUSNAME-no_problem-tasks.txt" -c "SELECT entry FROM tasks WHERE corpus_id=$CORPUSID and service_id=$SERVICEID and status=-1"
-psql -h $PGADDRESS -U cortex -t -o "$DTPATH/$CORPUSNAME-warning-tasks.txt" -c "SELECT entry FROM tasks WHERE corpus_id=$CORPUSID and service_id=$SERVICEID and status=-2"
-psql -h $PGADDRESS -U cortex -t -o "$DTPATH/$CORPUSNAME-error-tasks.txt" -c "SELECT entry FROM tasks WHERE corpus_id=$CORPUSID and service_id=$SERVICEID and status=-3"
+echo "1. Obtain the task lists..."
 
-# Specific to the 08.2019 dataset
-split -l 500000 arxmliv-warning-tasks.txt
-mv xaa arxmliv-warning_1-tasks.txt
-mv xab arxmliv-warning_2-tasks.txt
+psql -h $PGADDRESS -U cortex -t -o "$DTPATH/$CORPUSNAME-no_problem-tasks.txt" -c "SELECT entry FROM tasks WHERE corpus_id=$CORPUSID and service_id=$SERVICEID and status=-1 order by entry"
+psql -h $PGADDRESS -U cortex -t -o "$DTPATH/$CORPUSNAME-warning-tasks.txt" -c "SELECT entry FROM tasks WHERE corpus_id=$CORPUSID and service_id=$SERVICEID and status=-2 order by entry"
+psql -h $PGADDRESS -U cortex -t -o "$DTPATH/$CORPUSNAME-error-tasks.txt" -c "SELECT entry FROM tasks WHERE corpus_id=$CORPUSID and service_id=$SERVICEID and status=-3 order by entry"
 
-# For each severity, prepare a dataset archive of HTML files
-severitylist="no_problem warning_1 warning_2 error"
+echo "2. Unpack into yymm (year-month) directories..."
 
-for severity in $severitylist; do
-    mkdir $DTPATH/$severity
-    egrep -o '.+\/' $DTPATH/$CORPUSNAME-$severity-tasks.txt | while read -r line ; do
-        YEARDIR=$(expr match $line "^$CORPUSBASE/\([0-9]*\)")
-        SUBDIR=$(expr match $line "^$CORPUSBASE/[0-9]*/\([a-z0-9._-]*\)")
-        FULLDIR=$(expr match $line "^\($CORPUSBASE/[0-9]*/[a-z0-9._-]*\)")
+all_years="91 92 93 94 95 96 97 98 99 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20"
+all_months="01 02 03 04 05 06 07 08 09 10 11 12"
+severitylist="no_problem warning error"
 
-        FILENAME=$(unzip $FULLDIR/tex_to_html.zip *.html -d $DTPATH/$severity | egrep -o '\S*\.html')
-        if [ -f $FILENAME ]
-        then
-            if [ ! -d "$DTPATH/$severity/$YEARDIR" ]; then
-                mkdir $DTPATH/$severity/$YEARDIR
-            fi
-            mv $FILENAME $DTPATH/$severity/$YEARDIR/$SUBDIR.html
+for yy in $all_years; do
+    for mm in $all_months; do
+        yymm="$yy$mm"
+        # make it resumable from partially completed .zip state
+        if [ -f "$DTPATH/$CORPUSNAME-$yymm.zip" ] ; then
+            continue
+        fi
+        echo "-- copy papers for $yymm"
+        for severity in $severitylist; do
+            egrep -o ".+\/$yymm\/.+\/" $DTPATH/$CORPUSNAME-$severity-tasks.txt | while read -r line ; do
+                SUBDIR=$(expr match $line "^$CORPUSBASE/[0-9]*/\([a-z0-9._-]*\)")
+                FULLDIR=$(expr match $line "^\($CORPUSBASE/[0-9]*/[a-z0-9._-]*\)")
+                HTMLFILE="$DTPATH/$yymm/$SUBDIR.html"
+                if [ ! -d "$DTPATH/$yymm" ] ; then
+                    mkdir $DTPATH/$yymm
+                fi
+                if [ -f $HTMLFILE ] ; then # skip unzipping existing files
+                  continue
+                fi
+                FILENAME=$(unzip -n $FULLDIR/tex_to_html.zip *.html -d $DTPATH/$yymm | egrep -o '\S*\.html')
+                if [[ -f $FILENAME ]] && [[ "$FILENAME" != "$HTMLFILE" ]] ;
+                then
+                    mv -f $FILENAME $HTMLFILE
+                fi
+            done
+        done
+        if [ -d "$DTPATH/$yymm" ]; then
+            echo "-- create archive for $yymm"
+            cd $DTPATH
+            zip -9 -v -r $CORPUSNAME-$yymm.zip $yymm
+            echo "-- free space for $yymm"
+            rm -rf $DTPATH/$yymm
         fi
     done
-
-    # Create the final dataset archive
-    cd $DTPATH
-    zip -9 -v -r $CORPUSNAME-$severity.zip $severity  || exit 1;
-    cd ..
-    rm -rf $DTPATH/$severity
 done
 
+echo "Done!"
 exit 0;
