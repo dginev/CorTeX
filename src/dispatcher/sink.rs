@@ -41,8 +41,7 @@ impl Sink {
     progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>,
     done_queue_arc: &Arc<Mutex<Vec<TaskReport>>>,
     job_limit: Option<usize>,
-  ) -> Result<(), Box<dyn Error>>
-  {
+  ) -> Result<(), Box<dyn Error>> {
     // Ok, let's bind to a port and start broadcasting
     let context = zmq::Context::new();
     let sink = context.socket(zmq::PULL)?;
@@ -58,26 +57,14 @@ impl Sink {
       let mut service_msg = zmq::Message::new();
 
       sink.recv(&mut identity_msg, 0)?;
-      let identity = match identity_msg.as_str() {
-        Some(some_name) => some_name,
-        None => "_worker_",
-      };
+      let identity = identity_msg.as_str().unwrap_or("_worker_");
 
       sink.recv(&mut service_msg, 0)?;
-      let service_name = match service_msg.as_str() {
-        Some(some_name) => some_name,
-        None => "_unknown_",
-      };
+      let service_name = service_msg.as_str().unwrap_or("_unknown_");
 
       sink.recv(&mut taskid_msg, 0)?;
-      let taskid_str = match taskid_msg.as_str() {
-        Some(some_id) => some_id,
-        None => "-1",
-      };
-      let taskid = match taskid_str.parse::<i64>() {
-        Ok(some_id) => some_id,
-        Err(_) => -1,
-      };
+      let taskid_str = taskid_msg.as_str().unwrap_or("-1");
+      let taskid = taskid_str.parse::<i64>().unwrap_or(-1);
 
       // We have a job, count it
       sink_job_count += 1;
@@ -135,7 +122,7 @@ impl Sink {
                               continue;
                             },
                           };
-                          while let Ok(_) = sink.recv(&mut recv_msg, 0) {
+                          while sink.recv(&mut recv_msg, 0).is_ok() {
                             match file.write(recv_msg.deref()) {
                               Ok(written_bytes) => total_incoming += written_bytes,
                               Err(e) => {
@@ -175,7 +162,7 @@ impl Sink {
                 "-- Mismatch between requested service id {:?} and task's service id {:?} for task {:?}, discarding response",
                 service.id, task.service_id, taskid
               );
-              while let Ok(_) = sink.recv(&mut recv_msg, 0) {
+              while sink.recv(&mut recv_msg, 0).is_ok() {
                 if !sink.get_rcvmore()? {
                   break;
                 }
@@ -186,7 +173,7 @@ impl Sink {
       } else {
         // No such task, just discard the next message from the sink
         println!("-- No such task id found in dispatcher queue: {:?}", taskid);
-        while let Ok(_) = sink.recv(&mut recv_msg, 0) {
+        while sink.recv(&mut recv_msg, 0).is_ok() {
           if !sink.get_rcvmore()? {
             break;
           }

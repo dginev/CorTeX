@@ -34,5 +34,4 @@ pub mod models;
 pub mod reports;
 /// Auto-generated diesel schema for the backend DB
 pub mod schema;
-pub mod sysinfo;
 pub mod worker;

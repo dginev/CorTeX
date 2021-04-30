@@ -1,6 +1,7 @@
 {% extends "layout" %} {% block content %}
 <div class="center">
-  <form id="form-get-entry" class="form-get-entry" name="form-get-entry" method="post" accept-charset="UTF-8"
+  <form id="form-get-entry" class="form-get-entry" name="form-get-entry"
+    method="post" accept-charset="UTF-8"
     action="{{global.download_url}}">
     <div id="modal-get-entry" class="modal fade" tabindex="-1" role="dialog">
       <div class="modal-dialog">
@@ -18,7 +19,8 @@
                 <li>Agree that this download is intended and authorized only for
                   <strong>research use</strong>,</li>
                 <li>Agree to
-                  <strong>purging all local copies</strong> of the data at the immediate end of the research experiment,
+                  <strong>purging all local copies</strong> of the data at the
+                  immediate end of the research experiment,
                 </li>
                 <li>Agree to protecting the
                   <strong>original copyright</strong> of all implied data,</li>
@@ -27,10 +29,10 @@
               </ol>
               <br>
             </div>
-            <div class="g-recaptcha" data-sitekey="6LdEehITAAAAAG81QWBR7rTGxz5Rk7-FjwR7so_F"></div>
           </div>
           <div class="modal-footer">
-            <input class="btn btn-success" type="submit" value="Get {{global.entry_name}}" id="btn-get-entry">
+            <input class="btn btn-success" type="submit" value="Get
+              {{global.entry_name}}" id="btn-get-entry">
           </div>
         </div>
       </div>
@@ -38,7 +40,6 @@
   </form>
 </div>
 
-<script src='//www.google.com/recaptcha/api.js'></script>
 <script src='/public/js/jszip.min.js'></script>
 <script>
   $(document).ready(function () {
@@ -46,31 +47,6 @@
       // We'll AJAX our fetch, to have a handle on permissions
       e.preventDefault();
       var $form = $(this);
-      // Record the captcha key, which gets another 1 free uses
-      var g_recaptcha_response = $("#g-recaptcha-response").val();
-      var saved_recaptcha = localStorage.getItem("g_recaptcha_response");
-      if (!g_recaptcha_response || g_recaptcha_response == "undefined") {
-        g_recaptcha_response = saved_recaptcha;
-      }
-
-      if (saved_recaptcha != g_recaptcha_response) {
-        console.log("SETTING localStorage with ", g_recaptcha_response);
-        localStorage.setItem("g_recaptcha_response", g_recaptcha_response);
-        localStorage.setItem("g_recaptcha_quota", 20);
-      } else {
-        // Otherwise just decrement 1
-        var new_quota = (localStorage.getItem("g_recaptcha_quota") || 0) - 1;
-        if (new_quota > 0) {
-          localStorage.setItem("g_recaptcha_quota", new_quota);
-        } else {
-          // Quota expired, reseting
-          localStorage.removeItem("g_recaptcha_response");
-          localStorage.removeItem("g_recaptcha_quota");
-          $("#g-recaptcha-response").val('');
-          $("#modal-get-entry").modal("show");
-          return;
-        }
-      }
       $("body").css("cursor", "progress");
       var xhr = new XMLHttpRequest();
       xhr.responseType = "arraybuffer";
@@ -79,18 +55,6 @@
         if (this.readyState == 4) { // Only process when done.
           if (this.status != 200) {
             // Something went wrong, throw out the localStorage and re-auth (Redis could've fallen, etc)
-            localStorage.removeItem("g_recaptcha_response");
-            localStorage.removeItem("g_recaptcha_quota");
-            $("#g-recaptcha-response").val('');
-            $("#modal-get-entry").modal("show");
-            return;
-          }
-          if (this.responseURL.match(/expire_captcha/)) {
-            console.log("responseURL was: ", this.responseURL);
-            // Quota expired, reseting
-            localStorage.removeItem("g_recaptcha_response");
-            localStorage.removeItem("g_recaptcha_quota");
-            $("#g-recaptcha-response").val('');
             $("#modal-get-entry").modal("show");
             return;
           }
@@ -156,17 +120,7 @@
       xhr.send(xhr_payload);
     });
 
-    var saved_recaptcha = localStorage.getItem("g_recaptcha_response");
-    if (saved_recaptcha && saved_recaptcha != "undefined" && (saved_recaptcha.length > 0)) {
-      // We have a saved recaptcha, reuse for convenience
-      if ($("#g-recaptcha-response").length == 0) {
-        $('form').append('<textarea id="g-recaptcha-response" name="g-recaptcha-response" class="g-recaptcha-response" style="display: none;"></textarea>');
-      }
-      $("#g-recaptcha-response").val(saved_recaptcha);
-      $("#form-get-entry").submit();
-    } else {
-      $("#modal-get-entry").modal("show");
-    }
+    $("#form-get-entry").submit();
     return;
   });
   function final_main_content_write(data_url_map, conversion_report, main_content, js_collected, css_collected) {

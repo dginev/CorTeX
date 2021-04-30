@@ -16,7 +16,6 @@ use std::thread;
 use rocket::request::Form;
 use rocket::response::status::{Accepted, NotFound};
 use rocket::response::NamedFile;
-use rocket::Data;
 use rocket_contrib::json::Json;
 use rocket_contrib::templates::Template;
 
@@ -29,7 +28,6 @@ use cortex::frontend::cors::CORS;
 use cortex::frontend::helpers::*;
 use cortex::frontend::params::{ReportParams, RerunRequestParams, TemplateContext};
 use cortex::models::{Corpus, HistoricalRun, RunMetadata, RunMetadataStack, Service};
-use cortex::sysinfo;
 
 #[get("/")]
 fn root() -> Template {
@@ -56,26 +54,6 @@ fn root() -> Template {
   decorate_uri_encodings(&mut context);
 
   Template::render("overview", context)
-}
-
-#[get("/admin")]
-fn admin() -> Template {
-  let mut global = HashMap::new();
-  global.insert("title".to_string(), "Admin Interface".to_string());
-  global.insert(
-    "description".to_string(),
-    "An analysis framework for corpora of TeX/LaTeX documents - admin interface.".to_string(),
-  );
-  match sysinfo::report(&mut global) {
-    Ok(_) => {},
-    Err(e) => println!("Sys report failed: {:?}", e),
-  };
-
-  let context = TemplateContext {
-    global,
-    ..TemplateContext::default()
-  };
-  Template::render("admin", context)
 }
 
 #[get("/workers/<service_name>")]
@@ -169,8 +147,7 @@ fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
 fn top_service_report(
   corpus_name: String,
   service_name: String,
-) -> Result<Template, NotFound<String>>
-{
+) -> Result<Template, NotFound<String>> {
   serve_report(corpus_name, service_name, None, None, None, None)
 }
 #[get("/corpus/<corpus_name>/<service_name>/<severity>")]
@@ -178,8 +155,7 @@ fn severity_service_report(
   corpus_name: String,
   service_name: String,
   severity: String,
-) -> Result<Template, NotFound<String>>
-{
+) -> Result<Template, NotFound<String>> {
   serve_report(corpus_name, service_name, Some(severity), None, None, None)
 }
 #[get("/corpus/<corpus_name>/<service_name>/<severity>?<params..>")]
@@ -188,8 +164,7 @@ fn severity_service_report_all(
   service_name: String,
   severity: String,
   params: Option<Form<ReportParams>>,
-) -> Result<Template, NotFound<String>>
-{
+) -> Result<Template, NotFound<String>> {
   serve_report(
     corpus_name,
     service_name,
@@ -205,8 +180,7 @@ fn category_service_report(
   service_name: String,
   severity: String,
   category: String,
-) -> Result<Template, NotFound<String>>
-{
+) -> Result<Template, NotFound<String>> {
   serve_report(
     corpus_name,
     service_name,
@@ -223,8 +197,7 @@ fn category_service_report_all(
   severity: String,
   category: String,
   params: Option<Form<ReportParams>>,
-) -> Result<Template, NotFound<String>>
-{
+) -> Result<Template, NotFound<String>> {
   serve_report(
     corpus_name,
     service_name,
@@ -242,8 +215,7 @@ fn what_service_report(
   severity: String,
   category: String,
   what: String,
-) -> Result<Template, NotFound<String>>
-{
+) -> Result<Template, NotFound<String>> {
   serve_report(
     corpus_name,
     service_name,
@@ -261,8 +233,7 @@ fn what_service_report_all(
   category: String,
   what: String,
   params: Option<Form<ReportParams>>,
-) -> Result<Template, NotFound<String>>
-{
+) -> Result<Template, NotFound<String>> {
   serve_report(
     corpus_name,
     service_name,
@@ -277,8 +248,7 @@ fn what_service_report_all(
 fn historical_runs(
   corpus_name: String,
   service_name: String,
-) -> Result<Template, NotFound<String>>
-{
+) -> Result<Template, NotFound<String>> {
   let mut context = TemplateContext::default();
   let mut global = HashMap::new();
   let backend = Backend::default();
@@ -330,32 +300,13 @@ fn preview_entry(
   corpus_name: String,
   service_name: String,
   entry_name: String,
-) -> Result<Template, NotFound<String>>
-{
+) -> Result<Template, NotFound<String>> {
   serve_entry_preview(corpus_name, service_name, entry_name)
 }
 
-#[post("/entry/<service_name>/<entry_id>", data = "<data>")]
-fn entry_fetch(
-  service_name: String,
-  entry_id: usize,
-  data: Data,
-) -> Result<NamedFile, NotFound<String>>
-{
-  serve_entry(service_name, entry_id, data)
-}
-
-//Expire captchas
-#[get("/expire_captcha")]
-fn expire_captcha() -> Result<Template, NotFound<String>> {
-  let mut context = TemplateContext::default();
-  let mut global = HashMap::new();
-  global.insert(
-    "description".to_string(),
-    "Expire captcha cache for CorTeX.".to_string(),
-  );
-  context.global = global;
-  Ok(Template::render("expire_captcha", context))
+#[post("/entry/<service_name>/<entry_id>")]
+fn entry_fetch(service_name: String, entry_id: usize) -> Result<NamedFile, NotFound<String>> {
+  serve_entry(service_name, entry_id)
 }
 
 #[post(
@@ -367,8 +318,7 @@ fn rerun_corpus(
   corpus_name: String,
   service_name: String,
   rr: Json<RerunRequestParams>,
-) -> Result<Accepted<String>, NotFound<String>>
-{
+) -> Result<Accepted<String>, NotFound<String>> {
   let corpus_name = corpus_name.to_lowercase();
   serve_rerun(corpus_name, service_name, None, None, None, rr)
 }
@@ -383,8 +333,7 @@ fn rerun_severity(
   service_name: String,
   severity: String,
   rr: Json<RerunRequestParams>,
-) -> Result<Accepted<String>, NotFound<String>>
-{
+) -> Result<Accepted<String>, NotFound<String>> {
   serve_rerun(corpus_name, service_name, Some(severity), None, None, rr)
 }
 
@@ -399,8 +348,7 @@ fn rerun_category(
   severity: String,
   category: String,
   rr: Json<RerunRequestParams>,
-) -> Result<Accepted<String>, NotFound<String>>
-{
+) -> Result<Accepted<String>, NotFound<String>> {
   serve_rerun(
     corpus_name,
     service_name,
@@ -423,8 +371,7 @@ fn rerun_what(
   category: String,
   what: String,
   rr: Json<RerunRequestParams>,
-) -> Result<Accepted<String>, NotFound<String>>
-{
+) -> Result<Accepted<String>, NotFound<String>> {
   serve_rerun(
     corpus_name,
     service_name,
@@ -459,7 +406,6 @@ fn rocket() -> rocket::Rocket {
       "/",
       routes![
         root,
-        admin,
         corpus,
         favicon,
         robots,
@@ -478,7 +424,6 @@ fn rocket() -> rocket::Rocket {
         rerun_severity,
         rerun_category,
         rerun_what,
-        expire_captcha,
         historical_runs
       ],
     )

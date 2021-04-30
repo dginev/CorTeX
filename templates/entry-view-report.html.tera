@@ -1,7 +1,8 @@
 <div id="modal-get-entry" class="modal fade" tabindex="-1" role="dialog">
   <div class="modal-dialog">
     <div class="modal-content">
-      <form id="form-get-entry" class="form-get-entry" name="form-get-entry" method="post" accept-charset="UTF-8" action="">
+      <form id="form-get-entry" class="form-get-entry" name="form-get-entry"
+        method="post" accept-charset="UTF-8" action="">
         <div class="modal-header">
           <a class="close" data-dismiss="modal">×</a>
           <h3>Are you human?</h3>
@@ -15,7 +16,8 @@
               <li>Agree that this download is intended and authorized only for
                 <strong>research use</strong>,</li>
               <li>Agree to
-                <strong>purging all local copies</strong> of the data at the immediate end of the research experiment,</li>
+                <strong>purging all local copies</strong> of the data at the
+                immediate end of the research experiment,</li>
               <li>Agree to protecting the
                 <strong>original copyright</strong> of all implied data,</li>
               <li>Agree to
@@ -23,17 +25,16 @@
             </ol>
             <br>
           </div>
-          <div class="g-recaptcha" data-sitekey="6LdEehITAAAAAG81QWBR7rTGxz5Rk7-FjwR7so_F"></div>
         </div>
         <div class="modal-footer">
-          <input class="btn btn-success" type="submit" value="" id="btn-get-entry">
+          <input class="btn btn-success" type="submit" value=""
+            id="btn-get-entry">
         </div>
       </form>
     </div>
   </div>
 </div>
 
-<script src='//www.google.com/recaptcha/api.js'></script>
 <script src='/public/js/jszip.min.js'></script>
 <script>
   $(".entry-submit").click(function (e) {
@@ -41,37 +42,13 @@
     $("#btn-get-entry").val("Get " + $(this).parent().parent().find(":first-child").first().text());
     $("#form-get-entry").attr("action", $(this).attr("href"));
     $("#form-get-entry").attr("data-action", $(this).attr("data-action"));
-    var saved_recaptcha = localStorage.getItem("g_recaptcha_response");
-    if (saved_recaptcha && saved_recaptcha != "undefined" && (saved_recaptcha.length > 0)) {
-      // We have a saved recaptcha, reuse for convenience
-      $("#g-recaptcha-response").val(saved_recaptcha);
-      $("#form-get-entry").submit();
-    } else {
-      $("#modal-get-entry").modal("show");
-    }
+    $("#form-get-entry").submit();
   });
 
   $("#form-get-entry").submit(function (e) {
     // We'll AJAX our fetch, to have a handle on permissions
     e.preventDefault();
     var $form = $(this);
-    // Record the captcha key, which gets another 1 free uses
-    var g_recaptcha_response = $("#g-recaptcha-response").val();
-    if (localStorage.getItem("g_recaptcha_response") != g_recaptcha_response) {
-      console.log("SETTING localStorage with ", g_recaptcha_response);
-      localStorage.setItem("g_recaptcha_response", g_recaptcha_response);
-      localStorage.setItem("g_recaptcha_quota", 19);
-    } else {
-      // Otherwise just decrement 1
-      var new_quota = localStorage.getItem("g_recaptcha_quota") - 1;
-      if (new_quota > 0) {
-        localStorage.setItem("g_recaptcha_quota", new_quota);
-      } else {
-        // Quota expired, reseting
-        localStorage.removeItem("g_recaptcha_response");
-        localStorage.removeItem("g_recaptcha_quota");
-      }
-    }
     var form_action = $form.attr("data-action");
     var xhr = new XMLHttpRequest();
     xhr.responseType = "arraybuffer";
@@ -80,9 +57,6 @@
       console.log("action: ", form_action);
       if (this.readyState == 4) { // Only process when done.
         if (this.status != 200) {
-          // Something went wrong, throw out the localStorage and re-auth (Redis could've fallen, etc)
-          localStorage.removeItem("g_recaptcha_response");
-          localStorage.removeItem("g_recaptcha_quota");
           $("#modal-get-entry").modal("show");
           return;
         }
@@ -108,8 +82,6 @@
           if (type == "text/html") {
             // HTML means an error, reset!
             console.info(this.response);
-            localStorage.removeItem("g_recaptcha_response");
-            localStorage.removeItem("g_recaptcha_quota");
             $("#modal-get-entry").modal("show");
             return;
           }

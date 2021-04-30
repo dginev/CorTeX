@@ -342,8 +342,7 @@ impl NewTaskMessage {
     category: String,
     what: String,
     details: String,
-  ) -> NewTaskMessage
-  {
+  ) -> NewTaskMessage {
     match severity.to_lowercase().as_str() {
       "warning" => NewTaskMessage::Warning(NewLogWarning {
         task_id,
@@ -358,8 +357,8 @@ impl NewTaskMessage {
         details,
       }),
       "fatal" => NewTaskMessage::Fatal(NewLogFatal {
-        task_id,
         category,
+        task_id,
         what,
         details,
       }),

@@ -1,10 +1,8 @@
 //! Common concerns for frontend routes
-use redis::Commands;
 use regex::Regex;
 use rocket::request::Form;
 use rocket::response::status::{Accepted, NotFound};
 use rocket::response::NamedFile;
-use rocket::Data;
 use rocket_contrib::json::Json;
 use rocket_contrib::templates::Template;
 use std::collections::HashMap;
@@ -13,7 +11,6 @@ use std::str;
 use crate::backend::Backend;
 use crate::backend::RerunOptions;
 use crate::frontend::cached::task_report;
-use crate::frontend::captcha::{check_captcha, safe_data_to_string};
 use crate::frontend::helpers::*;
 use crate::frontend::params::{ReportParams, RerunRequestParams, TemplateContext};
 use crate::models::{Corpus, HistoricalRun, Service, Task};
@@ -32,8 +29,7 @@ pub fn serve_report(
   category: Option<String>,
   what: Option<String>,
   params: Option<Form<ReportParams>>,
-) -> Result<Template, NotFound<String>>
-{
+) -> Result<Template, NotFound<String>> {
   let report_start = time::get_time();
   let mut context = TemplateContext::default();
   let mut global = HashMap::new();
@@ -236,8 +232,7 @@ pub fn serve_rerun(
   category: Option<String>,
   what: Option<String>,
   rr: Json<RerunRequestParams>,
-) -> Result<Accepted<String>, NotFound<String>>
-{
+) -> Result<Accepted<String>, NotFound<String>> {
   let token = rr.token.clone();
   let description = rr.description.clone();
   let config = load_config();
@@ -297,76 +292,8 @@ pub fn serve_rerun(
   }
 }
 
-/// Provide a `NamedFile` for an entry, redirecting if captcha guard isn't met
-pub fn serve_entry(
-  service_name: String,
-  entry_id: usize,
-  data: Data,
-) -> Result<NamedFile, NotFound<String>>
-{
-  // Any secrets reside in config.json
-  let cortex_config = load_config();
-  let data = safe_data_to_string(data).unwrap_or_default(); // reuse old code by setting data to the String
-  println!("data 1: {:?}", data);
-  let g_recaptcha_response_string = if data.len() > 21 {
-    let data = &data[21..];
-    data.replace("&g-recaptcha-response=", "")
-  } else {
-    UNKNOWN.to_owned()
-  };
-  let g_recaptcha_response = &g_recaptcha_response_string;
-  // Check if we hve the g_recaptcha_response in Redis, then reuse
-  let mut redis_opt;
-  let quota: usize = match redis::Client::open("redis://127.0.0.1/") {
-    Err(_) => return Err(NotFound(format!("redis unreachable"))),
-    Ok(redis_client) => match redis_client.get_connection() {
-      Err(_) => return Err(NotFound(format!("redis unreachable"))),
-      Ok(mut redis_connection) => {
-        let quota = redis_connection.get(g_recaptcha_response).unwrap_or(0);
-        redis_opt = Some(redis_connection);
-        quota
-      },
-    },
-  };
-
-  println!("Response: {:?}", g_recaptcha_response);
-  println!("Quota: {:?}", quota);
-  let captcha_verified = if quota > 0 {
-    if let Some(ref mut redis_connection) = redis_opt {
-      println!("Using local redis quota.");
-      if quota == 1 {
-        // Remove if last
-        redis_connection.del(g_recaptcha_response).unwrap_or(());
-      } else {
-        // We have quota available, decrement it
-        redis_connection
-          .set(g_recaptcha_response, quota - 1)
-          .unwrap_or(());
-      }
-      // And allow operation
-      true
-    } else {
-      false // no redis, no access.
-    }
-  } else {
-    // expired quota, check with google
-    let check_val = check_captcha(g_recaptcha_response, &cortex_config.captcha_secret);
-    println!("Google validity: {:?}", check_val);
-    if check_val {
-      if let Some(ref mut redis_connection) = redis_opt {
-        // Add a reuse quota if things check out, 19 more downloads
-        redis_connection.set(g_recaptcha_response, 19).unwrap_or(());
-      }
-    }
-    check_val
-  };
-  println!("Captcha validity: {:?}", captcha_verified);
-
-  // If you are not human, you have no business here.
-  if !captcha_verified {
-    return Err(NotFound("Captcha was invalid".to_string()));
-  }
-
+/// Provide a `NamedFile` for an entry
+pub fn serve_entry(service_name: String, entry_id: usize) -> Result<NamedFile, NotFound<String>> {
   let backend = Backend::default();
   match Task::find(entry_id as i64, &backend.connection) {
     Ok(task) => {
@@ -394,8 +321,7 @@ pub fn serve_entry_preview(
   corpus_name: String,
   service_name: String,
   entry_name: String,
-) -> Result<Template, NotFound<String>>
-{
+) -> Result<Template, NotFound<String>> {
   let report_start = time::get_time();
   let corpus_name = corpus_name.to_lowercase();
   let mut context = TemplateContext::default();
@@ -406,8 +332,8 @@ pub fn serve_entry_preview(
   if let Ok(corpus) = corpus_result {
     let service_result = Service::find_by_name(&service_name, &backend.connection);
     if let Ok(service) = service_result {
-      // Assemble the Download URL from where we will gather the page contents (after captcha is
-      // confirmed) First, we need the taskid
+      // Assemble the Download URL from where we will gather the page contents
+      // First, we need the taskid
       let task = match Task::find_by_name(&entry_name, &corpus, &service, &backend.connection) {
         Ok(t) => t,
         Err(e) => return Err(NotFound(e.to_string())),
