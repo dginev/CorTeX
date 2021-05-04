@@ -111,32 +111,24 @@ pub fn serve_report(
           "highlight".to_string(),
           severity_highlight(&severity.clone().unwrap()).to_string(),
         );
-        template = if severity.is_some() && (severity.as_ref().unwrap() == "no_problem") {
-          let entries = task_report(
-            &mut global,
-            &corpus,
-            &service,
-            severity,
-            None,
-            None,
-            &params,
-          );
+        let no_problem_kind = severity.is_some() && (severity.as_ref().unwrap() == "no_problem");
+        let fetched_report = task_report(
+          &mut global,
+          &corpus,
+          &service,
+          severity,
+          None,
+          None,
+          &params,
+        );
+        template = if no_problem_kind {
           // Record the report into "entries" vector
-          context.entries = Some(entries);
+          context.entries = Some(fetched_report);
           // And set the task list template
           "task-list-report"
         } else {
-          let categories = task_report(
-            &mut global,
-            &corpus,
-            &service,
-            severity,
-            None,
-            None,
-            &params,
-          );
           // Record the report into "categories" vector
-          context.categories = Some(categories);
+          context.categories = Some(fetched_report);
           // And set the severity template
           "severity-report"
         };
@@ -148,35 +140,27 @@ pub fn serve_report(
           severity_highlight(&severity.clone().unwrap()).to_string(),
         );
         global.insert("category".to_string(), category.clone().unwrap());
-        if category.is_some() && (category.as_ref().unwrap() == "no_messages") {
-          let entries = task_report(
-            &mut global,
-            &corpus,
-            &service,
-            severity,
-            category,
-            None,
-            &params,
-          );
+        let no_messages_kind = category.is_some() && (category.as_ref().unwrap() == "no_messages");
+        let fetched_report = task_report(
+          &mut global,
+          &corpus,
+          &service,
+          severity,
+          category,
+          None,
+          &params,
+        );
+        template = if no_messages_kind {
           // Record the report into "entries" vector
-          context.entries = Some(entries);
+          context.entries = Some(fetched_report);
           // And set the task list template
-          template = "task-list-report";
+          "task-list-report"
         } else {
-          let whats = task_report(
-            &mut global,
-            &corpus,
-            &service,
-            severity,
-            category,
-            None,
-            &params,
-          );
           // Record the report into "whats" vector
-          context.whats = Some(whats);
+          context.whats = Some(fetched_report);
           // And set the category template
-          template = "category-report";
-        }
+          "category-report"
+        };
       } else {
         // What-level report
         global.insert("severity".to_string(), severity.clone().unwrap());
