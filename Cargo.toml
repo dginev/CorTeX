@@ -2,7 +2,7 @@
 name = "cortex"
 version = "0.4.3"
 edition = "2018"
-authors = ["Deyan Ginev <d.ginev@jacobs-university.de>"]
+authors = ["Deyan Ginev <deyan.ginev@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/dginev/cortex"
 description = """
@@ -26,7 +26,7 @@ git = "https://github.com/dginev/libarchive-sys.git"
 
 [dependencies.pericortex]
 git = "https://github.com/dginev/cortex-peripherals.git"
-version = "0.2.3"
+version = "0.2.4"
 
 [dependencies.rocket_contrib]
 version = "0.4.0"
