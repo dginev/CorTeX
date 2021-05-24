@@ -169,7 +169,9 @@
     }
 
     // Apply a style of choice to the article, default is TeX.js
-    let style = "texjs";
+    // let style = "texjs";
+    // Default is now the latexml "simple" style.
+    let style = "simple";
     if (window.location.href.includes("/engrafo")) {
       style = "engrafo";
     } // can still be overridden by the ?style= parameter
