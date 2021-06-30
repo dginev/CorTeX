@@ -1,7 +1,6 @@
 {% extends "layout" %} {% block content %}
 <div class="center">
-  <form id="form-get-entry" class="form-get-entry" name="form-get-entry"
-    method="post" accept-charset="UTF-8"
+  <form id="form-get-entry" class="form-get-entry" name="form-get-entry" method="post" accept-charset="UTF-8"
     action="{{global.download_url}}">
     <div id="modal-get-entry" class="modal fade" tabindex="-1" role="dialog">
       <div class="modal-dialog">
@@ -15,17 +14,21 @@
               <p>By proceeding to a download you:</p>
               <ol>
                 <li>Agree to a
-                  <strong>temporary preview</strong> of the implied data sample,</li>
+                  <strong>temporary preview</strong> of the implied data sample,
+                </li>
                 <li>Agree that this download is intended and authorized only for
-                  <strong>research use</strong>,</li>
+                  <strong>research use</strong>,
+                </li>
                 <li>Agree to
                   <strong>purging all local copies</strong> of the data at the
                   immediate end of the research experiment,
                 </li>
                 <li>Agree to protecting the
-                  <strong>original copyright</strong> of all implied data,</li>
+                  <strong>original copyright</strong> of all implied data,
+                </li>
                 <li>Agree to
-                  <strong>provide attribution</strong> as appropriate.</li>
+                  <strong>provide attribution</strong> as appropriate.
+                </li>
               </ol>
               <br>
             </div>
@@ -202,10 +205,10 @@
     var latexml_css = ["amsart", "apj", "article", "book", "cv", "listings", "report", "svjour", "ulem"];
     var maybe_mathjax_js = '<script>' +
       'var agent = navigator.userAgent; ' +
-      'var canMathML = ((agent.indexOf("Gecko") > -1) && (agent.indexOf("KHTML") === -1)|| agent.match(/MathPlayer/) ); ' +
+      'var canMathML = typeof(MathMLElement) == "function"; ' +
       'if (!canMathML) {' +
       'var el = document.createElement("script");' +
-      'el.src = "https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=MML_HTMLorMML";' +
+      'el.src = "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js";' +
       'document.querySelector("head").appendChild(el); }' +
       '</' + 'script>';
 
