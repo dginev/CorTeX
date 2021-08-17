@@ -161,7 +161,7 @@
 
     // If a conversion log is present, attach it as a trailing section
     if (conversion_report.length > 0) {
-      var html_report = '<section id="CR1" class="ltx_section">' +
+      var html_report = '<section id="latexml-conversion-report" class="ltx_section ltx_conversion_report">' +
         '<h2 class="ltx_title ltx_title_section">Cortex Conversion Report</h2>' +
         '<div id="S1.p1" class="ltx_para">' +
         '<p class="ltx_p">' +
