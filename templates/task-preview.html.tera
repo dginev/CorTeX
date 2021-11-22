@@ -173,8 +173,8 @@
 
     // Apply a style of choice to the article, default is TeX.js
     // let style = "texjs";
-    // Default is now the "arxmliv" style.
-    let style = "arxmliv";
+    // Default is now the "ar5iv" style.
+    let style = "ar5iv";
     if (window.location.href.includes("/engrafo")) {
       style = "engrafo";
     } // can still be overridden by the ?style= parameter
@@ -231,8 +231,8 @@
         var simple_css = '<link media="all" rel="stylesheet" href="//latexml.mathweb.org/css/external/LaTeXML.css">' + "\n" + '<link media="all" rel="stylesheet" href="//latexml.mathweb.org/css/external/ltx-' + style + '.css">';
         main_content = main_content.replace(/<\/head>/, simple_css + "\n</head>");
         main_content = main_content.replace(/<\/body>/, "\n" + maybe_mathjax_js + "\n" + fire_loaded + "\n</body>");
-      } else { // load arxmliv.css by default
-        var simple_css = '<link media="all" rel="stylesheet" href="//cdn.jsdelivr.net/gh/dginev/arxmliv-css@0.4.5/css/arxmliv.css">';
+      } else { // load ar5iv.css by default
+        var simple_css = '<link media="all" rel="stylesheet" href="//cdn.jsdelivr.net/gh/dginev/ar5iv-css@0.5.2/css/ar5iv.min.css">';
         main_content = main_content.replace(/<\/head>/, simple_css + "\n</head>");
         main_content = main_content.replace(/<\/body>/, "\n" + maybe_mathjax_js + "\n" + fire_loaded + "\n</body>");
       }
