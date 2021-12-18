@@ -232,7 +232,7 @@
         main_content = main_content.replace(/<\/head>/, simple_css + "\n</head>");
         main_content = main_content.replace(/<\/body>/, "\n" + maybe_mathjax_js + "\n" + fire_loaded + "\n</body>");
       } else { // load ar5iv.css by default
-        var simple_css = '<link media="all" rel="stylesheet" href="//cdn.jsdelivr.net/gh/dginev/ar5iv-css@0.5.2/css/ar5iv.min.css">';
+        var simple_css = '<link media="all" rel="stylesheet" href="//cdn.jsdelivr.net/gh/dginev/ar5iv-css@0.5.3/css/ar5iv.min.css">';
         main_content = main_content.replace(/<\/head>/, simple_css + "\n</head>");
         main_content = main_content.replace(/<\/body>/, "\n" + maybe_mathjax_js + "\n" + fire_loaded + "\n</body>");
       }
