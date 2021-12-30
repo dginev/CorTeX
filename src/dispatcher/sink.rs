@@ -75,9 +75,9 @@ impl Sink {
         sink_job_count, service_name, identity, taskid
       );
 
-      if let Some(task_progress) = server::pop_progress_task(&progress_queue_arc, taskid) {
+      if let Some(task_progress) = server::pop_progress_task(progress_queue_arc, taskid) {
         let task = task_progress.task;
-        match server::get_service(service_name, &services_arc) {
+        match server::get_service(service_name, services_arc) {
           None => {
             return Err(Box::new(io::Error::new(
               ErrorKind::Other,
@@ -95,7 +95,7 @@ impl Sink {
                   status: TaskStatus::NoProblem,
                   messages: Vec::new(),
                 };
-                server::push_done_queue(&done_queue_arc, done_report);
+                server::push_done_queue(done_queue_arc, done_report);
               } else {
                 // Receive the rest of the input in the correct file
                 match Path::new(&task.entry.clone()).parent() {
@@ -143,7 +143,7 @@ impl Sink {
                         }
                         // Then mark the task done. This can be in a new thread later on
                         let done_report = helpers::generate_report(task, recv_path);
-                        server::push_done_queue(&done_queue_arc, done_report);
+                        server::push_done_queue(done_queue_arc, done_report);
                       },
                     }
                   },

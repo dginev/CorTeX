@@ -37,8 +37,7 @@ impl Ventilator {
     progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>,
     done_queue_arc: &Arc<Mutex<Vec<TaskReport>>>,
     job_limit: Option<usize>,
-  ) -> Result<(), Box<dyn Error>>
-  {
+  ) -> Result<(), Box<dyn Error>> {
     // We have a Ventilator-exclusive "queues" stack for tasks to be dispatched
     let mut queues: HashMap<String, Vec<TaskProgress>> = HashMap::new();
     // Assuming this is the only And tidy up the postgres tasks:
@@ -66,7 +65,7 @@ impl Ventilator {
 
       let mut dispatched_task_opt: Option<TaskProgress> = None;
       // Requests for unknown service names will be silently ignored.
-      if let Some(service) = server::get_sync_service(&service_name, &services_arc, &backend) {
+      if let Some(service) = server::get_sync_service(&service_name, services_arc, &backend) {
         if !queues.contains_key(&service_name) {
           queues.insert(service_name.clone(), Vec::new());
         }
@@ -92,12 +91,12 @@ impl Ventilator {
           // This is a good time to also take care that none of the old tasks are dead in the
           // progress queue since the re-fetch happens infrequently, and directly
           // implies the progress queue will grow
-          let expired_tasks = server::timeout_progress_tasks(&progress_queue_arc);
+          let expired_tasks = server::timeout_progress_tasks(progress_queue_arc);
           for expired_t in expired_tasks {
             if expired_t.retries > 4 {
               // Too many retries, mark as fatal failure
               server::push_done_queue(
-                &done_queue_arc,
+                done_queue_arc,
                 TaskReport {
                   task: expired_t.task.clone(),
                   status: TaskStatus::Fatal,
@@ -196,7 +195,7 @@ impl Ventilator {
       }
       // Record that a task has been dispatched in the progress queue
       if let Some(dispatched_task) = dispatched_task_opt {
-        server::push_progress_task(&progress_queue_arc, dispatched_task);
+        server::push_progress_task(progress_queue_arc, dispatched_task);
       }
       if let Some(limit_number) = job_limit {
         if source_job_count >= limit_number {

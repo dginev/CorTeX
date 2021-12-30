@@ -33,7 +33,7 @@ pub struct FrontendConfig {
 }
 
 /// A backend-retrieved report used for filling in Tera-templated pages
-#[derive(Serialize)]
+#[derive(Serialize, Default)]
 pub struct TemplateContext {
   /// global data, as per Rocket examples
   pub global: HashMap<String, String>,
@@ -53,19 +53,4 @@ pub struct TemplateContext {
   pub history: Option<Vec<RunMetadata>>,
   /// serialized data for easy plotting of rerun history
   pub history_serialized: Option<String>,
-}
-impl Default for TemplateContext {
-  fn default() -> Self {
-    TemplateContext {
-      global: HashMap::new(),
-      corpora: None,
-      services: None,
-      entries: None,
-      categories: None,
-      whats: None,
-      workers: None,
-      history: None,
-      history_serialized: None,
-    }
-  }
 }

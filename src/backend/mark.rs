@@ -14,8 +14,7 @@ use crate::models::{
 pub(crate) fn mark_imported(
   connection: &PgConnection,
   imported_tasks: &[NewTask],
-) -> Result<usize, Error>
-{
+) -> Result<usize, Error> {
   // Insert, but only if the task is new (allow for extension calls with the same method)
   insert_into(tasks::table)
     .values(imported_tasks)
@@ -52,7 +51,7 @@ pub(crate) fn mark_done(connection: &PgConnection, reports: &[TaskReport]) -> Re
       // Clean slate, so proceed to add the new messages
       for message in &report.messages {
         if message.severity() != "status" {
-          message.create(&connection)?;
+          message.create(connection)?;
         }
       }
       // TODO: Update dependenct services, when integrated in DB
@@ -65,8 +64,7 @@ pub(crate) fn mark_done(connection: &PgConnection, reports: &[TaskReport]) -> Re
 pub(crate) fn mark_rerun<'a>(
   connection: &'a PgConnection,
   options: RerunOptions<'a>,
-) -> Result<(), Error>
-{
+) -> Result<(), Error> {
   let RerunOptions {
     corpus,
     service,
@@ -210,8 +208,7 @@ pub(crate) fn mark_new_run(
   service: &Service,
   owner: String,
   description: String,
-) -> Result<(), Error>
-{
+) -> Result<(), Error> {
   // Step 1. Mark any open runs as completed.
   mark_run_completed(connection, corpus, service)?;
   // Step 2. Create this historical run
@@ -221,7 +218,7 @@ pub(crate) fn mark_new_run(
     description,
     owner,
   };
-  hrun.create(&connection)?;
+  hrun.create(connection)?;
   Ok(())
 }
 
@@ -229,8 +226,7 @@ fn mark_run_completed(
   connection: &PgConnection,
   corpus: &Corpus,
   service: &Service,
-) -> Result<(), Error>
-{
+) -> Result<(), Error> {
   let to_finish: Vec<HistoricalRun> = HistoricalRun::find_by(corpus, service, connection)?
     .into_iter()
     .filter(|run| run.end_time.is_none())

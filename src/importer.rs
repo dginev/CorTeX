@@ -144,8 +144,8 @@ impl Importer {
                 // there
                 let dir_extract_path = &full_extract_path[0..full_extract_path.len() - 3];
                 match fs::metadata(dir_extract_path) {
-                  Ok(_) => {}, /* println!("Directory for {:?} already exists, won't unpack.",
-                                 * e.pathname()), */
+                  Ok(_) => {}, /* println!("Directory for {:?} already exists, won't unpack.", */
+                  // e.pathname()),
                   Err(_) => {
                     // println!("To unpack: {:?}", full_extract_path);
                     match e.extract_to(&full_extract_path, Vec::new()) {
@@ -369,7 +369,7 @@ pub fn single_file_transfer(tex_target: &str, reader: &Reader, writer: &mut Writ
     raw_data.extend(chunk.into_iter());
   }
   let mut ok_header = false;
-  match writer.write_header_new(&tex_target, raw_data.len() as i64) {
+  match writer.write_header_new(tex_target, raw_data.len() as i64) {
     Ok(_) => {
       ok_header = true;
     },

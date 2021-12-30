@@ -322,7 +322,7 @@ pub fn serve_entry_preview(
         Ok(t) => t,
         Err(e) => return Err(NotFound(e.to_string())),
       };
-      let download_url = format!("/entry/{}/{}", service_name, task.id.to_string());
+      let download_url = format!("/entry/{}/{}", service_name, task.id);
       global.insert("download_url".to_string(), download_url);
 
       // Metadata for preview page
