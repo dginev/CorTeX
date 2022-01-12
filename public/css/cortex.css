@@ -83,6 +83,13 @@ tr.error {
 .right {
   text-align: right;
 }
+
+#corpus-report th {
+  position: sticky;
+  top: 0;
+  background: white;
+}
+
 .table-nonfluid {
    width: auto !important;
 }
