@@ -1,3 +1,4 @@
+#![allow(clippy::extra_unused_lifetimes)]
 use std::collections::HashMap;
 
 use diesel::pg::PgConnection;

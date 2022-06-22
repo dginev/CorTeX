@@ -582,7 +582,7 @@ pub fn utf_truncate(input: &mut String, maxsize: usize) {
     input.truncate(utf_maxsize);
   }
   // eliminate null characters if any
-  *input = input.replace("\x00", "");
+  *input = input.replace('\x00', "");
 }
 
 /// Generate a random integer useful for temporary DB marks

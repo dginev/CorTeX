@@ -1,3 +1,4 @@
+#![allow(clippy::extra_unused_lifetimes)]
 use chrono::prelude::*;
 use diesel::result::Error;
 use diesel::*;

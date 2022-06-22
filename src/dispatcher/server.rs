@@ -89,9 +89,8 @@ pub fn timeout_progress_tasks<S: ::std::hash::BuildHasher>(
     .collect::<Vec<_>>();
   let mut expired_tasks = Vec::new();
   for key in expired_keys {
-    match progress_queue.remove(&key) {
-      None => {},
-      Some(task_progress) => expired_tasks.push(task_progress),
+    if let Some(task_progress) = progress_queue.remove(&key) {
+      expired_tasks.push(task_progress);
     }
   }
   expired_tasks
@@ -163,7 +162,8 @@ pub fn get_service<S: ::std::hash::BuildHasher>(
   let services = services
     .lock()
     .unwrap_or_else(|_| panic!("Failed to obtain Mutex lock in get_service"));
-  match services.get(service_name) {
+  let service = services.get(service_name);
+  match service {
     None => None, // TODO: Handle errors
     Some(service) => service.clone(),
   }

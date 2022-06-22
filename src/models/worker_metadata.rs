@@ -1,3 +1,4 @@
+#![allow(clippy::extra_unused_lifetimes)]
 use std::collections::HashMap;
 use std::thread;
 use std::time::SystemTime;

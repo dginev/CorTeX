@@ -1,4 +1,4 @@
-#![allow(clippy::implicit_hasher)]
+#![allow(clippy::implicit_hasher, clippy::extra_unused_lifetimes)]
 use diesel::pg::PgConnection;
 use diesel::result::Error;
 use diesel::*;

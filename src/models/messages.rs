@@ -1,4 +1,4 @@
-#![allow(clippy::implicit_hasher)]
+#![allow(clippy::implicit_hasher,clippy::extra_unused_lifetimes)]
 use std::fmt;
 
 use diesel::pg::PgConnection;
