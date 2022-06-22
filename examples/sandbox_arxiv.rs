@@ -33,7 +33,7 @@ fn main() {
   // Fish out the arXiv root directory from CorTeX
   let backend = Backend::default();
   let sandbox_start = time::get_time();
-  let corpus = match Corpus::find_by_name("arXMLiv", &backend.connection) {
+  let corpus = match Corpus::find_by_name("arxmliv", &backend.connection) {
     Ok(corpus) => corpus,
     _ => {
       println!("--  The arXMLiv corpus isn't registered in the CorTeX backend, aborting.");
