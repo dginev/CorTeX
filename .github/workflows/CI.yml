@@ -1,0 +1,41 @@
+on: [push, pull_request]
+
+name: CI
+
+jobs:
+  test:
+    name: Cortex
+    runs-on: ubuntu-latest
+    env:
+      DB_HOST: localhost
+      DB_USERNAME: postgres
+      PGPASSWORD: postgres
+    steps:
+      - name: Install CorTeX Dependencies
+        uses: ryankurte/action-apt@v0.2.0
+        with:
+          packages: "postgresql postgresql-contrib postgresql-client libpq-dev libarchive-dev libsodium-dev libzmq3-dev"
+      - name: Start PostgreSQL on Ubuntu
+        run: |
+          sudo systemctl start postgresql.service
+      - name: Setup Postgresql DB
+        run: |
+          sudo -u postgres psql -c 'create database cortex;'
+          sudo -u postgres psql -c 'create database cortex_tester;'
+          sudo -u postgres psql -c "create user cortex with password 'cortex';"
+          sudo -u postgres psql -c "create user cortex_tester with password 'cortex_tester';"
+          sudo -u postgres psql -c 'GRANT ALL PRIVILEGES ON DATABASE cortex TO cortex;'
+          sudo -u postgres psql -c 'GRANT ALL PRIVILEGES ON DATABASE cortex_tester TO cortex_tester;'
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+      - run: |
+          cargo install diesel_cli --vers 1.1.2  --no-default-features --features postgres
+          diesel migration run
+          DATABASE_URL="postgres://cortex_tester:cortex_tester@localhost/cortex_tester" diesel migration run
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
