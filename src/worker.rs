@@ -73,7 +73,7 @@ impl Worker for InitWorker {
     let backend = backend::from_address(&self.backend_address);
     let corpus = NewCorpus {
       name,
-      path: path.clone(),
+      path,
       complex: true,
       description: String::new(),
     };
