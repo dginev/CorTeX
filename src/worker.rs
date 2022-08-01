@@ -107,11 +107,11 @@ impl Worker for InitWorker {
     }
     source.set_identity(identity.as_bytes()).unwrap();
 
-    assert!(source.connect(&self.get_source_address()).is_ok());
+    source.connect(&self.get_source_address()).unwrap();
     // Connect to a task sink
     let context_sink = Context::new();
     let sink = context_sink.socket(zmq::PUSH).unwrap();
-    assert!(sink.connect(&self.get_sink_address()).is_ok());
+    sink.connect(&self.get_sink_address()).unwrap();
     let backend = backend::from_address(&self.backend_address);
     // Work in perpetuity
     loop {

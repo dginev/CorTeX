@@ -49,7 +49,7 @@ impl Ventilator {
     ventilator.set_router_handover(true)?;
 
     let address = format!("tcp://*:{}", self.port);
-    assert!(ventilator.bind(&address).is_ok());
+    ventilator.bind(&address).unwrap();
     let mut source_job_count: usize = 0;
 
     loop {

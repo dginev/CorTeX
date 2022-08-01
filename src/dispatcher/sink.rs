@@ -46,7 +46,7 @@ impl Sink {
     let context = zmq::Context::new();
     let sink = context.socket(zmq::PULL)?;
     let address = format!("tcp://*:{}", self.port);
-    assert!(sink.bind(&address).is_ok());
+    sink.bind(&address).unwrap();
 
     let mut sink_job_count: usize = 0;
 
