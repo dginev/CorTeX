@@ -137,7 +137,7 @@ impl Worker for InitWorker {
 
       self.convert(Path::new(&task.entry))?;
       sink.send(&identity, SNDMORE).unwrap();
-      sink.send(&self.get_service(), SNDMORE).unwrap();
+      sink.send(self.get_service(), SNDMORE).unwrap();
       sink.send(taskid, SNDMORE).unwrap();
       sink.send(&Vec::new(), 0).unwrap();
 
