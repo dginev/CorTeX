@@ -51,5 +51,5 @@ zmq-sys = "0.11.0"
 dotenv = "0.15.0"
 dotenv_codegen = "0.15"
 chrono = "0.4.22"
-diesel = {version="1.4.1", features = ["postgres", "chrono"]}
+diesel = {version="2.0.1", features = ["postgres", "chrono"]}
 lazy_static = "1.0.0"
