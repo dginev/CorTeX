@@ -373,7 +373,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "time 0.1.44",
+ "time 0.3.16",
  "zmq",
 ]
 
