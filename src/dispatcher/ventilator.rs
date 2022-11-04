@@ -135,7 +135,7 @@ impl Ventilator {
           ventilator.send(&taskid.to_string(), SNDMORE)?;
           if serviceid == 1 {
             // No payload needed for init
-            ventilator.send(&Vec::new(), 0)?;
+            ventilator.send(Vec::new(), 0)?;
           } else {
             // Regular services fetch the task payload and transfer it to the worker
             let file_opt = helpers::prepare_input_stream(&current_task);
@@ -169,7 +169,7 @@ impl Ventilator {
               println!("-- Failed to prepare input stream for taskid {:?}", taskid);
               println!("-- task details: {:?}", current_task);
               taskid = -1;
-              ventilator.send(&Vec::new(), 0)?;
+              ventilator.send(Vec::new(), 0)?;
             }
           }
         } else {
@@ -178,7 +178,7 @@ impl Ventilator {
             source_job_count, identity_str
           );
           ventilator.send("0", SNDMORE)?;
-          ventilator.send(&Vec::new(), 0)?;
+          ventilator.send(Vec::new(), 0)?;
         }
         // Update this worker's metadata
         WorkerMetadata::record_dispatched(

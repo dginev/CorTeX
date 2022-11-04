@@ -106,8 +106,8 @@ pub(crate) fn task_report(
         .filter(corpus_id.eq(corpus.id))
         .filter(status.eq(task_status.unwrap().raw()))
         .order(tasks::entry.asc())
-        .offset(offset as i64)
-        .limit(page_size as i64)
+        .offset(offset)
+        .limit(page_size)
         .load(connection)
         .unwrap_or_default();
       for &(ref entry_fixedwidth, entry_taskid) in &entry_rows {
@@ -353,8 +353,8 @@ fn aux_stats_compute_percentages(stats_hash: &mut HashMap<String, f64>, total_gi
   for stats_key in stats_keys {
     {
       let key_percent_value: f64 =
-        100.0 * (*stats_hash.get_mut(&stats_key).unwrap() as f64 / total as f64);
-      let key_percent_rounded: f64 = (key_percent_value * 100.0).round() as f64 / 100.0;
+        100.0 * (*stats_hash.get_mut(&stats_key).unwrap() / total);
+      let key_percent_rounded: f64 = (key_percent_value * 100.0).round() / 100.0;
       let key_percent_name = stats_key + "_percent";
       stats_hash.insert(key_percent_name, key_percent_rounded);
     }
@@ -394,13 +394,13 @@ fn aux_task_rows_stats(
     stats_hash.insert("messages".to_string(), stat_messages.to_string());
 
     let tasks_percent_value: f64 = 100.0 * (stat_tasks as f64 / total_valid_tasks as f64);
-    let tasks_percent_rounded: f64 = (tasks_percent_value * 100.0).round() as f64 / 100.0;
+    let tasks_percent_rounded: f64 = (tasks_percent_value * 100.0).round() / 100.0;
     stats_hash.insert(
       "tasks_percent".to_string(),
       tasks_percent_rounded.to_string(),
     );
     let messages_percent_value: f64 = 100.0 * (stat_messages as f64 / these_messages as f64);
-    let messages_percent_rounded: f64 = (messages_percent_value * 100.0).round() as f64 / 100.0;
+    let messages_percent_rounded: f64 = (messages_percent_value * 100.0).round() / 100.0;
     stats_hash.insert(
       "messages_percent".to_string(),
       messages_percent_rounded.to_string(),
@@ -410,7 +410,7 @@ fn aux_task_rows_stats(
   }
 
   let these_tasks_percent_value: f64 = 100.0 * (these_tasks as f64 / total_valid_tasks as f64);
-  let these_tasks_percent_rounded: f64 = (these_tasks_percent_value * 100.0).round() as f64 / 100.0;
+  let these_tasks_percent_rounded: f64 = (these_tasks_percent_value * 100.0).round() / 100.0;
   // Append the total to the end of the report:
   let mut total_hash = HashMap::new();
   total_hash.insert("name".to_string(), "total".to_string());
@@ -423,7 +423,7 @@ fn aux_task_rows_stats(
       let silent_tasks_percent_value: f64 =
         100.0 * (silent_count as f64 / total_valid_tasks as f64);
       let silent_tasks_percent_rounded: f64 =
-        (silent_tasks_percent_value * 100.0).round() as f64 / 100.0;
+        (silent_tasks_percent_value * 100.0).round() / 100.0;
       no_messages_hash.insert(
         "tasks_percent".to_string(),
         silent_tasks_percent_rounded.to_string(),

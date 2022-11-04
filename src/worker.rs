@@ -139,7 +139,7 @@ impl Worker for InitWorker {
       sink.send(&identity, SNDMORE).unwrap();
       sink.send(self.get_service(), SNDMORE).unwrap();
       sink.send(taskid, SNDMORE).unwrap();
-      sink.send(&Vec::new(), 0).unwrap();
+      sink.send(Vec::new(), 0).unwrap();
 
       work_counter += 1;
       if let Some(upper_bound) = limit {
