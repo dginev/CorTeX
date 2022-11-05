@@ -83,10 +83,10 @@ impl Worker for InitWorker {
       Corpus::find_by_name(&corpus.name, &backend.connection).expect("Failed to create new corpus.");
 
     // Create an importer for the corpus, and then process all entries to populate CorTeX tasks
-    let importer = Importer {
+    let mut importer = Importer {
       corpus: registered_corpus,
       backend: backend::from_address(&self.backend_address),
-      cwd: Importer::cwd(),
+      ..Importer::default()
     };
 
     importer.process()?;

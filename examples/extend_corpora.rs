@@ -36,19 +36,17 @@ fn main() {
 
   for corpus in corpora {
     // First, build an importer, which will perform the extension
-    let importer = Importer {
+    let mut importer = Importer {
       corpus: corpus.clone(),
-      backend: Backend::default(),
-      cwd: Importer::cwd(),
+      ..Importer::default()
     };
 
     // Extend the already imported corpus. I prefer that method name to "update", as we won't yet
     // implement downsizing on deletion.
     let extend_start = time::get_time();
     println!("-- Extending: {:?}", corpus.name);
-    match importer.extend_corpus() {
-      Ok(_) => {},
-      Err(e) => println!("Corpus extension panicked: {:?}", e),
+    if let Err(e) = importer.extend_corpus() {
+      println!("Corpus extension panicked: {:?}", e);
     };
     let extend_end = time::get_time();
     let extend_duration = (extend_end - extend_start).num_milliseconds();

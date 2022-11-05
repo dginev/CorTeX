@@ -58,10 +58,10 @@ fn can_import_simple() {
   // had a failing test where path and name were being swapped - diesel seems picky about struct
   // layouts matching table column order
   assert_eq!(corpus.name, name);
-  let importer = Importer {
+  let mut importer = Importer {
     corpus,
     backend: backend::testdb(),
-    cwd: Importer::cwd(),
+    ..Importer::default()
   };
 
   println!("-- Testing simple import");
@@ -97,19 +97,19 @@ fn can_import_complex() {
   assert!(corpus_result.is_ok());
   let corpus = corpus_result.unwrap();
   let corpus_id = corpus.id;
-  let importer = Importer {
+  let mut importer = Importer {
     corpus: corpus.clone(),
     backend: backend::testdb(),
-    cwd: Importer::cwd(),
+    ..Importer::default()
   };
 
   println!("-- Testing complex import");
   assert!(importer.process().is_ok());
 
-  let repeat_importer = Importer {
+  let mut repeat_importer = Importer {
     corpus,
     backend: backend::testdb(),
-    cwd: Importer::cwd(),
+    ..Importer::default()
   };
 
   println!("-- Testing repeated complex import (successful and no-op)");

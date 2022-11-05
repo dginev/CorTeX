@@ -10,8 +10,9 @@ use glob::glob;
 // use regex::Regex;
 use crate::backend::Backend;
 use crate::helpers::TaskStatus;
-use crate::models::{Corpus, NewCorpus, NewTask};
+use crate::models::{Corpus, NewTask};
 use std::env;
+use std::collections::HashSet;
 use std::error::Error;
 use std::fs;
 use std::path::Path;
@@ -21,6 +22,7 @@ use Archive::*;
 const BUFFER_SIZE: usize = 10_240;
 
 /// Struct for performing corpus imports into `CorTeX`
+#[derive(Debug)]
 pub struct Importer {
   /// a `Corpus` to be imported, containing all relevant metadata
   pub corpus: Corpus,
@@ -28,25 +30,27 @@ pub struct Importer {
   pub backend: Backend,
   /// the current working directory, to resolve relative paths
   pub cwd: PathBuf,
+  /// the known prefixes of top-level directories to import
+  /// used to avoid re-examining existing directories.
+  pub active_prefixes: HashSet<String>
 }
 impl Default for Importer {
   fn default() -> Importer {
     let default_backend = Backend::default();
-    let name = "default";
-    default_backend
-      .add(&NewCorpus {
-        path: ".".to_string(),
-        name: name.to_string(),
-        complex: false,
-        description: String::new(),
-      })
-      .expect("Failed to create new corpus.");
-    let registered_corpus = Corpus::find_by_name(name, &default_backend.connection).unwrap();
-
+    // We'll add a mock corpus to the Importer default but it is
+    // *NOT* meant to be used in any real operations, as the Corpus isn't
+    // actually registered in the DB.
     Importer {
-      corpus: registered_corpus,
+      corpus: Corpus {
+       name: "mock corpus".to_string(),
+        id:0,
+        path: ".".to_string(),
+        complex: true,
+        description: String::new(),
+      },
       backend: default_backend,
       cwd: Importer::cwd(),
+      active_prefixes: HashSet::new(),
     }
   }
 }
@@ -55,12 +59,12 @@ impl Importer {
   /// Convenience method for (recklessly?) obtaining the current working dir
   pub fn cwd() -> PathBuf { env::current_dir().unwrap() }
   /// Top-level method for unpacking an arxiv-toplogy corpus from its tar-ed form
-  fn unpack(&self) -> Result<(), Box<dyn Error>> {
+  fn unpack(&mut self) -> Result<(), Box<dyn Error>> {
     self.unpack_arxiv_top()?;
     self.unpack_arxiv_months()?;
     Ok(())
   }
-  fn unpack_extend(&self) -> Result<(), Box<dyn Error>> {
+  fn unpack_extend(&mut self) -> Result<(), Box<dyn Error>> {
     self.unpack_extend_arxiv_top()?;
     // We can reuse the monthly unpack, as it deletes all unpacked document archives
     // In other words, it always acts as a conservative extension
@@ -69,9 +73,9 @@ impl Importer {
   }
 
   /// Unpack the top-level tar files from an arxiv-topology corpus
-  fn unpack_arxiv_top(&self) -> Result<(), Box<dyn Error>> {
-    println!("-- Starting top-level unpack process");
+  fn unpack_arxiv_top(&mut self) -> Result<(), Box<dyn Error>> {
     let path_str = self.corpus.path.clone();
+    println!("-- Starting top-level unpack at {}", path_str);
     let tars_path = path_str.to_string() + "/*.tar";
     for entry in glob(&tars_path).unwrap() {
       match entry {
@@ -94,12 +98,16 @@ impl Importer {
             .open_filename(path.to_str().unwrap(), BUFFER_SIZE)
             .unwrap();
           while let Ok(e) = archive_reader.next_header() {
-            if e.pathname().ends_with(".pdf") {
+            let entry_pathname = e.pathname();
+            if entry_pathname.ends_with(".pdf") {
               continue;
             }
-            let full_extract_path = path_str.to_string() + &e.pathname();
+            if let Some(base) = entry_pathname.split('/').next() {
+              self.active_prefixes.insert(base.to_owned());
+            }
+            let full_extract_path = path_str.to_string() + &entry_pathname;
             match fs::metadata(full_extract_path.clone()) {
-              Ok(_) => println!("File {:?} exists, won't unpack.", e.pathname()),
+              Ok(_) => println!("File {:?} exists, won't unpack.", entry_pathname),
               Err(_) => {
                 println!("To unpack: {:?}", full_extract_path);
                 match e.extract_to(&full_extract_path, Vec::new()) {
@@ -118,9 +126,12 @@ impl Importer {
     Ok(())
   }
   /// Top-level extension unpacking for arxiv-topology corpora
-  fn unpack_extend_arxiv_top(&self) -> Result<(), Box<dyn Error>> {
-    println!("-- Starting top-level unpack-extend process");
-    let path_str = self.corpus.path.clone();
+  fn unpack_extend_arxiv_top(&mut self) -> Result<(), Box<dyn Error>> {
+    let mut path_str = self.corpus.path.clone();
+    if !path_str.ends_with('/') {
+      path_str.push('/');
+    }
+    println!("-- Starting top-level unpack-extend at {}",path_str);
     let tars_path = path_str.to_string() + "/*.tar";
     for entry in glob(&tars_path).unwrap() {
       match entry {
@@ -133,10 +144,14 @@ impl Importer {
             .open_filename(path.to_str().unwrap(), BUFFER_SIZE)
             .unwrap();
           while let Ok(e) = archive_reader.next_header() {
-            if e.pathname().ends_with(".pdf") {
+            let entry_pathname = e.pathname();
+            if entry_pathname.ends_with(".pdf") {
               continue;
             }
-            let full_extract_path = path_str.to_string() + &e.pathname();
+            if let Some(base) = entry_pathname.split('/').next() {
+              self.active_prefixes.insert(base.to_owned());
+            }
+            let full_extract_path = path_str.to_string() + &entry_pathname;
             match fs::metadata(full_extract_path.clone()) {
               Ok(_) => {}, //println!("File {:?} exists, won't unpack.", e.pathname()),
               Err(_) => {
@@ -170,8 +185,14 @@ impl Importer {
   fn unpack_arxiv_months(&self) -> Result<(), Box<dyn Error>> {
     println!("-- Starting to unpack monthly .gz archives");
     let path_str = self.corpus.path.clone();
-    let gzs_path = path_str + "/*/*.gz";
-    for entry in glob(&gzs_path).unwrap() {
+    let gzs_paths = if self.active_prefixes.is_empty() {
+      vec![path_str + "/*/*.gz"]
+    } else {
+      self.active_prefixes.iter().map(|ap| format!("{}/{}/*.gz", path_str, ap)).collect()
+    };
+    let globs_iter = gzs_paths.iter().flat_map(|path| glob(&path).unwrap());
+
+    for entry in globs_iter {
       match entry {
         Ok(path) => {
           let entry_path = path.to_str().unwrap();
@@ -264,12 +285,20 @@ impl Importer {
       let current_path = walk_q.pop().unwrap();
       let current_metadata = fs::metadata(current_path.clone())?;
       if current_metadata.is_dir() {
-        println!("-- current path {:?}", current_path);
+        let current_path_str = current_path.to_str().unwrap().to_string();
+        let rel_path = current_path_str.replace(&self.corpus.path,"");
+        let mut slash_iter = rel_path.split('/');
+        slash_iter.next(); // drop the corpus root piece.
+        if let Some(base) = slash_iter.next() {
+          if !self.active_prefixes.contains(base) {
+            continue;
+          }
+        }
         // First, test if we just found an entry:
         let current_local_dir = current_path.file_name().unwrap();
         let current_entry =
           current_local_dir.to_str().unwrap().to_string() + "." + import_extension;
-        let current_entry_path = current_path.to_str().unwrap().to_string() + "/" + &current_entry;
+        let current_entry_path = current_path_str + "/" + &current_entry;
         match fs::metadata(&current_entry_path) {
           Ok(_) => {
             // Found the expected file, import this entry:
@@ -319,7 +348,7 @@ impl Importer {
     }
   }
   /// Top-level import driver, performs an optional unpack, and then an import into the Task store
-  pub fn process(&self) -> Result<(), Box<dyn Error>> {
+  pub fn process(&mut self) -> Result<(), Box<dyn Error>> {
     // println!("Greetings from the import processor");
     if self.corpus.complex {
       // Complex setup has an unpack step:
@@ -333,7 +362,7 @@ impl Importer {
 
   /// Top-level corpus extension, performs a check for newly added documents and extracts+adds
   /// them to the existing corpus tasks
-  pub fn extend_corpus(&self) -> Result<(), Box<dyn Error>> {
+  pub fn extend_corpus(&mut self) -> Result<(), Box<dyn Error>> {
     if self.corpus.complex {
       // Complex setup has an unpack step:
       self.unpack_extend()?;

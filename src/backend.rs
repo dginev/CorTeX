@@ -21,6 +21,7 @@ use diesel::result::Error;
 use diesel::*;
 use dotenv::dotenv;
 use std::collections::HashMap;
+use std::fmt;
 
 use crate::concerns::{CortexDeletable, CortexInsertable};
 use crate::helpers::{TaskReport, TaskStatus};
@@ -35,6 +36,9 @@ pub const TEST_DB_ADDRESS: &str = dotenv!("TEST_DATABASE_URL");
 pub struct Backend {
   /// The Diesel PgConnection object
   pub connection: PgConnection,
+}
+impl fmt::Debug for Backend {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { f.write_str("<Backend omitted>") }
 }
 impl Default for Backend {
   fn default() -> Self {
