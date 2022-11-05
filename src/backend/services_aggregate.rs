@@ -69,6 +69,10 @@ pub(crate) fn extend_service(
   // TODO: when we want to get completeness, also:
   // - update dependencies
   let import_service = Service::find_by_name("import", connection)?;
+  // TODO: performance can be improved with a convention here.
+  // when inserting a new task in the import service, use "TODO" (0) severity
+  // when this extension function succeeds, update severity to success (-1)
+  // Currently we try to reinsert all imported tasks, which is wasteful.
   let entries: Vec<String> = tasks
     .filter(service_id.eq(import_service.id))
     .filter(corpus_id.eq(corpus.id))

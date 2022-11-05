@@ -276,9 +276,9 @@ impl Importer {
 
   /// Given a CorTeX-topology corpus, walk the file system and import it into the Task store
   pub fn walk_import(&self) -> Result<usize, Box<dyn Error>> {
-    println!("-- Starting import walk");
     let import_extension = if self.corpus.complex { "zip" } else { "tex" };
     let mut walk_q: Vec<PathBuf> = vec![Path::new(&self.corpus.path).to_owned()];
+    println!("-- Starting import walk at {}",&self.corpus.path);
     let mut import_q: Vec<NewTask> = Vec::new();
     let mut import_counter = 0;
     while !walk_q.is_empty() {
@@ -288,9 +288,11 @@ impl Importer {
         let current_path_str = current_path.to_str().unwrap().to_string();
         let rel_path = current_path_str.replace(&self.corpus.path,"");
         let mut slash_iter = rel_path.split('/');
-        slash_iter.next(); // drop the corpus root piece.
+        if rel_path.starts_with('/') { // drop the corpus root piece.
+          slash_iter.next();
+        }
         if let Some(base) = slash_iter.next() {
-          if !self.active_prefixes.contains(base) {
+          if !base.is_empty() && !self.active_prefixes.contains(base) {
             continue;
           }
         }
@@ -330,7 +332,8 @@ impl Importer {
     Ok(import_counter)
   }
 
-  /// Create a new NoProblem task for the "import" service and the Importer-specified corpus
+  /// Create a new TODO task for the "import" service and the Importer-specified corpus
+  /// (should get marked as "NoProblem" once the extension is completed)
   pub fn new_task(&self, entry: &str) -> NewTask {
     let abs_entry: String = if Path::new(&entry).is_relative() {
       let mut new_abs = self.cwd.clone();
@@ -342,7 +345,7 @@ impl Importer {
 
     NewTask {
       entry: abs_entry,
-      status: TaskStatus::NoProblem.raw(),
+      status: TaskStatus::TODO.raw(),
       corpus_id: self.corpus.id,
       service_id: 2,
     }
