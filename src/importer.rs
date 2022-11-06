@@ -190,7 +190,7 @@ impl Importer {
     } else {
       self.active_prefixes.iter().map(|ap| format!("{}/{}/*.gz", path_str, ap)).collect()
     };
-    let globs_iter = gzs_paths.iter().flat_map(|path| glob(&path).unwrap());
+    let globs_iter = gzs_paths.iter().flat_map(|path| glob(path).unwrap());
 
     for entry in globs_iter {
       match entry {
