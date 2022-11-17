@@ -292,7 +292,8 @@ impl Importer {
           slash_iter.next();
         }
         if let Some(base) = slash_iter.next() {
-          if !base.is_empty() && !self.active_prefixes.contains(base) {
+          // if we have an "active_prefixes" filter, comply with it
+          if !base.is_empty() && !self.active_prefixes.is_empty() && !self.active_prefixes.contains(base) {
             continue;
           }
         }
