@@ -1429,7 +1429,7 @@ checksum = "478c572c3d73181ff3c2539045f6eb99e5491218eae919370993b890cdbdd98e"
 [[package]]
 name = "pericortex"
 version = "0.2.4"
-source = "git+https://github.com/dginev/cortex-peripherals.git#238aab52c3eb381dc584db0c804ba6f7c4bd47b6"
+source = "git+https://github.com/dginev/cortex-peripherals.git#a3d74f009d0b2660583454cfd51490c7b76604df"
 dependencies = [
  "ansi_term",
  "chrono",
