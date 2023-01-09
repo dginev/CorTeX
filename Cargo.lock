@@ -358,7 +358,7 @@ dependencies = [
  "diesel",
  "dotenv",
  "dotenv_codegen",
- "glob 0.3.0",
+ "glob 0.3.1",
  "hyper 0.14.23",
  "lazy_static",
  "libarchive-sys",
@@ -850,9 +850,9 @@ checksum = "8be18de09a56b60ed0edf84bc9df007e30040691af7acd1c41874faac5895bfb"
 
 [[package]]
 name = "glob"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b919933a397b79c37e33b77bb2aa3dc8eb6e165ad809e58ff75bc7db2e34574"
+checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "hashbrown"
@@ -1733,7 +1733,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2810037b5820098af97bd4fdd309e76a8101ceb178147de775c835a2537284fe"
 dependencies = [
  "devise",
- "glob 0.3.0",
+ "glob 0.3.1",
  "indexmap",
  "quote 0.6.13",
  "rocket_http",
@@ -1747,7 +1747,7 @@ version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e20efbc6a211cb3df5375accf532d4186f224b623f39eca650b19b96240c596b"
 dependencies = [
- "glob 0.3.0",
+ "glob 0.3.1",
  "log 0.4.17",
  "notify",
  "rocket",
