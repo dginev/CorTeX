@@ -71,9 +71,7 @@ impl Sink {
       let mut total_incoming = 0;
       let request_time = time::get_time();
       println!(
-        "sink {:?}: incoming result for {:?}, worker {:?}, taskid: {}",
-        sink_job_count, service_name, identity, taskid
-      );
+        "sink {sink_job_count:?}: incoming result for {service_name:?}, worker {identity:?}, taskid: {taskid}");
 
       if let Some(task_progress) = server::pop_progress_task(progress_queue_arc, taskid) {
         let task = task_progress.task;
@@ -118,7 +116,7 @@ impl Sink {
                           let mut file = match File::create(recv_path) {
                             Ok(f) => f,
                             Err(e) => {
-                              println!("-- Error TODO: File::create(recv_path): {:?}", e);
+                              println!("-- Error TODO: File::create(recv_path): {e:?}");
                               continue;
                             },
                           };
@@ -127,9 +125,7 @@ impl Sink {
                               Ok(written_bytes) => total_incoming += written_bytes,
                               Err(e) => {
                                 println!(
-                                  "-- Error TODO: file.write(recv_msg.deref()) failed: {:?}",
-                                  e
-                                );
+                                  "-- Error TODO: file.write(recv_msg.deref()) failed: {e:?}");
                                 break;
                               },
                             };
@@ -172,7 +168,7 @@ impl Sink {
         };
       } else {
         // No such task, just discard the next message from the sink
-        println!("-- No such task id found in dispatcher queue: {:?}", taskid);
+        println!("-- No such task id found in dispatcher queue: {taskid:?}");
         while sink.recv(&mut recv_msg, 0).is_ok() {
           if !sink.get_rcvmore()? {
             break;
@@ -182,15 +178,11 @@ impl Sink {
       let responded_time = time::get_time();
       let request_duration = (responded_time - request_time).num_milliseconds();
       println!(
-        "sink {}: message size: {}, took {}ms.",
-        sink_job_count, total_incoming, request_duration
-      );
+        "sink {sink_job_count}: message size: {total_incoming}, took {request_duration}ms.");
       if let Some(limit_number) = job_limit {
         if sink_job_count >= limit_number {
           println!(
-            "sink {}: job limit reached, terminating Sink thread...",
-            limit_number
-          );
+            "sink {limit_number}: job limit reached, terminating Sink thread...");
           break;
         }
       }

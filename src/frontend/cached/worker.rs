@@ -51,11 +51,11 @@ pub fn cache_worker() {
             for severity in &["invalid", "fatal", "error", "warning", "no_problem", "info"] {
               // most importantly, DEL the key from Redis!
               let key_severity = key_base.clone() + "_" + severity;
-              println!("[cache worker] DEL {:?}", key_severity);
+              println!("[cache worker] DEL {key_severity:?}");
               redis_connection.del(key_severity.clone()).unwrap_or(());
               // also the combined-severity page for this category
               let key_severity_all = key_severity.clone() + "_all_messages";
-              println!("[cache worker] DEL {:?}", key_severity_all);
+              println!("[cache worker] DEL {key_severity_all:?}");
               redis_connection.del(key_severity_all.clone()).unwrap_or(());
               if "no_problem" == *severity {
                 continue;
@@ -81,11 +81,11 @@ pub fn cache_worker() {
                 }
 
                 let key_category = key_severity.clone() + "_" + category;
-                println!("[cache worker] DEL {:?}", key_category);
+                println!("[cache worker] DEL {key_category:?}");
                 redis_connection.del(key_category.clone()).unwrap_or(());
                 // also the combined-severity page for this `what` class
                 let key_category_all = key_category + "_all_messages";
-                println!("[cache worker] DEL {:?}", key_category_all);
+                println!("[cache worker] DEL {key_category_all:?}");
                 redis_connection.del(key_category_all.clone()).unwrap_or(());
 
                 let _ = task_report(

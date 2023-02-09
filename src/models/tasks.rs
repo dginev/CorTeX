@@ -53,7 +53,7 @@ impl CortexDeletable for Task {
       "service_id" => self.delete_by_service_id(connection),
       "id" => self.delete_by_id(connection),
       _ => Err(Error::QueryBuilderError(
-        format!("unknown Task model field: {}", field).into(),
+        format!("unknown Task model field: {field}").into(),
       )),
     }
   }
@@ -95,13 +95,12 @@ impl Task {
     corpus: &Corpus,
     service: &Service,
     connection: &PgConnection,
-  ) -> Result<Task, Error>
-  {
+  ) -> Result<Task, Error> {
     use crate::schema::tasks::dsl::{corpus_id, service_id};
     tasks::table
       .filter(corpus_id.eq(corpus.id))
       .filter(service_id.eq(service.id))
-      .filter(tasks::entry.like(&format!("%{}.zip", name)))
+      .filter(tasks::entry.like(&format!("%{name}.zip")))
       .first(connection)
   }
 }
@@ -112,7 +111,7 @@ impl CortexDeletable for NewTask {
       "entry" => self.delete_by_entry(connection),
       "service_id" => self.delete_by_service_id(connection),
       _ => Err(Error::QueryBuilderError(
-        format!("unknown Task model field: {}", field).into(),
+        format!("unknown Task model field: {field}").into(),
       )),
     }
   }

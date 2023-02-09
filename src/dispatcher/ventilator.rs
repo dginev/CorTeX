@@ -129,9 +129,7 @@ impl Ventilator {
           taskid = current_task.id;
           let serviceid = current_task.service_id;
           println!(
-            "vent {}: worker {:?} received task {:?}",
-            source_job_count, identity_str, taskid
-          );
+            "vent {source_job_count}: worker {identity_str:?} received task {taskid:?}");
           ventilator.send(&taskid.to_string(), SNDMORE)?;
           if serviceid == 1 {
             // No payload needed for init
@@ -162,21 +160,17 @@ impl Ventilator {
               let responded_time = time::get_time();
               let request_duration = (responded_time - request_time).num_milliseconds();
               println!(
-                "vent {}: message size: {}, took {}ms.",
-                source_job_count, total_outgoing, request_duration
-              );
+                "vent {source_job_count}: message size: {total_outgoing}, took {request_duration}ms.");
             } else {
-              println!("-- Failed to prepare input stream for taskid {:?}", taskid);
-              println!("-- task details: {:?}", current_task);
+              println!("-- Failed to prepare input stream for taskid {taskid:?}");
+              println!("-- task details: {current_task:?}");
               taskid = -1;
               ventilator.send(Vec::new(), 0)?;
             }
           }
         } else {
           println!(
-            "vent {:?}: worker {:?} received mock reply.",
-            source_job_count, identity_str
-          );
+            "vent {source_job_count:?}: worker {identity_str:?} received mock reply.");
           ventilator.send("0", SNDMORE)?;
           ventilator.send(Vec::new(), 0)?;
         }
@@ -189,9 +183,7 @@ impl Ventilator {
         )?;
       } else {
         println!(
-          "-- No such service in ventilator request: {:?}",
-          service_name
-        );
+          "-- No such service in ventilator request: {service_name:?}");
       }
       // Record that a task has been dispatched in the progress queue
       if let Some(dispatched_task) = dispatched_task_opt {
@@ -200,9 +192,7 @@ impl Ventilator {
       if let Some(limit_number) = job_limit {
         if source_job_count >= limit_number {
           println!(
-            "vent {}: job limit reached, terminating Ventilator thread...",
-            limit_number
-          );
+            "vent {limit_number}: job limit reached, terminating Ventilator thread...");
           break;
         }
       }

@@ -484,7 +484,7 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
       .open_filename(result.to_str().unwrap_or_default(), BUFFER_SIZE)
     {
       Err(e) => {
-        println!("Error TODO: Couldn't open archive_reader: {:?}", e);
+        println!("Error TODO: Couldn't open archive_reader: {e:?}");
       },
       Ok(archive_reader) => {
         while let Ok(entry) = archive_reader.next_header() {
@@ -523,10 +523,7 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
                   let latexml_scheme_status = match message_what.parse::<i32>() {
                     Ok(num) => num,
                     Err(e) => {
-                      println!(
-                        "Error TODO: Failed to parse conversion status {:?}: {:?}",
-                        message_what, e
-                      );
+                      println!("Error TODO: Failed to parse conversion status {message_what:?}: {e:?}");
                       3 // latexml raw fatal
                     },
                   };

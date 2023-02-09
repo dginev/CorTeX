@@ -234,9 +234,7 @@ pub fn serve_rerun(
     Some(user) => user,
   };
   println!(
-    "-- User {:?}: Mark for rerun on {:?}/{:?}/{:?}/{:?}/{:?}",
-    user, corpus_name, service_name, severity, category, what
-  );
+    "-- User {user:?}: Mark for rerun on {corpus_name}/{service_name}/{severity:?}/{category:?}/{what:?}");
 
   // Run (and measure) the three rerun queries
   let report_start = time::get_time();
@@ -267,9 +265,7 @@ pub fn serve_rerun(
   let report_end = time::get_time();
   let report_duration = (report_end - report_start).num_milliseconds();
   println!(
-    "-- User {:?}: Mark for rerun took {:?}ms",
-    user, report_duration
-  );
+    "-- User {user:?}: Mark for rerun took {report_duration:?}ms");
   match rerun_result {
     Err(_) => Err(NotFound("Access Denied".to_string())), // TODO: better error message?
     Ok(_) => Ok(Accepted(None)),
@@ -288,15 +284,13 @@ pub fn serve_entry(service_name: String, entry_id: usize) -> Result<NamedFile, N
       };
       if zip_path.is_empty() {
         Err(NotFound(format!(
-          "Service {:?} does not have a result
-                               for entry {:?}",
-          service_name, entry_id
-        )))
+          "Service {service_name:?} does not have a result
+                               for entry {entry_id:?}")))
       } else {
         NamedFile::open(&zip_path).map_err(|_| NotFound("Invalid Zip at path".to_string()))
       }
     },
-    Err(e) => Err(NotFound(format!("Task not found: {}", e))),
+    Err(e) => Err(NotFound(format!("Task not found: {e}"))),
   }
 }
 

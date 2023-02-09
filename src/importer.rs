@@ -75,7 +75,7 @@ impl Importer {
   /// Unpack the top-level tar files from an arxiv-topology corpus
   fn unpack_arxiv_top(&mut self) -> Result<(), Box<dyn Error>> {
     let path_str = self.corpus.path.clone();
-    println!("-- Starting top-level unpack at {}", path_str);
+    println!("-- Starting top-level unpack at {path_str}");
     let tars_path = path_str.to_string() + "/*.tar";
     for entry in glob(&tars_path).unwrap() {
       match entry {
@@ -107,20 +107,20 @@ impl Importer {
             }
             let full_extract_path = path_str.to_string() + &entry_pathname;
             match fs::metadata(full_extract_path.clone()) {
-              Ok(_) => println!("File {:?} exists, won't unpack.", entry_pathname),
+              Ok(_) => println!("File {entry_pathname:?} exists, won't unpack."),
               Err(_) => {
-                println!("To unpack: {:?}", full_extract_path);
+                println!("To unpack: {full_extract_path:?}");
                 match e.extract_to(&full_extract_path, Vec::new()) {
                   Ok(_) => {},
                   _ => {
-                    println!("Failed to extract {:?}", full_extract_path);
+                    println!("Failed to extract {full_extract_path:?}");
                   },
                 }
               },
             }
           }
         },
-        Err(e) => println!("Failed tar glob: {:?}", e),
+        Err(e) => println!("Failed tar glob: {e:?}"),
       }
     }
     Ok(())
@@ -131,7 +131,7 @@ impl Importer {
     if !path_str.ends_with('/') {
       path_str.push('/');
     }
-    println!("-- Starting top-level unpack-extend at {}",path_str);
+    println!("-- Starting top-level unpack-extend at {path_str}");
     let tars_path = path_str.to_string() + "/*.tar";
     for entry in glob(&tars_path).unwrap() {
       match entry {
@@ -166,7 +166,7 @@ impl Importer {
                     match e.extract_to(&full_extract_path, Vec::new()) {
                       Ok(_) => {},
                       _ => {
-                        println!("Failed to extract {:?}", full_extract_path);
+                        println!("Failed to extract {full_extract_path:?}");
                       },
                     }
                   },
@@ -175,7 +175,7 @@ impl Importer {
             }
           }
         },
-        Err(e) => println!("Failed tar glob: {:?}", e),
+        Err(e) => println!("Failed tar glob: {e:?}"),
       }
     }
     Ok(())
@@ -188,7 +188,7 @@ impl Importer {
     let gzs_paths = if self.active_prefixes.is_empty() {
       vec![path_str + "/*/*.gz"]
     } else {
-      self.active_prefixes.iter().map(|ap| format!("{}/{}/*.gz", path_str, ap)).collect()
+      self.active_prefixes.iter().map(|ap| format!("{path_str}/{ap}/*.gz")).collect()
     };
     let globs_iter = gzs_paths.iter().flat_map(|path| glob(path).unwrap());
 
@@ -233,7 +233,7 @@ impl Importer {
                 file_count += 1;
                 match archive_writer_new.write_header(e) {
                   Ok(_) => {}, // TODO: If we need to print an error message, we can do so later.
-                  Err(e2) => println!("Header write failed: {:?}", e2),
+                  Err(e2) => println!("Header write failed: {e2:?}"),
                 };
                 while let Ok(chunk) = archive_reader.read_data(BUFFER_SIZE) {
                   archive_writer_new.write_data(chunk).unwrap();
@@ -257,18 +257,18 @@ impl Importer {
                 Ok(_) => {
                   single_file_transfer(&default_tex_target, &raw_reader, &mut archive_writer_new);
                 },
-                Err(_) => println!("No content in archive: {:?}", entry_path),
+                Err(_) => println!("No content in archive: {entry_path:?}"),
               },
-              Err(_) => println!("Unrecognizeable archive: {:?}", entry_path),
+              Err(_) => println!("Unrecognizeable archive: {entry_path:?}"),
             }
           }
           // Done with this .gz , remove it:
           match fs::remove_file(path.clone()) {
             Ok(_) => {},
-            Err(e) => println!("Can't remove source .gz: {:?}", e),
+            Err(e) => println!("Can't remove source .gz: {e:?}"),
           };
         },
-        Err(e) => println!("Failed gz glob: {:?}", e),
+        Err(e) => println!("Failed gz glob: {e:?}"),
       }
     }
     Ok(())
@@ -305,12 +305,12 @@ impl Importer {
         match fs::metadata(&current_entry_path) {
           Ok(_) => {
             // Found the expected file, import this entry:
-            println!("Found entry: {:?}", current_entry_path);
+            println!("Found entry: {current_entry_path:?}");
             import_counter += 1;
             import_q.push(self.new_task(&current_entry_path));
             if import_q.len() >= 1000 {
               // Flush the import queue to backend:
-              println!("Checkpoint backend writer: job {:?}", import_counter);
+              println!("Checkpoint backend writer: job {import_counter:?}");
               self.backend.mark_imported(&import_q).unwrap(); // TODO: Proper Error-handling
               import_q.clear();
             }
@@ -329,7 +329,7 @@ impl Importer {
       println!("Checkpoint backend writer: job {:?}", import_q.len());
       self.backend.mark_imported(&import_q).unwrap();
     } // TODO: Proper Error-handling
-    println!("--- Imported {:?} entries.", import_counter);
+    println!("--- Imported {import_counter:?} entries.");
     Ok(import_counter)
   }
 
@@ -407,13 +407,13 @@ pub fn single_file_transfer(tex_target: &str, reader: &Reader, writer: &mut Writ
       ok_header = true;
     },
     Err(e) => {
-      println!("Couldn't write header: {:?}", e);
+      println!("Couldn't write header: {e:?}");
     },
   }
   if ok_header {
     match writer.write_data(raw_data) {
       Ok(_) => {},
-      Err(e) => println!("Failed to write data to {:?} because {:?}", tex_target, e),
+      Err(e) => println!("Failed to write data to {tex_target:?} because {e:?}"),
     };
   }
 }

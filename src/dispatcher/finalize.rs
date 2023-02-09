@@ -26,7 +26,7 @@ impl Finalize {
         // we did some work, on to the next iteration
         jobs_count += 1;
         if jobs_count % 100 == 0 {
-          println!("-- finalize thread persisted {} jobs.", jobs_count);
+          println!("-- finalize thread persisted {jobs_count} jobs.");
         }
       } else {
         // If we have no reports to process, sleep for a second and recheck
@@ -35,9 +35,7 @@ impl Finalize {
       if let Some(limit) = self.job_limit {
         if jobs_count >= limit {
           println!(
-            "finalize {}: job limit reached, terminating finalize thread...",
-            limit
-          );
+            "finalize {limit}: job limit reached, terminating finalize thread...");
           break;
         }
       }

@@ -13,8 +13,7 @@ use crate::models::Service;
 pub fn mark_done_arc(
   backend: &Backend,
   reports_arc: &Arc<Mutex<Vec<TaskReport>>>,
-) -> Result<bool, String>
-{
+) -> Result<bool, String> {
   // Important: hold the mutex lock for the entirety of the mark_done process,
   // so that it gets poisoned if the DB runs away and the thread panics
   // we want the entire dispatcher to panic if this thread panics.
@@ -27,7 +26,7 @@ pub fn mark_done_arc(
     let request_time = time::get_time();
     let mut success = false;
     if let Err(e) = backend.mark_done(&reports) {
-      println!("-- mark_done attempt failed: {:?}", e);
+      println!("-- mark_done attempt failed: {e:?}");
       // DB persist failed, retry
       let mut retries = 0;
       while retries < 3 {
@@ -38,7 +37,7 @@ pub fn mark_done_arc(
             success = true;
             break;
           },
-          Err(e) => println!("-- mark_done retry failed: {:?}", e),
+          Err(e) => println!("-- mark_done retry failed: {e:?}"),
         };
       }
     } else {
@@ -52,9 +51,7 @@ pub fn mark_done_arc(
     let responded_time = time::get_time();
     let request_duration = (responded_time - request_time).num_milliseconds();
     println!(
-      "finalize: reporting tasks to DB took {}ms.",
-      request_duration
-    );
+      "finalize: reporting tasks to DB took {request_duration}ms.");
     Ok(true)
   } else {
     Ok(false)

@@ -113,7 +113,7 @@ pub fn decorate_uri_encodings(context: &mut TemplateContext) {
   {
     if let Some(corpus_name) = context.global.get("corpus_name_uri") {
       if let Some(service_name) = context.global.get("service_name_uri") {
-        current_link = format!("/corpus/{}/{}/", corpus_name, service_name);
+        current_link = format!("/corpus/{corpus_name}/{service_name}/");
         if let Some(severity) = context.global.get("severity_uri") {
           current_link.push_str(severity);
           current_link.push('/');
@@ -140,24 +140,18 @@ pub fn load_config() -> FrontendConfig {
   let mut config_file = match File::open("config.json") {
     Ok(cfg) => cfg,
     Err(e) => panic!(
-      "You need a well-formed JSON config.json file to run the frontend. Error: {}",
-      e
-    ),
+      "You need a well-formed JSON config.json file to run the frontend. Error: {e}"),
   };
   let mut config_buffer = String::new();
   match config_file.read_to_string(&mut config_buffer) {
     Ok(_) => {},
     Err(e) => panic!(
-      "You need a well-formed JSON config.json file to run the frontend. Error: {}",
-      e
-    ),
+      "You need a well-formed JSON config.json file to run the frontend. Error: {e}"),
   };
 
   match serde_json::from_str(&config_buffer) {
     Ok(decoded) => decoded,
     Err(e) => panic!(
-      "You need a well-formed JSON config.json file to run the frontend. Error: {}",
-      e
-    ),
+      "You need a well-formed JSON config.json file to run the frontend. Error: {e}"),
   }
 }

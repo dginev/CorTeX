@@ -278,10 +278,7 @@ fn historical_runs(
   // Pass the globals(reports+metadata) onto the stash
   global.insert(
     "description".to_string(),
-    format!(
-      "Historical runs of service {} over corpus {}",
-      service_name, corpus_name
-    ),
+    format!("Historical runs of service {service_name} over corpus {corpus_name}"),
   );
   global.insert("service_name".to_string(), service_name);
   global.insert("corpus_name".to_string(), corpus_name);
@@ -385,19 +382,19 @@ fn rerun_what(
 #[get("/favicon.ico")]
 fn favicon() -> Result<NamedFile, NotFound<String>> {
   let path = Path::new("public/").join("favicon.ico");
-  NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {:?}", path)))
+  NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {path:?}")))
 }
 
 #[get("/robots.txt")]
 fn robots() -> Result<NamedFile, NotFound<String>> {
   let path = Path::new("public/").join("robots.txt");
-  NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {:?}", path)))
+  NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {path:?}")))
 }
 
 #[get("/public/<file..>")]
 fn files(file: PathBuf) -> Result<NamedFile, NotFound<String>> {
   let path = Path::new("public/").join(file);
-  NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {:?}", path)))
+  NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {path:?}")))
 }
 
 fn rocket() -> rocket::Rocket {

@@ -132,7 +132,7 @@ fn since_string(then: SystemTime, is_fresh: &mut bool) -> String {
   let secs = since_duration.as_secs();
   if secs < 60 {
     *is_fresh = true;
-    format!("{} seconds ago", secs)
+    format!("{secs} seconds ago")
   } else if secs < 3_600 {
     format!("{} minutes ago", secs / 60)
   } else if secs < 86_400 {
@@ -199,8 +199,7 @@ impl WorkerMetadata {
     service_id: i32,
     last_returned_task_id: i64,
     backend_address: String,
-  ) -> Result<(), Error>
-  {
+  ) -> Result<(), Error> {
     let now = SystemTime::now();
     let _ = thread::spawn(move || {
       let backend = backend::from_address(&backend_address);
@@ -219,10 +218,7 @@ impl WorkerMetadata {
           .execute(&backend.connection)
           .unwrap_or(0);
       } else {
-        println!(
-          "-- Can't record worker metadata for unknown worker: {:?} {:?}",
-          identity, service_id
-        );
+        println!("-- Can't record worker metadata for unknown worker: {identity:?} {service_id:?}");
       }
     });
     Ok(())
