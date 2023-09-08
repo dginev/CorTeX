@@ -82,8 +82,10 @@ fn main() -> Result<(), Error> {
               if line.is_empty() {
                 continue;
               }
+              // Special cases are:
+              // - "Loading..." info messages
+              // - "Processing definitions..." info messages
               if let Some(cap) = LOADING_LINE_REGEX.captures(line) {
-                // Special case is a "Loading..." info messages
                 let mut filepath = cap.get(1).map_or("", |m| m.as_str()).to_string();
                 let mut filename = cap.get(2).map_or("", |m| m.as_str()).to_string();
                 cortex::helpers::utf_truncate(&mut filename, 50);

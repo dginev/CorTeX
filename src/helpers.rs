@@ -30,7 +30,7 @@ lazy_static! {
     Regex::new(r"^([^ :]+):([^ :]+):([^ ]+)(\s(.*))?$").unwrap();
   /// "(Loading... file" message regex
   pub static ref LOADING_LINE_REGEX: Regex =
-    Regex::new(r"^\(Loading\s(.+/)?([^/]+[^.])\.\.\.(\s|$)").unwrap();
+    Regex::new(r"^\((?:Loading|Processing definitions)\s(.+/)?([^/]+[^.])\.\.\.(\s|$)").unwrap();
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
