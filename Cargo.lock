@@ -344,7 +344,7 @@ dependencies = [
  "base64 0.13.1",
  "hkdf",
  "hmac 0.10.1",
- "percent-encoding 2.3.0",
+ "percent-encoding 2.3.1",
  "rand 0.8.5",
  "sha2 0.9.9",
  "time 0.1.45",
@@ -368,7 +368,7 @@ dependencies = [
  "hyper 0.14.27",
  "lazy_static",
  "libarchive-sys",
- "percent-encoding 2.3.0",
+ "percent-encoding 2.3.1",
  "pericortex",
  "rand 0.8.5",
  "redis",
@@ -752,7 +752,7 @@ version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a9c384f161156f5260c24a097c56119f9be8c798586aecc13afbcbe7b7e26bf8"
 dependencies = [
- "percent-encoding 2.3.0",
+ "percent-encoding 2.3.1",
 ]
 
 [[package]]
@@ -1443,9 +1443,9 @@ checksum = "31010dd2e1ac33d5b46a5b413495239882813e0369f8ed8a5e266f173602f831"
 
 [[package]]
 name = "percent-encoding"
-version = "2.3.0"
+version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b2a4787296e9989611394c33f193f676704af1686e70b8f8033ab5ba9a35a94"
+checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
 
 [[package]]
 name = "pericortex"
@@ -1692,7 +1692,7 @@ checksum = "4f49cdc0bb3f412bf8e7d1bd90fe1d9eb10bc5c399ba90973c14662a27b3f8ba"
 dependencies = [
  "combine",
  "itoa",
- "percent-encoding 2.3.0",
+ "percent-encoding 2.3.1",
  "ryu",
  "sha1_smol",
  "socket2",
@@ -2489,7 +2489,7 @@ checksum = "0d68c799ae75762b8c3fe375feb6600ef5602c883c5d21eb51c09f22b83c4643"
 dependencies = [
  "form_urlencoded",
  "idna 0.3.0",
- "percent-encoding 2.3.0",
+ "percent-encoding 2.3.1",
 ]
 
 [[package]]
