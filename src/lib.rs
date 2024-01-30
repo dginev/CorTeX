@@ -13,7 +13,6 @@
 )]
 #![deny(missing_docs)]
 #![recursion_limit = "256"]
-#![feature(plugin)]
 #![allow(clippy::implicit_hasher)]
 #[macro_use]
 extern crate diesel;
