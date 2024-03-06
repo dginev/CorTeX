@@ -2,7 +2,6 @@
 use crate::helpers::TaskStatus;
 use crate::models::{Service, Task};
 use crate::schema::tasks;
-use diesel::pg::PgConnection;
 use diesel::result::Error;
 use diesel::*;
 use rand::{thread_rng, Rng};

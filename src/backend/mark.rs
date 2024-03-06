@@ -1,5 +1,4 @@
 use crate::schema::{log_errors, log_fatals, log_infos, log_invalids, log_warnings, tasks};
-use diesel::pg::PgConnection;
 use diesel::result::Error;
 use diesel::*;
 

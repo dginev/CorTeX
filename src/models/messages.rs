@@ -1,10 +1,8 @@
 #![allow(clippy::implicit_hasher,clippy::extra_unused_lifetimes)]
 use std::fmt;
 
-use diesel::pg::PgConnection;
 use diesel::result::Error;
 use diesel::*;
-use diesel::{insert_into};
 
 use crate::concerns::CortexInsertable;
 use crate::schema::log_errors;

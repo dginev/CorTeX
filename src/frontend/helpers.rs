@@ -1,7 +1,6 @@
 //! General purpose auxiliary routines that do not fit the MVC web service paradigm,
 //! tending to minor tasks
 use crate::frontend::params::{FrontendConfig, TemplateContext};
-use serde_json;
 use std::fs::File;
 use std::io::Read;
 

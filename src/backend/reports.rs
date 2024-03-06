@@ -1,5 +1,4 @@
 use diesel::dsl::sql;
-use diesel::pg::PgConnection;
 use diesel::*;
 use regex::Regex;
 use std::collections::HashMap;

@@ -1,4 +1,3 @@
-use diesel::pg::PgConnection;
 use diesel::*;
 use crate::schema::corpora;
 use crate::models::Corpus;

@@ -1,6 +1,4 @@
-use diesel::pg::PgConnection;
 use diesel::result::Error;
-use diesel::update;
 use diesel::*;
 
 use crate::helpers::TaskStatus;

@@ -3,7 +3,6 @@ use crate::concerns::CortexInsertable;
 use crate::helpers::TaskStatus;
 use crate::models::{Corpus, NewTask, Service};
 use crate::schema::services;
-use diesel::pg::PgConnection;
 use diesel::result::Error;
 use diesel::*;
 

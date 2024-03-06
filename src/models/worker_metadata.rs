@@ -3,10 +3,8 @@ use std::collections::HashMap;
 use std::thread;
 use std::time::SystemTime;
 
-use diesel::pg::PgConnection;
 use diesel::result::Error;
 use diesel::*;
-use diesel::{insert_into, update};
 
 use serde::Serialize;
 

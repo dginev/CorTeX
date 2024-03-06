@@ -16,7 +16,6 @@ mod tasks_aggregate;
 pub(crate) use reports::progress_report;
 pub use reports::TaskReportOptions;
 
-use diesel::pg::PgConnection;
 use diesel::result::Error;
 use diesel::*;
 use dotenv::dotenv;

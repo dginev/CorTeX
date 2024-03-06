@@ -1,10 +1,8 @@
 #![allow(clippy::extra_unused_lifetimes)]
 use std::collections::HashMap;
 
-use diesel::pg::PgConnection;
 use diesel::result::Error;
 use diesel::*;
-use diesel::{insert_into};
 
 use crate::schema::services;
 use crate::schema::worker_metadata;
