@@ -118,6 +118,11 @@ impl RunMetadataStack {
     let mut start_time_guard = HashSet::new();
     let mut runs_meta_vega = Vec::new();
     for run in runs_meta.iter() {
+      // skip extension runs from Vega report, too noisy
+      // Tip: rename the "description" field if you want the run included
+      if run.description == "extending corpus with more entries" {
+        continue;
+      }
       // Avoid adding more than one run at a given start_time for the vega metadata stack,
       // as vega wrongly combines the data into a single entry.
       if !run.start_time.is_empty() && !run.end_time.is_empty() {
