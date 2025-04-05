@@ -5,6 +5,7 @@ use std::io::Cursor;
 /// Rocket solution for Cross-origin resource sharing
 pub struct CORS();
 
+#[rocket::async_trait]
 impl Fairing for CORS {
   fn info(&self) -> Info {
     Info {
@@ -13,7 +14,7 @@ impl Fairing for CORS {
     }
   }
 
-  fn on_response(&self, request: &rocket::Request, response: &mut rocket::Response) {
+  async fn on_response<'r>(&self, request: &'r rocket::Request<'_>, response: &mut rocket::Response<'r>) {
     if request.method() == rocket::http::Method::Options
       || response.content_type() == Some(rocket::http::ContentType::JSON)
     {
@@ -32,7 +33,7 @@ impl Fairing for CORS {
 
     if request.method() == rocket::http::Method::Options {
       response.set_header(rocket::http::ContentType::Plain);
-      response.set_sized_body(Cursor::new(""));
+      response.set_sized_body(0, Cursor::new(""));
     }
   }
 }
