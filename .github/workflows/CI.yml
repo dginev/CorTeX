@@ -10,6 +10,7 @@ jobs:
       DB_HOST: localhost
       DB_USERNAME: postgres
       PGPASSWORD: postgres
+      DATABASE_URL: "postgres://cortex_tester:cortex_tester@localhost/cortex_tester"
     steps:
       - name: Install CorTeX Dependencies
         uses: ryankurte/action-apt@v0.2.0
@@ -24,6 +25,11 @@ jobs:
           sudo -u postgres psql -c 'create database cortex_tester;'
           sudo -u postgres psql -c "create user cortex with password 'cortex';"
           sudo -u postgres psql -c "create user cortex_tester with password 'cortex_tester';"
+          sudo -u postgres psql -c 'GRANT ALL PRIVILEGES ON SCHEMA public TO postgres;'
+          sudo -u postgres psql -c 'GRANT ALL PRIVILEGES ON SCHEMA public TO cortex;'
+          sudo -u postgres psql -c 'GRANT ALL PRIVILEGES ON SCHEMA public TO cortex_tester;'
+          sudo -u postgres psql -c 'ALTER DATABASE cortex OWNER TO cortex;'
+          sudo -u postgres psql -c 'ALTER DATABASE cortex_tester OWNER TO cortex_tester;'
           sudo -u postgres psql -c 'GRANT ALL PRIVILEGES ON DATABASE cortex TO cortex;'
           sudo -u postgres psql -c 'GRANT ALL PRIVILEGES ON DATABASE cortex_tester TO cortex_tester;'
       - uses: actions/checkout@v2
@@ -34,8 +40,8 @@ jobs:
           override: true
       - run: |
           cargo install diesel_cli --vers 1.1.2  --no-default-features --features postgres
+          diesel setup
           diesel migration run
-          DATABASE_URL="postgres://cortex_tester:cortex_tester@localhost/cortex_tester" diesel migration run
       - uses: actions-rs/cargo@v1
         with:
           command: test
