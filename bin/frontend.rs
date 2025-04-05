@@ -13,11 +13,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::thread;
 
-use rocket::request::Form;
 use rocket::response::status::{Accepted, NotFound};
-use rocket::response::NamedFile;
-use rocket_contrib::json::Json;
-use rocket_contrib::templates::Template;
+use rocket::fs::NamedFile;
+use rocket::futures::TryFutureExt;
+use rocket::serde::json::Json;
+use rocket_dyn_templates::Template;
 
 use cortex::backend::Backend;
 use cortex::frontend::cached::cache_worker;
@@ -163,7 +163,7 @@ fn severity_service_report_all(
   corpus_name: String,
   service_name: String,
   severity: String,
-  params: Option<Form<ReportParams>>,
+  params: Option<ReportParams>,
 ) -> Result<Template, NotFound<String>> {
   serve_report(
     corpus_name,
@@ -196,7 +196,7 @@ fn category_service_report_all(
   service_name: String,
   severity: String,
   category: String,
-  params: Option<Form<ReportParams>>,
+  params: Option<ReportParams>,
 ) -> Result<Template, NotFound<String>> {
   serve_report(
     corpus_name,
@@ -232,7 +232,7 @@ fn what_service_report_all(
   severity: String,
   category: String,
   what: String,
-  params: Option<Form<ReportParams>>,
+  params: Option<ReportParams>,
 ) -> Result<Template, NotFound<String>> {
   serve_report(
     corpus_name,
@@ -302,8 +302,8 @@ fn preview_entry(
 }
 
 #[post("/entry/<service_name>/<entry_id>")]
-fn entry_fetch(service_name: String, entry_id: usize) -> Result<NamedFile, NotFound<String>> {
-  serve_entry(service_name, entry_id)
+async fn entry_fetch(service_name: String, entry_id: usize) -> Result<NamedFile, NotFound<String>> {
+  serve_entry(service_name, entry_id).await
 }
 
 #[post(
@@ -380,25 +380,30 @@ fn rerun_what(
 }
 
 #[get("/favicon.ico")]
-fn favicon() -> Result<NamedFile, NotFound<String>> {
+async fn favicon() -> Result<NamedFile, NotFound<String>> {
   let path = Path::new("public/").join("favicon.ico");
-  NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {path:?}")))
+  NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {path:?}"))).await
 }
 
 #[get("/robots.txt")]
-fn robots() -> Result<NamedFile, NotFound<String>> {
+async fn robots() -> Result<NamedFile, NotFound<String>> {
   let path = Path::new("public/").join("robots.txt");
-  NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {path:?}")))
+  NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {path:?}"))).await
 }
 
 #[get("/public/<file..>")]
-fn files(file: PathBuf) -> Result<NamedFile, NotFound<String>> {
+async fn files(file: PathBuf) -> Result<NamedFile, NotFound<String>> {
   let path = Path::new("public/").join(file);
-  NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {path:?}")))
+  NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {path:?}"))).await
 }
 
-fn rocket() -> rocket::Rocket {
-  rocket::ignite()
+#[launch]
+fn rocket() -> _ {
+// cache worker in parallel to the main service thread
+  let _ = thread::spawn(move || {
+    cache_worker();
+  });
+  rocket::build()
     .mount(
       "/",
       routes![
@@ -426,12 +431,4 @@ fn rocket() -> rocket::Rocket {
     )
     .attach(Template::fairing())
     .attach(CORS())
-}
-
-fn main() {
-  // cache worker in parallel to the main service thread
-  let _ = thread::spawn(move || {
-    cache_worker();
-  });
-  rocket().launch();
 }

@@ -4,7 +4,6 @@ use crate::backend::TaskReportOptions;
 use crate::frontend::params::ReportParams;
 use crate::models::{Corpus, Service};
 use redis::Commands;
-use rocket::request::Form;
 use std::collections::HashMap;
 
 /// Cached proxy over `Backend::task_report`
@@ -15,7 +14,7 @@ pub fn task_report(
   severity: Option<String>,
   category: Option<String>,
   what: Option<String>,
-  params: &Option<Form<ReportParams>>,
+  params: &Option<ReportParams>,
 ) -> Vec<HashMap<String, String>>
 {
   let all_messages = match params {
@@ -34,10 +33,7 @@ pub fn task_report(
   let mut time_val: String = time::now().rfc822().to_string();
 
   let mut redis_connection = match redis::Client::open("redis://127.0.0.1/") {
-    Ok(redis_client) => match redis_client.get_connection() {
-      Ok(rc) => Some(rc),
-      _ => None,
-    },
+    Ok(redis_client) => redis_client.get_connection().ok(),
     _ => None,
   };
 

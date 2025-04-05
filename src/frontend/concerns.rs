@@ -1,10 +1,10 @@
 //! Common concerns for frontend routes
 use regex::Regex;
-use rocket::request::Form;
 use rocket::response::status::{Accepted, NotFound};
-use rocket::response::NamedFile;
-use rocket_contrib::json::Json;
-use rocket_contrib::templates::Template;
+use rocket::fs::NamedFile;
+use rocket::serde::json::Json;
+use rocket_dyn_templates::Template;
+use crate::rocket::futures::TryFutureExt;
 use std::collections::HashMap;
 use std::str;
 
@@ -28,7 +28,7 @@ pub fn serve_report(
   severity: Option<String>,
   category: Option<String>,
   what: Option<String>,
-  params: Option<Form<ReportParams>>,
+  params: Option<ReportParams>,
 ) -> Result<Template, NotFound<String>> {
   let report_start = time::get_time();
   let mut context = TemplateContext::default();
@@ -268,12 +268,12 @@ pub fn serve_rerun(
     "-- User {user:?}: Mark for rerun took {report_duration:?}ms");
   match rerun_result {
     Err(_) => Err(NotFound("Access Denied".to_string())), // TODO: better error message?
-    Ok(_) => Ok(Accepted(None)),
+    Ok(_) => Ok(Accepted(String::default())),
   }
 }
 
 /// Provide a `NamedFile` for an entry
-pub fn serve_entry(service_name: String, entry_id: usize) -> Result<NamedFile, NotFound<String>> {
+pub async fn serve_entry(service_name: String, entry_id: usize) -> Result<NamedFile, NotFound<String>> {
   let backend = Backend::default();
   match Task::find(entry_id as i64, &backend.connection) {
     Ok(task) => {
@@ -287,7 +287,7 @@ pub fn serve_entry(service_name: String, entry_id: usize) -> Result<NamedFile, N
           "Service {service_name:?} does not have a result
                                for entry {entry_id:?}")))
       } else {
-        NamedFile::open(&zip_path).map_err(|_| NotFound("Invalid Zip at path".to_string()))
+        NamedFile::open(&zip_path).map_err(|_| NotFound("Invalid Zip at path".to_string())).await
       }
     },
     Err(e) => Err(NotFound(format!("Task not found: {e}"))),
