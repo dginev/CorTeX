@@ -15,7 +15,7 @@ use diesel::prelude::*;
 
 #[test]
 fn task_table_crud() {
-  let backend = backend::testdb();
+  let mut backend = backend::testdb();
   let mock_service_id = random_mark();
   let mock_corpus_id = random_mark();
   let mock_service = Service {
@@ -58,7 +58,7 @@ fn task_table_crud() {
 
 #[test]
 fn task_lifecycle_test() {
-  let backend = backend::testdb();
+  let mut backend = backend::testdb();
   // Add 100 tasks, out of which we will mark 17
   let mock_service_id = random_mark();
   let mock_corpus_id = random_mark();
@@ -79,7 +79,7 @@ fn task_lifecycle_test() {
     status: TaskStatus::TODO.raw(),
   };
 
-  assert!(backend.delete_by(&mock_task, "service_id").is_ok());
+  assert!(dbg!(backend.delete_by(&mock_task, "service_id")).is_ok());
 
   // insert 100 tasks
   for index in 1..101 {
@@ -105,7 +105,7 @@ fn task_lifecycle_test() {
   let marked_in_db = tasks::table
     .filter(status.eq(random_mark))
     .count()
-    .get_result(&backend.connection);
+    .get_result(&mut backend.connection);
   assert_eq!(marked_in_db, Ok(17));
 
   let cleared_limbo_tasks = backend.clear_limbo_tasks();
@@ -113,7 +113,7 @@ fn task_lifecycle_test() {
   let marked_in_db_2 = tasks::table
     .filter(status.eq(random_mark))
     .count()
-    .get_result(&backend.connection);
+    .get_result(&mut backend.connection);
   assert_eq!(marked_in_db_2, Ok(0));
 
   let post_cleanup = backend.delete_by(&mock_task, "service_id");
@@ -122,7 +122,7 @@ fn task_lifecycle_test() {
 
 #[test]
 fn batch_ops_test() {
-  let backend = backend::testdb();
+  let mut backend = backend::testdb();
   let mock_service = Service {
     id: random_mark(),
     name: String::from("batch_ops_test"),
@@ -165,7 +165,7 @@ fn batch_ops_test() {
   let todo_tasks_result: Result<Vec<Task>, _> = tasks::table
     .filter(service_id.eq(mock_service.id))
     .filter(status.eq(TaskStatus::TODO.raw()))
-    .get_results(&backend.connection);
+    .get_results(&mut backend.connection);
   assert!(todo_tasks_result.is_ok());
   let todo_tasks = todo_tasks_result.unwrap();
   // We now have `mock_task_count` registered tasks in the DB
@@ -192,7 +192,7 @@ fn batch_ops_test() {
   let done_tasks_result: Result<Vec<Task>, _> = tasks::table
     .filter(service_id.eq(mock_service.id))
     .filter(status.eq(TaskStatus::NoProblem.raw()))
-    .get_results(&backend.connection);
+    .get_results(&mut backend.connection);
   // Are all tasks marked as NoProblem after?
   assert!(done_tasks_result.is_ok());
   let done_tasks = done_tasks_result.unwrap();
@@ -202,20 +202,25 @@ fn batch_ops_test() {
   let done_logs_result: Result<i64, _> = log_infos::table
     .filter(task_id.eq_any(&done_task_ids))
     .count()
-    .get_result(&backend.connection);
+    .get_result(&mut backend.connection);
   assert_eq!(done_logs_result, Ok(mock_task_count as i64));
   // There should be no TODO tasks left for this service
   let pre_rerun_todo_count = tasks::table
     .filter(service_id.eq(mock_service.id))
     .filter(status.eq(TaskStatus::TODO.raw()))
     .count()
-    .get_result(&backend.connection);
+    .get_result(&mut backend.connection);
   assert_eq!(pre_rerun_todo_count, Ok(0));
   // mark_rerun of all tasks
   let mark_rerun_result = backend.mark_rerun(RerunOptions {
     corpus: &mock_corpus,
     service: &mock_service,
-    severity_opt: None, category_opt: None, what_opt: None, owner_opt: None, description_opt: None});
+    severity_opt: None,
+    category_opt: None,
+    what_opt: None,
+    owner_opt: None,
+    description_opt: None,
+  });
   println!("debug : {:?}", mark_rerun_result);
   assert!(mark_rerun_result.is_ok());
 
@@ -223,21 +228,21 @@ fn batch_ops_test() {
     .filter(service_id.eq(mock_service.id))
     .filter(status.eq(TaskStatus::TODO.raw()))
     .count()
-    .get_result(&backend.connection);
+    .get_result(&mut backend.connection);
   // are all tasks marked as TODO after the rerun?
   assert_eq!(post_rerun_todo_count, Ok(mock_task_count as i64));
   // are all messages erased for those tasks?
   let post_rerun_logs_result: Result<i64, _> = log_infos::table
     .filter(task_id.eq_any(&done_task_ids))
     .count()
-    .get_result(&backend.connection);
+    .get_result(&mut backend.connection);
   assert_eq!(post_rerun_logs_result, Ok(0));
 
   let post_rerun_done_count: Result<i64, _> = tasks::table
     .filter(service_id.eq(mock_service.id))
     .filter(status.eq(TaskStatus::NoProblem.raw()))
     .count()
-    .get_result(&backend.connection);
+    .get_result(&mut backend.connection);
   println!("Found {:?} done tasks", post_rerun_done_count);
   assert_eq!(post_rerun_done_count, Ok(0));
 

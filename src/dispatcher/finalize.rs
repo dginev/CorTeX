@@ -18,11 +18,11 @@ pub struct Finalize {
 impl Finalize {
   /// Start the finalize loop, checking for new completed tasks every second
   pub fn start(&self, done_queue_arc: &Arc<Mutex<Vec<TaskReport>>>) -> Result<(), Box<dyn Error>> {
-    let backend = backend::from_address(&self.backend_address);
+    let mut backend = backend::from_address(&self.backend_address);
     let mut jobs_count: usize = 0;
     // Persist every 1 second, if there is something to record
     loop {
-      if server::mark_done_arc(&backend, done_queue_arc)? {
+      if server::mark_done_arc(&mut backend, done_queue_arc)? {
         // we did some work, on to the next iteration
         jobs_count += 1;
         if jobs_count % 100 == 0 {
@@ -34,8 +34,7 @@ impl Finalize {
       }
       if let Some(limit) = self.job_limit {
         if jobs_count >= limit {
-          println!(
-            "finalize {limit}: job limit reached, terminating finalize thread...");
+          println!("finalize {limit}: job limit reached, terminating finalize thread...");
           break;
         }
       }

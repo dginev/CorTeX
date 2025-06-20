@@ -31,9 +31,9 @@ fn main() {
   };
 
   // Fish out the arXiv root directory from CorTeX
-  let backend = Backend::default();
+  let mut backend = Backend::default();
   let sandbox_start = time::get_time();
-  let corpus = match Corpus::find_by_name("arxmliv", &backend.connection) {
+  let corpus = match Corpus::find_by_name("arxmliv", &mut backend.connection) {
     Ok(corpus) => corpus,
     _ => {
       println!("--  The arXMLiv corpus isn't registered in the CorTeX backend, aborting.");
@@ -41,16 +41,13 @@ fn main() {
     },
   };
   let corpus_path = corpus.path;
-  println!("-- using arXiv path: {:?}", corpus_path);
+  println!("-- using arXiv path: {corpus_path:?}");
 
   // Prepare to read in the arXiv ids we will sandbox
   let ids_fh = match File::open(&ids_filepath) {
     Ok(fh) => fh,
     _ => {
-      println!(
-        "-- Couldn't read file with arXiv ids {:?}, aborting.",
-        ids_filepath
-      );
+      println!("-- Couldn't read file with arXiv ids {ids_filepath:?}, aborting.");
       return;
     },
   };
@@ -80,7 +77,7 @@ fn main() {
       None => {
         match new_style.captures(&id) {
           None => {
-            println!("-- Malformed arxiv id: {:?}", id);
+            println!("-- Malformed arxiv id: {id:?}");
             None
           },
           Some(caps) => {
@@ -105,7 +102,7 @@ fn main() {
     let relative_entry_path = entry.unwrap();
     let entry_path = corpus_path.clone() + "/" + &relative_entry_path;
     match File::open(entry_path) {
-      Err(_) => println!("-- missing arXiv source for {:?}", id),
+      Err(_) => println!("-- missing arXiv source for {id:?}"),
       Ok(mut entry_fh) => {
         let mut buffer = Vec::new();
         if entry_fh.read_to_end(&mut buffer).is_ok() {
@@ -114,7 +111,7 @@ fn main() {
           match sandbox_writer.write_header_new(&relative_entry_path, buffer.len() as i64) {
             Ok(_) => {},
             Err(e) => {
-              println!("Couldn't write header {:?}: {:?}", relative_entry_path, e);
+              println!("Couldn't write header {relative_entry_path:?}: {e:?}");
               continue;
             },
           };
@@ -133,8 +130,5 @@ fn main() {
 
   let sandbox_end = time::get_time();
   let sandbox_duration = (sandbox_end - sandbox_start).num_milliseconds();
-  println!(
-    "-- Sandboxing {:?} arXiv papers took took {:?}ms",
-    counter, sandbox_duration
-  );
+  println!("-- Sandboxing {counter:?} arXiv papers took took {sandbox_duration:?}ms");
 }

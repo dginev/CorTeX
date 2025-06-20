@@ -16,19 +16,16 @@ fn main() {
   // Note that we realize the initial import via a real cortex worker, but use a simply utility
   // script for extensions. this is the case since the goal here is to do a simple sysadmin
   // "maintenance update", rather than a full-blown "semantic" union operation
-  let backend = Backend::default();
+  let mut backend = Backend::default();
 
   // If input is provided, only extend the corpus of the given name/path.
   let mut input_args = env::args();
   let _ = input_args.next();
   let corpora = if let Some(path) = input_args.next() {
-    if let Ok(corpus) = Corpus::find_by_path(&path, &backend.connection) {
+    if let Ok(corpus) = Corpus::find_by_path(&path, &mut backend.connection) {
       vec![corpus]
     } else {
-      panic!(
-        "No corpus could be found at path {:?}. Make sure path matches DB registration.",
-        path
-      );
+      panic!("No corpus could be found at path {path:?}. Make sure path matches DB registration.");
     }
   } else {
     backend.corpora()
@@ -46,7 +43,7 @@ fn main() {
     let extend_start = time::get_time();
     println!("-- Extending: {:?}", corpus.name);
     if let Err(e) = importer.extend_corpus() {
-      println!("Corpus extension panicked: {:?}", e);
+      println!("Corpus extension panicked: {e:?}");
     };
     let extend_end = time::get_time();
     let extend_duration = (extend_end - extend_start).num_milliseconds();
@@ -57,7 +54,7 @@ fn main() {
 
     // Then re-register all services, so that they pick up on the tasks
     let register_start = time::get_time();
-    match corpus.select_services(&backend.connection) {
+    match corpus.select_services(&mut backend.connection) {
       Ok(services) => {
         for service in services {
           let service_id = service.id;
@@ -70,7 +67,7 @@ fn main() {
           }
         }
       },
-      Err(e) => println!("Services could not be fetched: {:?}", e),
+      Err(e) => println!("Services could not be fetched: {e:?}"),
     };
     let register_end = time::get_time();
     let register_duration = (register_end - register_start).num_milliseconds();

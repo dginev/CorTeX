@@ -322,7 +322,7 @@ impl LogRecord for NewTaskMessage {
   }
 }
 impl CortexInsertable for NewTaskMessage {
-  fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
+  fn create(&self, connection: &mut PgConnection) -> Result<usize, Error> {
     use crate::helpers::NewTaskMessage::*;
     match *self {
       Info(ref record) => record.create(connection),
@@ -394,9 +394,9 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
       // If the line starts with tab, we are indeed reading in details
       if line.starts_with('\t') {
         // Append details line to the last message
-        let mut last_message = messages.pop().unwrap_or_else(|| {
-          panic!("parse_log tried to parse details without having a log message, invalid log file?")
-        });
+        let mut last_message = messages.pop().expect(
+          "parse_log tried to parse details without having a log message, invalid log file?",
+        );
         let mut truncated_details = last_message.details().to_string() + "\n" + line;
         utf_truncate(&mut truncated_details, 2000);
         last_message.set_details(truncated_details);
@@ -478,7 +478,7 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
     // Let's open the archive file and find the cortex.log file:
     let log_name = "cortex.log";
     match Reader::new()
-      .unwrap_or_else(|_| panic!("Could not create libarchive Reader struct"))
+      .expect("Could not create libarchive Reader struct")
       .support_filter_all()
       .support_format_all()
       .open_filename(result.to_str().unwrap_or_default(), BUFFER_SIZE)
@@ -523,7 +523,9 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
                   let latexml_scheme_status = match message_what.parse::<i32>() {
                     Ok(num) => num,
                     Err(e) => {
-                      println!("Error TODO: Failed to parse conversion status {message_what:?}: {e:?}");
+                      println!(
+                        "Error TODO: Failed to parse conversion status {message_what:?}: {e:?}"
+                      );
                       3 // latexml raw fatal
                     },
                   };

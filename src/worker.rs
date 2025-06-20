@@ -57,8 +57,8 @@ impl Default for InitWorker {
 }
 impl Worker for InitWorker {
   fn get_service(&self) -> &str { &self.service }
-  fn get_source_address(&self) -> Cow<str> { Cow::Borrowed(&self.source) }
-  fn get_sink_address(&self) -> Cow<str> { Cow::Borrowed(&self.sink) }
+  fn get_source_address(&self) -> Cow<'_, str> { Cow::Borrowed(&self.source) }
+  fn get_sink_address(&self) -> Cow<'_, str> { Cow::Borrowed(&self.sink) }
   fn get_identity(&self) -> &str { &self.identity }
   fn set_identity(&mut self, identity: String) { self.identity = identity; }
   fn message_size(&self) -> usize { self.message_size }
@@ -70,7 +70,7 @@ impl Worker for InitWorker {
       .map(|x| x.1)
       .unwrap_or(&path)
       .to_lowercase(); // TODO: this is Unix path only
-    let backend = backend::from_address(&self.backend_address);
+    let mut backend = backend::from_address(&self.backend_address);
     let corpus = NewCorpus {
       name,
       path,
@@ -79,8 +79,8 @@ impl Worker for InitWorker {
     };
     // Add the new corpus.
     backend.add(&corpus).expect("Failed to create new corpus.");
-    let registered_corpus =
-      Corpus::find_by_name(&corpus.name, &backend.connection).expect("Failed to create new corpus.");
+    let registered_corpus = Corpus::find_by_name(&corpus.name, &mut backend.connection)
+      .expect("Failed to create new corpus.");
 
     // Create an importer for the corpus, and then process all entries to populate CorTeX tasks
     let mut importer = Importer {
@@ -112,7 +112,7 @@ impl Worker for InitWorker {
     let context_sink = Context::new();
     let sink = context_sink.socket(zmq::PUSH).unwrap();
     sink.connect(&self.get_sink_address()).unwrap();
-    let backend = backend::from_address(&self.backend_address);
+    let mut backend = backend::from_address(&self.backend_address);
     // Work in perpetuity
     loop {
       let mut taskid_msg = Message::new();
@@ -125,7 +125,7 @@ impl Worker for InitWorker {
       // Terminating with an empty message in place of a payload (INIT is special)
       source.recv(&mut recv_msg, 0).unwrap();
 
-      let task_result = Task::find(taskid.parse::<i64>().unwrap(), &backend.connection);
+      let task_result = Task::find(taskid.parse::<i64>().unwrap(), &mut backend.connection);
       let task = match task_result {
         Ok(t) => t,
         _ => {

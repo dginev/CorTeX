@@ -11,8 +11,8 @@ use glob::glob;
 use crate::backend::Backend;
 use crate::helpers::TaskStatus;
 use crate::models::{Corpus, NewTask};
-use std::env;
 use std::collections::HashSet;
+use std::env;
 use std::error::Error;
 use std::fs;
 use std::path::Path;
@@ -32,7 +32,7 @@ pub struct Importer {
   pub cwd: PathBuf,
   /// the known prefixes of top-level directories to import
   /// used to avoid re-examining existing directories.
-  pub active_prefixes: HashSet<String>
+  pub active_prefixes: HashSet<String>,
 }
 impl Default for Importer {
   fn default() -> Importer {
@@ -42,8 +42,8 @@ impl Default for Importer {
     // actually registered in the DB.
     Importer {
       corpus: Corpus {
-       name: "mock corpus".to_string(),
-        id:0,
+        name: "mock corpus".to_string(),
+        id: 0,
         path: ".".to_string(),
         complex: true,
         description: String::new(),
@@ -188,7 +188,11 @@ impl Importer {
     let gzs_paths = if self.active_prefixes.is_empty() {
       vec![path_str + "/*/*.gz"]
     } else {
-      self.active_prefixes.iter().map(|ap| format!("{path_str}/{ap}/*.gz")).collect()
+      self
+        .active_prefixes
+        .iter()
+        .map(|ap| format!("{path_str}/{ap}/*.gz"))
+        .collect()
     };
     let globs_iter = gzs_paths.iter().flat_map(|path| glob(path).unwrap());
 
@@ -275,25 +279,28 @@ impl Importer {
   }
 
   /// Given a CorTeX-topology corpus, walk the file system and import it into the Task store
-  pub fn walk_import(&self) -> Result<usize, Box<dyn Error>> {
+  pub fn walk_import(&mut self) -> Result<usize, Box<dyn Error>> {
     let import_extension = if self.corpus.complex { "zip" } else { "tex" };
     let mut walk_q: Vec<PathBuf> = vec![Path::new(&self.corpus.path).to_owned()];
-    println!("-- Starting import walk at {}",&self.corpus.path);
+    println!("-- Starting import walk at {}", &self.corpus.path);
     let mut import_q: Vec<NewTask> = Vec::new();
     let mut import_counter = 0;
-    while !walk_q.is_empty() {
-      let current_path = walk_q.pop().unwrap();
+    while let Some(current_path) = walk_q.pop() {
       let current_metadata = fs::metadata(current_path.clone())?;
       if current_metadata.is_dir() {
         let current_path_str = current_path.to_str().unwrap().to_string();
-        let rel_path = current_path_str.replace(&self.corpus.path,"");
+        let rel_path = current_path_str.replace(&self.corpus.path, "");
         let mut slash_iter = rel_path.split('/');
-        if rel_path.starts_with('/') { // drop the corpus root piece.
+        if rel_path.starts_with('/') {
+          // drop the corpus root piece.
           slash_iter.next();
         }
         if let Some(base) = slash_iter.next() {
           // if we have an "active_prefixes" filter, comply with it
-          if !base.is_empty() && !self.active_prefixes.is_empty() && !self.active_prefixes.contains(base) {
+          if !base.is_empty()
+            && !self.active_prefixes.is_empty()
+            && !self.active_prefixes.contains(base)
+          {
             continue;
           }
         }
@@ -374,7 +381,7 @@ impl Importer {
     // Before we import, mark any current runs as completed.
     for service in self
       .corpus
-      .select_services(&self.backend.connection)
+      .select_services(&mut self.backend.connection)
       .unwrap_or_default()
       .iter()
     {

@@ -1,7 +1,7 @@
 ### System-level prerequisites:
 Note: for up-to-date instructions, it may be best to consult the [.travis.yml](https://github.com/dginev/CorTeX/blob/master/.travis.yml) file used in continuous integration. A docker image may be a good long-term solution (feel free to contribute one!).
 
-**Nightly rust required**: minimal supported version currently `rustc 1.33.0-nightly (bf669d1e3 2019-01-25)`
+**Nightly rust required**: minimal supported version currently `rustc version 1.86.0 (05f9846f8 2025-03-31)`
 
  * A Postgres installation, with the dev client-side bindings for diesel
 ```
@@ -9,28 +9,7 @@ Note: for up-to-date instructions, it may be best to consult the [.travis.yml](h
 ```
  * A ZeroMQ installation and bindings
 ```
-  sudo apt-get install libtool autoconf make pkg-config g++
-  cd /tmp
-  git clone --depth 1 -b stable https://github.com/jedisct1/libsodium.git
-  cd libsodium
-  ./autogen.sh
-  ./configure --prefix=$HOME
-  make
-  make install
-  cd ..
-  wget https://github.com/zeromq/zeromq4-1/archive/v4.1.6.tar.gz
-  tar zxf v4.1.6.tar.gz
-  cd zeromq4-1-4.1.6
-  ./autogen.sh
-  ./configure --prefix=$HOME --with-libsodium
-  make
-  make install
-cd ..
-```
-
- * GnuPlot for classic plotting:
-```
-  sudo apt-get install libgd2-noxpm-dev libcairo2-dev gnuplot
+  sudo apt-get install libtool autoconf make pkg-config g++ libsodium-dev libzmq3-dev
 ```
 
 * libarchive for dealing with complex directory jobs
@@ -40,16 +19,11 @@ cd ..
 
 * A Redis caching server for mitigating DB load and maintaining temporary frontend state
 ```
-  cd /tmp &&
-  wget http://download.redis.io/redis-stable.tar.gz &&
-  tar xvzf redis-stable.tar.gz &&
-  cd redis-stable &&
-  make &&
-  make install
+  sudo apt install redis-server
 ```
 
 ### Setting up postgresql:
- This is not normative, but the simplest (insecure!) approach is just changing the contents of `/etc/postgresql/9.10/main/pg_hba.conf` to:
+ This is not normative, but the simplest (insecure!) approach is just changing the contents of `/etc/postgresql/16/main/pg_hba.conf` to:
  ```
     local all postgres peer
     local cortex cortex password
@@ -66,7 +40,10 @@ cd ..
     create user cortex_tester with password 'cortex_tester';
 
     grant all privileges on database cortex_tester to cortex_tester;
+    grant all on schema public to cortex_tester;
     grant all privileges on database cortex to cortex;
+    grant all on schema public to cortex;
+    grant all on schema public to postgres;
  ```
 
  This should evolve as we get nearer to production deploys... Also, for now postgresql is expected on the default 5432 port.

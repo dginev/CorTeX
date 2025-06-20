@@ -14,7 +14,7 @@ use super::services::Service;
 // Corpora
 
 #[derive(Identifiable, Queryable, AsChangeset, Clone, Debug, Serialize)]
-#[table_name = "corpora"]
+#[diesel(table_name = corpora)]
 /// A minimal description of a document collection. Defined by a name, path and simple/complex file
 /// system setup.
 pub struct Corpus {
@@ -34,12 +34,12 @@ pub struct Corpus {
 
 impl Corpus {
   /// ORM-like until diesel.rs introduces finders for more fields
-  pub fn find_by_name(name_query: &str, connection: &PgConnection) -> Result<Self, Error> {
+  pub fn find_by_name(name_query: &str, connection: &mut PgConnection) -> Result<Self, Error> {
     use crate::schema::corpora::name;
     corpora::table.filter(name.eq(name_query)).first(connection)
   }
   /// ORM-like until diesel.rs introduces finders for more fields
-  pub fn find_by_path(path_query: &str, connection: &PgConnection) -> Result<Self, Error> {
+  pub fn find_by_path(path_query: &str, connection: &mut PgConnection) -> Result<Self, Error> {
     use crate::schema::corpora::path;
     corpora::table.filter(path.eq(path_query)).first(connection)
   }
@@ -53,7 +53,7 @@ impl Corpus {
   }
 
   /// Return a vector of services currently activated on this corpus
-  pub fn select_services(&self, connection: &PgConnection) -> Result<Vec<Service>, Error> {
+  pub fn select_services(&self, connection: &mut PgConnection) -> Result<Vec<Service>, Error> {
     use crate::schema::tasks::dsl::{corpus_id, service_id};
     let corpus_service_ids_query = tasks::table
       .select(service_id)
@@ -65,7 +65,7 @@ impl Corpus {
   }
 
   /// Deletes a corpus and its dependent tasks from the DB, consuming the object
-  pub fn destroy(self, connection: &PgConnection) -> Result<usize, Error> {
+  pub fn destroy(self, connection: &mut PgConnection) -> Result<usize, Error> {
     // all tasks for entries of this corpus
     delete(tasks::table)
       .filter(tasks::corpus_id.eq(self.id))
@@ -84,7 +84,7 @@ impl Corpus {
 
 /// Insertable `Corpus` struct
 #[derive(Insertable)]
-#[table_name = "corpora"]
+#[diesel(table_name = corpora)]
 pub struct NewCorpus {
   /// file system path to corpus root
   /// (a corpus is held in a single top-level directory)
@@ -108,7 +108,7 @@ impl Default for NewCorpus {
   }
 }
 impl CortexInsertable for NewCorpus {
-  fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
+  fn create(&self, connection: &mut PgConnection) -> Result<usize, Error> {
     insert_into(corpora::table).values(self).execute(connection)
   }
 }

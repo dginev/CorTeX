@@ -36,7 +36,7 @@ pub struct Service {
 }
 /// Insertable struct for `Service`
 #[derive(Insertable, Clone, Debug)]
-#[table_name = "services"]
+#[diesel(table_name = services)]
 pub struct NewService {
   /// a human-readable name
   pub name: String,
@@ -57,7 +57,7 @@ pub struct NewService {
   pub description: String,
 }
 impl CortexInsertable for NewService {
-  fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
+  fn create(&self, connection: &mut PgConnection) -> Result<usize, Error> {
     insert_into(services::table)
       .values(self)
       .execute(connection)
@@ -66,7 +66,7 @@ impl CortexInsertable for NewService {
 
 impl Service {
   /// ORM-like until diesel.rs introduces finders for more fields
-  pub fn find_by_name(name_query: &str, connection: &PgConnection) -> Result<Service, Error> {
+  pub fn find_by_name(name_query: &str, connection: &mut PgConnection) -> Result<Service, Error> {
     use crate::schema::services::name;
     services::table
       .filter(name.eq(name_query))
@@ -94,7 +94,7 @@ impl Service {
   }
 
   /// Return a vector of services currently activated on this corpus
-  pub fn select_workers(&self, connection: &PgConnection) -> Result<Vec<WorkerMetadata>, Error> {
+  pub fn select_workers(&self, connection: &mut PgConnection) -> Result<Vec<WorkerMetadata>, Error> {
     let workers_query = worker_metadata::table
       .filter(worker_metadata::service_id.eq(self.id))
       .order(worker_metadata::name.asc());

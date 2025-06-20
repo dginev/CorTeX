@@ -1,4 +1,4 @@
-#![allow(clippy::implicit_hasher,clippy::extra_unused_lifetimes)]
+#![allow(clippy::implicit_hasher, clippy::extra_unused_lifetimes)]
 use std::fmt;
 
 use diesel::result::Error;
@@ -16,7 +16,7 @@ use super::tasks::Task;
 // Log Messages
 
 #[derive(Identifiable, Queryable, AsChangeset, Associations, Clone, Debug)]
-#[belongs_to(Task)]
+#[diesel(belongs_to(Task))]
 /// An info/debug message, as per the `LaTeXML` convention
 pub struct LogInfo {
   /// task primary key, auto-incremented by postgresql
@@ -31,7 +31,7 @@ pub struct LogInfo {
   pub details: String,
 }
 #[derive(Insertable, Clone, Debug)]
-#[table_name = "log_infos"]
+#[diesel(table_name = log_infos)]
 /// A new, insertable, info/debug message
 pub struct NewLogInfo {
   /// owner task's id
@@ -45,7 +45,7 @@ pub struct NewLogInfo {
 }
 
 #[derive(Identifiable, Queryable, AsChangeset, Associations, Clone, Debug)]
-#[belongs_to(Task)]
+#[diesel(belongs_to(Task))]
 /// A warning message, as per the `LaTeXML` convention
 pub struct LogWarning {
   /// task primary key, auto-incremented by postgresql
@@ -60,7 +60,7 @@ pub struct LogWarning {
   pub details: String,
 }
 #[derive(Insertable, Clone, Debug)]
-#[table_name = "log_warnings"]
+#[diesel(table_name = log_warnings)]
 /// A new, insertable, warning message
 pub struct NewLogWarning {
   /// owner task's id
@@ -74,7 +74,7 @@ pub struct NewLogWarning {
 }
 
 #[derive(Identifiable, Queryable, AsChangeset, Associations, Clone, Debug)]
-#[belongs_to(Task)]
+#[diesel(belongs_to(Task))]
 /// An error message, as per the `LaTeXML` convention
 pub struct LogError {
   /// task primary key, auto-incremented by postgresql
@@ -89,7 +89,7 @@ pub struct LogError {
   pub details: String,
 }
 #[derive(Insertable, Clone, Debug)]
-#[table_name = "log_errors"]
+#[diesel(table_name = log_errors)]
 /// A new, insertable, error message
 pub struct NewLogError {
   /// owner task's id
@@ -103,7 +103,7 @@ pub struct NewLogError {
 }
 
 #[derive(Identifiable, Queryable, AsChangeset, Associations, Clone, Debug)]
-#[belongs_to(Task)]
+#[diesel(belongs_to(Task))]
 /// A fatal message, as per the `LaTeXML` convention
 pub struct LogFatal {
   /// task primary key, auto-incremented by postgresql
@@ -118,7 +118,7 @@ pub struct LogFatal {
   pub details: String,
 }
 #[derive(Insertable, Clone, Debug)]
-#[table_name = "log_fatals"]
+#[diesel(table_name = log_fatals)]
 /// A new, insertable, fatal message
 pub struct NewLogFatal {
   /// mid-level description (open set)
@@ -132,7 +132,7 @@ pub struct NewLogFatal {
 }
 
 #[derive(Identifiable, Queryable, AsChangeset, Clone, Associations, Debug)]
-#[belongs_to(Task)]
+#[diesel(belongs_to(Task))]
 /// An invalid message, as per the `LaTeXML` convention
 pub struct LogInvalid {
   /// task primary key, auto-incremented by postgresql
@@ -147,7 +147,7 @@ pub struct LogInvalid {
   pub details: String,
 }
 #[derive(Insertable, Clone, Debug)]
-#[table_name = "log_invalids"]
+#[diesel(table_name = log_invalids)]
 /// A new, insertable, invalid message
 pub struct NewLogInvalid {
   /// owner task's id
@@ -210,7 +210,7 @@ impl LogRecord for NewLogInfo {
   fn severity(&self) -> &str { "info" }
 }
 impl CortexInsertable for NewLogInfo {
-  fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
+  fn create(&self, connection: &mut PgConnection) -> Result<usize, Error> {
     insert_into(log_infos::table)
       .values(self)
       .execute(connection)
@@ -233,7 +233,7 @@ impl LogRecord for NewLogWarning {
   fn severity(&self) -> &str { "warning" }
 }
 impl CortexInsertable for NewLogWarning {
-  fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
+  fn create(&self, connection: &mut PgConnection) -> Result<usize, Error> {
     insert_into(log_warnings::table)
       .values(self)
       .execute(connection)
@@ -256,7 +256,7 @@ impl LogRecord for NewLogError {
   fn severity(&self) -> &str { "error" }
 }
 impl CortexInsertable for NewLogError {
-  fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
+  fn create(&self, connection: &mut PgConnection) -> Result<usize, Error> {
     insert_into(log_errors::table)
       .values(self)
       .execute(connection)
@@ -279,7 +279,7 @@ impl LogRecord for NewLogFatal {
   fn severity(&self) -> &str { "fatal" }
 }
 impl CortexInsertable for NewLogFatal {
-  fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
+  fn create(&self, connection: &mut PgConnection) -> Result<usize, Error> {
     insert_into(log_fatals::table)
       .values(self)
       .execute(connection)
@@ -302,7 +302,7 @@ impl LogRecord for NewLogInvalid {
   fn severity(&self) -> &str { "invalid" }
 }
 impl CortexInsertable for NewLogInvalid {
-  fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
+  fn create(&self, connection: &mut PgConnection) -> Result<usize, Error> {
     insert_into(log_invalids::table)
       .values(self)
       .execute(connection)

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::{Mutex};
+use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
@@ -10,7 +10,7 @@ use crate::models::Service;
 
 /// Persists a shared vector of reports to the Task store
 pub fn mark_done_arc(
-  backend: &Backend,
+  backend: &mut Backend,
   reports_arc: &Arc<Mutex<Vec<TaskReport>>>,
 ) -> Result<bool, String> {
   // Important: hold the mutex lock for the entirety of the mark_done process,
@@ -18,9 +18,9 @@ pub fn mark_done_arc(
   // we want the entire dispatcher to panic if this thread panics.
   let mut mutex_guard = reports_arc
     .lock()
-    .unwrap_or_else(|_| panic!("Failed to obtain Mutex lock in drain_shared_vec"));
+    .expect("Failed to obtain Mutex lock in drain_shared_vec");
 
-  let reports : Vec<TaskReport> = (*mutex_guard).drain(..).collect();
+  let reports: Vec<TaskReport> = (*mutex_guard).drain(..).collect();
   if !reports.is_empty() {
     let request_time = time::get_time();
     let mut success = false;
@@ -49,8 +49,7 @@ pub fn mark_done_arc(
     }
     let responded_time = time::get_time();
     let request_duration = (responded_time - request_time).num_milliseconds();
-    println!(
-      "finalize: reporting tasks to DB took {request_duration}ms.");
+    println!("finalize: reporting tasks to DB took {request_duration}ms.");
     Ok(true)
   } else {
     Ok(false)
@@ -60,7 +59,7 @@ pub fn mark_done_arc(
 pub fn push_done_queue(reports_arc: &Arc<Mutex<Vec<TaskReport>>>, report: TaskReport) {
   let mut reports = reports_arc
     .lock()
-    .unwrap_or_else(|_| panic!("Failed to obtain Mutex lock in push_done_queue"));
+    .expect("Failed to obtain Mutex lock in push_done_queue");
   if reports.len() > 10_000 {
     panic!(
       "Done queue is too large: {:?} tasks. Stop the sink!",
@@ -76,7 +75,7 @@ pub fn timeout_progress_tasks<S: ::std::hash::BuildHasher>(
 ) -> Vec<TaskProgress> {
   let mut progress_queue = progress_queue_arc
     .lock()
-    .unwrap_or_else(|_| panic!("Failed to obtain Mutex lock in timeout_progress_tasks"));
+    .expect("Failed to obtain Mutex lock in timeout_progress_tasks");
   let now = time::get_time().sec;
   let expired_keys = progress_queue
     .iter()
@@ -96,8 +95,7 @@ pub fn timeout_progress_tasks<S: ::std::hash::BuildHasher>(
 pub fn pop_progress_task<S: ::std::hash::BuildHasher>(
   progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress, S>>>,
   taskid: i64,
-) -> Option<TaskProgress>
-{
+) -> Option<TaskProgress> {
   if taskid < 0 {
     // Mock ids are to be skipped
     return None;
@@ -112,8 +110,7 @@ pub fn pop_progress_task<S: ::std::hash::BuildHasher>(
 pub fn push_progress_task<S: ::std::hash::BuildHasher>(
   progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress, S>>>,
   progress_task: TaskProgress,
-)
-{
+) {
   let mut progress_queue = progress_queue_arc
     .lock()
     .unwrap_or_else(|_| panic!("Failed to obtain Mutex lock in push_progress_task"));
@@ -132,20 +129,14 @@ pub fn push_progress_task<S: ::std::hash::BuildHasher>(
 pub fn get_sync_service<S: ::std::hash::BuildHasher>(
   service_name: &str,
   services: &Arc<Mutex<HashMap<String, Option<Service>, S>>>,
-  backend: &Backend,
-) -> Option<Service>
-{
+  backend: &mut Backend,
+) -> Option<Service> {
   let mut services = services
     .lock()
     .unwrap_or_else(|_| panic!("Failed to obtain Mutex lock in get_sync_services"));
   services
     .entry(service_name.to_string())
-    .or_insert_with(
-      || match Service::find_by_name(service_name, &backend.connection) {
-        Ok(s) => Some(s),
-        _ => None,
-      },
-    )
+    .or_insert_with(|| Service::find_by_name(service_name, &mut backend.connection).ok())
     .clone()
 }
 
@@ -153,11 +144,10 @@ pub fn get_sync_service<S: ::std::hash::BuildHasher>(
 pub fn get_service<S: ::std::hash::BuildHasher>(
   service_name: &str,
   services: &Arc<Mutex<HashMap<String, Option<Service>, S>>>,
-) -> Option<Service>
-{
+) -> Option<Service> {
   let services = services
     .lock()
-    .unwrap_or_else(|_| panic!("Failed to obtain Mutex lock in get_service"));
+    .expect("Failed to obtain Mutex lock in get_service");
   let service = services.get(service_name);
   match service {
     None => None, // TODO: Handle errors

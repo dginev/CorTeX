@@ -14,7 +14,7 @@ pub trait MarkRerun {
     service_id: i32,
     rerun_category: &str,
     rerun_what: &str,
-    connection: &PgConnection,
+    connection: &mut PgConnection,
   ) -> Result<usize, Error>;
   /// Mid-specificity `category`-filtered reruns
   fn mark_rerun_by_category(
@@ -22,7 +22,7 @@ pub trait MarkRerun {
     corpus_id: i32,
     service_id: i32,
     rerun_category: &str,
-    connection: &PgConnection,
+    connection: &mut PgConnection,
   ) -> Result<usize, Error>;
 }
 
@@ -34,9 +34,8 @@ impl MarkRerun for LogInfo {
     service_id: i32,
     rerun_category: &str,
     rerun_what: &str,
-    connection: &PgConnection,
-  ) -> Result<usize, Error>
-  {
+    connection: &mut PgConnection,
+  ) -> Result<usize, Error> {
     use crate::schema::log_infos::dsl::{category, log_infos, task_id, what};
     let task_ids_to_rerun = log_infos
       .filter(category.eq(rerun_category))
@@ -57,9 +56,8 @@ impl MarkRerun for LogInfo {
     corpus_id: i32,
     service_id: i32,
     rerun_category: &str,
-    connection: &PgConnection,
-  ) -> Result<usize, Error>
-  {
+    connection: &mut PgConnection,
+  ) -> Result<usize, Error> {
     use crate::schema::log_infos::dsl::{category, log_infos, task_id};
     let task_ids_to_rerun = log_infos
       .filter(category.eq(rerun_category))
@@ -83,9 +81,8 @@ impl MarkRerun for LogWarning {
     service_id: i32,
     rerun_category: &str,
     rerun_what: &str,
-    connection: &PgConnection,
-  ) -> Result<usize, Error>
-  {
+    connection: &mut PgConnection,
+  ) -> Result<usize, Error> {
     use crate::schema::log_warnings::dsl::{category, log_warnings, task_id, what};
     let task_ids_to_rerun = log_warnings
       .filter(category.eq(rerun_category))
@@ -106,9 +103,8 @@ impl MarkRerun for LogWarning {
     corpus_id: i32,
     service_id: i32,
     rerun_category: &str,
-    connection: &PgConnection,
-  ) -> Result<usize, Error>
-  {
+    connection: &mut PgConnection,
+  ) -> Result<usize, Error> {
     use crate::schema::log_warnings::dsl::{category, log_warnings, task_id};
     let task_ids_to_rerun = log_warnings
       .filter(category.eq(rerun_category))
@@ -132,9 +128,8 @@ impl MarkRerun for LogError {
     service_id: i32,
     rerun_category: &str,
     rerun_what: &str,
-    connection: &PgConnection,
-  ) -> Result<usize, Error>
-  {
+    connection: &mut PgConnection,
+  ) -> Result<usize, Error> {
     use crate::schema::log_errors::dsl::{category, log_errors, task_id, what};
     let task_ids_to_rerun = log_errors
       .filter(category.eq(rerun_category))
@@ -155,9 +150,8 @@ impl MarkRerun for LogError {
     corpus_id: i32,
     service_id: i32,
     rerun_category: &str,
-    connection: &PgConnection,
-  ) -> Result<usize, Error>
-  {
+    connection: &mut PgConnection,
+  ) -> Result<usize, Error> {
     use crate::schema::log_errors::dsl::{category, log_errors, task_id};
     let task_ids_to_rerun = log_errors
       .filter(category.eq(rerun_category))
@@ -180,9 +174,8 @@ impl MarkRerun for LogFatal {
     service_id: i32,
     rerun_category: &str,
     rerun_what: &str,
-    connection: &PgConnection,
-  ) -> Result<usize, Error>
-  {
+    connection: &mut PgConnection,
+  ) -> Result<usize, Error> {
     use crate::schema::log_fatals::dsl::{category, log_fatals, task_id, what};
     let task_ids_to_rerun = log_fatals
       .filter(category.eq(rerun_category))
@@ -203,9 +196,8 @@ impl MarkRerun for LogFatal {
     corpus_id: i32,
     service_id: i32,
     rerun_category: &str,
-    connection: &PgConnection,
-  ) -> Result<usize, Error>
-  {
+    connection: &mut PgConnection,
+  ) -> Result<usize, Error> {
     use crate::schema::log_fatals::dsl::{category, log_fatals, task_id};
     use diesel::sql_types::BigInt;
     if rerun_category == "no_messages" {
@@ -249,9 +241,8 @@ impl MarkRerun for LogInvalid {
     service_id: i32,
     rerun_category: &str,
     rerun_what: &str,
-    connection: &PgConnection,
-  ) -> Result<usize, Error>
-  {
+    connection: &mut PgConnection,
+  ) -> Result<usize, Error> {
     use crate::schema::log_invalids::dsl::{category, log_invalids, task_id, what};
     let task_ids_to_rerun = log_invalids
       .filter(category.eq(rerun_category))
@@ -272,9 +263,8 @@ impl MarkRerun for LogInvalid {
     corpus_id: i32,
     service_id: i32,
     rerun_category: &str,
-    connection: &PgConnection,
-  ) -> Result<usize, Error>
-  {
+    connection: &mut PgConnection,
+  ) -> Result<usize, Error> {
     use crate::schema::log_invalids::dsl::{category, log_invalids, task_id};
     let task_ids_to_rerun = log_invalids
       .filter(category.eq(rerun_category))

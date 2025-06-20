@@ -18,7 +18,7 @@ table! {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, QueryableByName)]
-#[table_name = "aggregate_reports"]
+#[diesel(table_name = aggregate_reports)]
 /// The return struct of aggregate reports targeting task and log message counts
 pub struct AggregateReport {
   /// the category, per `LaTeXML` convention
@@ -39,7 +39,7 @@ table! {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, QueryableByName)]
-#[table_name = "task_detail_reports"]
+#[diesel(table_name = task_detail_reports)]
 /// The return struct of "task details" reports
 pub struct TaskDetailReport {
   /// the task id

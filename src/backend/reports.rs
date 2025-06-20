@@ -35,11 +35,10 @@ pub struct TaskReportOptions<'a> {
 }
 
 pub(crate) fn progress_report(
-  connection: &PgConnection,
+  connection: &mut PgConnection,
   corpus: i32,
   service: i32,
-) -> HashMap<String, f64>
-{
+) -> HashMap<String, f64> {
   use crate::schema::tasks::{corpus_id, service_id, status};
   use diesel::sql_types::BigInt;
 
@@ -74,10 +73,9 @@ pub(crate) fn progress_report(
 }
 
 pub(crate) fn task_report(
-  connection: &PgConnection,
+  connection: &mut PgConnection,
   options: TaskReportOptions,
-) -> Vec<HashMap<String, String>>
-{
+) -> Vec<HashMap<String, String>> {
   use crate::schema::tasks::dsl::{corpus_id, service_id, status};
   use diesel::sql_types::{BigInt, Text};
   // destructure options
@@ -159,8 +157,9 @@ pub(crate) fn task_report(
       let bind_status = if !all_messages {
         task_status_raw
       } else {
-        task_status_raw + 1 // TODO: better would be a .prev() method or so, since this hardwires the assumption of
-                            // using adjacent negative integers
+        task_status_raw + 1 // TODO: better would be a .prev() method or so, since this hardwires
+                            // the assumption of using adjacent negative
+                            // integers
       };
       match category_opt {
         None => {
@@ -345,14 +344,10 @@ fn aux_stats_compute_percentages(stats_hash: &mut HashMap<String, f64>, total_gi
     },
     Some(total_num) => total_num,
   });
-  let stats_keys = stats_hash
-    .iter()
-    .map(|(k, _)| k.clone())
-    .collect::<Vec<_>>();
+  let stats_keys = stats_hash.keys().cloned().collect::<Vec<_>>();
   for stats_key in stats_keys {
     {
-      let key_percent_value: f64 =
-        100.0 * (*stats_hash.get_mut(&stats_key).unwrap() / total);
+      let key_percent_value: f64 = 100.0 * (*stats_hash.get_mut(&stats_key).unwrap() / total);
       let key_percent_rounded: f64 = (key_percent_value * 100.0).round() / 100.0;
       let key_percent_name = stats_key + "_percent";
       stats_hash.insert(key_percent_name, key_percent_rounded);
@@ -366,8 +361,7 @@ fn aux_task_rows_stats(
   these_tasks: i64,
   mut these_messages: i64,
   these_silent: Option<i64>,
-) -> Vec<HashMap<String, String>>
-{
+) -> Vec<HashMap<String, String>> {
   let mut report = Vec::new();
   // Guard against dividing by 0
   if total_valid_tasks <= 0 {
@@ -421,8 +415,7 @@ fn aux_task_rows_stats(
       no_messages_hash.insert("tasks".to_string(), silent_count.to_string());
       let silent_tasks_percent_value: f64 =
         100.0 * (silent_count as f64 / total_valid_tasks as f64);
-      let silent_tasks_percent_rounded: f64 =
-        (silent_tasks_percent_value * 100.0).round() / 100.0;
+      let silent_tasks_percent_rounded: f64 = (silent_tasks_percent_value * 100.0).round() / 100.0;
       no_messages_hash.insert(
         "tasks_percent".to_string(),
         silent_tasks_percent_rounded.to_string(),
@@ -444,12 +437,11 @@ fn aux_task_rows_stats(
 }
 
 pub(crate) fn list_tasks(
-  connection: &PgConnection,
+  connection: &mut PgConnection,
   corpus: &Corpus,
   service: &Service,
   task_status: &TaskStatus,
-) -> Vec<Task>
-{
+) -> Vec<Task> {
   use crate::schema::tasks::dsl::{corpus_id, service_id, status};
   tasks::table
     .filter(service_id.eq(service.id))
@@ -460,12 +452,11 @@ pub(crate) fn list_tasks(
 }
 
 pub(crate) fn list_entries(
-  connection: &PgConnection,
+  connection: &mut PgConnection,
   corpus: &Corpus,
   service: &Service,
   task_status: &TaskStatus,
-) -> Vec<String>
-{
+) -> Vec<String> {
   list_tasks(connection, corpus, service, task_status)
     .into_iter()
     .map(|task| {

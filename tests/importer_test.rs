@@ -36,12 +36,12 @@ fn assert_dirs(dirs: &[&str]) -> Result<(), std::io::Error> {
 
 #[test]
 fn can_import_simple() {
-  let test_backend = backend::testdb();
+  let mut test_backend = backend::testdb();
   let name = "simple import test";
   // Clean slate
   let clean_slate = delete(corpora::table)
     .filter(corpora::name.eq(name))
-    .execute(&test_backend.connection);
+    .execute(&mut test_backend.connection);
   assert!(clean_slate.is_ok());
   let new_corpus = NewCorpus {
     name: name.to_string(),
@@ -51,7 +51,7 @@ fn can_import_simple() {
   };
   let add_corpus_result = test_backend.add(&new_corpus);
   assert!(add_corpus_result.is_ok());
-  let corpus_result = Corpus::find_by_name(name, &test_backend.connection);
+  let corpus_result = Corpus::find_by_name(name, &mut test_backend.connection);
   assert!(corpus_result.is_ok());
   let corpus = corpus_result.unwrap();
   let corpus_id = corpus.id;
@@ -71,18 +71,18 @@ fn can_import_simple() {
   // Clean slate
   let clean_slate_post = delete(tasks::table)
     .filter(tasks::corpus_id.eq(corpus_id))
-    .execute(&test_backend.connection);
+    .execute(&mut test_backend.connection);
   assert!(clean_slate_post.is_ok());
 }
 
 #[test]
 fn can_import_complex() {
-  let test_backend = backend::testdb();
+  let mut test_backend = backend::testdb();
   let name = "complex import test";
   // Clean slate
   let clean_slate = delete(corpora::table)
     .filter(corpora::name.eq(name))
-    .execute(&test_backend.connection);
+    .execute(&mut test_backend.connection);
   assert!(clean_slate.is_ok());
 
   let new_corpus = NewCorpus {
@@ -93,7 +93,7 @@ fn can_import_complex() {
   };
   let add_corpus_result = test_backend.add(&new_corpus);
   assert!(add_corpus_result.is_ok());
-  let corpus_result = Corpus::find_by_name(name, &test_backend.connection);
+  let corpus_result = Corpus::find_by_name(name, &mut test_backend.connection);
   assert!(corpus_result.is_ok());
   let corpus = corpus_result.unwrap();
   let corpus_id = corpus.id;
@@ -130,6 +130,6 @@ fn can_import_complex() {
   // Clean slate
   let clean_slate_post = delete(tasks::table)
     .filter(tasks::corpus_id.eq(corpus_id))
-    .execute(&test_backend.connection);
+    .execute(&mut test_backend.connection);
   assert!(clean_slate_post.is_ok());
 }
