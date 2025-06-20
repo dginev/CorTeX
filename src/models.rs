@@ -24,3 +24,6 @@ pub use corpora::*;
 
 mod historical_runs;
 pub use historical_runs::*;
+
+mod historical_tasks;
+pub use historical_tasks::*;

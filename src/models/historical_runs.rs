@@ -18,7 +18,7 @@ use crate::schema::historical_runs;
 #[diesel(table_name = historical_runs)]
 /// Historical `(Corpus, Service)` run records
 pub struct HistoricalRun {
-  /// task primary key, auto-incremented by postgresql
+  /// id of the historical run
   pub id: i32,
   /// id of the service owning this task
   pub service_id: i32,
@@ -178,8 +178,7 @@ impl HistoricalRun {
     corpus: &Corpus,
     service: &Service,
     connection: &mut PgConnection,
-  ) -> Result<Vec<HistoricalRun>, Error>
-  {
+  ) -> Result<Vec<HistoricalRun>, Error> {
     use crate::schema::historical_runs::dsl::{corpus_id, service_id, start_time};
     let runs: Vec<HistoricalRun> = historical_runs::table
       .filter(corpus_id.eq(corpus.id))
@@ -194,8 +193,7 @@ impl HistoricalRun {
     corpus: &Corpus,
     service: &Service,
     connection: &mut PgConnection,
-  ) -> Result<Option<HistoricalRun>, Error>
-  {
+  ) -> Result<Option<HistoricalRun>, Error> {
     use crate::schema::historical_runs::dsl::{corpus_id, end_time, service_id};
     historical_runs::table
       .filter(corpus_id.eq(corpus.id))
