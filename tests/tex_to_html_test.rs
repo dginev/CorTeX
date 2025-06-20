@@ -34,7 +34,7 @@ fn mock_tex_to_html() {
     return;
   }
   // Initialize a corpus, import a single task, and enable a service on it
-  let test_backend = backend::testdb();
+  let mut test_backend = backend::testdb();
   // assert!(test_backend.setup_task_tables().is_ok());
   let corpus_name = "tex_to_html_test corpus";
   let service_name = "tex_to_html";
@@ -46,15 +46,15 @@ fn mock_tex_to_html() {
   // Clean slate
   let clean_slate_result = delete(corpora::table)
     .filter(corpora::name.eq(corpus_name))
-    .execute(&test_backend.connection);
+    .execute(&mut test_backend.connection);
   assert!(clean_slate_result.is_ok());
   let service_clean_slate_result = delete(services::table)
     .filter(services::name.eq(service_name))
-    .execute(&test_backend.connection);
+    .execute(&mut test_backend.connection);
   assert!(service_clean_slate_result.is_ok());
   let task_clean_slate_result = delete(tasks::table)
     .filter(tasks::entry.eq(&abs_entry))
-    .execute(&test_backend.connection);
+    .execute(&mut test_backend.connection);
   assert!(task_clean_slate_result.is_ok());
 
   let add_corpus_result = test_backend.add(&NewCorpus {
@@ -64,7 +64,7 @@ fn mock_tex_to_html() {
     description: String::new(),
   });
   assert!(add_corpus_result.is_ok());
-  let corpus_result = Corpus::find_by_name(corpus_name, &test_backend.connection);
+  let corpus_result = Corpus::find_by_name(corpus_name, &mut test_backend.connection);
   assert!(corpus_result.is_ok());
   let registered_corpus = corpus_result.unwrap();
 
@@ -78,7 +78,7 @@ fn mock_tex_to_html() {
     description: String::from("mock"),
   });
   assert!(add_service_result.is_ok());
-  let service_result = Service::find_by_name(service_name, &test_backend.connection);
+  let service_result = Service::find_by_name(service_name, &mut test_backend.connection);
   let tex_to_html_service = service_result.unwrap();
 
   let conversion_task = NewTask {
@@ -112,7 +112,8 @@ fn mock_tex_to_html() {
   thread::sleep(Duration::new(2, 0)); // TODO: Can this be deterministic? Join?
   assert!(manager_thread.join().is_ok());
   // Check round-trip success
-  let finished_task_result = Task::find_by_entry(&conversion_task.entry, &test_backend.connection);
+  let finished_task_result =
+    Task::find_by_entry(&conversion_task.entry, &mut test_backend.connection);
   assert!(finished_task_result.is_ok());
   let finished_task = finished_task_result.unwrap();
   println!("Finished: {:?}", finished_task);

@@ -21,13 +21,13 @@ use diesel::prelude::*;
 fn mock_round_trip() {
   // Initialize a corpus, import a single task, and enable a service on it
   let job_limit: Option<usize> = Some(1);
-  let test_backend = backend::testdb();
+  let mut test_backend = backend::testdb();
   // assert!(test_backend.setup_task_tables().is_ok());
   let corpus_name = "mock round-trip corpus";
   // Clean slate
   let clean_slate_result = delete(corpora::table)
     .filter(corpora::name.eq(corpus_name))
-    .execute(&test_backend.connection);
+    .execute(&mut test_backend.connection);
   assert!(clean_slate_result.is_ok());
 
   let add_corpus_result = test_backend.add(&NewCorpus {
@@ -37,7 +37,7 @@ fn mock_round_trip() {
     description: String::new(),
   });
   assert!(add_corpus_result.is_ok());
-  let corpus_result = Corpus::find_by_name(corpus_name, &test_backend.connection);
+  let corpus_result = Corpus::find_by_name(corpus_name, &mut test_backend.connection);
   assert!(corpus_result.is_ok());
   let mock_corpus = corpus_result.unwrap();
 
@@ -49,11 +49,11 @@ fn mock_round_trip() {
   // clean slate
   let service_clean_slate = delete(services::table)
     .filter(services::name.eq(service_name))
-    .execute(&test_backend.connection);
+    .execute(&mut test_backend.connection);
   assert!(service_clean_slate.is_ok());
   let tasks_clean_slate = delete(tasks::table)
     .filter(tasks::entry.eq(&abs_entry))
-    .execute(&test_backend.connection);
+    .execute(&mut test_backend.connection);
   assert!(tasks_clean_slate.is_ok());
 
   let add_service_result = test_backend.add(&NewService {
@@ -66,7 +66,7 @@ fn mock_round_trip() {
     description: String::from("mock"),
   });
   assert!(add_service_result.is_ok());
-  let service_result = Service::find_by_name(service_name, &test_backend.connection);
+  let service_result = Service::find_by_name(service_name, &mut test_backend.connection);
   assert!(service_result.is_ok());
   let echo_service = service_result.unwrap();
 

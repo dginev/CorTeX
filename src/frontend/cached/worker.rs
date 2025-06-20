@@ -9,22 +9,19 @@ use std::time::Duration;
 /// A standalone worker loop for invalidating stale cache entries, mostly for CorTeX's frontend
 /// report pages
 pub fn cache_worker() {
-  let redis_client = match redis::Client::open("redis://127.0.0.1/") {
-    Ok(client) => client,
-    _ => panic!("Redis connection failed, please boot up redis and restart the frontend!"),
-  };
-  let mut redis_connection = match redis_client.get_connection() {
-    Ok(conn) => conn,
-    _ => panic!("Redis connection failed, please boot up redis and restart the frontend!"),
-  };
+  let redis_client = redis::Client::open("redis://127.0.0.1/")
+    .expect("Redis connection failed, please boot up redis and restart the frontend!");
+  let mut redis_connection = redis_client
+    .get_connection()
+    .expect("Redis connection failed, please boot up redis and restart the frontend!");
   let mut queued_cache: HashMap<String, usize> = HashMap::new();
   loop {
     // Keep a fresh backend connection on each invalidation pass.
-    let backend = Backend::default();
+    let mut backend = Backend::default();
     let mut global_stub: HashMap<String, String> = HashMap::new();
     // each corpus+service (non-import)
     for corpus in &backend.corpora() {
-      if let Ok(services) = corpus.select_services(&backend.connection) {
+      if let Ok(services) = corpus.select_services(&mut backend.connection) {
         for service in &services {
           if service.name == "import" {
             continue;

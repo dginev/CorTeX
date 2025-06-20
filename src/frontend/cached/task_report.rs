@@ -15,8 +15,7 @@ pub fn task_report(
   category: Option<String>,
   what: Option<String>,
   params: &Option<ReportParams>,
-) -> Vec<HashMap<String, String>>
-{
+) -> Vec<HashMap<String, String>> {
   let all_messages = match params {
     None => false,
     Some(ref params) => *params.all.as_ref().unwrap_or(&false),
@@ -75,7 +74,7 @@ pub fn task_report(
     };
 
   if cached_report.is_empty() {
-    let backend = Backend::default();
+    let mut backend = Backend::default();
     fetched_report = backend.task_report(TaskReportOptions {
       corpus,
       service,

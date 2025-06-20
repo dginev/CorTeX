@@ -11,7 +11,7 @@ use crate::models::{
 };
 
 pub(crate) fn mark_imported(
-  connection: &PgConnection,
+  connection: &mut PgConnection,
   imported_tasks: &[NewTask],
 ) -> Result<usize, Error> {
   // Insert, but only if the task is new (allow for extension calls with the same method)
@@ -21,36 +21,39 @@ pub(crate) fn mark_imported(
     .execute(connection)
 }
 
-pub(crate) fn mark_done(connection: &PgConnection, reports: &[TaskReport]) -> Result<(), Error> {
+pub(crate) fn mark_done(
+  connection: &mut PgConnection,
+  reports: &[TaskReport],
+) -> Result<(), Error> {
   use crate::schema::tasks::{id, status};
 
-  connection.transaction::<(), Error, _>(|| {
+  connection.transaction::<(), Error, _>(|t_connection| {
     for report in reports.iter() {
       // Update the status
       update(tasks::table)
         .filter(id.eq(report.task.id))
         .set(status.eq(report.status.raw()))
-        .execute(connection)?;
+        .execute(t_connection)?;
       // Next, delete all previous log messages for this task.id
       delete(log_infos::table)
         .filter(log_infos::task_id.eq(report.task.id))
-        .execute(connection)?;
+        .execute(t_connection)?;
       delete(log_warnings::table)
         .filter(log_warnings::task_id.eq(report.task.id))
-        .execute(connection)?;
+        .execute(t_connection)?;
       delete(log_errors::table)
         .filter(log_errors::task_id.eq(report.task.id))
-        .execute(connection)?;
+        .execute(t_connection)?;
       delete(log_fatals::table)
         .filter(log_fatals::task_id.eq(report.task.id))
-        .execute(connection)?;
+        .execute(t_connection)?;
       delete(log_invalids::table)
         .filter(log_invalids::task_id.eq(report.task.id))
-        .execute(connection)?;
+        .execute(t_connection)?;
       // Clean slate, so proceed to add the new messages
       for message in &report.messages {
         if message.severity() != "status" {
-          message.create(connection)?;
+          message.create(t_connection)?;
         }
       }
       // TODO: Update dependenct services, when integrated in DB
@@ -61,7 +64,7 @@ pub(crate) fn mark_done(connection: &PgConnection, reports: &[TaskReport]) -> Re
 }
 
 pub(crate) fn mark_rerun<'a>(
-  connection: &'a PgConnection,
+  connection: &'a mut PgConnection,
   options: RerunOptions<'a>,
 ) -> Result<(), Error> {
   let RerunOptions {
@@ -202,7 +205,7 @@ pub(crate) fn mark_rerun<'a>(
 }
 
 pub(crate) fn mark_new_run(
-  connection: &PgConnection,
+  connection: &mut PgConnection,
   corpus: &Corpus,
   service: &Service,
   owner: String,
@@ -222,7 +225,7 @@ pub(crate) fn mark_new_run(
 }
 
 fn mark_run_completed(
-  connection: &PgConnection,
+  connection: &mut PgConnection,
   corpus: &Corpus,
   service: &Service,
 ) -> Result<(), Error> {
@@ -231,9 +234,9 @@ fn mark_run_completed(
     .filter(|run| run.end_time.is_none())
     .collect();
   if !to_finish.is_empty() {
-    connection.transaction::<(), Error, _>(move || {
+    connection.transaction::<(), Error, _>(move |t_connection| {
       for run in to_finish.into_iter() {
-        run.mark_completed(connection)?;
+        run.mark_completed(t_connection)?;
       }
       Ok(())
     })?;

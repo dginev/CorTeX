@@ -12,7 +12,7 @@ use crate::backend;
 use crate::schema::worker_metadata;
 
 #[derive(Insertable, Debug)]
-#[table_name = "worker_metadata"]
+#[diesel(table_name = worker_metadata)]
 /// Metadata collection for workers, updated by the dispatcher upon zmq transactions
 pub struct NewWorkerMetadata {
   /// associated service for this worker metadata set
@@ -38,7 +38,7 @@ pub struct NewWorkerMetadata {
 }
 
 #[derive(Identifiable, Queryable, Clone, Debug, Serialize)]
-#[table_name = "worker_metadata"]
+#[diesel(table_name = worker_metadata)]
 /// Metadata collection for workers, updated by the dispatcher upon zmq transactions
 pub struct WorkerMetadata {
   /// task primary key, auto-incremented by postgresql
@@ -151,8 +151,8 @@ impl WorkerMetadata {
   {
     let now = SystemTime::now();
     let _ = thread::spawn(move || {
-      let backend = backend::from_address(&backend_address);
-      match WorkerMetadata::find_by_name(&name, service_id, &backend.connection) {
+      let mut backend = backend::from_address(&backend_address);
+      match WorkerMetadata::find_by_name(&name, service_id, &mut backend.connection) {
         Ok(data) => {
           // update with the appropriate fields.
           let session_seen = match data.session_seen {
@@ -166,7 +166,7 @@ impl WorkerMetadata {
               worker_metadata::time_last_dispatch.eq(now),
               worker_metadata::session_seen.eq(Some(session_seen)),
             ))
-            .execute(&backend.connection)
+            .execute(&mut backend.connection)
             .unwrap_or(0);
         },
         _ => {
@@ -184,7 +184,7 @@ impl WorkerMetadata {
           };
           insert_into(worker_metadata::table)
             .values(&data)
-            .execute(&backend.connection)
+            .execute(&mut backend.connection)
             .unwrap_or(0);
         },
       }
@@ -200,8 +200,8 @@ impl WorkerMetadata {
   ) -> Result<(), Error> {
     let now = SystemTime::now();
     let _ = thread::spawn(move || {
-      let backend = backend::from_address(&backend_address);
-      if let Ok(data) = WorkerMetadata::find_by_name(&identity, service_id, &backend.connection) {
+      let mut backend = backend::from_address(&backend_address);
+      if let Ok(data) = WorkerMetadata::find_by_name(&identity, service_id, &mut backend.connection) {
         let session_seen = match data.session_seen {
           Some(time) => time,
           None => now,
@@ -213,7 +213,7 @@ impl WorkerMetadata {
             worker_metadata::time_last_return.eq(now),
             worker_metadata::session_seen.eq(Some(session_seen)),
           ))
-          .execute(&backend.connection)
+          .execute(&mut backend.connection)
           .unwrap_or(0);
       } else {
         println!("-- Can't record worker metadata for unknown worker: {identity:?} {service_id:?}");
@@ -226,7 +226,7 @@ impl WorkerMetadata {
   pub fn find_by_name(
     identity: &str,
     sid: i32,
-    connection: &PgConnection,
+    connection: &mut PgConnection,
   ) -> Result<WorkerMetadata, Error>
   {
     use crate::schema::worker_metadata::{name, service_id};

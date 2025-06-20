@@ -7,11 +7,10 @@ use diesel::result::Error;
 use diesel::*;
 
 pub(crate) fn register_service(
-  connection: &PgConnection,
+  connection: &mut PgConnection,
   service: &Service,
   corpus_path: &str,
-) -> Result<(), Error>
-{
+) -> Result<(), Error> {
   use crate::schema::tasks::dsl::*;
   let corpus = Corpus::find_by_path(corpus_path, connection)?;
   let todo_raw = TaskStatus::TODO.raw();
@@ -31,7 +30,7 @@ pub(crate) fn register_service(
     .filter(corpus_id.eq(corpus.id))
     .select(entry)
     .load(connection)?;
-  connection.transaction::<(), Error, _>(|| {
+  connection.transaction::<(), Error, _>(|t_connection| {
     for imported_entry in entries {
       let new_task = NewTask {
         entry: imported_entry,
@@ -39,7 +38,7 @@ pub(crate) fn register_service(
         corpus_id: corpus.id,
         status: todo_raw,
       };
-      new_task.create(connection)?;
+      new_task.create(t_connection)?;
     }
     Ok(())
   })?;
@@ -56,11 +55,10 @@ pub(crate) fn register_service(
 }
 
 pub(crate) fn extend_service(
-  connection: &PgConnection,
+  connection: &mut PgConnection,
   service: &Service,
   corpus_path: &str,
-) -> Result<(), Error>
-{
+) -> Result<(), Error> {
   use crate::schema::tasks::dsl::*;
   let corpus = Corpus::find_by_path(corpus_path, connection)?;
   let todo_raw = TaskStatus::TODO.raw();
@@ -77,7 +75,7 @@ pub(crate) fn extend_service(
     .filter(corpus_id.eq(corpus.id))
     .select(entry)
     .load(connection)?;
-  connection.transaction::<(), Error, _>(|| {
+  connection.transaction::<(), Error, _>(|t_connection| {
     for imported_entry in entries {
       let new_task = NewTask {
         entry: imported_entry,
@@ -85,17 +83,16 @@ pub(crate) fn extend_service(
         corpus_id: corpus.id,
         status: todo_raw,
       };
-      new_task.create_if_new(connection)?;
+      new_task.create_if_new(t_connection)?;
     }
     Ok(())
   })
 }
 
 pub(crate) fn delete_service_by_name(
-  connection: &PgConnection,
+  connection: &mut PgConnection,
   name: &str,
-) -> Result<usize, Error>
-{
+) -> Result<usize, Error> {
   delete(services::table)
     .filter(services::name.eq(name))
     .execute(connection)

@@ -15,7 +15,7 @@ use crate::models::{Corpus, Service};
 use crate::schema::historical_runs;
 
 #[derive(Identifiable, Queryable, Clone, Debug, PartialEq, Eq, QueryableByName)]
-#[table_name = "historical_runs"]
+#[diesel(table_name = historical_runs)]
 /// Historical `(Corpus, Service)` run records
 pub struct HistoricalRun {
   /// task primary key, auto-incremented by postgresql
@@ -151,7 +151,7 @@ impl RunMetadataStack {
 }
 
 #[derive(Insertable, Debug, Clone)]
-#[table_name = "historical_runs"]
+#[diesel(table_name = historical_runs)]
 /// A new task, to be inserted into `CorTeX`
 pub struct NewHistoricalRun {
   /// id of the service owning this task
@@ -165,7 +165,7 @@ pub struct NewHistoricalRun {
 }
 
 impl CortexInsertable for NewHistoricalRun {
-  fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
+  fn create(&self, connection: &mut PgConnection) -> Result<usize, Error> {
     insert_into(historical_runs::table)
       .values(self)
       .execute(connection)
@@ -177,7 +177,7 @@ impl HistoricalRun {
   pub fn find_by(
     corpus: &Corpus,
     service: &Service,
-    connection: &PgConnection,
+    connection: &mut PgConnection,
   ) -> Result<Vec<HistoricalRun>, Error>
   {
     use crate::schema::historical_runs::dsl::{corpus_id, service_id, start_time};
@@ -193,7 +193,7 @@ impl HistoricalRun {
   pub fn find_current(
     corpus: &Corpus,
     service: &Service,
-    connection: &PgConnection,
+    connection: &mut PgConnection,
   ) -> Result<Option<HistoricalRun>, Error>
   {
     use crate::schema::historical_runs::dsl::{corpus_id, end_time, service_id};
@@ -206,7 +206,7 @@ impl HistoricalRun {
   }
 
   /// Mark this historical run as completed, by setting `end_time` to the current time.
-  pub fn mark_completed(&self, connection: &PgConnection) -> Result<(), Error> {
+  pub fn mark_completed(&self, connection: &mut PgConnection) -> Result<(), Error> {
     use diesel::dsl::now;
     if self.end_time.is_none() {
       // gather the current statistics for this run, then update.

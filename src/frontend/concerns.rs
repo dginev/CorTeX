@@ -1,10 +1,10 @@
 //! Common concerns for frontend routes
+use crate::rocket::futures::TryFutureExt;
 use regex::Regex;
-use rocket::response::status::{Accepted, NotFound};
 use rocket::fs::NamedFile;
+use rocket::response::status::{Accepted, NotFound};
 use rocket::serde::json::Json;
 use rocket_dyn_templates::Template;
-use crate::rocket::futures::TryFutureExt;
 use std::collections::HashMap;
 use std::str;
 
@@ -33,13 +33,13 @@ pub fn serve_report(
   let report_start = time::get_time();
   let mut context = TemplateContext::default();
   let mut global = HashMap::new();
-  let backend = Backend::default();
+  let mut backend = Backend::default();
 
   let corpus_name = corpus_name.to_lowercase();
   let service_name = service_name.to_lowercase();
-  let corpus_result = Corpus::find_by_name(&corpus_name, &backend.connection);
+  let corpus_result = Corpus::find_by_name(&corpus_name, &mut backend.connection);
   if let Ok(corpus) = corpus_result {
-    let service_result = Service::find_by_name(&service_name, &backend.connection);
+    let service_result = Service::find_by_name(&service_name, &mut backend.connection);
     if let Ok(service) = service_result {
       // Metadata in all reports
       global.insert(
@@ -64,7 +64,7 @@ pub fn serve_report(
       global.insert("outputformat".to_string(), service.outputformat.clone());
 
       if let Ok(Some(historical_run)) =
-        HistoricalRun::find_current(&corpus, &service, &backend.connection)
+        HistoricalRun::find_current(&corpus, &service, &mut backend.connection)
       {
         global.insert(
           "run_start_time".to_string(),
@@ -111,7 +111,10 @@ pub fn serve_report(
           "highlight".to_string(),
           severity_highlight(&severity.clone().unwrap()).to_string(),
         );
-        let no_problem_kind = severity.is_some() && (severity.as_ref().unwrap() == "no_problem");
+        let no_problem_kind = match severity {
+          Some(ref s) => s == "no_problem",
+          None => false,
+        };
         let fetched_report = task_report(
           &mut global,
           &corpus,
@@ -238,16 +241,16 @@ pub fn serve_rerun(
 
   // Run (and measure) the three rerun queries
   let report_start = time::get_time();
-  let backend = Backend::default();
+  let mut backend = Backend::default();
   // Build corpus and service objects
-  let corpus = match Corpus::find_by_name(&corpus_name, &backend.connection) {
+  let corpus = match Corpus::find_by_name(&corpus_name, &mut backend.connection) {
     Err(_) => return Err(NotFound("Access Denied".to_string())), /* TODO: response.
                                                                    * error(Forbidden, */
     // "Access denied"),
     Ok(corpus) => corpus,
   };
 
-  let service = match Service::find_by_name(&service_name, &backend.connection) {
+  let service = match Service::find_by_name(&service_name, &mut backend.connection) {
     Err(_) => return Err(NotFound("Access Denied".to_string())), /* TODO: response.
                                                                    * error(Forbidden, */
     // "Access denied"),
@@ -264,8 +267,7 @@ pub fn serve_rerun(
   });
   let report_end = time::get_time();
   let report_duration = (report_end - report_start).num_milliseconds();
-  println!(
-    "-- User {user:?}: Mark for rerun took {report_duration:?}ms");
+  println!("-- User {user:?}: Mark for rerun took {report_duration:?}ms");
   match rerun_result {
     Err(_) => Err(NotFound("Access Denied".to_string())), // TODO: better error message?
     Ok(_) => Ok(Accepted(String::default())),
@@ -273,9 +275,12 @@ pub fn serve_rerun(
 }
 
 /// Provide a `NamedFile` for an entry
-pub async fn serve_entry(service_name: String, entry_id: usize) -> Result<NamedFile, NotFound<String>> {
-  let backend = Backend::default();
-  match Task::find(entry_id as i64, &backend.connection) {
+pub async fn serve_entry(
+  service_name: String,
+  entry_id: usize,
+) -> Result<NamedFile, NotFound<String>> {
+  let mut backend = Backend::default();
+  match Task::find(entry_id as i64, &mut backend.connection) {
     Ok(task) => {
       let entry = task.entry;
       let zip_path = match service_name.as_str() {
@@ -285,9 +290,12 @@ pub async fn serve_entry(service_name: String, entry_id: usize) -> Result<NamedF
       if zip_path.is_empty() {
         Err(NotFound(format!(
           "Service {service_name:?} does not have a result
-                               for entry {entry_id:?}")))
+                               for entry {entry_id:?}"
+        )))
       } else {
-        NamedFile::open(&zip_path).map_err(|_| NotFound("Invalid Zip at path".to_string())).await
+        NamedFile::open(&zip_path)
+          .map_err(|_| NotFound("Invalid Zip at path".to_string()))
+          .await
       }
     },
     Err(e) => Err(NotFound(format!("Task not found: {e}"))),
@@ -304,15 +312,15 @@ pub fn serve_entry_preview(
   let corpus_name = corpus_name.to_lowercase();
   let mut context = TemplateContext::default();
   let mut global = HashMap::new();
-  let backend = Backend::default();
+  let mut backend = Backend::default();
 
-  let corpus_result = Corpus::find_by_name(&corpus_name, &backend.connection);
+  let corpus_result = Corpus::find_by_name(&corpus_name, &mut backend.connection);
   if let Ok(corpus) = corpus_result {
-    let service_result = Service::find_by_name(&service_name, &backend.connection);
+    let service_result = Service::find_by_name(&service_name, &mut backend.connection);
     if let Ok(service) = service_result {
       // Assemble the Download URL from where we will gather the page contents
       // First, we need the taskid
-      let task = match Task::find_by_name(&entry_name, &corpus, &service, &backend.connection) {
+      let task = match Task::find_by_name(&entry_name, &corpus, &service, &mut backend.connection) {
         Ok(t) => t,
         Err(e) => return Err(NotFound(e.to_string())),
       };

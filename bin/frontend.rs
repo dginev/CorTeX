@@ -13,9 +13,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::thread;
 
-use rocket::response::status::{Accepted, NotFound};
 use rocket::fs::NamedFile;
 use rocket::futures::TryFutureExt;
+use rocket::response::status::{Accepted, NotFound};
 use rocket::serde::json::Json;
 use rocket_dyn_templates::Template;
 
@@ -42,7 +42,7 @@ fn root() -> Template {
     "An analysis framework for corpora of TeX/LaTeX documents - overview page".to_string(),
   );
 
-  let backend = Backend::default();
+  let mut backend = Backend::default();
   let corpora = backend
     .corpora()
     .iter()
@@ -58,9 +58,9 @@ fn root() -> Template {
 
 #[get("/workers/<service_name>")]
 fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
-  let backend = Backend::default();
+  let mut backend = Backend::default();
   let service_name = uri_unescape(Some(&service_name)).unwrap_or_else(|| UNKNOWN.to_string());
-  if let Ok(service) = Service::find_by_name(&service_name, &backend.connection) {
+  if let Ok(service) = Service::find_by_name(&service_name, &mut backend.connection) {
     let mut global = HashMap::new();
     global.insert(
       "title".to_string(),
@@ -84,7 +84,7 @@ fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
     };
 
     let workers = service
-      .select_workers(&backend.connection)
+      .select_workers(&mut backend.connection)
       .unwrap()
       .into_iter()
       .map(Into::into)
@@ -98,9 +98,9 @@ fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
 
 #[get("/corpus/<corpus_name>")]
 fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
-  let backend = Backend::default();
+  let mut backend = Backend::default();
   let corpus_name = uri_unescape(Some(&corpus_name)).unwrap_or_else(|| UNKNOWN.to_string());
-  let corpus_result = Corpus::find_by_name(&corpus_name, &backend.connection);
+  let corpus_result = Corpus::find_by_name(&corpus_name, &mut backend.connection);
   if let Ok(corpus) = corpus_result {
     let mut global = HashMap::new();
     global.insert(
@@ -120,7 +120,7 @@ fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
       ..TemplateContext::default()
     };
 
-    let services_result = corpus.select_services(&backend.connection);
+    let services_result = corpus.select_services(&mut backend.connection);
     if let Ok(backend_services) = services_result {
       let services = backend_services
         .iter()
@@ -251,11 +251,11 @@ fn historical_runs(
 ) -> Result<Template, NotFound<String>> {
   let mut context = TemplateContext::default();
   let mut global = HashMap::new();
-  let backend = Backend::default();
+  let mut backend = Backend::default();
   let corpus_name = corpus_name.to_lowercase();
-  if let Ok(corpus) = Corpus::find_by_name(&corpus_name, &backend.connection) {
-    if let Ok(service) = Service::find_by_name(&service_name, &backend.connection) {
-      if let Ok(runs) = HistoricalRun::find_by(&corpus, &service, &backend.connection) {
+  if let Ok(corpus) = Corpus::find_by_name(&corpus_name, &mut backend.connection) {
+    if let Ok(service) = Service::find_by_name(&service_name, &mut backend.connection) {
+      if let Ok(runs) = HistoricalRun::find_by(&corpus, &service, &mut backend.connection) {
         let runs_meta = runs
           .into_iter()
           .map(Into::into)
@@ -382,24 +382,30 @@ fn rerun_what(
 #[get("/favicon.ico")]
 async fn favicon() -> Result<NamedFile, NotFound<String>> {
   let path = Path::new("public/").join("favicon.ico");
-  NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {path:?}"))).await
+  NamedFile::open(&path)
+    .map_err(|_| NotFound(format!("Bad path: {path:?}")))
+    .await
 }
 
 #[get("/robots.txt")]
 async fn robots() -> Result<NamedFile, NotFound<String>> {
   let path = Path::new("public/").join("robots.txt");
-  NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {path:?}"))).await
+  NamedFile::open(&path)
+    .map_err(|_| NotFound(format!("Bad path: {path:?}")))
+    .await
 }
 
 #[get("/public/<file..>")]
 async fn files(file: PathBuf) -> Result<NamedFile, NotFound<String>> {
   let path = Path::new("public/").join(file);
-  NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {path:?}"))).await
+  NamedFile::open(&path)
+    .map_err(|_| NotFound(format!("Bad path: {path:?}")))
+    .await
 }
 
 #[launch]
 fn rocket() -> _ {
-// cache worker in parallel to the main service thread
+  // cache worker in parallel to the main service thread
   let _ = thread::spawn(move || {
     cache_worker();
   });

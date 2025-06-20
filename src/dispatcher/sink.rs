@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io;
-use std::io::ErrorKind;
 use std::io::Write;
 use std::ops::Deref;
 use std::path::Path;
@@ -75,8 +74,7 @@ impl Sink {
         let task = task_progress.task;
         match server::get_service(service_name, services_arc) {
           None => {
-            return Err(Box::new(io::Error::new(
-              ErrorKind::Other,
+            return Err(Box::new(io::Error::other(
               "TODO: Server::get_service found nothing.",
             )));
           }, // TODO: Handle errors
@@ -123,7 +121,8 @@ impl Sink {
                               Ok(written_bytes) => total_incoming += written_bytes,
                               Err(e) => {
                                 println!(
-                                  "-- Error TODO: file.write(recv_msg.deref()) failed: {e:?}");
+                                  "-- Error TODO: file.write(recv_msg.deref()) failed: {e:?}"
+                                );
                                 break;
                               },
                             };
@@ -175,12 +174,10 @@ impl Sink {
       }
       let responded_time = time::get_time();
       let request_duration = (responded_time - request_time).num_milliseconds();
-      println!(
-        "sink {sink_job_count}: message size: {total_incoming}, took {request_duration}ms.");
+      println!("sink {sink_job_count}: message size: {total_incoming}, took {request_duration}ms.");
       if let Some(limit_number) = job_limit {
         if sink_job_count >= limit_number {
-          println!(
-            "sink {limit_number}: job limit reached, terminating Sink thread...");
+          println!("sink {limit_number}: job limit reached, terminating Sink thread...");
           break;
         }
       }

@@ -24,7 +24,7 @@ fn main() -> Result<(), Error> {
   let start_traverse = time::get_time();
   let chunk_size = 10_240;
   // Setup CorTeX backend data
-  let backend = Backend::default();
+  let mut backend = Backend::default();
   let mut input_args = env::args();
   let _ = input_args.next(); // discard the script filename
   let corpus_name = match input_args.next() {
@@ -35,14 +35,14 @@ fn main() -> Result<(), Error> {
     Some(name) => name,
     None => "tex_to_html".to_string(),
   };
-  let corpus = Corpus::find_by_name(&corpus_name, &backend.connection)?;
-  let service = Service::find_by_name(&service_name, &backend.connection)?;
-  let service_filename = format!("{}.zip", service_name);
+  let corpus = Corpus::find_by_name(&corpus_name, &mut backend.connection)?;
+  let service = Service::find_by_name(&service_name, &mut backend.connection)?;
+  let service_filename = format!("{service_name}.zip");
 
   let mut total_entries = 0;
   let mut messages = Vec::new(); // persist MESSAGE_BUFFER_SIZE messages at a time
                                  // Traverse each status code with produced HTML:
-  for status in vec![
+  for status in [
     TaskStatus::NoProblem,
     TaskStatus::Warning,
     TaskStatus::Error,
@@ -107,9 +107,9 @@ fn main() -> Result<(), Error> {
 
       // Check if messages overflow buffer, in which case persist
       if messages.len() > MESSAGE_BUFFER_SIZE {
-        backend.connection.transaction::<(), Error, _>(|| {
+        backend.connection.transaction::<(), Error, _>(|t_conn| {
           for message in &messages {
-            message.create(&backend.connection)?;
+            message.create(t_conn)?;
           }
           Ok(())
         })?;
@@ -120,9 +120,9 @@ fn main() -> Result<(), Error> {
 
   // Flush any remaining messages to DB.
   if !messages.is_empty() {
-    backend.connection.transaction::<(), Error, _>(|| {
+    backend.connection.transaction::<(), Error, _>(|t_conn| {
       for message in &messages {
-        message.create(&backend.connection)?;
+        message.create(t_conn)?;
       }
       Ok(())
     })?;

@@ -40,7 +40,7 @@ impl Ventilator {
     // We have a Ventilator-exclusive "queues" stack for tasks to be dispatched
     let mut queues: HashMap<String, Vec<TaskProgress>> = HashMap::new();
     // Assuming this is the only And tidy up the postgres tasks:
-    let backend = backend::from_address(&self.backend_address);
+    let mut backend = backend::from_address(&self.backend_address);
     backend.clear_limbo_tasks()?;
     // Ok, let's bind to a port and start broadcasting
     let context = zmq::Context::new();
@@ -64,7 +64,7 @@ impl Ventilator {
 
       let mut dispatched_task_opt: Option<TaskProgress> = None;
       // Requests for unknown service names will be silently ignored.
-      if let Some(service) = server::get_sync_service(&service_name, services_arc, &backend) {
+      if let Some(service) = server::get_sync_service(&service_name, services_arc, &mut backend) {
         if !queues.contains_key(&service_name) {
           queues.insert(service_name.clone(), Vec::new());
         }
@@ -127,8 +127,7 @@ impl Ventilator {
           let current_task = current_task_progress.task;
           taskid = current_task.id;
           let serviceid = current_task.service_id;
-          println!(
-            "vent {source_job_count}: worker {identity_str:?} received task {taskid:?}");
+          println!("vent {source_job_count}: worker {identity_str:?} received task {taskid:?}");
           ventilator.send(&taskid.to_string(), SNDMORE)?;
           if serviceid == 1 {
             // No payload needed for init
@@ -168,8 +167,7 @@ impl Ventilator {
             }
           }
         } else {
-          println!(
-            "vent {source_job_count:?}: worker {identity_str:?} received mock reply.");
+          println!("vent {source_job_count:?}: worker {identity_str:?} received mock reply.");
           ventilator.send("0", SNDMORE)?;
           ventilator.send(Vec::new(), 0)?;
         }
@@ -181,8 +179,7 @@ impl Ventilator {
           self.backend_address.clone(),
         )?;
       } else {
-        println!(
-          "-- No such service in ventilator request: {service_name:?}");
+        println!("-- No such service in ventilator request: {service_name:?}");
       }
       // Record that a task has been dispatched in the progress queue
       if let Some(dispatched_task) = dispatched_task_opt {
@@ -190,8 +187,7 @@ impl Ventilator {
       }
       if let Some(limit_number) = job_limit {
         if source_job_count >= limit_number {
-          println!(
-            "vent {limit_number}: job limit reached, terminating Ventilator thread...");
+          println!("vent {limit_number}: job limit reached, terminating Ventilator thread...");
           break;
         }
       }

@@ -31,11 +31,11 @@ fn main() {
     }
   }
   corpus_path.push('/');
-  println!("-- Importing corpus at {:?} ...", &corpus_path);
-  let backend = Backend::default();
+  println!("-- Importing corpus at {corpus_path:?} ...");
+  let mut backend = Backend::default();
 
-  if let Ok(corpus) = Corpus::find_by_path(&corpus_path, &backend.connection) {
-    assert!(corpus.destroy(&backend.connection).is_ok());
+  if let Ok(corpus) = Corpus::find_by_path(&corpus_path, &mut backend.connection) {
+    assert!(corpus.destroy(&mut backend.connection).is_ok());
   }
 
   backend
@@ -72,14 +72,14 @@ fn main() {
   };
   // Perform a single echo task
   if let Err(e) = worker.start(Some(1)) {
-    println!("InitWorker result: {:?}", e);
+    println!("InitWorker result: {e:?}");
   }
   // Wait for the final finisher to persist to DB
   thread::sleep(Duration::new(2, 0)); // TODO: Can this be deterministic? Join?
 
   // Then add a TeX-to-HTML service on this corpus.
   let service_name = "tex_to_html";
-  let service_registered = match Service::find_by_name(service_name, &backend.connection) {
+  let service_registered = match Service::find_by_name(service_name, &mut backend.connection) {
     Ok(s) => s,
     Err(_) => {
       let new_service = NewService {
@@ -92,7 +92,7 @@ fn main() {
         description: String::from("mock"),
       };
       assert!(backend.add(&new_service).is_ok());
-      let service_registered_result = Service::find_by_name(service_name, &backend.connection);
+      let service_registered_result = Service::find_by_name(service_name, &mut backend.connection);
       assert!(service_registered_result.is_ok());
       service_registered_result.unwrap()
     },

@@ -32,8 +32,8 @@ fn main() {
     "-- Registering service {:?} on corpus at {:?} ...",
     &service_name, &corpus_path
   );
-  let backend = Backend::default();
-  let service_registered_result = Service::find_by_name(&service_name, &backend.connection);
+  let mut backend = Backend::default();
+  let service_registered_result = Service::find_by_name(&service_name, &mut backend.connection);
   assert!(service_registered_result.is_ok());
   let service_registered = service_registered_result.unwrap();
 
