@@ -116,7 +116,7 @@ fn mock_tex_to_html() {
     Task::find_by_entry(&conversion_task.entry, &mut test_backend.connection);
   assert!(finished_task_result.is_ok());
   let finished_task = finished_task_result.unwrap();
-  println!("Finished: {:?}", finished_task);
+  println!("Finished: {finished_task:?}");
   // This particular test finishes with an Warning with the current LaTeXML 0.8.5 (needs cmp.sty).
   assert_eq!(finished_task.status, TaskStatus::Warning.raw())
 }

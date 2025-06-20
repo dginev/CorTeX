@@ -5,8 +5,8 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-///! Import a new corpus into `CorTeX` from the command line.
-///! Example run: `$ cargo run --release --example tex_to_html_import /data/arxmliv/ arXMLiv`
+//! Import a new corpus into `CorTeX` from the command line.
+//! Example run: `$ cargo run --release --example tex_to_html_import /data/arxmliv/ arXMLiv`
 use std::env;
 
 use cortex::backend::{Backend, DEFAULT_DB_ADDRESS};
