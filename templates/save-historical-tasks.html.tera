@@ -16,9 +16,6 @@
           </p>
         </div>
         <div class="modal-footer">
-          <input id="savetasks-description" type="text" class="form-control" placeholder="Description of rerun"
-            name="description">
-          <br>
           <input id="savetasks-token" type="text" class="form-control" placeholder="Please enter your rerun token"
             name="token">
           <br>
@@ -37,14 +34,7 @@
     $("#btn-savetasks").attr("class", "btn btn-primary disabled");
   });
   $("input#savetasks-token").on('input', function () {
-    if (($(this).val().length == 0) || ($("input#savetasks-description").val().length == 0)) {
-      $("#btn-savetasks").addClass("disabled");
-    } else {
-      $("#btn-savetasks").removeClass("disabled");
-    }
-  });
-  $("input#savetasks-description").on('input', function () {
-    if (($(this).val().length == 0) || ($("input#savetasks-token").val().length == 0)) {
+    if (($(this).val().length == 0)) {
       $("#btn-savetasks").addClass("disabled");
     } else {
       $("#btn-savetasks").removeClass("disabled");
@@ -71,9 +61,7 @@
     xhr.open('POST', action);
     xhr.setRequestHeader('Content-Type', 'application/json');
 
-    var data = {};
-    data['token'] = $("input#savetasks-token").val();
-    data['description'] = $("input#savetasks-description").val();
+    var data = {'token': $("input#savetasks-token").val(), 'description': ''};
     xhr.send(JSON.stringify(data));
     return false;
   });
