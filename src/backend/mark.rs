@@ -260,7 +260,5 @@ pub fn save_historical_tasks(
         .filter(tasks::service_id.eq(service.id)),
     )
     .into_columns((historical_tasks::task_id, historical_tasks::status));
-  let sql = debug_query::<diesel::pg::Pg, _>(&insert_query);
-  dbg!(sql);
   insert_query.execute(connection)
 }
