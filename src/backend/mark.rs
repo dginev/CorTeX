@@ -1,4 +1,6 @@
-use crate::schema::{log_errors, log_fatals, log_infos, log_invalids, log_warnings, tasks};
+use crate::schema::{
+  historical_tasks, log_errors, log_fatals, log_infos, log_invalids, log_warnings, tasks,
+};
 use diesel::result::Error;
 use diesel::*;
 
@@ -242,4 +244,23 @@ fn mark_run_completed(
     })?;
   }
   Ok(())
+}
+
+pub fn save_historical_tasks(
+  connection: &mut PgConnection,
+  corpus: &Corpus,
+  service: &Service,
+) -> Result<usize, Error> {
+  //  create batch copy query
+  let insert_query = insert_into(historical_tasks::table)
+    .values(
+      tasks::table
+        .select((tasks::id, tasks::status))
+        .filter(tasks::corpus_id.eq(corpus.id))
+        .filter(tasks::service_id.eq(service.id)),
+    )
+    .into_columns((historical_tasks::task_id, historical_tasks::status));
+  let sql = debug_query::<diesel::pg::Pg, _>(&insert_query);
+  dbg!(sql);
+  insert_query.execute(connection)
 }

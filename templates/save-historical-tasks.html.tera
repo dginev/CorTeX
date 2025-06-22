@@ -1,0 +1,85 @@
+<div id="modal-savetasks" class="modal fade" tabindex="-1" role="dialog">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="form-savetasks" class="form-savetasks" name="form-savetasks" method="post" accept-charset="UTF-8"
+        action="/savetasks/{{global.corpus_name_uri}}/{{global.service_name_uri}}">
+        <div class="modal-header">
+          <a class="close" data-dismiss="modal">×</a>
+          <h3>Save tasks for the historical record</h3>
+        </div>
+        <div class="modal-body">
+          <p>You are about to copy the status records of all tasks belonging to
+            <strong>all</strong> of the below: </p>
+          <p class="savetasks-banner">
+            <span class="savetasks-banner-segment" data-segment="corpus">{{global.corpus_name}}</span>
+            <span class="savetasks-banner-segment" data-segment="service">{{global.service_name}}</span>
+          </p>
+        </div>
+        <div class="modal-footer">
+          <input id="savetasks-description" type="text" class="form-control" placeholder="Description of rerun"
+            name="description">
+          <br>
+          <input id="savetasks-token" type="text" class="form-control" placeholder="Please enter your rerun token"
+            name="token">
+          <br>
+          <button type="button" id="btn-savetasks" class="btn btn-primary disabled">Mark for rerun</buttont>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+
+<script>
+  $("#modal-savetasks").on('shown.bs.modal', function () {
+    $("#savetasks-token").val("");
+    $("#btn-savetasks").html('Mark for rerun');
+    $("#btn-savetasks").attr("class", "btn btn-primary disabled");
+  });
+  $("input#savetasks-token").on('input', function () {
+    if (($(this).val().length == 0) || ($("input#savetasks-description").val().length == 0)) {
+      $("#btn-savetasks").addClass("disabled");
+    } else {
+      $("#btn-savetasks").removeClass("disabled");
+    }
+  });
+  $("input#savetasks-description").on('input', function () {
+    if (($(this).val().length == 0) || ($("input#savetasks-token").val().length == 0)) {
+      $("#btn-savetasks").addClass("disabled");
+    } else {
+      $("#btn-savetasks").removeClass("disabled");
+    }
+  });
+
+  $("#btn-savetasks").click(function (e) {
+    e.preventDefault();
+    $("#btn-savetasks").html('<i class="fa fa-refresh fa-spin"></i> Marking...');
+    var action = $("form#form-savetasks").attr("action").replace(/\/+$/, '');
+    var xhr = new XMLHttpRequest();
+    xhr.onreadystatechange = function () {
+      if (this.readyState == 4) { // Only process when done.
+        if (this.status != 200 && this.status != 202) {
+          // Something went wrong, throw out the localStorage and re-auth (Redis could've fallen, etc)
+          $("#btn-savetasks").html('Failed, please retry.');
+          $("#btn-savetasks").attr("class", "btn btn-danger disabled");
+        } else {
+          $("#btn-savetasks").html('Marked!');
+          $("#btn-savetasks").attr("class", "btn btn-success disabled");
+        }
+      }
+    };
+    xhr.open('POST', action);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+
+    var data = {};
+    data['token'] = $("input#savetasks-token").val();
+    data['description'] = $("input#savetasks-description").val();
+    xhr.send(JSON.stringify(data));
+    return false;
+  });
+
+  $("span.savetasks-banner-segment:not(:empty)").each(function () {
+    var segment = "[" + $(this).data('segment') + "]&nbsp;";
+    $(this).prepend('<i class="fa fa-chevron-right fa-lg"></i>&nbsp;&nbsp;' + segment);
+  });
+</script>

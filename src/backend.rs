@@ -113,6 +113,15 @@ impl Backend {
     mark::mark_new_run(&mut self.connection, corpus, service, owner, description)
   }
 
+  /// Save the current historical tasks for reference
+  pub fn save_historical_tasks(
+    &mut self,
+    corpus: &Corpus,
+    service: &Service,
+  ) -> Result<usize, Error> {
+    mark::save_historical_tasks(&mut self.connection, corpus, service)
+  }
+
   /// Generic delete method, uses primary "id" field
   pub fn delete<Model: CortexDeletable>(&mut self, object: &Model) -> Result<usize, Error> {
     object.delete_by(&mut self.connection, "id")

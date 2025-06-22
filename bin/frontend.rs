@@ -22,7 +22,7 @@ use rocket_dyn_templates::Template;
 use cortex::backend::Backend;
 use cortex::frontend::cached::cache_worker;
 use cortex::frontend::concerns::{
-  serve_entry, serve_entry_preview, serve_report, serve_rerun, UNKNOWN,
+  serve_entry, serve_entry_preview, serve_report, serve_rerun, serve_savetasks, UNKNOWN,
 };
 use cortex::frontend::cors::CORS;
 use cortex::frontend::helpers::*;
@@ -379,6 +379,20 @@ fn rerun_what(
   )
 }
 
+#[post(
+  "/savetasks/<corpus_name>/<service_name>",
+  format = "application/json",
+  data = "<rr>"
+)]
+fn savetasks(
+  corpus_name: String,
+  service_name: String,
+  rr: Json<RerunRequestParams>,
+) -> Result<Accepted<String>, NotFound<String>> {
+  let corpus_name = corpus_name.to_lowercase();
+  serve_savetasks(corpus_name, service_name, rr)
+}
+
 #[get("/favicon.ico")]
 async fn favicon() -> Result<NamedFile, NotFound<String>> {
   let path = Path::new("public/").join("favicon.ico");
@@ -432,7 +446,8 @@ fn rocket() -> _ {
         rerun_severity,
         rerun_category,
         rerun_what,
-        historical_runs
+        historical_runs,
+        savetasks
       ],
     )
     .attach(Template::fairing())
