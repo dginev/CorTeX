@@ -26,7 +26,7 @@
           <input id="rerun-description" type="text" class="form-control" placeholder="Description of rerun"
             name="description">
           <br>
-          <input id="rerun-token" type="text" class="form-control" placeholder="Please enter your rerun token"
+          <input id="rerun-token" type="text" class="form-control" placeholder="Please enter your auth token"
             name="token">
           <br>
           <button type="button" id="btn-rerun" class="btn btn-primary disabled">Mark for rerun</buttont>

@@ -16,10 +16,10 @@
           </p>
         </div>
         <div class="modal-footer">
-          <input id="savetasks-token" type="text" class="form-control" placeholder="Please enter your rerun token"
+          <input id="savetasks-token" type="text" class="form-control" placeholder="Please enter your auth token"
             name="token">
           <br>
-          <button type="button" id="btn-savetasks" class="btn btn-primary disabled">Mark for rerun</buttont>
+          <button type="button" id="btn-savetasks" class="btn btn-primary disabled">Save historical record</buttont>
         </div>
       </form>
     </div>
@@ -30,7 +30,7 @@
 <script>
   $("#modal-savetasks").on('shown.bs.modal', function () {
     $("#savetasks-token").val("");
-    $("#btn-savetasks").html('Mark for rerun');
+    $("#btn-savetasks").html('Save historical record');
     $("#btn-savetasks").attr("class", "btn btn-primary disabled");
   });
   $("input#savetasks-token").on('input', function () {
