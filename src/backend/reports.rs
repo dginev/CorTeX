@@ -3,8 +3,9 @@ use diesel::*;
 use regex::Regex;
 use std::collections::HashMap;
 
+use crate::frontend::helpers::severity_highlight;
 use crate::helpers::TaskStatus;
-use crate::models::{Corpus, HistoricalTask, Service, Task, TaskRunMetadata};
+use crate::models::{Corpus, DiffStatusRow, HistoricalTask, Service, Task, TaskRunMetadata};
 use crate::reports::{AggregateReport, TaskDetailReport};
 use crate::schema::tasks;
 
@@ -470,23 +471,79 @@ pub(crate) fn list_entries(
     .collect()
 }
 
-/// Prepares a template-friendly report of task differences
+/// Prepares a template-friendly list of task differences
 pub fn list_task_diffs(
   connection: &mut PgConnection,
   corpus: &Corpus,
   service: &Service,
 ) -> Vec<TaskRunMetadata> {
-  match HistoricalTask::report_for(&corpus, &service, None, connection) {
+  match HistoricalTask::report_for(corpus, service, None, connection) {
     Ok(report) => report
       .into_iter()
-      .map(|row| TaskRunMetadata {
-        entry: TASK_REPORT_NAME_REGEX.replace(&row.0, "$1").to_string(),
-        previous_status: TaskStatus::from_raw(row.2.status).to_key(),
-        current_status: TaskStatus::from_raw(row.1.status).to_key(),
-        previous_saved_at: row.2.saved_at.format("%Y-%m-%d").to_string(),
-        current_saved_at: row.1.saved_at.format("%Y-%m-%d").to_string(),
+      .map(|row| {
+        let previous_status = TaskStatus::from_raw(row.2.status).to_key();
+        let current_status = TaskStatus::from_raw(row.1.status).to_key();
+        let previous_highlight = severity_highlight(&previous_status).to_owned();
+        let current_highlight = severity_highlight(&current_status).to_owned();
+        TaskRunMetadata {
+          entry: TASK_REPORT_NAME_REGEX.replace(&row.0, "$1").to_string(),
+          previous_status,
+          current_status,
+          previous_highlight,
+          current_highlight,
+          previous_saved_at: row.2.saved_at.format("%Y-%m-%d").to_string(),
+          current_saved_at: row.1.saved_at.format("%Y-%m-%d").to_string(),
+        }
       })
       .collect(),
+    _ => Vec::new(),
+  }
+}
+
+/// Prepares a template-friendly summary of task differences
+pub fn summary_task_diffs(
+  connection: &mut PgConnection,
+  corpus: &Corpus,
+  service: &Service,
+) -> Vec<DiffStatusRow> {
+  match HistoricalTask::report_for(corpus, service, None, connection) {
+    Ok(report) => {
+      let mut summary = HashMap::new();
+      for row in report {
+        let prev_status = row.2.status;
+        let current_status = row.1.status;
+        let count = summary
+          .entry(prev_status)
+          .or_insert_with(HashMap::new)
+          .entry(current_status)
+          .or_insert(0);
+        *count += 1;
+      }
+      // Here we are only interested to rpeort on the 4 "completed" severities
+      // we could add invalid, but not yet a focus
+      use TaskStatus::*;
+      let mut tabular = Vec::new();
+      for prev in [NoProblem, Warning, Error, Fatal].iter() {
+        for current in [NoProblem, Warning, Error, Fatal].iter() {
+          let previous_status = prev.to_key();
+          let current_status = current.to_key();
+          let previous_highlight = severity_highlight(&previous_status).to_owned();
+          let current_highlight = severity_highlight(&current_status).to_owned();
+          tabular.push(DiffStatusRow {
+            previous_status,
+            current_status,
+            previous_highlight,
+            current_highlight,
+            task_count: *summary
+              .entry(prev.raw())
+              .or_insert_with(HashMap::new)
+              .entry(current.raw())
+              .or_insert(0),
+          });
+        }
+      }
+      tabular
+    },
     _ => Vec::new(),
   }
 }

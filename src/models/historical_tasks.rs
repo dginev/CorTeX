@@ -43,10 +43,29 @@ pub struct TaskRunMetadata {
   pub previous_status: String,
   /// The current result for processing this task
   pub current_status: String,
+  /// The previous highlight for displaying this task
+  pub previous_highlight: String,
+  /// The current highlight for displaying this task
+  pub current_highlight: String,
   /// Previous timestamp of a manual save
   pub previous_saved_at: String,
   /// Current/latest timestamp of a manual save
   pub current_saved_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+/// A single report row for the diff-summary feature
+pub struct DiffStatusRow {
+  /// The previous result for processing this task
+  pub previous_status: String,
+  /// The current result for processing this task
+  pub current_status: String,
+  /// The previous highlight for displaying this task
+  pub previous_highlight: String,
+  /// The current highlight for displaying this task
+  pub current_highlight: String,
+  /// Task count
+  pub task_count: usize,
 }
 
 impl CortexInsertable for NewHistoricalTask {

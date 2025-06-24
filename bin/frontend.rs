@@ -292,6 +292,31 @@ fn historical_runs(
   Ok(Template::render("history", context))
 }
 
+#[get("/diff-summary/<corpus_name>/<service_name>")]
+fn diff_historical_summary(
+  corpus_name: String,
+  service_name: String,
+) -> Result<Template, NotFound<String>> {
+  let mut context = TemplateContext::default();
+  // let mut global = HashMap::new();
+  let mut backend = Backend::default();
+  if let Ok(corpus) = Corpus::find_by_name(&corpus_name, &mut backend.connection) {
+    if let Ok(service) = Service::find_by_name(&service_name, &mut backend.connection) {
+      context.diff_summary = Some(backend.summary_task_diffs(&corpus, &service));
+    }
+  }
+  let mut global = HashMap::new();
+  global.insert(
+    "description".to_string(),
+    format!("Summary of recent differences of service {service_name} over corpus {corpus_name}"),
+  );
+  global.insert("service_name".to_string(), service_name);
+  global.insert("corpus_name".to_string(), corpus_name);
+  context.global = global;
+  decorate_uri_encodings(&mut context);
+  Ok(Template::render("diff-summary", context))
+}
+
 #[get("/diff-history/<corpus_name>/<service_name>")]
 fn diff_historical_tasks(
   corpus_name: String,
@@ -317,10 +342,7 @@ fn diff_historical_tasks(
   global.insert("corpus_name".to_string(), corpus_name);
 
   context.global = global;
-  // And pass the handy lambdas
-  // And render the correct template
   decorate_uri_encodings(&mut context);
-  // Report also the task diff statistics
   Ok(Template::render("diff-history", context))
 }
 
@@ -480,6 +502,7 @@ fn rocket() -> _ {
         rerun_what,
         historical_runs,
         diff_historical_tasks,
+        diff_historical_summary,
         savetasks
       ],
     )

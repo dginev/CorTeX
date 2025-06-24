@@ -1,5 +1,5 @@
 //! Various parameter data structures for the Rocket frontend routes
-use crate::models::{RunMetadata, TaskRunMetadata};
+use crate::models::{DiffStatusRow, RunMetadata, TaskRunMetadata};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -53,6 +53,8 @@ pub struct TemplateContext {
   pub history: Option<Vec<RunMetadata>>,
   /// tabular data for reporting on historical task diffs
   pub diff_report: Option<Vec<TaskRunMetadata>>,
+  /// tabular data for reporting a summary of severity transitions between two runs
+  pub diff_summary: Option<Vec<DiffStatusRow>>,
   /// serialized data for easy plotting of rerun history
   pub history_serialized: Option<String>,
 }

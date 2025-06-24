@@ -73,7 +73,7 @@
           href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/info">Explore Info-level
           messages</a><br>
         <a href="/history/{{global.corpus_name_uri}}/{{global.service_name_uri}}">Explore History</a><br>
-        <a href="/diff-history/{{global.corpus_name_uri}}/{{global.service_name_uri}}">Diff Task History</a><br>
+        <a href="/diff-summary/{{global.corpus_name_uri}}/{{global.service_name_uri}}">Diff previous runs</a><br>
       </div>
     </div>
     <div class="col-md-4"></div>
