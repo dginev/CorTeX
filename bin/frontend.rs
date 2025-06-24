@@ -27,7 +27,10 @@ use cortex::frontend::concerns::{
 use cortex::frontend::cors::CORS;
 use cortex::frontend::helpers::*;
 use cortex::frontend::params::{ReportParams, RerunRequestParams, TemplateContext};
-use cortex::models::{Corpus, HistoricalRun, RunMetadata, RunMetadataStack, Service};
+use cortex::helpers::TaskStatus;
+use cortex::models::{
+  Corpus, HistoricalRun, HistoricalTask, RunMetadata, RunMetadataStack, Service, TaskRunMetadata,
+};
 
 #[get("/")]
 fn root() -> Template {
@@ -292,6 +295,54 @@ fn historical_runs(
   Ok(Template::render("history", context))
 }
 
+#[get("/diff-history/<corpus_name>/<service_name>")]
+fn diff_historical_tasks(
+  corpus_name: String,
+  service_name: String,
+) -> Result<Template, NotFound<String>> {
+  let mut context = TemplateContext::default();
+  let mut global = HashMap::new();
+  let mut backend = Backend::default();
+  let corpus_name = corpus_name.to_lowercase();
+  if let Ok(corpus) = Corpus::find_by_name(&corpus_name, &mut backend.connection) {
+    if let Ok(service) = Service::find_by_name(&service_name, &mut backend.connection) {
+      if let Ok(report) =
+        HistoricalTask::report_for(&corpus, &service, None, &mut backend.connection)
+      {
+        context.diff_report = Some(
+          report
+            .into_iter()
+            .map(|row| TaskRunMetadata {
+              entry: row.0,
+              previous_status: TaskStatus::from_raw(row.2.status).to_key(),
+              current_status: TaskStatus::from_raw(row.2.status).to_key(),
+              previous_saved_at: row.2.saved_at.format("%Y-%m-%d").to_string(),
+              current_saved_at: row.1.saved_at.format("%Y-%m-%d").to_string(),
+            })
+            .collect(),
+        );
+      }
+    }
+  }
+
+  // Pass the globals(reports+metadata) onto the stash
+  global.insert(
+    "description".to_string(),
+    format!(
+      "Diffs for historical task severity runs of service {service_name} over corpus {corpus_name}"
+    ),
+  );
+  global.insert("service_name".to_string(), service_name);
+  global.insert("corpus_name".to_string(), corpus_name);
+
+  context.global = global;
+  // And pass the handy lambdas
+  // And render the correct template
+  decorate_uri_encodings(&mut context);
+  // Report also the task diff statistics
+  Ok(Template::render("diff-history", context))
+}
+
 #[get("/preview/<corpus_name>/<service_name>/<entry_name>")]
 fn preview_entry(
   corpus_name: String,
@@ -447,6 +498,7 @@ fn rocket() -> _ {
         rerun_category,
         rerun_what,
         historical_runs,
+        diff_historical_tasks,
         savetasks
       ],
     )

@@ -1,0 +1,34 @@
+{% extends "layout" %}
+
+{% block content %}
+<div class="center">
+  <h1>Diff with previous Task Status</h1>
+  <br>
+  <div class="row">
+    <table class="table table-striped diff-tasks-report">
+      <thead>
+        <tr><th>Entry<th>Previous Status</th><th>Current Status</th><th>Previously Saved at</th><th>Saved at</th></tr>
+      </thead>
+      <tbody>
+        {% for entry in diff_report %}
+        <tr>
+          <td>{{ entry.entry }}</td>
+          <td>{{ entry.previous_status }}</td>
+          <td>{{ entry.current_status }}</td>
+          <td>{{ entry.previous_saved_at }}</td>
+          <td>{{ entry.current_saved_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock content %}
+
+<br> {% block footer_extra %} {% if global.corpus_description %}
+<p class="corpus-description">
+  <span class="bold">{{global.corpus_name}}:</span> {{global.corpus_description}} </p>
+{% endif %} {% if global.service_description %}
+<p class="service-description">
+  <span class="bold">{{global.service_name}}:</span> {{global.service_description}} </p>
+{% endif %} {% endblock footer_extra %}
