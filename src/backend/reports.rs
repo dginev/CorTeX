@@ -4,7 +4,7 @@ use regex::Regex;
 use std::collections::HashMap;
 
 use crate::helpers::TaskStatus;
-use crate::models::{Corpus, Service, Task};
+use crate::models::{Corpus, HistoricalTask, Service, Task, TaskRunMetadata};
 use crate::reports::{AggregateReport, TaskDetailReport};
 use crate::schema::tasks;
 
@@ -468,4 +468,25 @@ pub(crate) fn list_entries(
       }
     })
     .collect()
+}
+
+/// Prepares a template-friendly report of task differences
+pub fn list_task_diffs(
+  connection: &mut PgConnection,
+  corpus: &Corpus,
+  service: &Service,
+) -> Vec<TaskRunMetadata> {
+  match HistoricalTask::report_for(&corpus, &service, None, connection) {
+    Ok(report) => report
+      .into_iter()
+      .map(|row| TaskRunMetadata {
+        entry: TASK_REPORT_NAME_REGEX.replace(&row.0, "$1").to_string(),
+        previous_status: TaskStatus::from_raw(row.2.status).to_key(),
+        current_status: TaskStatus::from_raw(row.1.status).to_key(),
+        previous_saved_at: row.2.saved_at.format("%Y-%m-%d").to_string(),
+        current_saved_at: row.1.saved_at.format("%Y-%m-%d").to_string(),
+      })
+      .collect(),
+    _ => Vec::new(),
+  }
 }

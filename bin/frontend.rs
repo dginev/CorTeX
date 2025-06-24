@@ -27,10 +27,7 @@ use cortex::frontend::concerns::{
 use cortex::frontend::cors::CORS;
 use cortex::frontend::helpers::*;
 use cortex::frontend::params::{ReportParams, RerunRequestParams, TemplateContext};
-use cortex::helpers::TaskStatus;
-use cortex::models::{
-  Corpus, HistoricalRun, HistoricalTask, RunMetadata, RunMetadataStack, Service, TaskRunMetadata,
-};
+use cortex::models::{Corpus, HistoricalRun, RunMetadata, RunMetadataStack, Service};
 
 #[get("/")]
 fn root() -> Template {
@@ -306,25 +303,9 @@ fn diff_historical_tasks(
   let corpus_name = corpus_name.to_lowercase();
   if let Ok(corpus) = Corpus::find_by_name(&corpus_name, &mut backend.connection) {
     if let Ok(service) = Service::find_by_name(&service_name, &mut backend.connection) {
-      if let Ok(report) =
-        HistoricalTask::report_for(&corpus, &service, None, &mut backend.connection)
-      {
-        context.diff_report = Some(
-          report
-            .into_iter()
-            .map(|row| TaskRunMetadata {
-              entry: row.0,
-              previous_status: TaskStatus::from_raw(row.2.status).to_key(),
-              current_status: TaskStatus::from_raw(row.2.status).to_key(),
-              previous_saved_at: row.2.saved_at.format("%Y-%m-%d").to_string(),
-              current_saved_at: row.1.saved_at.format("%Y-%m-%d").to_string(),
-            })
-            .collect(),
-        );
-      }
+      context.diff_report = Some(backend.list_task_diffs(&corpus, &service));
     }
   }
-
   // Pass the globals(reports+metadata) onto the stash
   global.insert(
     "description".to_string(),

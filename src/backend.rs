@@ -24,7 +24,7 @@ use std::fmt;
 
 use crate::concerns::{CortexDeletable, CortexInsertable};
 use crate::helpers::{TaskReport, TaskStatus};
-use crate::models::{Corpus, NewTask, Service, Task};
+use crate::models::{Corpus, NewTask, Service, Task, TaskRunMetadata};
 
 /// The production database postgresql address, set from the .env configuration file
 pub const DEFAULT_DB_ADDRESS: &str = dotenv!("DATABASE_URL");
@@ -201,5 +201,10 @@ impl Backend {
   /// Provides a progress report, grouped by severity, for a given `Corpus` and `Service` pair
   pub fn progress_report(&mut self, corpus: &Corpus, service: &Service) -> HashMap<String, f64> {
     reports::progress_report(&mut self.connection, corpus.id, service.id)
+  }
+
+  /// Prepares a template-friendly report of task differences
+  pub fn list_task_diffs(&mut self, corpus: &Corpus, service: &Service) -> Vec<TaskRunMetadata> {
+    reports::list_task_diffs(&mut self.connection, corpus, service)
   }
 }
