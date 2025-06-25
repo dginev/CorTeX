@@ -2,7 +2,7 @@
 
 {% block content %}
 <div class="center">
-  <h1>Summary of differences between the last two rnus</h1>
+  <h1>Differences in per-task severity</h1>
   <br>
   <div class="row">
     <table class="table table-striped diff-tasks-report">

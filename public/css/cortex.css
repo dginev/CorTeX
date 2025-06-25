@@ -29,7 +29,8 @@ footer {
   height: 15px;
 }
 
-tr.error {
+tr.error,
+td.error {
   background-color: #ffe9bf;
 }
 
@@ -287,6 +288,6 @@ div.main-report-bottom {
 }
 
 table.diff-tasks-report {
-  width: 35rem !important;
+  width: 40rem !important;
   margin: auto;
 }

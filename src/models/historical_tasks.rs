@@ -1,5 +1,6 @@
 #![allow(clippy::extra_unused_lifetimes)]
 use chrono::prelude::*;
+use diesel::pg::Pg;
 use diesel::result::Error;
 use diesel::*;
 use rocket::serde::Serialize;
@@ -7,7 +8,8 @@ use rocket::serde::Serialize;
 // use super::tasks::Task;
 // use crate::helpers::TaskStatus;
 use crate::concerns::CortexInsertable;
-use crate::models::{Corpus, Service, Task};
+use crate::helpers::TaskStatus;
+use crate::models::{Corpus, Service};
 use crate::schema::{historical_tasks, tasks};
 
 #[derive(Identifiable, Queryable, Clone, Debug, PartialEq, Eq, QueryableByName)]
@@ -68,6 +70,19 @@ pub struct DiffStatusRow {
   pub task_count: usize,
 }
 
+#[derive(Debug, Clone)]
+/// A collection of filters for task status history reports
+pub struct DiffStatusFilter {
+  /// The previous result for processing this task
+  pub previous_status: TaskStatus,
+  /// The current result for processing this task
+  pub current_status: TaskStatus,
+  /// Starting offset
+  pub offset: usize,
+  /// Page size
+  pub page_size: usize,
+}
+
 impl CortexInsertable for NewHistoricalTask {
   fn create(&self, connection: &mut PgConnection) -> Result<usize, Error> {
     insert_into(historical_tasks::table)
@@ -105,46 +120,80 @@ impl HistoricalTask {
 
   /// Prepare a report for diffing the two most recent historical records of all tasks belonging to
   /// a `(corpus,service)` pair. We do this 100 tasks at a time, starting from the given offset.
+  /// The return contract is (id, previous, current)
   pub fn report_for(
     corpus: &Corpus,
     service: &Service,
-    offset: Option<i64>,
+    filters: Option<DiffStatusFilter>,
     connection: &mut PgConnection,
-  ) -> Result<Vec<(String, HistoricalTask, HistoricalTask)>, Error> {
-    use crate::schema::historical_tasks::dsl::{saved_at, task_id};
+  ) -> Result<Vec<(i64, HistoricalTask, HistoricalTask)>, Error> {
+    use crate::schema::historical_tasks::dsl::{saved_at, status, task_id};
     use crate::schema::tasks::dsl::{corpus_id, service_id};
-    // 1. First we obtain upto 100 tasks, for the given (corpus, service) pair, starting from the
-    //    given offset.
-    let tasks_batch: Vec<Task> = tasks::table
+    // 1. We need to know the cutoff date of the previous status, to only select the relevant
+    //    entries.
+    let tasks_subquery = tasks::table
       .filter(corpus_id.eq(corpus.id))
       .filter(service_id.eq(service.id))
-      .order(tasks::id.asc())
-      .limit(100)
-      .offset(offset.unwrap_or(0))
+      .select(tasks::id);
+    let dates: Vec<NaiveDateTime> = historical_tasks::table
+      .filter(task_id.eq_any(tasks_subquery))
+      .order(saved_at.desc())
+      .select(saved_at)
+      .distinct()
+      .limit(2)
       .get_results(connection)?;
     // 2. Next, we extract all historical tasks for those 100 ids, using a single query,
     //    descendingly sorting by saved_at.
+    if dates.len() < 2 {
+      return Ok(Vec::new());
+    }
 
-    let historical_tasks_batch: Vec<HistoricalTask> = historical_tasks::table
-      .filter(task_id.eq_any(tasks_batch.iter().map(|task| task.id)))
-      .order(saved_at.desc())
-      .get_results(connection)?;
-    // 3. Lastly, we further constrain the reported tasks by only picking the two most recent of
-    //    each task.
     let mut reported_tasks = Vec::new();
-    for task in tasks_batch {
-      let mut latest_two = historical_tasks_batch
-        .iter()
-        .filter(|h| h.task_id == task.id)
-        .take(2)
-        .cloned()
-        .collect::<Vec<_>>();
-      // Note: we pad the report to always have 2 entries, even if one or none are available, to
-      // simplify Also, skip empty cases.
-      if latest_two.len() == 1 {
-        reported_tasks.push((task.entry, latest_two[0].clone(), latest_two.remove(0)));
-      } else if latest_two.len() == 2 {
-        reported_tasks.push((task.entry, latest_two.remove(0), latest_two.remove(0)));
+    if let Some(DiffStatusFilter {
+      previous_status,
+      current_status,
+      offset,
+      page_size,
+    }) = filters
+    {
+      let query = historical_tasks::table
+        .filter(saved_at.eq(dates[0]).and(status.eq(current_status.raw())))
+        .or_filter(saved_at.eq(dates[1]).and(status.eq(previous_status.raw())))
+        .filter(task_id.eq_any(tasks_subquery))
+        .order((task_id.asc(), saved_at.asc()))
+        .offset(2 * offset as i64)
+        .limit(2 * page_size as i64)
+        .select(historical_tasks::all_columns);
+      let debug = debug_query::<Pg, _>(&query);
+      rocket::error!("SQL Query: {}", debug);
+      let recent_historical_tasks: Vec<HistoricalTask> = query.get_results(connection)?;
+      rocket::error!("Recent tasks: {:?}", recent_historical_tasks);
+      // Iterate in pairs, as applicable
+      let mut peek_tasks = recent_historical_tasks.into_iter().peekable();
+      while let Some(task) = peek_tasks.next() {
+        if let Some(next_task) = peek_tasks.peek() {
+          if task.task_id == next_task.task_id {
+            reported_tasks.push((task.task_id, task, peek_tasks.next().unwrap()));
+          }
+        }
+      }
+    } else {
+      // TODO: refactor with a dynamic filter from previous condition
+      // Top-level report without filters
+      let all_historical_tasks: Vec<HistoricalTask> = historical_tasks::table
+        .filter(saved_at.eq(dates[0]))
+        .or_filter(saved_at.eq(dates[1]))
+        .filter(task_id.eq_any(tasks_subquery))
+        .order((task_id.asc(), saved_at.asc()))
+        .select(historical_tasks::all_columns)
+        .get_results(connection)?;
+      let mut peek_tasks = all_historical_tasks.into_iter().peekable();
+      while let Some(task) = peek_tasks.next() {
+        if let Some(next_task) = peek_tasks.peek() {
+          if task.task_id == next_task.task_id {
+            reported_tasks.push((task.task_id, task, peek_tasks.next().unwrap()));
+          }
+        }
       }
     }
     Ok(reported_tasks)

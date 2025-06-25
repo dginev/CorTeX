@@ -23,6 +23,19 @@ pub struct RerunRequestParams {
   pub description: String,
 }
 
+/// Configuration in URL query parameter for rerun requests
+#[derive(FromForm, Serialize, Deserialize)]
+pub struct DiffRequestParams {
+  /// the previous status to query, required
+  pub previous_status: String,
+  /// the current status to query, required
+  pub current_status: String,
+  /// starting offset for this query
+  pub offset: Option<usize>,
+  /// page size for paging in SQL
+  pub page_size: Option<usize>,
+}
+
 /// Global configuration for the frontend executable, read in at boot
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct FrontendConfig {

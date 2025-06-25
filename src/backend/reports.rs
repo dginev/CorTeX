@@ -5,7 +5,9 @@ use std::collections::HashMap;
 
 use crate::frontend::helpers::severity_highlight;
 use crate::helpers::TaskStatus;
-use crate::models::{Corpus, DiffStatusRow, HistoricalTask, Service, Task, TaskRunMetadata};
+use crate::models::{
+  Corpus, DiffStatusFilter, DiffStatusRow, HistoricalTask, Service, Task, TaskRunMetadata,
+};
 use crate::reports::{AggregateReport, TaskDetailReport};
 use crate::schema::tasks;
 
@@ -476,23 +478,24 @@ pub fn list_task_diffs(
   connection: &mut PgConnection,
   corpus: &Corpus,
   service: &Service,
+  filters: DiffStatusFilter,
 ) -> Vec<TaskRunMetadata> {
-  match HistoricalTask::report_for(corpus, service, None, connection) {
+  match HistoricalTask::report_for(corpus, service, Some(filters), connection) {
     Ok(report) => report
       .into_iter()
       .map(|row| {
-        let previous_status = TaskStatus::from_raw(row.2.status).to_key();
-        let current_status = TaskStatus::from_raw(row.1.status).to_key();
+        let previous_status = TaskStatus::from_raw(row.1.status).to_key();
+        let current_status = TaskStatus::from_raw(row.2.status).to_key();
         let previous_highlight = severity_highlight(&previous_status).to_owned();
         let current_highlight = severity_highlight(&current_status).to_owned();
         TaskRunMetadata {
-          entry: TASK_REPORT_NAME_REGEX.replace(&row.0, "$1").to_string(),
+          entry: row.0.to_string(), //TASK_REPORT_NAME_REGEX.replace(&row.0, "$1").to_string(),
           previous_status,
           current_status,
           previous_highlight,
           current_highlight,
-          previous_saved_at: row.2.saved_at.format("%Y-%m-%d").to_string(),
-          current_saved_at: row.1.saved_at.format("%Y-%m-%d").to_string(),
+          previous_saved_at: row.1.saved_at.format("%Y-%m-%d").to_string(),
+          current_saved_at: row.2.saved_at.format("%Y-%m-%d").to_string(),
         }
       })
       .collect(),
@@ -510,8 +513,8 @@ pub fn summary_task_diffs(
     Ok(report) => {
       let mut summary = HashMap::new();
       for row in report {
-        let prev_status = row.2.status;
-        let current_status = row.1.status;
+        let prev_status = row.1.status;
+        let current_status = row.2.status;
         let count = summary
           .entry(prev_status)
           .or_insert_with(HashMap::new)
