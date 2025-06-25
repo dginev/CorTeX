@@ -134,6 +134,7 @@ impl HistoricalTask {
     let tasks_subquery = tasks::table
       .filter(corpus_id.eq(corpus.id))
       .filter(service_id.eq(service.id))
+      .order(tasks::id.asc())
       .select(tasks::id);
     let dates: Vec<NaiveDateTime> = historical_tasks::table
       .filter(task_id.eq_any(tasks_subquery))
