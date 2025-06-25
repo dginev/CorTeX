@@ -1,7 +1,8 @@
 #![allow(clippy::extra_unused_lifetimes)]
 use chrono::prelude::*;
-use diesel::pg::Pg;
+// use diesel::pg::Pg;
 use diesel::result::Error;
+use diesel::sql_types::{BigInt, Integer, Text, Timestamp};
 use diesel::*;
 use rocket::serde::Serialize;
 // use super::messages::*;
@@ -91,12 +92,28 @@ impl CortexInsertable for NewHistoricalTask {
   }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, QueryableByName)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+#[diesel(table_name = historical_tasks)]
+/// A reportable historical task
+pub struct HistoricalTaskReport {
+  #[diesel(sql_type = BigInt)]
+  /// the id from the task table
+  pub task_id: i64,
+  #[diesel(sql_type = Integer)]
+  /// the recorded status at this timestamp
+  pub status: i32,
+  #[diesel(sql_type = Timestamp)]
+  /// the saved request was at this time
+  pub saved_at: NaiveDateTime,
+  #[diesel(sql_type = Text)]
+  /// the filename on disk for this task
+  pub entry: String,
+}
+
 impl HistoricalTask {
   /// Obtain all historical records for a given task id
-  pub fn find_by(
-    needle_id: i64,
-    connection: &mut PgConnection,
-  ) -> Result<Vec<HistoricalTask>, Error> {
+  pub fn find_by(needle_id: i64, connection: &mut PgConnection) -> Result<Vec<Self>, Error> {
     use crate::schema::historical_tasks::dsl::{saved_at, task_id};
     let runs: Vec<HistoricalTask> = historical_tasks::table
       .filter(task_id.eq(needle_id))
@@ -126,8 +143,8 @@ impl HistoricalTask {
     service: &Service,
     filters: Option<DiffStatusFilter>,
     connection: &mut PgConnection,
-  ) -> Result<Vec<(i64, HistoricalTask, HistoricalTask)>, Error> {
-    use crate::schema::historical_tasks::dsl::{saved_at, status, task_id};
+  ) -> Result<Vec<(HistoricalTaskReport, HistoricalTaskReport)>, Error> {
+    use crate::schema::historical_tasks::dsl::{saved_at, task_id};
     use crate::schema::tasks::dsl::{corpus_id, service_id};
     // 1. We need to know the cutoff date of the previous status, to only select the relevant
     //    entries.
@@ -148,7 +165,6 @@ impl HistoricalTask {
     if dates.len() < 2 {
       return Ok(Vec::new());
     }
-
     let mut reported_tasks = Vec::new();
     if let Some(DiffStatusFilter {
       previous_status,
@@ -157,29 +173,53 @@ impl HistoricalTask {
       page_size,
     }) = filters
     {
-      let query = historical_tasks::table
-        .filter(saved_at.eq(dates[0]).and(status.eq(current_status.raw())))
-        .or_filter(saved_at.eq(dates[1]).and(status.eq(previous_status.raw())))
-        .filter(task_id.eq_any(tasks_subquery))
-        .order((task_id.asc(), saved_at.asc()))
-        .offset(2 * offset as i64)
-        .limit(2 * page_size as i64)
-        .select(historical_tasks::all_columns);
-      let debug = debug_query::<Pg, _>(&query);
-      rocket::error!("SQL Query: {}", debug);
-      let recent_historical_tasks: Vec<HistoricalTask> = query.get_results(connection)?;
-      rocket::error!("Recent tasks: {:?}", recent_historical_tasks);
+      // Optimized query to fetch historical tasks with matching status and saved_at
+      let matching_tasks_query = r###"
+        WITH matching_tasks AS (
+          SELECT h.task_id
+          FROM historical_tasks h
+          JOIN tasks t ON h.task_id = t.id
+          WHERE t.corpus_id = $1 AND t.service_id = $2
+            AND (
+              (h.saved_at = $3 AND h.status = $4) OR
+              (h.saved_at = $5 AND h.status = $6)
+            )
+          GROUP BY h.task_id
+          HAVING COUNT(DISTINCT h.status) = 2
+        )
+        SELECT h.task_id, h.status, h.saved_at, t.entry
+        FROM historical_tasks h
+        JOIN tasks t ON h.task_id = t.id
+        WHERE h.task_id IN (SELECT task_id FROM matching_tasks)
+        ORDER BY h.task_id ASC, h.saved_at ASC
+        OFFSET $7
+        LIMIT $8;
+        "###;
+
+      let main_query = sql_query(matching_tasks_query)
+        .bind::<Integer, _>(corpus.id)
+        .bind::<Integer, _>(service.id)
+        .bind::<Timestamp, _>(dates[0])
+        .bind::<Integer, _>(current_status.raw())
+        .bind::<Timestamp, _>(dates[1])
+        .bind::<Integer, _>(previous_status.raw())
+        .bind::<Integer, _>(2 * offset as i32)
+        .bind::<Integer, _>(2 * page_size as i32);
+      // let debug = debug_query::<Pg, _>(&main_query);
+      let recent_historical_tasks: Vec<HistoricalTaskReport> =
+        main_query.get_results::<HistoricalTaskReport>(connection)?;
       // Iterate in pairs, as applicable
-      let mut peek_tasks = recent_historical_tasks.into_iter().peekable();
-      while let Some(task) = peek_tasks.next() {
-        if let Some(next_task) = peek_tasks.peek() {
-          if task.task_id == next_task.task_id {
-            reported_tasks.push((task.task_id, task, peek_tasks.next().unwrap()));
+      let mut iter = recent_historical_tasks.into_iter();
+      while let Some(t1) = iter.next() {
+        if let Some(t2) = iter.next() {
+          if t1.task_id == t2.task_id {
+            reported_tasks.push((t1, t2));
           }
+        } else {
+          break;
         }
       }
     } else {
-      // TODO: refactor with a dynamic filter from previous condition
       // Top-level report without filters
       let all_historical_tasks: Vec<HistoricalTask> = historical_tasks::table
         .filter(saved_at.eq(dates[0]))
@@ -192,7 +232,20 @@ impl HistoricalTask {
       while let Some(task) = peek_tasks.next() {
         if let Some(next_task) = peek_tasks.peek() {
           if task.task_id == next_task.task_id {
-            reported_tasks.push((task.task_id, task, peek_tasks.next().unwrap()));
+            let t1_report = HistoricalTaskReport {
+              task_id: task.task_id,
+              status: task.status,
+              saved_at: task.saved_at,
+              entry: String::new(),
+            };
+            let next_task = peek_tasks.next().unwrap();
+            let t2_report = HistoricalTaskReport {
+              task_id: next_task.task_id,
+              status: next_task.status,
+              saved_at: next_task.saved_at,
+              entry: String::new(),
+            };
+            reported_tasks.push((t1_report, t2_report));
           }
         }
       }

@@ -2,18 +2,18 @@
 
 {% block content %}
 <div class="center">
-  <h1>Diff with previous Task Status</h1>
+  <h1>Change from "{{global.previous_status}}" to "{{global.current_status}}" Status</h1>
   <br>
   <div class="row">
-    <table class="table table-striped diff-tasks-report">
+    <table class="table table-striped diff-tasks-list">
       <thead>
-        <tr><th>Entry<th>Previous Status</th><th>Current Status</th><th>Previously Saved at</th><th>Saved at</th></tr>
+        <tr><th>Entry</th><th>Previously Saved at</th><th>Saved at</th></tr>
       </thead>
       <tbody>
         {% for entry in diff_report %}
         <tr>
-          <td>{{ entry.entry }}</td>
-          <td>{{ entry.previous_status }}</td>
+          <td class="left">{{ entry.entry }}</td>
+          <td  class="left previous">{{ entry.previous_status }}</td>
           <td>{{ entry.current_status }}</td>
           <td>{{ entry.previous_saved_at }}</td>
           <td>{{ entry.current_saved_at }}</td>

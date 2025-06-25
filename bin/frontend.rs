@@ -350,6 +350,8 @@ fn diff_historical_tasks(
           page_size: page_size.unwrap_or(100),
         },
       ));
+      global.insert("previous_status".to_string(), previous_status);
+      global.insert("current_status".to_string(), current_status);
     }
   }
   // Pass the globals(reports+metadata) onto the stash
@@ -361,7 +363,6 @@ fn diff_historical_tasks(
   );
   global.insert("service_name".to_string(), service_name);
   global.insert("corpus_name".to_string(), corpus_name);
-
   context.global = global;
   decorate_uri_encodings(&mut context);
   Ok(Template::render("diff-history", context))

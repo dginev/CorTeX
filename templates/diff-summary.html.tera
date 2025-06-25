@@ -14,8 +14,8 @@
         <tr>
           <td class="left {{ row.previous_highlight }}">{{ row.previous_status }}</td>
           <td class="left {{ row.current_highlight }}">{{ row.current_status }}</td>
-          <td>{{ row.task_count }}</td>
-          <td class="right"><a href="/diff-history/{{global.corpus_name}}/{{global.service_name}}?previous_status={{ row.previous_status }}&current_status={{ row.current_status }}">Task list</a></td>
+          <td class="right">{{ row.task_count }}</td>
+          <td class="center"><a href="/diff-history/{{global.corpus_name}}/{{global.service_name}}?previous_status={{ row.previous_status }}&current_status={{ row.current_status }}">Task list</a></td>
         </tr>
         {% endfor %}
       </tbody>
