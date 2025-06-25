@@ -1,0 +1,1 @@
+DROP INDEX idx_historical_tasks_saved_at_status;
