@@ -70,7 +70,7 @@ pub fn serve_report(
           "run_start_time".to_string(),
           historical_run
             .start_time
-            .format("%Y-%m-%d %H:%M:%S")
+            .format("%Y-%m-%d %H:%M:%S%.f")
             .to_string(),
         );
         global.insert("run_owner".to_string(), historical_run.owner);

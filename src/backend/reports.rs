@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use diesel::dsl::sql;
 use diesel::*;
 use regex::Regex;
@@ -511,6 +512,8 @@ pub fn summary_task_diffs(
   connection: &mut PgConnection,
   corpus: &Corpus,
   service: &Service,
+  previous_date: Option<NaiveDateTime>,
+  current_date: Option<NaiveDateTime>,
 ) -> Vec<DiffStatusRow> {
   match HistoricalTask::report_for(corpus, service, None, connection) {
     Ok(report) => {

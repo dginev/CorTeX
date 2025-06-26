@@ -27,9 +27,13 @@ pub struct RerunRequestParams {
 #[derive(FromForm, Serialize, Deserialize)]
 pub struct DiffRequestParams {
   /// the previous status to query, required
-  pub previous_status: String,
+  pub previous_status: Option<String>,
   /// the current status to query, required
-  pub current_status: String,
+  pub current_status: Option<String>,
+  /// the previous date to query, optional
+  pub previous_date: Option<String>,
+  /// the current date to query, optional
+  pub current_date: Option<String>,
   /// starting offset for this query
   pub offset: Option<usize>,
   /// page size for paging in SQL

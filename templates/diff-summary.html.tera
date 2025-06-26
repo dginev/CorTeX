@@ -3,7 +3,20 @@
 {% block content %}
 <div class="center">
   <h1>Differences in per-task severity</h1>
-  <br>
+  <div class="pick-dates">
+    <strong>Previous Run</strong>
+    <select name="previous-date" id="select-previous-date">
+      {% for date in dates %}
+      <option value="{{ date }}">{{ date }}</option>
+      {% endfor %}
+    </select><br>
+    <strong>Current Run</strong>
+    <select name="current-date" id="select-current-date">
+      {% for date in dates %}
+      <option value="{{ date }}">{{ date }}</option>
+      {% endfor %}
+    </select>
+  </div>
   <div class="row">
     <table class="table table-striped diff-tasks-report">
       <thead>

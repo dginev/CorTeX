@@ -80,6 +80,10 @@ pub struct DiffStatusFilter {
   pub previous_status: TaskStatus,
   /// The current result for processing this task
   pub current_status: TaskStatus,
+  /// The requested previous date for this manual save
+  pub previous_date: Option<NaiveDateTime>,
+  /// The requested current date for this manual save
+  pub current_date: Option<NaiveDateTime>,
   /// Starting offset
   pub offset: usize,
   /// Page size
@@ -155,13 +159,24 @@ impl HistoricalTask {
       .filter(service_id.eq(service.id))
       .order(tasks::id.asc())
       .select(tasks::id);
-    let dates: Vec<NaiveDateTime> = historical_tasks::table
-      .filter(task_id.eq_any(tasks_subquery))
-      .order(saved_at.desc())
-      .select(saved_at)
-      .distinct()
-      .limit(2)
-      .get_results(connection)?;
+    let mut dates: Vec<NaiveDateTime> = Vec::new();
+    if let Some(ref opts) = filters {
+      if let (Some(previous_date_param), Some(current_date_param)) =
+        (opts.previous_date, opts.current_date)
+      {
+        dates.push(current_date_param);
+        dates.push(previous_date_param);
+      }
+    }
+    if dates.is_empty() {
+      dates = historical_tasks::table
+        .filter(task_id.eq_any(tasks_subquery))
+        .order(saved_at.desc())
+        .select(saved_at)
+        .distinct()
+        .limit(2)
+        .get_results(connection)?;
+    }
     // 2. Next, we extract all historical tasks for those 100 ids, using a single query,
     //    descendingly sorting by saved_at.
     if dates.len() < 2 {
@@ -171,6 +186,8 @@ impl HistoricalTask {
     if let Some(DiffStatusFilter {
       previous_status,
       current_status,
+      previous_date: _, // handled prior
+      current_date: _,  // handled prior
       offset,
       page_size,
     }) = filters

@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::thread;
 
+use chrono::NaiveDateTime;
 use rocket::fs::NamedFile;
 use rocket::futures::TryFutureExt;
 use rocket::response::status::{Accepted, NotFound};
@@ -297,17 +298,25 @@ fn historical_runs(
   Ok(Template::render("history", context))
 }
 
-#[get("/diff-summary/<corpus_name>/<service_name>")]
+#[get("/diff-summary/<corpus_name>/<service_name>?<params..>")]
 fn diff_historical_summary(
   corpus_name: String,
   service_name: String,
+  params: DiffRequestParams,
 ) -> Result<Template, NotFound<String>> {
   let mut context = TemplateContext::default();
   // let mut global = HashMap::new();
   let mut backend = Backend::default();
   if let Ok(corpus) = Corpus::find_by_name(&corpus_name, &mut backend.connection) {
     if let Ok(service) = Service::find_by_name(&service_name, &mut backend.connection) {
-      context.diff_summary = Some(backend.summary_task_diffs(&corpus, &service));
+      let previous_date = params
+        .previous_date
+        .map(|date| NaiveDateTime::parse_from_str(&date, "%Y-%m-%d %H:%M:%S%.f").unwrap());
+      let current_date = params
+        .current_date
+        .map(|date| NaiveDateTime::parse_from_str(&date, "%Y-%m-%d %H:%M:%S%.f").unwrap());
+      context.diff_summary =
+        Some(backend.summary_task_diffs(&corpus, &service, previous_date, current_date));
     }
   }
   let mut global = HashMap::new();
@@ -337,12 +346,16 @@ fn diff_historical_tasks(
       let DiffRequestParams {
         previous_status,
         current_status,
+        previous_date,
+        current_date,
         offset,
         page_size,
       } = params;
       // DEFAULT VALUES
       let offset = offset.unwrap_or(0);
       let page_size = page_size.unwrap_or(100);
+      let previous_status = previous_status.expect("previous status is required for this report");
+      let current_status = current_status.expect("current status is required for this report");
       // ask DB for a report
       context.diff_report = Some(backend.list_task_diffs(
         &corpus,
@@ -350,6 +363,8 @@ fn diff_historical_tasks(
         DiffStatusFilter {
           previous_status: TaskStatus::from_key(&previous_status).unwrap(),
           current_status: TaskStatus::from_key(&current_status).unwrap(),
+          previous_date,
+          current_date,
           offset,
           page_size,
         },

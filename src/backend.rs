@@ -23,6 +23,7 @@ use std::collections::HashMap;
 use std::fmt;
 
 use crate::concerns::{CortexDeletable, CortexInsertable};
+use crate::frontend::params::DiffRequestParams;
 use crate::helpers::{TaskReport, TaskStatus};
 use crate::models::{
   Corpus, DiffStatusFilter, DiffStatusRow, NewTask, Service, Task, TaskRunMetadata,
@@ -216,7 +217,19 @@ impl Backend {
   }
 
   /// Prepares a template-friendly summary of task differences
-  pub fn summary_task_diffs(&mut self, corpus: &Corpus, service: &Service) -> Vec<DiffStatusRow> {
-    reports::summary_task_diffs(&mut self.connection, corpus, service)
+  pub fn summary_task_diffs(
+    &mut self,
+    corpus: &Corpus,
+    service: &Service,
+    previous_date: Option<NaiveDateTime>,
+    current_date: Option<NaiveDateTime>,
+  ) -> Vec<DiffStatusRow> {
+    reports::summary_task_diffs(
+      &mut self.connection,
+      corpus,
+      service,
+      previous_date,
+      current_date,
+    )
   }
 }
