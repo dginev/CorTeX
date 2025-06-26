@@ -489,6 +489,7 @@ pub fn list_task_diffs(
         let previous_highlight = severity_highlight(&previous_status).to_owned();
         let current_highlight = severity_highlight(&current_status).to_owned();
         TaskRunMetadata {
+          task_id: row.0.task_id.to_string(),
           entry: TASK_REPORT_NAME_REGEX
             .replace(&row.0.entry, "$1")
             .to_string(),

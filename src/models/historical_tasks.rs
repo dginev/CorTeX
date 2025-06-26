@@ -40,6 +40,8 @@ pub struct NewHistoricalTask {
 #[derive(Debug, Clone, Serialize)]
 /// A single report row for the diff-historical feature
 pub struct TaskRunMetadata {
+  /// id of the task we are tracking
+  pub task_id: String,
   /// The underling entry of the task
   pub entry: String,
   /// The previous result for processing this task
