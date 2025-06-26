@@ -1328,7 +1328,7 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 [[package]]
 name = "libarchive-sys"
 version = "0.0.1"
-source = "git+https://github.com/dginev/libarchive-sys.git#4f659e02beae199807b157e3ea72e2b2128360f1"
+source = "git+https://github.com/dginev/libarchive-sys.git#46462934f5c72362997b09d66b28f533730dba74"
 dependencies = [
  "pkg-config",
  "time 0.2.27",
