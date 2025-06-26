@@ -33,6 +33,16 @@
     </table>
     {% include "entry-view-report" %}
   </div>
+  <div>
+    {% if global.offset_min_false %}
+    <span><a href="/diff-history/{{global.corpus_name_uri}}/{{global.service_name_uri}}?previous_status={{global.previous_status}}&current_status={{global.current_status}}&offset={{global.prev_offset}}&page_size={{global.page_size}}">&lt;&lt;</a></span>
+    {% endif %}
+    <span>[{{global.from_offset}}-{{global.to_offset}}]</span>
+    {% if global.offset_max_false %}
+    <span><a href="/diff-history/{{global.corpus_name_uri}}/{{global.service_name_uri}}?previous_status={{global.previous_status}}&current_status={{global.current_status}}&offset={{global.next_offset}}&page_size={{global.page_size}}">&gt;&gt;</a></span>
+    {% endif %}
+  </div>
+
 </div>
 {% endblock content %}
 

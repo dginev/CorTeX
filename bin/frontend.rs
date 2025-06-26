@@ -340,18 +340,45 @@ fn diff_historical_tasks(
         offset,
         page_size,
       } = params;
+      // DEFAULT VALUES
+      let offset = offset.unwrap_or(0);
+      let page_size = page_size.unwrap_or(100);
+      // ask DB for a report
       context.diff_report = Some(backend.list_task_diffs(
         &corpus,
         &service,
         DiffStatusFilter {
           previous_status: TaskStatus::from_key(&previous_status).unwrap(),
           current_status: TaskStatus::from_key(&current_status).unwrap(),
-          offset: offset.unwrap_or(0),
-          page_size: page_size.unwrap_or(100),
+          offset,
+          page_size,
         },
       ));
       global.insert("previous_status".to_string(), previous_status);
       global.insert("current_status".to_string(), current_status);
+      // Make sure we have pagination available
+      let from_offset = offset;
+      let to_offset = offset + page_size;
+      global.insert("from_offset".to_string(), from_offset.to_string());
+      if from_offset >= page_size {
+        // TODO: properly do tera ifs?
+        global.insert("offset_min_false".to_string(), "true".to_string());
+        global.insert(
+          "prev_offset".to_string(),
+          (from_offset - page_size).to_string(),
+        );
+      }
+      if context.diff_report.as_ref().unwrap().len() >= page_size {
+        global.insert("offset_max_false".to_string(), "true".to_string());
+      }
+      global.insert(
+        "next_offset".to_string(),
+        (from_offset + page_size).to_string(),
+      );
+
+      global.insert("offset".to_string(), offset.to_string());
+      global.insert("page_size".to_string(), page_size.to_string());
+      global.insert("to_offset".to_string(), to_offset.to_string());
     }
   }
   // Pass the globals(reports+metadata) onto the stash
