@@ -193,7 +193,7 @@ impl HistoricalTask {
         FROM historical_tasks h
         JOIN tasks t ON h.task_id = t.id
         WHERE h.task_id IN (SELECT task_id FROM matching_tasks)
-        ORDER BY h.task_id ASC, h.saved_at ASC
+        ORDER BY t.entry ASC, h.task_id ASC, h.saved_at ASC
         OFFSET $7
         LIMIT $8;
         "###;
