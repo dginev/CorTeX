@@ -135,6 +135,6 @@ fn main() -> Result<(), Error> {
     "-- Message traversal for corpus {:?} and service {:?} took {:?}ms",
     corpus.name, service.name, traverse_duration
   );
-  println!("-- traversed {:?} entries.", total_entries);
+  println!("-- traversed {total_entries:?} entries.");
   Ok(())
 }

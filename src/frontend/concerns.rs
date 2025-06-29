@@ -70,7 +70,7 @@ pub fn serve_report(
           "run_start_time".to_string(),
           historical_run
             .start_time
-            .format("%Y-%m-%d %H:%M:%S")
+            .format("%Y-%m-%d %H:%M:%S%.f")
             .to_string(),
         );
         global.insert("run_owner".to_string(), historical_run.owner);
@@ -271,6 +271,44 @@ pub fn serve_rerun(
   match rerun_result {
     Err(_) => Err(NotFound("Access Denied".to_string())), // TODO: better error message?
     Ok(_) => Ok(Accepted(String::default())),
+  }
+}
+
+/// Save the historical tasks of a corpus run, for reference, for a <corpus,service> pair
+pub fn serve_savetasks(
+  corpus_name: String,
+  service_name: String,
+  rr: Json<RerunRequestParams>,
+) -> Result<Accepted<String>, NotFound<String>> {
+  let token = rr.token.clone();
+  let config = load_config();
+  let corpus_name = corpus_name.to_lowercase();
+  let service_name = service_name.to_lowercase();
+
+  // Ensure we're given a valid rerun token to rerun, or anyone can wipe the cortex results
+  // let token = safe_data_to_string(data).unwrap_or_else(|_| UNKNOWN.to_string()); // reuse old
+  // code by setting data to the String
+  let user_opt = config.rerun_tokens.get(&token);
+  let user = match user_opt {
+    None => return Err(NotFound("Access Denied".to_string())),
+    Some(user) => user,
+  };
+  println!("-- User {user:?}: Saving tasks on {corpus_name}/{service_name}");
+
+  let mut backend = Backend::default();
+  // Build corpus and service objects
+  let corpus = match Corpus::find_by_name(&corpus_name, &mut backend.connection) {
+    Err(e) => return Err(NotFound(format!("{e}"))),
+    Ok(corpus) => corpus,
+  };
+
+  let service = match Service::find_by_name(&service_name, &mut backend.connection) {
+    Err(_) => return Err(NotFound("Access Denied".to_string())),
+    Ok(service) => service,
+  };
+  match backend.save_historical_tasks(&corpus, &service) {
+    Err(e) => Err(NotFound(format!("{e}"))),
+    Ok(count) => Ok(Accepted(format!("Saved {count} tasks"))),
   }
 }
 

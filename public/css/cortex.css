@@ -1,21 +1,27 @@
-.quietlink:link {color:#000000; text-decoration:none}
-.quietlink:visited {color:#000000; text-decoration:none}
+.quietlink:link {
+  color: #000000;
+  text-decoration: none;
+}
+.quietlink:visited {
+  color: #000000;
+  text-decoration: none;
+}
 .link-total {
-   color:#000000;
-   text-decoration:none;
-   display:inline-block;
-   pointer-events: none;
-   cursor: default;
+  color: #000000;
+  text-decoration: none;
+  display: inline-block;
+  pointer-events: none;
+  cursor: default;
 }
 body {
   height: 100%;
-  font-family: "Helvetica Neue",Helvetica,Arial,sans-serif;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 #body {
   min-height: 100%;
   height: auto;
   /* Negative indent footer by its height */
-  margin-bottom:15px;
+  margin-bottom: 15px;
   /* Pad bottom by footer height */
   padding: 0 0 15px;
 }
@@ -23,12 +29,13 @@ footer {
   height: 15px;
 }
 
-tr.error {
-  background-color: #FFE9BF;
+tr.error,
+td.error {
+  background-color: #ffe9bf;
 }
 
 .welcome-title {
- font-weight: normal;
+  font-weight: normal;
 }
 .welcome-subtitle {
   font-size: 1.5em;
@@ -45,16 +52,16 @@ tr.error {
 .contact-item {
   text-align: left;
   font-family: Helvetica Neue;
-  display:table-row;
-  vertical-align:middle;
+  display: table-row;
+  vertical-align: middle;
 }
 .contact-token {
-  display:table-cell;
-  vertical-align:middle;
+  display: table-cell;
+  vertical-align: middle;
   padding: 5px;
 }
 .coming-soon {
-  font-family: 'Chantelli-Antiqua', 'Georgia', serif;
+  font-family: "Chantelli-Antiqua", "Georgia", serif;
   position: absolute;
   top: 50%;
   left: 50%;
@@ -65,7 +72,7 @@ tr.error {
   padding: 20px;
   display: block;
   text-align: left;
-  font-family: 'Roboto Slab', serif;
+  font-family: "Roboto Slab", serif;
 }
 
 .vertical-middle-align {
@@ -91,7 +98,7 @@ tr.error {
 }
 
 .table-nonfluid {
-   width: auto !important;
+  width: auto !important;
 }
 .btn-github-star {
   padding-top: 15px;
@@ -100,9 +107,8 @@ tr.error {
   margin: auto;
 }
 
-
 .vertical-center {
-  min-height: 100%;  /* Fallback for browsers do NOT support vh unit */
+  min-height: 100%; /* Fallback for browsers do NOT support vh unit */
   min-height: 100vh; /* These two lines are counted as one :-)       */
 
   display: flex;
@@ -137,12 +143,14 @@ h1 {
   padding: 12px 12px 8px;
 }
 
-.blog-date, .talk-date {
-  font-size:  0.6em;
+.blog-date,
+.talk-date {
+  font-size: 0.6em;
   color: DarkGrey;
   margin: 6px 0px 24px;
 }
-.blog-post-overview, .talk-overview {
+.blog-post-overview,
+.talk-overview {
   margin-bottom: 60px;
 }
 
@@ -151,13 +159,13 @@ h1 {
   /*font-family: 'OFLGoudy';*/
   font-family: "Georgia";
 }
-.nav-link[data-nav-name=''] {
+.nav-link[data-nav-name=""] {
   visibility: hidden;
 }
 .report-duration {
   font-style: italic;
 }
-.report-duration[data-report-duration=''] {
+.report-duration[data-report-duration=""] {
   visibility: hidden;
 }
 .rerun-total-count {
@@ -173,7 +181,7 @@ h1 {
   font-size: 1.2em;
   padding-bottom: 10px;
 }
-.rerun-banner-segment:empty{
+.rerun-banner-segment:empty {
   visibility: hidden;
 }
 
@@ -181,7 +189,8 @@ div#report-div {
   visibility: hidden;
 }
 
-p.corpus-description, p.service-description {
+p.corpus-description,
+p.service-description {
   padding-left: 4em;
 }
 div.bottom-content {
@@ -205,10 +214,11 @@ tr.fresh > td {
   height: 17px;
   margin-bottom: 2px;
   vertical-align: middle;
-
 }
 
-.switch input {display:none;}
+.switch input {
+  display: none;
+}
 .slider {
   position: absolute;
   cursor: pointer;
@@ -217,8 +227,8 @@ tr.fresh > td {
   right: 0;
   bottom: 0;
   background-color: #ccc;
-  -webkit-transition: .4s;
-  transition: .4s;
+  -webkit-transition: 0.4s;
+  transition: 0.4s;
 }
 
 .slider:before {
@@ -229,16 +239,16 @@ tr.fresh > td {
   left: 2px;
   bottom: 2px;
   background-color: white;
-  -webkit-transition: .4s;
-  transition: .4s;
+  -webkit-transition: 0.4s;
+  transition: 0.4s;
 }
 
 input:checked + .slider {
-  background-color: #2196F3;
+  background-color: #2196f3;
 }
 
 input:focus + .slider {
-  box-shadow: 0 0 1px #2196F3;
+  box-shadow: 0 0 1px #2196f3;
 }
 
 input:checked + .slider:before {
@@ -267,7 +277,7 @@ span.history-footnote {
 }
 
 div.arxmliv-kwarc-footer {
-  margin-top:0.8em;
+  margin-top: 0.8em;
   font-size: 1em;
   font-weight: bold;
 }
@@ -275,4 +285,19 @@ div.arxmliv-kwarc-footer {
 div.main-report-bottom {
   padding-bottom: 20px;
   margin-bottom: 20px;
+}
+
+table.diff-tasks-report {
+  width: 40rem !important;
+  margin: auto;
+}
+
+.pick-dates {
+  margin: 3rem auto 3rem auto;
+  max-width: max-content;
+  text-align: right;
+  & button {
+    display: inline-block;
+    font-size: 1rem;
+  }
 }

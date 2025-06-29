@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::thread;
 
+use chrono::NaiveDateTime;
 use rocket::fs::NamedFile;
 use rocket::futures::TryFutureExt;
 use rocket::response::status::{Accepted, NotFound};
@@ -22,12 +23,17 @@ use rocket_dyn_templates::Template;
 use cortex::backend::Backend;
 use cortex::frontend::cached::cache_worker;
 use cortex::frontend::concerns::{
-  serve_entry, serve_entry_preview, serve_report, serve_rerun, UNKNOWN,
+  serve_entry, serve_entry_preview, serve_report, serve_rerun, serve_savetasks, UNKNOWN,
 };
 use cortex::frontend::cors::CORS;
 use cortex::frontend::helpers::*;
-use cortex::frontend::params::{ReportParams, RerunRequestParams, TemplateContext};
-use cortex::models::{Corpus, HistoricalRun, RunMetadata, RunMetadataStack, Service};
+use cortex::frontend::params::{
+  DiffRequestParams, ReportParams, RerunRequestParams, TemplateContext,
+};
+use cortex::helpers::TaskStatus;
+use cortex::models::{
+  Corpus, DiffStatusFilter, HistoricalRun, RunMetadata, RunMetadataStack, Service,
+};
 
 #[get("/")]
 fn root() -> Template {
@@ -292,6 +298,132 @@ fn historical_runs(
   Ok(Template::render("history", context))
 }
 
+#[get("/diff-summary/<corpus_name>/<service_name>?<params..>")]
+fn diff_historical_summary(
+  corpus_name: String,
+  service_name: String,
+  params: DiffRequestParams,
+) -> Result<Template, NotFound<String>> {
+  let mut context = TemplateContext::default();
+  // let mut global = HashMap::new();
+  let mut backend = Backend::default();
+  let mut global = HashMap::new();
+  if let Ok(corpus) = Corpus::find_by_name(&corpus_name, &mut backend.connection) {
+    if let Ok(service) = Service::find_by_name(&service_name, &mut backend.connection) {
+      let previous_date = params
+        .previous_date
+        .map(|date| NaiveDateTime::parse_from_str(&date, "%Y-%m-%d %H:%M:%S%.f").unwrap());
+      let current_date = params
+        .current_date
+        .map(|date| NaiveDateTime::parse_from_str(&date, "%Y-%m-%d %H:%M:%S%.f").unwrap());
+      global.insert(
+        "previous_date".to_string(),
+        previous_date.unwrap_or_default().to_string(),
+      );
+      global.insert(
+        "current_date".to_string(),
+        current_date.unwrap_or_default().to_string(),
+      );
+      let (dates, summary) =
+        backend.summary_task_diffs(&corpus, &service, previous_date, current_date);
+      context.diff_dates = Some(dates);
+      context.diff_summary = Some(summary);
+    }
+  }
+  global.insert(
+    "description".to_string(),
+    format!("Summary of recent differences of service {service_name} over corpus {corpus_name}"),
+  );
+  global.insert("service_name".to_string(), service_name);
+  global.insert("corpus_name".to_string(), corpus_name);
+  context.global = global;
+  decorate_uri_encodings(&mut context);
+  Ok(Template::render("diff-summary", context))
+}
+
+#[get("/diff-history/<corpus_name>/<service_name>?<params..>")]
+fn diff_historical_tasks(
+  corpus_name: String,
+  service_name: String,
+  params: DiffRequestParams,
+) -> Result<Template, NotFound<String>> {
+  let mut context = TemplateContext::default();
+  let mut global = HashMap::new();
+  let mut backend = Backend::default();
+  let corpus_name = corpus_name.to_lowercase();
+  if let Ok(corpus) = Corpus::find_by_name(&corpus_name, &mut backend.connection) {
+    if let Ok(service) = Service::find_by_name(&service_name, &mut backend.connection) {
+      let DiffRequestParams {
+        previous_status,
+        current_status,
+        previous_date,
+        current_date,
+        offset,
+        page_size,
+      } = params;
+      // DEFAULT VALUES
+      let offset = offset.unwrap_or(0);
+      let page_size = page_size.unwrap_or(100);
+      let previous_status = previous_status.expect("previous status is required for this report");
+      let current_status = current_status.expect("current status is required for this report");
+      // ask DB for a report
+      context.diff_report = Some(
+        backend.list_task_diffs(
+          &corpus,
+          &service,
+          DiffStatusFilter {
+            previous_status: Some(TaskStatus::from_key(&previous_status).unwrap()),
+            current_status: Some(TaskStatus::from_key(&current_status).unwrap()),
+            previous_date: previous_date
+              .map(|date| NaiveDateTime::parse_from_str(&date, "%Y-%m-%d %H:%M:%S%.f").unwrap()),
+            current_date: current_date
+              .map(|date| NaiveDateTime::parse_from_str(&date, "%Y-%m-%d %H:%M:%S%.f").unwrap()),
+            offset,
+            page_size,
+          },
+        ),
+      );
+      global.insert("previous_status".to_string(), previous_status);
+      global.insert("current_status".to_string(), current_status);
+      // Make sure we have pagination available
+      let from_offset = offset;
+      let to_offset = offset + page_size;
+      global.insert("from_offset".to_string(), from_offset.to_string());
+      if from_offset >= page_size {
+        // TODO: properly do tera ifs?
+        global.insert("offset_min_false".to_string(), "true".to_string());
+        global.insert(
+          "prev_offset".to_string(),
+          (from_offset - page_size).to_string(),
+        );
+      }
+      if context.diff_report.as_ref().unwrap().len() >= page_size {
+        global.insert("offset_max_false".to_string(), "true".to_string());
+      }
+      global.insert(
+        "next_offset".to_string(),
+        (from_offset + page_size).to_string(),
+      );
+
+      global.insert("offset".to_string(), offset.to_string());
+      global.insert("page_size".to_string(), page_size.to_string());
+      global.insert("to_offset".to_string(), to_offset.to_string());
+    }
+  }
+  // Pass the globals(reports+metadata) onto the stash
+  global.insert(
+    "description".to_string(),
+    format!(
+      "Diffs for historical task severity runs of service {service_name} over corpus {corpus_name}"
+    ),
+  );
+  global.insert("service_name".to_string(), service_name);
+  global.insert("corpus_name".to_string(), corpus_name);
+  context.global = global;
+  decorate_uri_encodings(&mut context);
+  Ok(Template::render("diff-history", context))
+}
+
 #[get("/preview/<corpus_name>/<service_name>/<entry_name>")]
 fn preview_entry(
   corpus_name: String,
@@ -379,6 +511,20 @@ fn rerun_what(
   )
 }
 
+#[post(
+  "/savetasks/<corpus_name>/<service_name>",
+  format = "application/json",
+  data = "<rr>"
+)]
+fn savetasks(
+  corpus_name: String,
+  service_name: String,
+  rr: Json<RerunRequestParams>,
+) -> Result<Accepted<String>, NotFound<String>> {
+  let corpus_name = corpus_name.to_lowercase();
+  serve_savetasks(corpus_name, service_name, rr)
+}
+
 #[get("/favicon.ico")]
 async fn favicon() -> Result<NamedFile, NotFound<String>> {
   let path = Path::new("public/").join("favicon.ico");
@@ -432,7 +578,10 @@ fn rocket() -> _ {
         rerun_severity,
         rerun_category,
         rerun_what,
-        historical_runs
+        historical_runs,
+        diff_historical_tasks,
+        diff_historical_summary,
+        savetasks
       ],
     )
     .attach(Template::fairing())

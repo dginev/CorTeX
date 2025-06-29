@@ -1,5 +1,5 @@
 //! Various parameter data structures for the Rocket frontend routes
-use crate::models::RunMetadata;
+use crate::models::{DiffStatusRow, RunMetadata, TaskRunMetadata};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -21,6 +21,23 @@ pub struct RerunRequestParams {
   pub token: String,
   /// a plain text description for the purpose of the rerun
   pub description: String,
+}
+
+/// Configuration in URL query parameter for rerun requests
+#[derive(FromForm, Serialize, Deserialize)]
+pub struct DiffRequestParams {
+  /// the previous status to query, required
+  pub previous_status: Option<String>,
+  /// the current status to query, required
+  pub current_status: Option<String>,
+  /// the previous date to query, optional
+  pub previous_date: Option<String>,
+  /// the current date to query, optional
+  pub current_date: Option<String>,
+  /// starting offset for this query
+  pub offset: Option<usize>,
+  /// page size for paging in SQL
+  pub page_size: Option<usize>,
 }
 
 /// Global configuration for the frontend executable, read in at boot
@@ -51,6 +68,12 @@ pub struct TemplateContext {
   pub workers: Option<Vec<HashMap<String, String>>>,
   /// tabular data for reporting on rerun history
   pub history: Option<Vec<RunMetadata>>,
+  /// tabular data for reporting on historical task diffs
+  pub diff_report: Option<Vec<TaskRunMetadata>>,
+  /// tabular data for reporting a summary of severity transitions between two runs
+  pub diff_summary: Option<Vec<DiffStatusRow>>,
+  /// date labels for selecting a historical report from/to range
+  pub diff_dates: Option<Vec<String>>,
   /// serialized data for easy plotting of rerun history
   pub history_serialized: Option<String>,
 }

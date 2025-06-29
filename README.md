@@ -3,7 +3,7 @@
 
 **A general purpose processing framework for corpora of scientific documents**
 
-[![CI](https://github.com/dginev/CorTeX/actions/workflows/CI.yml/badge.svg)](https://github.com/dginev/CorTeX/actions/workflows/CI.yml) [![API Documentation](https://img.shields.io/badge/docs-API-blue.svg)](http://dginev.github.io/CorTeX/cortex/index.html) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/dginev/CorTeX/master/LICENSE) ![version](https://img.shields.io/badge/version-0.4.3-orange.svg) [![Dependabot Status](https://api.dependabot.com/badges/status?host=github&repo=dginev/CorTeX)](https://dependabot.com)
+[![CI](https://github.com/dginev/CorTeX/actions/workflows/CI.yml/badge.svg)](https://github.com/dginev/CorTeX/actions/workflows/CI.yml) [![API Documentation](https://img.shields.io/badge/docs-API-blue.svg)](http://dginev.github.io/CorTeX/cortex/index.html) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/dginev/CorTeX/master/LICENSE) ![version](https://img.shields.io/badge/version-0.4.3-orange.svg)
 
 
 **News**:

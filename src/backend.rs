@@ -24,7 +24,10 @@ use std::fmt;
 
 use crate::concerns::{CortexDeletable, CortexInsertable};
 use crate::helpers::{TaskReport, TaskStatus};
-use crate::models::{Corpus, NewTask, Service, Task};
+use crate::models::{
+  Corpus, DiffStatusFilter, DiffStatusRow, NewTask, Service, Task, TaskRunMetadata,
+};
+use chrono::NaiveDateTime;
 
 /// The production database postgresql address, set from the .env configuration file
 pub const DEFAULT_DB_ADDRESS: &str = dotenv!("DATABASE_URL");
@@ -113,6 +116,15 @@ impl Backend {
     mark::mark_new_run(&mut self.connection, corpus, service, owner, description)
   }
 
+  /// Save the current historical tasks for reference
+  pub fn save_historical_tasks(
+    &mut self,
+    corpus: &Corpus,
+    service: &Service,
+  ) -> Result<usize, Error> {
+    mark::save_historical_tasks(&mut self.connection, corpus, service)
+  }
+
   /// Generic delete method, uses primary "id" field
   pub fn delete<Model: CortexDeletable>(&mut self, object: &Model) -> Result<usize, Error> {
     object.delete_by(&mut self.connection, "id")
@@ -192,5 +204,32 @@ impl Backend {
   /// Provides a progress report, grouped by severity, for a given `Corpus` and `Service` pair
   pub fn progress_report(&mut self, corpus: &Corpus, service: &Service) -> HashMap<String, f64> {
     reports::progress_report(&mut self.connection, corpus.id, service.id)
+  }
+
+  /// Prepares a template-friendly report of task differences
+  pub fn list_task_diffs(
+    &mut self,
+    corpus: &Corpus,
+    service: &Service,
+    filters: DiffStatusFilter,
+  ) -> Vec<TaskRunMetadata> {
+    reports::list_task_diffs(&mut self.connection, corpus, service, filters)
+  }
+
+  /// Prepares a template-friendly summary of task differences
+  pub fn summary_task_diffs(
+    &mut self,
+    corpus: &Corpus,
+    service: &Service,
+    previous_date: Option<NaiveDateTime>,
+    current_date: Option<NaiveDateTime>,
+  ) -> (Vec<String>, Vec<DiffStatusRow>) {
+    reports::summary_task_diffs(
+      &mut self.connection,
+      corpus,
+      service,
+      previous_date,
+      current_date,
+    )
   }
 }

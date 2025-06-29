@@ -5,8 +5,8 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-///! Register a service with a given name on a corpus with a given path
-///! Example run: `cargo run --release --example register_service tex_to_html /data/arxmliv/`
+//! Register a service with a given name on a corpus with a given path
+//! Example run: `cargo run --release --example register_service tex_to_html /data/arxmliv/`
 use cortex::backend::Backend;
 use cortex::models::Service;
 use std::env;

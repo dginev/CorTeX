@@ -1,0 +1,60 @@
+{% extends "layout" %}
+{% block head_extra %}
+<script>
+  function reloadWithNewDates() {
+    const previousDate = document.getElementById('select-previous-date').value;
+    const currentDate = document.getElementById('select-current-date').value;
+    window.location.href = `/diff-summary/{{global.corpus_name}}/{{global.service_name}}?previous_date=${previousDate}&current_date=${currentDate}`;
+    return;
+  }
+</script>
+{% endblock head_extra %}
+
+{% block content %}
+<div class="center">
+  <h1>Differences in per-task severity</h1>
+  <div class="pick-dates">
+    <label for="select-previous-date">Date of previous run</label>
+    <select name="previous-date" id="select-previous-date">
+      <option value="" disabled selected hidden>choose date</option>
+      {% for date in diff_dates | reverse %}
+      <option value="{{ date }}" {%if date == global.previous_date %}selected{% endif %}>{{ date }}</option>
+      {% endfor %}
+    </select><br>
+    <label for="select-current-date">Current Run</label>
+    <select name="current-date" id="select-current-date">
+      <option value="" disabled selected hidden>choose date</option>
+      {% for date in diff_dates %}
+      <option value="{{ date }}"  {%if date == global.current_date %}selected{% endif %}>{{ date }}</option>
+      {% endfor %}
+    </select><br>
+    <button onclick="reloadWithNewDates();">Reload</button>
+  </div>
+  <div class="row">
+    <table class="table table-striped diff-tasks-report">
+      <thead>
+        <tr><th>Previous Status</th><th>Current Status</th><th>Task Count</th><th>Details</th></tr>
+      </thead>
+      <tbody>
+        {% for this in diff_summary %}
+        <tr>
+          <td class="left {{ this.previous_highlight }}">{{ this.previous_status }}</td>
+          <td class="left {{ this.current_highlight }}">{{ this.current_status }}</td>
+          <td class="right">{{ this.task_count }}</td>
+          <td class="center"><a href="/diff-history/{{global.corpus_name}}/{{global.service_name}}?previous_status={{ this.previous_status }}&current_status={{ this.current_status }}{%
+            if global.previous_date and global.current_date%}&previous_date={{global.previous_date}}&current_date={{global.current_date}}{% endif %}">Task list</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock content %}
+
+{% block footer_extra %} {% if global.corpus_description %}
+<p class="corpus-description">
+  <span class="bold">{{global.corpus_name}}:</span> {{global.corpus_description}} </p>
+{% endif %} {% if global.service_description %}
+<p class="service-description">
+  <span class="bold">{{global.service_name}}:</span> {{global.service_description}} </p>
+{% endif %} {% endblock footer_extra %}

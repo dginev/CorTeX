@@ -1,0 +1,55 @@
+{% extends "layout" %}
+
+{% block content %}
+<div class="center">
+  <h1>Change from "{{global.previous_status}}" to "{{global.current_status}}" Status</h1>
+  <br>
+  <div class="row">
+    <table class="table table-striped diff-tasks-list">
+      <thead>
+        <tr>
+          <th>Entry</th>
+          <th>Source</th>
+          <th>Preview</th>
+          <th>Previous save</th>
+          <th>Current save</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for this in diff_report %}
+        <tr>
+          <td class="left">{{ this.entry }}</td>
+          <td class="left task-source">
+            <a class="entry-submit" data-action="download" href="/entry/import/{{this.task_id}}">Source TeX</a>
+          </td>
+          <td class="left task-preview">
+            <a target="_blank" href="/preview/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{this.entry}}">preview</a>
+          </td>
+          <td class="left {{this.previous_highlight}}">{{ this.previous_saved_at }}</td>
+          <td class="left {{this.current_highlight}}">{{ this.current_saved_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% include "entry-view-report" %}
+  </div>
+  <div>
+    {% if global.offset_min_false %}
+    <span><a href="/diff-history/{{global.corpus_name_uri}}/{{global.service_name_uri}}?previous_status={{global.previous_status}}&current_status={{global.current_status}}&offset={{global.prev_offset}}&page_size={{global.page_size}}">&lt;&lt;</a></span>
+    {% endif %}
+    <span>[{{global.from_offset}}-{{global.to_offset}}]</span>
+    {% if global.offset_max_false %}
+    <span><a href="/diff-history/{{global.corpus_name_uri}}/{{global.service_name_uri}}?previous_status={{global.previous_status}}&current_status={{global.current_status}}&offset={{global.next_offset}}&page_size={{global.page_size}}">&gt;&gt;</a></span>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock content %}
+
+<br> {% block footer_extra %} {% if global.corpus_description %}
+<p class="corpus-description">
+  <span class="bold">{{global.corpus_name}}:</span> {{global.corpus_description}} </p>
+{% endif %} {% if global.service_description %}
+<p class="service-description">
+  <span class="bold">{{global.service_name}}:</span> {{global.service_description}} </p>
+{% endif %} {% endblock footer_extra %}

@@ -1,10 +1,14 @@
+use chrono::NaiveDateTime;
 use diesel::dsl::sql;
 use diesel::*;
 use regex::Regex;
 use std::collections::HashMap;
 
+use crate::frontend::helpers::severity_highlight;
 use crate::helpers::TaskStatus;
-use crate::models::{Corpus, Service, Task};
+use crate::models::{
+  Corpus, DiffStatusFilter, DiffStatusRow, HistoricalTask, Service, Task, TaskRunMetadata,
+};
 use crate::reports::{AggregateReport, TaskDetailReport};
 use crate::schema::tasks;
 
@@ -468,4 +472,97 @@ pub(crate) fn list_entries(
       }
     })
     .collect()
+}
+
+/// Prepares a template-friendly list of task differences
+pub fn list_task_diffs(
+  connection: &mut PgConnection,
+  corpus: &Corpus,
+  service: &Service,
+  filters: DiffStatusFilter,
+) -> Vec<TaskRunMetadata> {
+  match HistoricalTask::report_for(corpus, service, Some(filters), connection) {
+    Ok((_dates, report)) => report
+      .into_iter()
+      .map(|row| {
+        let previous_status = TaskStatus::from_raw(row.0.status).to_key();
+        let current_status = TaskStatus::from_raw(row.1.status).to_key();
+        let previous_highlight = severity_highlight(&previous_status).to_owned();
+        let current_highlight = severity_highlight(&current_status).to_owned();
+        TaskRunMetadata {
+          task_id: row.0.task_id.to_string(),
+          entry: TASK_REPORT_NAME_REGEX
+            .replace(&row.0.entry, "$1")
+            .to_string(),
+          previous_status,
+          current_status,
+          previous_highlight,
+          current_highlight,
+          previous_saved_at: row.0.saved_at.format("%Y-%m-%d").to_string(),
+          current_saved_at: row.1.saved_at.format("%Y-%m-%d").to_string(),
+        }
+      })
+      .collect(),
+    _ => Vec::new(),
+  }
+}
+
+/// Prepares a template-friendly summary of task differences
+pub fn summary_task_diffs(
+  connection: &mut PgConnection,
+  corpus: &Corpus,
+  service: &Service,
+  previous_date: Option<NaiveDateTime>,
+  current_date: Option<NaiveDateTime>,
+) -> (Vec<String>, Vec<DiffStatusRow>) {
+  let filters = if previous_date.is_some() || current_date.is_some() {
+    Some(DiffStatusFilter {
+      previous_date,
+      current_date,
+      ..DiffStatusFilter::default()
+    })
+  } else {
+    None
+  };
+
+  match HistoricalTask::report_for(corpus, service, filters, connection) {
+    Ok((dates, report)) => {
+      let mut summary = HashMap::new();
+      for row in report {
+        let prev_status = row.0.status;
+        let current_status = row.1.status;
+        let count = summary
+          .entry(prev_status)
+          .or_insert_with(HashMap::new)
+          .entry(current_status)
+          .or_insert(0);
+        *count += 1;
+      }
+      // Here we are only interested to rpeort on the 4 "completed" severities
+      // we could add invalid, but not yet a focus
+      use TaskStatus::*;
+      let mut tabular = Vec::new();
+      for prev in [NoProblem, Warning, Error, Fatal].iter() {
+        for current in [NoProblem, Warning, Error, Fatal].iter() {
+          let previous_status = prev.to_key();
+          let current_status = current.to_key();
+          let previous_highlight = severity_highlight(&previous_status).to_owned();
+          let current_highlight = severity_highlight(&current_status).to_owned();
+          tabular.push(DiffStatusRow {
+            previous_status,
+            current_status,
+            previous_highlight,
+            current_highlight,
+            task_count: *summary
+              .entry(prev.raw())
+              .or_insert_with(HashMap::new)
+              .entry(current.raw())
+              .or_insert(0),
+          });
+        }
+      }
+      (dates, tabular)
+    },
+    _ => (Vec::new(), Vec::new()),
+  }
 }

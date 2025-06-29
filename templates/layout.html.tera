@@ -94,8 +94,10 @@
         {% block content %} {% endblock content %}
     </div>
 
-    {% if global.report_duration %} {% include "rerun" %} {% endif %}
-
+    {% if global.report_duration %}
+      {% include "rerun" %}
+      {% include "save-historical-tasks" %}
+    {% endif %}
     <footer>
         <nav class="navbar navbar-default navbar-fixed-bottom" role="navigation">
             {% if global.report_duration %}
@@ -106,6 +108,10 @@
                     <a href="#modal-rerun" data-toggle="modal" data-target="#modal-rerun"
                         title="Mark reported tasks for rerun">
                         <i class="fa fa-refresh"></i>
+                    </a>
+                    <a href="#modal-savetasks" data-toggle="modal" data-target="#modal-savetasks"
+                        title="Save reported tasks for the historical record">
+                        <i class="fa fa-save"></i>
                     </a><br>
                 </span>
                 {% if not global.severity %}

@@ -84,7 +84,7 @@ fn task_lifecycle_test() {
   // insert 100 tasks
   for index in 1..101 {
     let indexed_task = NewTask {
-      entry: format!("{}{}", mock_task.entry, index.to_string()),
+      entry: format!("{}{}", mock_task.entry, index),
       ..mock_task
     };
     assert!(backend.add(&indexed_task).is_ok());
@@ -152,7 +152,7 @@ fn batch_ops_test() {
   };
   // mark_imported on `mock_task_count` tasks
   let names: Vec<String> = (1..mock_task_count + 1)
-    .map(|index| format!("{}{}", mock_new_task.entry, index.to_string()))
+    .map(|index| format!("{}{}", mock_new_task.entry, index))
     .collect();
   let new_tasks: Vec<NewTask> = (0..mock_task_count)
     .map(|index| NewTask {
@@ -221,7 +221,7 @@ fn batch_ops_test() {
     owner_opt: None,
     description_opt: None,
   });
-  println!("debug : {:?}", mark_rerun_result);
+  println!("debug : {mark_rerun_result:?}");
   assert!(mark_rerun_result.is_ok());
 
   let post_rerun_todo_count: Result<i64, _> = tasks::table
@@ -243,7 +243,7 @@ fn batch_ops_test() {
     .filter(status.eq(TaskStatus::NoProblem.raw()))
     .count()
     .get_result(&mut backend.connection);
-  println!("Found {:?} done tasks", post_rerun_done_count);
+  println!("Found {post_rerun_done_count:?} done tasks");
   assert_eq!(post_rerun_done_count, Ok(0));
 
   // cleanup!
