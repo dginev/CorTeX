@@ -23,11 +23,11 @@ use std::collections::HashMap;
 use std::fmt;
 
 use crate::concerns::{CortexDeletable, CortexInsertable};
-use crate::frontend::params::DiffRequestParams;
 use crate::helpers::{TaskReport, TaskStatus};
 use crate::models::{
   Corpus, DiffStatusFilter, DiffStatusRow, NewTask, Service, Task, TaskRunMetadata,
 };
+use chrono::NaiveDateTime;
 
 /// The production database postgresql address, set from the .env configuration file
 pub const DEFAULT_DB_ADDRESS: &str = dotenv!("DATABASE_URL");
@@ -223,7 +223,7 @@ impl Backend {
     service: &Service,
     previous_date: Option<NaiveDateTime>,
     current_date: Option<NaiveDateTime>,
-  ) -> Vec<DiffStatusRow> {
+  ) -> (Vec<String>, Vec<DiffStatusRow>) {
     reports::summary_task_diffs(
       &mut self.connection,
       corpus,

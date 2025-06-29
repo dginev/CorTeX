@@ -72,6 +72,8 @@ pub struct TemplateContext {
   pub diff_report: Option<Vec<TaskRunMetadata>>,
   /// tabular data for reporting a summary of severity transitions between two runs
   pub diff_summary: Option<Vec<DiffStatusRow>>,
+  /// date labels for selecting a historical report from/to range
+  pub diff_dates: Option<Vec<String>>,
   /// serialized data for easy plotting of rerun history
   pub history_serialized: Option<String>,
 }

@@ -482,7 +482,7 @@ pub fn list_task_diffs(
   filters: DiffStatusFilter,
 ) -> Vec<TaskRunMetadata> {
   match HistoricalTask::report_for(corpus, service, Some(filters), connection) {
-    Ok(report) => report
+    Ok((_dates, report)) => report
       .into_iter()
       .map(|row| {
         let previous_status = TaskStatus::from_raw(row.0.status).to_key();
@@ -514,9 +514,19 @@ pub fn summary_task_diffs(
   service: &Service,
   previous_date: Option<NaiveDateTime>,
   current_date: Option<NaiveDateTime>,
-) -> Vec<DiffStatusRow> {
-  match HistoricalTask::report_for(corpus, service, None, connection) {
-    Ok(report) => {
+) -> (Vec<String>, Vec<DiffStatusRow>) {
+  let filters = if previous_date.is_some() || current_date.is_some() {
+    Some(DiffStatusFilter {
+      previous_date,
+      current_date,
+      ..DiffStatusFilter::default()
+    })
+  } else {
+    None
+  };
+
+  match HistoricalTask::report_for(corpus, service, filters, connection) {
+    Ok((dates, report)) => {
       let mut summary = HashMap::new();
       for row in report {
         let prev_status = row.0.status;
@@ -551,8 +561,8 @@ pub fn summary_task_diffs(
           });
         }
       }
-      tabular
+      (dates, tabular)
     },
-    _ => Vec::new(),
+    _ => (Vec::new(), Vec::new()),
   }
 }

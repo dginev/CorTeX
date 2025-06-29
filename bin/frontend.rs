@@ -307,6 +307,7 @@ fn diff_historical_summary(
   let mut context = TemplateContext::default();
   // let mut global = HashMap::new();
   let mut backend = Backend::default();
+  let mut global = HashMap::new();
   if let Ok(corpus) = Corpus::find_by_name(&corpus_name, &mut backend.connection) {
     if let Ok(service) = Service::find_by_name(&service_name, &mut backend.connection) {
       let previous_date = params
@@ -315,11 +316,20 @@ fn diff_historical_summary(
       let current_date = params
         .current_date
         .map(|date| NaiveDateTime::parse_from_str(&date, "%Y-%m-%d %H:%M:%S%.f").unwrap());
-      context.diff_summary =
-        Some(backend.summary_task_diffs(&corpus, &service, previous_date, current_date));
+      global.insert(
+        "previous_date".to_string(),
+        previous_date.unwrap_or_default().to_string(),
+      );
+      global.insert(
+        "current_date".to_string(),
+        current_date.unwrap_or_default().to_string(),
+      );
+      let (dates, summary) =
+        backend.summary_task_diffs(&corpus, &service, previous_date, current_date);
+      context.diff_dates = Some(dates);
+      context.diff_summary = Some(summary);
     }
   }
-  let mut global = HashMap::new();
   global.insert(
     "description".to_string(),
     format!("Summary of recent differences of service {service_name} over corpus {corpus_name}"),
@@ -357,18 +367,22 @@ fn diff_historical_tasks(
       let previous_status = previous_status.expect("previous status is required for this report");
       let current_status = current_status.expect("current status is required for this report");
       // ask DB for a report
-      context.diff_report = Some(backend.list_task_diffs(
-        &corpus,
-        &service,
-        DiffStatusFilter {
-          previous_status: TaskStatus::from_key(&previous_status).unwrap(),
-          current_status: TaskStatus::from_key(&current_status).unwrap(),
-          previous_date,
-          current_date,
-          offset,
-          page_size,
-        },
-      ));
+      context.diff_report = Some(
+        backend.list_task_diffs(
+          &corpus,
+          &service,
+          DiffStatusFilter {
+            previous_status: Some(TaskStatus::from_key(&previous_status).unwrap()),
+            current_status: Some(TaskStatus::from_key(&current_status).unwrap()),
+            previous_date: previous_date
+              .map(|date| NaiveDateTime::parse_from_str(&date, "%Y-%m-%d %H:%M:%S%.f").unwrap()),
+            current_date: current_date
+              .map(|date| NaiveDateTime::parse_from_str(&date, "%Y-%m-%d %H:%M:%S%.f").unwrap()),
+            offset,
+            page_size,
+          },
+        ),
+      );
       global.insert("previous_status".to_string(), previous_status);
       global.insert("current_status".to_string(), current_status);
       // Make sure we have pagination available

@@ -73,13 +73,13 @@ pub struct DiffStatusRow {
   pub task_count: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 /// A collection of filters for task status history reports
 pub struct DiffStatusFilter {
   /// The previous result for processing this task
-  pub previous_status: TaskStatus,
+  pub previous_status: Option<TaskStatus>,
   /// The current result for processing this task
-  pub current_status: TaskStatus,
+  pub current_status: Option<TaskStatus>,
   /// The requested previous date for this manual save
   pub previous_date: Option<NaiveDateTime>,
   /// The requested current date for this manual save
@@ -89,6 +89,13 @@ pub struct DiffStatusFilter {
   /// Page size
   pub page_size: usize,
 }
+
+/// A historical overview contains the list of labels for all dates where a snapshot was taken,
+/// followed by pairs of reports for tasks at the previous date and current date chosen.
+pub type HistoricalReportOverview = (
+  Vec<String>,
+  Vec<(HistoricalTaskReport, HistoricalTaskReport)>,
+);
 
 impl CortexInsertable for NewHistoricalTask {
   fn create(&self, connection: &mut PgConnection) -> Result<usize, Error> {
@@ -149,7 +156,7 @@ impl HistoricalTask {
     service: &Service,
     filters: Option<DiffStatusFilter>,
     connection: &mut PgConnection,
-  ) -> Result<Vec<(HistoricalTaskReport, HistoricalTaskReport)>, Error> {
+  ) -> Result<HistoricalReportOverview, Error> {
     use crate::schema::historical_tasks::dsl::{saved_at, task_id};
     use crate::schema::tasks::dsl::{corpus_id, service_id};
     // 1. We need to know the cutoff date of the previous status, to only select the relevant
@@ -160,7 +167,15 @@ impl HistoricalTask {
       .order(tasks::id.asc())
       .select(tasks::id);
     let mut dates: Vec<NaiveDateTime> = Vec::new();
-    if let Some(ref opts) = filters {
+    let mut previous_status = None;
+    let mut current_status = None;
+    let mut offset = 0;
+    let mut page_size = 0;
+    if let Some(opts) = filters {
+      previous_status = opts.previous_status;
+      current_status = opts.current_status;
+      offset = opts.offset;
+      page_size = opts.page_size;
       if let (Some(previous_date_param), Some(current_date_param)) =
         (opts.previous_date, opts.current_date)
       {
@@ -168,30 +183,26 @@ impl HistoricalTask {
         dates.push(previous_date_param);
       }
     }
-    if dates.is_empty() {
-      dates = historical_tasks::table
-        .filter(task_id.eq_any(tasks_subquery))
-        .order(saved_at.desc())
-        .select(saved_at)
-        .distinct()
-        .limit(2)
-        .get_results(connection)?;
+    let all_dates = historical_tasks::table
+      .filter(task_id.eq_any(tasks_subquery))
+      .order(saved_at.desc())
+      .select(saved_at)
+      .distinct()
+      .get_results(connection)?;
+    if dates.is_empty() && all_dates.len() > 1 {
+      dates = vec![all_dates[0], all_dates[1]];
     }
     // 2. Next, we extract all historical tasks for those 100 ids, using a single query,
     //    descendingly sorting by saved_at.
     if dates.len() < 2 {
-      return Ok(Vec::new());
+      return Ok((Vec::new(), Vec::new()));
     }
+    let dates_labels = all_dates
+      .into_iter()
+      .map(|date| date.format("%Y-%m-%d %H:%M:%S%.f").to_string())
+      .collect();
     let mut reported_tasks = Vec::new();
-    if let Some(DiffStatusFilter {
-      previous_status,
-      current_status,
-      previous_date: _, // handled prior
-      current_date: _,  // handled prior
-      offset,
-      page_size,
-    }) = filters
-    {
+    if page_size > 0 {
       // Optimized query to fetch historical tasks with matching status and saved_at
       let matching_tasks_query = r###"
         WITH matching_tasks AS (
@@ -219,9 +230,9 @@ impl HistoricalTask {
         .bind::<Integer, _>(corpus.id)
         .bind::<Integer, _>(service.id)
         .bind::<Timestamp, _>(dates[0])
-        .bind::<Integer, _>(current_status.raw())
+        .bind::<Integer, _>(current_status.expect("Current status is required").raw())
         .bind::<Timestamp, _>(dates[1])
-        .bind::<Integer, _>(previous_status.raw())
+        .bind::<Integer, _>(previous_status.expect("Previous status is required").raw())
         .bind::<Integer, _>(2 * offset as i32)
         .bind::<Integer, _>(2 * page_size as i32);
       // let debug = debug_query::<Pg, _>(&main_query);
@@ -269,6 +280,6 @@ impl HistoricalTask {
         }
       }
     }
-    Ok(reported_tasks)
+    Ok((dates_labels, reported_tasks))
   }
 }

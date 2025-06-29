@@ -291,3 +291,13 @@ table.diff-tasks-report {
   width: 40rem !important;
   margin: auto;
 }
+
+.pick-dates {
+  margin: 3rem auto 3rem auto;
+  max-width: max-content;
+  text-align: right;
+  & button {
+    display: inline-block;
+    font-size: 1rem;
+  }
+}

@@ -25,7 +25,7 @@ impl Finalize {
       if server::mark_done_arc(&mut backend, done_queue_arc)? {
         // we did some work, on to the next iteration
         jobs_count += 1;
-        if jobs_count % 100 == 0 {
+        if jobs_count.is_multiple_of(100) {
           println!("-- finalize thread persisted {jobs_count} jobs.");
         }
       } else {

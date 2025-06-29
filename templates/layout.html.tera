@@ -94,8 +94,10 @@
         {% block content %} {% endblock content %}
     </div>
 
-    {% if global.report_duration %} {% include "rerun" %} {% endif %}
-    {% if global.report_duration %} {% include "save-historical-tasks" %} {% endif %}
+    {% if global.report_duration %}
+      {% include "rerun" %}
+      {% include "save-historical-tasks" %}
+    {% endif %}
     <footer>
         <nav class="navbar navbar-default navbar-fixed-bottom" role="navigation">
             {% if global.report_duration %}

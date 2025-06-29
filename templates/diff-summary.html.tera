@@ -1,21 +1,34 @@
 {% extends "layout" %}
+{% block head_extra %}
+<script>
+  function reloadWithNewDates() {
+    const previousDate = document.getElementById('select-previous-date').value;
+    const currentDate = document.getElementById('select-current-date').value;
+    window.location.href = `/diff-summary/{{global.corpus_name}}/{{global.service_name}}?previous_date=${previousDate}&current_date=${currentDate}`;
+    return;
+  }
+</script>
+{% endblock head_extra %}
 
 {% block content %}
 <div class="center">
   <h1>Differences in per-task severity</h1>
   <div class="pick-dates">
-    <strong>Previous Run</strong>
+    <label for="select-previous-date">Date of previous run</label>
     <select name="previous-date" id="select-previous-date">
-      {% for date in dates %}
-      <option value="{{ date }}">{{ date }}</option>
+      <option value="" disabled selected hidden>choose date</option>
+      {% for date in diff_dates | reverse %}
+      <option value="{{ date }}" {%if date == global.previous_date %}selected{% endif %}>{{ date }}</option>
       {% endfor %}
     </select><br>
-    <strong>Current Run</strong>
+    <label for="select-current-date">Current Run</label>
     <select name="current-date" id="select-current-date">
-      {% for date in dates %}
-      <option value="{{ date }}">{{ date }}</option>
+      <option value="" disabled selected hidden>choose date</option>
+      {% for date in diff_dates %}
+      <option value="{{ date }}"  {%if date == global.current_date %}selected{% endif %}>{{ date }}</option>
       {% endfor %}
-    </select>
+    </select><br>
+    <button onclick="reloadWithNewDates();">Reload</button>
   </div>
   <div class="row">
     <table class="table table-striped diff-tasks-report">
@@ -28,7 +41,8 @@
           <td class="left {{ this.previous_highlight }}">{{ this.previous_status }}</td>
           <td class="left {{ this.current_highlight }}">{{ this.current_status }}</td>
           <td class="right">{{ this.task_count }}</td>
-          <td class="center"><a href="/diff-history/{{global.corpus_name}}/{{global.service_name}}?previous_status={{ this.previous_status }}&current_status={{ this.current_status }}">Task list</a></td>
+          <td class="center"><a href="/diff-history/{{global.corpus_name}}/{{global.service_name}}?previous_status={{ this.previous_status }}&current_status={{ this.current_status }}{%
+            if global.previous_date and global.current_date%}&previous_date={{global.previous_date}}&current_date={{global.current_date}}{% endif %}">Task list</a></td>
         </tr>
         {% endfor %}
       </tbody>
@@ -37,7 +51,7 @@
 </div>
 {% endblock content %}
 
-<br> {% block footer_extra %} {% if global.corpus_description %}
+{% block footer_extra %} {% if global.corpus_description %}
 <p class="corpus-description">
   <span class="bold">{{global.corpus_name}}:</span> {{global.corpus_description}} </p>
 {% endif %} {% if global.service_description %}
