@@ -134,8 +134,8 @@ impl Worker for InitWorker {
           continue;
         },
       };
-
-      self.convert(Path::new(&task.entry))?;
+      // ignore error for now, complete the task.
+      let _ = self.convert(Path::new(&task.entry));
       sink.send(&identity, SNDMORE).unwrap();
       sink.send(self.get_service(), SNDMORE).unwrap();
       sink.send(taskid, SNDMORE).unwrap();
