@@ -154,7 +154,7 @@ pub(crate) fn task_report(
 
       let task_status_raw = task_status.unwrap_or(TaskStatus::NoProblem).raw();
       let status_clause = if !all_messages {
-        String::from("status=$3")
+        String::from("status=$3 ")
       } else {
         String::from("status < $3 and status > ") + &TaskStatus::Invalid.raw().to_string()
       };
@@ -305,7 +305,7 @@ pub(crate) fn task_report(
                   + &log_table
                   + ".task_id and service_id=$1 and corpus_id=$2 and "
                   + &status_clause
-                  + "and category=$4 and what=$5 ORDER BY tasks.entry ASC offset $6 limit $7";
+                  + " and category=$4 and what=$5 ORDER BY tasks.entry ASC offset $6 limit $7";
 
                 let details_report_query = sql_query(details_report_query_string)
                   .bind::<BigInt, i64>(i64::from(service.id))
