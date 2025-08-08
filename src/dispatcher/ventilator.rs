@@ -57,6 +57,9 @@ impl Ventilator {
       ventilator.recv(&mut identity, 0)?;
       ventilator.recv(&mut msg, 0)?;
       let service_name = msg.as_str().unwrap_or_default().to_string();
+      if service_name.is_empty() {
+        continue; // Skip empty service names, they are not valid
+      }
       let identity_str = identity.as_str().unwrap_or_default().to_string();
       // println!("Task requested for service: {}", service_name.clone());
       let request_time = time::get_time();
