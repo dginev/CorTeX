@@ -1,3 +1,18 @@
+//! During the August 2025, upgrade to Postgres 17 on our KWARC server that runs CorTeX builds for ar5iv,
+//! there was a keyboard mistake that caused the DB to drop the session tables for the full run.
+//! 
+//! As a means of recovery, observe that all files remain on disk in case of DB mishaps, where each
+//! converted task has a "cortex.log" file that persists all messages, including the final conversion
+//! status.
+//! 
+//! This led to the strategy of:
+//! 1. Marking all tasks TODO
+//! 2. Walking the TODO tasks of a corpus in batches, reading the cortex.log file for each and 
+//!    preparing log_* messages in the "usual way" (reusing the code from the dispatcher/server/sink)
+//! 3. The remaining TODO tasks are then either "Fatals" that came back without a log file, or 
+//!    have other issues. Ideally we actually re-convert those entries for certainty.
+//! 
+
 use std::env;
 use std::thread;
 use std::time::Duration;
@@ -18,7 +33,6 @@ lazy_static! {
   static ref ENTRY_ZIP_NAME_REGEX: Regex =
     Regex::new(r"[^/]+\.zip$").unwrap();
 }
-// use Archive::*;
 
 // Walks all TODO "status" entries of a corpus, unpacks+scans their cortex.log file, then
 // 1. uses conversion status to update "status" value in tasks
