@@ -55,21 +55,21 @@ fn main() {
     .expect("Please provide a path to a registered corpus");
   let service = Service::find_by_name("tex_to_html", &mut backend.connection)
     .expect("DB connection failed: could not find tex_to_hml service");
-
-    let batch_size = 100;
-  // Fetch a batch of tasks for the given corpus and service
-  let mut offset = 0;
+  // Load all tasks at once, since we will be marking them as completed as we go
+  // and batching will get polluted.
+  let batch_size = 100;
+  let tasks : Vec<Task> = tasks::table
+  .filter(corpus_id.eq(corpus.id))
+  .filter(service_id.eq(service.id))
+  .filter(status.eq(TaskStatus::TODO.raw()))
+  .get_results(&mut backend.connection).expect("DB connection failed");
+  eprintln!("-- will scan and update {} tasks a batch of {} at a time", tasks.len(), batch_size);
+  let mut tasks_iter = tasks.into_iter();
   loop {
-    let batch : Vec<Task> = tasks::table
-      .filter(corpus_id.eq(corpus.id))
-      .filter(service_id.eq(service.id))
-      .filter(status.eq(TaskStatus::TODO.raw()))
-      .offset(offset)
-      .limit(batch_size)
-      .get_results(&mut backend.connection).expect("DB connection failed");
+    let batch: Vec<Task> = tasks_iter.by_ref().take(batch_size).collect();
+    if batch.is_empty() { break; }
     let batch_len = batch.len();
     let mut batch_reports = Vec::new();
-    eprintln!("-- Processing {} tasks from offset {}", batch_len, offset);
     for task in batch {
       let html_entry = ENTRY_ZIP_NAME_REGEX.replace(&task.entry,"tex_to_html.zip").to_string();
       let html_entry_path = Path::new(&html_entry);
@@ -103,10 +103,5 @@ fn main() {
     if success {
       eprintln!("-- Successfully saved {} reports for {} tasks", reports_len, batch_len);
     }
-    if batch_len < batch_size as usize {
-      break; // No more tasks to process
-    }
-    offset += batch_size;
   }
 }
-
