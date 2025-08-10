@@ -55,19 +55,29 @@ impl Ventilator {
       let mut msg = zmq::Message::new();
       let mut identity = zmq::Message::new();
       ventilator.recv(&mut identity, 0)?;
+      let mut identity_str = identity.as_str().unwrap_or_default().to_string();
       ventilator.recv(&mut msg, 0)?;
-      let service_name = msg.as_str().unwrap_or_default().to_string();
-      if service_name.is_empty() {
-        continue; // Skip empty service names, they are not valid
+      let mut service_name = msg.as_str().unwrap_or_default().to_string();
+      if identity_str.is_empty() || service_name.is_empty() {
+        continue; // Skip empty names, they are not valid requests
       }
-      let identity_str = identity.as_str().unwrap_or_default().to_string();
-      // println!("Task requested for service: {}", service_name.clone());
+      
       let request_time = time::get_time();
       source_job_count += 1;
-
       let mut dispatched_task_opt: Option<TaskProgress> = None;
       // Requests for unknown service names will be silently ignored.
-      if let Some(service) = server::get_sync_service(&service_name, services_arc, &mut backend) {
+      let service_opt = match server::get_sync_service(&service_name, services_arc, &mut backend) {
+        Some(s) => Some(s),
+        None => match server::get_sync_service(&identity_str, services_arc, &mut backend) {
+          Some(id_s) => {
+            std::mem::swap(&mut service_name, &mut identity_str);
+            eprintln!("-- Request shuffled argument order, identity {:?} and service {:?}", service_name, identity_str);
+            Some(id_s)
+          },
+          None => None
+        }
+      };
+      if let Some(service) = service_opt {
         if !queues.contains_key(&service_name) {
           queues.insert(service_name.clone(), Vec::new());
         }
@@ -182,7 +192,7 @@ impl Ventilator {
           self.backend_address.clone(),
         )?;
       } else {
-        println!("-- No such service in ventilator request: {service_name:?}");
+        println!("-- No such service {service_name:?} in ventilator request from {identity_str:?}");
       }
       // Record that a task has been dispatched in the progress queue
       if let Some(dispatched_task) = dispatched_task_opt {
