@@ -39,7 +39,7 @@ time = "0.1.4"
 redis = "0.32.6"
 rocket = { version = "0.5.1", features = ["json"] }
 rocket_dyn_templates = { version = "0.2.0", features = ["tera"] }
-hyper = "1.6"
+hyper = "1.7"
 percent-encoding = "2.3.2"
 zmq = "0.10.0"
 dotenv = "0.15.0"
