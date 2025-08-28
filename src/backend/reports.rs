@@ -153,17 +153,11 @@ pub(crate) fn task_report(
       };
 
       let task_status_raw = task_status.unwrap_or(TaskStatus::NoProblem).raw();
-      let status_clause = if !all_messages {
-        String::from("status=$3 ")
+      let (status_clause,bind_status) = if !all_messages {
+        (String::from("status=$3 "), task_status_raw)
       } else {
-        String::from("status < $3 and status > ") + &TaskStatus::Invalid.raw().to_string()
-      };
-      let bind_status = if !all_messages {
-        task_status_raw
-      } else {
-        task_status_raw + 1 // TODO: better would be a .prev() method or so, since this hardwires
-                            // the assumption of using adjacent negative
-                            // integers
+        (String::from("status < $3 and status > ") + &TaskStatus::Invalid.raw().to_string(),
+          0) // all completed tasks are negative integers, so 0 is a safe upper bound
       };
       match category_opt {
         None => {
