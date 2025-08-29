@@ -54,7 +54,12 @@ impl Ventilator {
     loop {
       let mut identity = zmq::Message::new();
       let mut msg = zmq::Message::new();
-      ventilator.recv(&mut identity, 0)?;
+      // There appears to be a very rare failure mode in 08.2025 sandbox conversion testing,
+      // where 3 adjacent empty messages are received by the ventilator, causing a permanetly shuffled
+      // state. 
+      while identity.is_empty() {
+        ventilator.recv(&mut identity, 0)?;
+      }
       ventilator.recv(&mut msg, 0)?;
       let identity_str = identity.as_str().unwrap_or_default().to_string();
       let service_name = msg.as_str().unwrap_or_default().to_string();
