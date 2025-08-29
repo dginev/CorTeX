@@ -52,15 +52,12 @@ impl Ventilator {
     let mut source_job_count: usize = 0;
 
     loop {
-      let mut msg = zmq::Message::new();
       let mut identity = zmq::Message::new();
+      let mut msg = zmq::Message::new();
       ventilator.recv(&mut identity, 0)?;
-      let mut identity_str = identity.as_str().unwrap_or_default().to_string();
       ventilator.recv(&mut msg, 0)?;
-      let mut service_name = msg.as_str().unwrap_or_default().to_string();
-      if identity_str.is_empty() || service_name.is_empty() {
-        continue; // Skip empty names, they are not valid requests
-      }
+      let identity_str = identity.as_str().unwrap_or_default().to_string();
+      let service_name = msg.as_str().unwrap_or_default().to_string();
       
       let request_time = time::get_time();
       source_job_count += 1;
@@ -68,13 +65,13 @@ impl Ventilator {
       // Requests for unknown service names will be silently ignored.
       let service_opt = match server::get_sync_service(&service_name, services_arc, &mut backend) {
         Some(s) => Some(s),
-        None => match server::get_sync_service(&identity_str, services_arc, &mut backend) {
-          Some(id_s) => {
-            std::mem::swap(&mut service_name, &mut identity_str);
-            eprintln!("-- Request shuffled argument order, identity {:?} and service {:?}", service_name, identity_str);
-            Some(id_s)
-          },
-          None => None
+        None => {
+          // As it happens, we can never survive this mistake with our current zmq code. We need a full reboot to regain sanity.
+          eprintln!("-- FAILURE: unknown service name {service_name:?} requested by worker {identity_str:?}. Mock response sent.");
+          ventilator.send(identity, SNDMORE)?;
+          ventilator.send("0", SNDMORE)?;
+          ventilator.send(Vec::new(), 0)?;
+          continue;
         }
       };
       if let Some(service) = service_opt {
@@ -85,7 +82,7 @@ impl Ventilator {
           .get_mut(&service_name)
           .unwrap_or_else(|| panic!("Could not obtain queue mutex lock in main ventilator loop"));
         if task_queue.is_empty() {
-          println!(
+          eprintln!(
             "-- No tasks in task queue for service {:?}, fetching up to {:?} more from backend...",
             service_name, self.queue_size
           );
@@ -140,7 +137,7 @@ impl Ventilator {
           let current_task = current_task_progress.task;
           taskid = current_task.id;
           let serviceid = current_task.service_id;
-          println!("vent {source_job_count}: worker {identity_str:?} received task {taskid:?}");
+          eprintln!("vent {source_job_count}: worker {identity_str:?} received task {taskid:?}");
           ventilator.send(&taskid.to_string(), SNDMORE)?;
           if serviceid == 1 {
             // No payload needed for init
@@ -170,17 +167,17 @@ impl Ventilator {
               }
               let responded_time = time::get_time();
               let request_duration = (responded_time - request_time).num_milliseconds();
-              println!(
+              eprintln!(
                 "vent {source_job_count}: message size: {total_outgoing}, took {request_duration}ms.");
             } else {
-              println!("-- Failed to prepare input stream for taskid {taskid:?}");
-              println!("-- task details: {current_task:?}");
+              eprintln!("-- Failed to prepare input stream for taskid {taskid:?}");
+              eprintln!("-- task details: {current_task:?}");
               taskid = -1;
               ventilator.send(Vec::new(), 0)?;
             }
           }
         } else {
-          println!("vent {source_job_count:?}: worker {identity_str:?} received mock reply.");
+          eprintln!("vent {source_job_count:?}: worker {identity_str:?} received mock reply.");
           ventilator.send("0", SNDMORE)?;
           ventilator.send(Vec::new(), 0)?;
         }
@@ -192,7 +189,7 @@ impl Ventilator {
           self.backend_address.clone(),
         )?;
       } else {
-        println!("-- No such service {service_name:?} in ventilator request from {identity_str:?}");
+        eprintln!("-- No such service {service_name:?} in ventilator request from {identity_str:?}");
       }
       // Record that a task has been dispatched in the progress queue
       if let Some(dispatched_task) = dispatched_task_opt {
@@ -200,7 +197,7 @@ impl Ventilator {
       }
       if let Some(limit_number) = job_limit {
         if source_job_count >= limit_number {
-          println!("vent {limit_number}: job limit reached, terminating Ventilator thread...");
+          eprintln!("vent {limit_number}: job limit reached, terminating Ventilator thread...");
           break;
         }
       }
