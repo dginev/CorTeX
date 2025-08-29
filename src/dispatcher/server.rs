@@ -150,7 +150,7 @@ pub fn get_service<S: ::std::hash::BuildHasher>(
     .expect("Failed to obtain Mutex lock in get_service");
   let service = services.get(service_name);
   match service {
-    None => None, // TODO: Handle errors
+    None => None, // TODO: Should we panic? Can we recover?
     Some(service) => service.clone(),
   }
 }
