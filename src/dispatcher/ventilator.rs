@@ -63,6 +63,11 @@ impl Ventilator {
       ventilator.recv(&mut msg, 0)?;
       let identity_str = identity.as_str().unwrap_or_default().to_string();
       let service_name = msg.as_str().unwrap_or_default().to_string();
+      if identity_str.is_empty() && service_name.is_empty() {
+        // careful to only skip if both empty, to avoid evenness issues. But a restart would be healthier really.
+        eprintln!("-- FAILURE: empty request {service_name:?} requested by worker {identity_str:?}. Skip.");
+        continue;
+      }
       
       let request_time = time::get_time();
       source_job_count += 1;
