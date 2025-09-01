@@ -68,19 +68,34 @@ impl TaskManager {
     let vent_progress_queue_arc = progress_queue_arc.clone();
     let vent_done_queue_arc = done_queue_arc.clone();
     let vent_thread = thread::spawn(move || {
-      Ventilator {
+      let ventilator = Ventilator {
         port: source_port,
         queue_size: source_queue_size,
         message_size: source_message_size,
         backend_address: source_backend_address.clone(),
+      };
+      // 09.2025, Currently the ventilator has some hard to reproduce fragility to empty messages
+      //          which necessitates a restart of the thread. If we can reproduce that better,
+      //          it may be possible to return to the previous single-threaded lifecycle.
+      loop {  
+        match ventilator.start(
+          &vent_services_arc,
+          &vent_progress_queue_arc,
+          &vent_done_queue_arc,
+          job_limit,
+        ) {
+          Err(e) => return Err(format!("ventilator failed {e:?}")),
+          Ok(0) => return Ok(()),
+          Ok(jobs) => {
+            if let Some(limit) = job_limit {
+              if jobs > 0 && jobs > limit { 
+                return Ok(());
+              }
+            }
+            // loop otherwise
+          }
+        }        
       }
-      .start(
-        &vent_services_arc,
-        &vent_progress_queue_arc,
-        &vent_done_queue_arc,
-        job_limit,
-      )
-      .unwrap_or_else(|e| panic!("Failed in ventilator thread: {e:?}"));
     });
 
     // Next prepare the finalize thread which will persist finished jobs to the DB
@@ -122,16 +137,16 @@ impl TaskManager {
     });
 
     if vent_thread.join().is_err() {
-      println!("Ventilator thread died unexpectedly!");
+      eprintln!("-- Ventilator thread died unexpectedly!");
       Err(zmq::Error::ETERM)
     } else if sink_thread.join().is_err() {
-      println!("Sink thread died unexpectedly!");
+      eprintln!("-- Sink thread died unexpectedly!");
       Err(zmq::Error::ETERM)
     } else if finalize_thread.join().is_err() {
-      println!("DB thread died unexpectedly!");
+      eprintln!("-- DB thread died unexpectedly!");
       Err(zmq::Error::ETERM)
     } else {
-      println!("Manager successfully terminated!");
+      eprintln!("-- Manager successfully terminated!");
       Ok(())
     }
   }

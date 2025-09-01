@@ -30,13 +30,15 @@ impl Ventilator {
   /// The ventilator shares state with other manager threads via queues for tasks in progress,
   /// as well as a queue for completed tasks pending persisting to disk.
   /// A job limit can be provided as a termination condition for the sink server.
+  /// 
+  /// Upon premature termination, returns the number of tasks processed.
   pub fn start(
     &self,
     services_arc: &Arc<Mutex<HashMap<String, Option<Service>>>>,
     progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>,
     done_queue_arc: &Arc<Mutex<Vec<TaskReport>>>,
     job_limit: Option<usize>,
-  ) -> Result<(), Box<dyn Error>> {
+  ) -> Result<usize, Box<dyn Error>> {
     // We have a Ventilator-exclusive "queues" stack for tasks to be dispatched
     let mut queues: HashMap<String, Vec<TaskProgress>> = HashMap::new();
     // Assuming this is the only And tidy up the postgres tasks:
@@ -66,7 +68,7 @@ impl Ventilator {
       if identity_str.is_empty() && service_name.is_empty() {
         // careful to only skip if both empty, to avoid evenness issues. But a restart would be healthier really.
         eprintln!("-- FAILURE: empty request {service_name:?} requested by worker {identity_str:?}. Skip.");
-        continue;
+        return Ok(source_job_count);
       }
       
       let request_time = time::get_time();
@@ -208,10 +210,9 @@ impl Ventilator {
       if let Some(limit_number) = job_limit {
         if source_job_count >= limit_number {
           eprintln!("vent {limit_number}: job limit reached, terminating Ventilator thread...");
-          break;
+          return Ok(source_job_count);
         }
       }
     }
-    Ok(())
   }
 }
