@@ -8,7 +8,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::thread;
+use std::thread::{self, sleep};
+use std::time::Duration;
 
 use crate::backend::DEFAULT_DB_ADDRESS;
 use crate::dispatcher::finalize::Finalize;
@@ -64,39 +65,6 @@ impl TaskManager {
     let source_message_size = self.message_size;
     let source_backend_address = self.backend_address.clone();
 
-    let vent_services_arc = services_arc.clone();
-    let vent_progress_queue_arc = progress_queue_arc.clone();
-    let vent_done_queue_arc = done_queue_arc.clone();
-    let vent_thread = thread::spawn(move || {
-      let ventilator = Ventilator {
-        port: source_port,
-        queue_size: source_queue_size,
-        message_size: source_message_size,
-        backend_address: source_backend_address.clone(),
-      };
-      // 09.2025, Currently the ventilator has some hard to reproduce fragility to empty messages
-      //          which necessitates a restart of the thread. If we can reproduce that better,
-      //          it may be possible to return to the previous single-threaded lifecycle.
-      loop {  
-        match ventilator.start(
-          &vent_services_arc,
-          &vent_progress_queue_arc,
-          &vent_done_queue_arc,
-          job_limit,
-        ) {
-          Err(e) => return Err(format!("ventilator failed {e:?}")),
-          Ok(0) => return Ok(()),
-          Ok(jobs) => {
-            if let Some(limit) = job_limit {
-              if jobs > 0 && jobs > limit { 
-                return Ok(());
-              }
-            }
-            // loop otherwise
-          }
-        }        
-      }
-    });
 
     // Next prepare the finalize thread which will persist finished jobs to the DB
     let finalize_backend_address = self.backend_address.clone();
@@ -116,10 +84,10 @@ impl TaskManager {
     let result_message_size = self.message_size;
     let result_backend_address = self.backend_address.clone();
 
-    let sink_services_arc = services_arc;
-    let sink_progress_queue_arc = progress_queue_arc;
+    let sink_services_arc = services_arc.clone();
+    let sink_progress_queue_arc = progress_queue_arc.clone();
 
-    let sink_done_queue_arc = done_queue_arc;
+    let sink_done_queue_arc = done_queue_arc.clone();
     let sink_thread = thread::spawn(move || {
       Sink {
         port: result_port,
@@ -136,10 +104,37 @@ impl TaskManager {
       .unwrap_or_else(|e| panic!("Failed in sink thread: {e:?}"));
     });
 
-    if vent_thread.join().is_err() {
-      eprintln!("-- Ventilator thread died unexpectedly!");
-      Err(zmq::Error::ETERM)
-    } else if sink_thread.join().is_err() {
+    // 09.2025, Currently the ventilator has some hard to reproduce fragility to empty messages
+    //          which necessitates a restart of the thread. If we can reproduce that better,
+    //          it may be possible to return to the previous single-threaded lifecycle.
+    loop {  
+      let vent_services_arc = services_arc.clone();
+      let vent_progress_queue_arc = progress_queue_arc.clone();
+      let vent_done_queue_arc = done_queue_arc.clone();
+      let vent_backend_address = source_backend_address.clone();
+      let vent_thread = thread::spawn(move || {
+        let ventilator = Ventilator {
+          port: source_port,
+          queue_size: source_queue_size,
+          message_size: source_message_size,
+          backend_address: vent_backend_address,
+        };
+        ventilator.start(
+            &vent_services_arc,
+            &vent_progress_queue_arc,
+            &vent_done_queue_arc,
+            job_limit,
+          ).unwrap_or_else(|e| panic!("Failed in ventilator thread: {e:?}"));
+      });
+      if vent_thread.join().is_err() {
+        eprintln!("-- Ventilator thread died unexpectedly!");
+        return Err(zmq::Error::ETERM);
+      } else if job_limit.is_some() {
+        break;
+      }
+      sleep(Duration::from_secs(1));
+    }
+    if sink_thread.join().is_err() {
       eprintln!("-- Sink thread died unexpectedly!");
       Err(zmq::Error::ETERM)
     } else if finalize_thread.join().is_err() {
