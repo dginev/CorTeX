@@ -36,7 +36,7 @@ glob = "0.3.3"
 rand = "0.8.0"
 tempfile = "3"
 time = "0.1.4"
-redis = "1.0.2"
+redis = "1.0.3"
 rocket = { version = "0.5.1", features = ["json"] }
 rocket_dyn_templates = { version = "0.2.0", features = ["tera"] }
 hyper = "1.8"
