@@ -167,3 +167,47 @@ indexed sub-millisecond lookup — cheap *and* fresh, removing the hard Redis de
 
 **Net:** the priority order holds — **#4 (pool the metadata writes)** and **#6 (rollup tables)** are
 the two highest-leverage and both are tractable. Re-measure after each fix to verify the wins.
+
+---
+
+## Full-pipeline validation of #4 (2026-06-13)
+
+The 395× figure above is an *isolated* connection-open microbenchmark. To validate it end-to-end we
+added `examples/bench_pipeline.rs`, which drives the **real** ventilator → echo-worker → sink →
+finalize → `worker_metadata` loop over a backlog of tiny tasks for a fixed time window, then counts
+what flowed through. Same binary, same config (20 000-task backlog, **4 echo workers**, 8 s window);
+the only change between arms is reverting the four #4 files to their pre-#4 (`HEAD~1`) versions.
+
+| Arm | tasks/s | PG connection errors (8 s) | worker-metadata recorded | process |
+|---|---|---|---|---|
+| **pooled (#4, HEAD)** | ~2425 | **0** | ~19 391 dispatched (intact) | clean exit |
+| **unpooled (pre-#4)** | ~2500\* | **15 500** | **245** dispatched (~98.8 % **dropped**) | **crashed (SIGSEGV)** |
+
+\* Task *throughput* looks similar because the metadata writes are fire-and-forget (off the dispatch
+critical path) — so raw tasks/s is **not** where the damage shows. The damage is systemic:
+
+- The unpooled path opens **2 fresh `PgConnection`s per task** (one in `record_dispatched`, one in
+  `record_received`). At ~2400 tasks/s that is ~**9 600 connection opens/s**, which in 8 s produced
+  **15 500 hard failures**: Postgres `FATAL: sorry, too many clients already` (it **exhausted
+  `max_connections=100`**), `remaining connection slots are reserved for ... SUPERUSER` (it ate the
+  reserved slots too — i.e. it would **take the frontend and every other DB client down with it**),
+  and `Cannot assign requested address` (it **exhausted ephemeral TCP source ports**).
+- `connection_at` uses `PgConnection::establish(...).expect(...)`, so each failure **panics in its
+  detached thread and silently drops that metadata write** — **~98.8 %** of metadata was lost (245 of
+  ~20 000), and the thread+connection storm ultimately **crashed the process (SIGSEGV, exit 139)**.
+- The pooled arm: **zero** connection errors, metadata intact, stable — connections bounded by the
+  pool (`pool_size=32`) regardless of task rate.
+
+**Conclusion.** #4 is not merely a latency win; the pre-#4 per-event-connection pattern is a
+**fault-injection bomb** under pipeline load — it exhausts the shared Postgres connection pool +
+OS ports and crashes, destabilising the *whole* deployment. Pooling converts an O(tasks) connection
+storm into a bounded, reused set. This is the first concrete proof point for the
+[maximum-robustness](DESIGN_PRINCIPLES.md) mandate; see also [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) for
+the residual liabilities this run surfaced (the metadata **thread-per-event spawn** still remains —
+only the *connection* is pooled, not the thread — and the metadata read-before-insert **race** drops
+the `returned` counts even in the pooled arm).
+
+*Sandbox note:* this dev box's seccomp limits capped what could be measured here — an in-process
+`pg_stat_activity` connection sampler tripped the sandbox (SIGSTKFLT), so peak-backend counts were
+read from the Postgres `FATAL` messages instead. The definitive 200-worker / 100–200 tasks/s run
+belongs on the real `cortex` box; the failure modes above already reproduce decisively at 4 workers.

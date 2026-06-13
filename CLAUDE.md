@@ -57,6 +57,14 @@ additionally needs `latexmlc` (skips otherwise): `cargo test`.
 
 ## Coding conventions
 
+- **Maximum robustness is the prime directive** ([`docs/DESIGN_PRINCIPLES.md`](docs/DESIGN_PRINCIPLES.md)).
+  arXiv data is hostile and `latexml-oxide` fails unpredictably, so design every component for
+  resilience, fault-tolerance, and *transparent* failure: **no unbounded per-event resource
+  acquisition** (pool/bound connections, threads, in-flight work), **no `unwrap`/`expect`/`panic!` on
+  request or dispatch paths** (return `Result`, log, count, continue — never drop work silently),
+  isolate blast radius, degrade gracefully, idempotent crash-consistent writes. Record every
+  resilience gap you find in [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) (the running ledger —
+  owner: *we go back and solve them all at the end*); never fix-and-forget or leave a gap unrecorded.
 - **Style:** `.rustfmt.toml` (2-space indent, custom). Run `cargo fmt`; `cargo clippy` must stay
   clean. `src/lib.rs` has `#![deny(missing_docs)]` — **every public item needs a doc comment.**
 - **License header:** every source file starts with the MIT copyright block (copy an existing file).
