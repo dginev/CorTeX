@@ -21,6 +21,10 @@ path = "bin/frontend.rs"
 name = "dispatcher"
 path = "bin/dispatcher.rs"
 
+[[bin]]
+name = "cortex"
+path = "bin/cortex.rs"
+
 [dependencies.libarchive-sys]
 git = "https://github.com/dginev/libarchive-sys.git"
 
@@ -48,4 +52,5 @@ toml = "0.8"
 chrono = "0.4.45"
 diesel = {version="2.2.10", features = ["postgres", "chrono"]}
 diesel_migrations = "2.2"
+clap = { version = "4", features = ["derive"] }
 lazy_static = "1.0.0"

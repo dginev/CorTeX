@@ -28,9 +28,7 @@ use rocket::{Route, State};
 use rocket_dyn_templates::{context, Template};
 use serde::Serialize;
 
-use crate::config::{
-  config, AssetsConfig, CacheConfig, CortexConfig, DatabaseConfig, DispatcherConfig,
-};
+use crate::config::{config, AssetsConfig, CacheConfig, CortexConfig, DispatcherConfig};
 
 /// Managed state: the path where the write path persists the configuration file.
 pub struct ConfigFile(pub PathBuf);
@@ -109,15 +107,6 @@ pub struct HealthDto {
   pub migrations: MigrationsHealth,
 }
 
-/// The subset of configuration that is safe to persist to the config file (excludes secrets).
-#[derive(Serialize)]
-struct PersistedConfig<'a> {
-  database: &'a DatabaseConfig,
-  dispatcher: &'a DispatcherConfig,
-  cache: &'a CacheConfig,
-  assets: &'a AssetsConfig,
-}
-
 /// The editable, non-secret fields of the Settings form (database/auth are edited out-of-band).
 #[derive(FromForm)]
 pub struct SettingsForm {
@@ -172,13 +161,8 @@ fn merge_and_persist(patch: &serde_json::Value, path: &Path) -> Result<CortexCon
     .merge(Serialized::defaults(patch))
     .extract()
     .map_err(|_| Status::UnprocessableEntity)?;
-  let persisted = PersistedConfig {
-    database: &merged.database,
-    dispatcher: &merged.dispatcher,
-    cache: &merged.cache,
-    assets: &merged.assets,
-  };
-  let toml_text = toml::to_string_pretty(&persisted).map_err(|_| Status::InternalServerError)?;
+  let toml_text =
+    crate::config::to_persisted_toml(&merged).map_err(|_| Status::InternalServerError)?;
   std::fs::write(path, toml_text).map_err(|_| Status::InternalServerError)?;
   Ok(merged)
 }

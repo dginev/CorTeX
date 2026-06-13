@@ -179,6 +179,24 @@ struct LegacyFrontendConfig {
   rerun_tokens: HashMap<String, String>,
 }
 
+/// Serializes the non-secret configuration sections (everything except `auth`) to TOML. Shared by
+/// `cortex init`'s config scaffold and the Settings write path so the on-disk shape is identical.
+pub fn to_persisted_toml(config: &CortexConfig) -> Result<String, toml::ser::Error> {
+  #[derive(Serialize)]
+  struct Persisted<'a> {
+    database: &'a DatabaseConfig,
+    dispatcher: &'a DispatcherConfig,
+    cache: &'a CacheConfig,
+    assets: &'a AssetsConfig,
+  }
+  toml::to_string_pretty(&Persisted {
+    database: &config.database,
+    dispatcher: &config.dispatcher,
+    cache: &config.cache,
+    assets: &config.assets,
+  })
+}
+
 /// The path of the optional `cortex.toml` configuration file, read and written by both the loader
 /// and the Settings write path. Overridable via the `CORTEX_CONFIG_FILE` environment variable.
 pub fn config_file_path() -> std::path::PathBuf {
