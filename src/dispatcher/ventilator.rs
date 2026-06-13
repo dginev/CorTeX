@@ -3,7 +3,7 @@ use std::io::Read;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use crate::backend;
+use crate::backend::{self, DbPool};
 use crate::dispatcher::server;
 use crate::helpers;
 use crate::helpers::{NewTaskMessage, TaskProgress, TaskReport, TaskStatus};
@@ -23,6 +23,8 @@ pub struct Ventilator {
   pub message_size: usize,
   /// address for the Task store postgres endpoint
   pub backend_address: String,
+  /// pooled connections for worker-metadata updates (avoids a fresh connection per ZMQ event)
+  pub pool: DbPool,
 }
 
 impl Ventilator {
@@ -198,12 +200,7 @@ impl Ventilator {
           ventilator.send(Vec::new(), 0)?;
         }
         // Update this worker's metadata
-        WorkerMetadata::record_dispatched(
-          identity_str,
-          service.id,
-          taskid,
-          self.backend_address.clone(),
-        )?;
+        WorkerMetadata::record_dispatched(identity_str, service.id, taskid, self.pool.clone())?;
       } else {
         eprintln!(
           "-- No such service {service_name:?} in ventilator request from {identity_str:?}"

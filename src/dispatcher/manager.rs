@@ -11,7 +11,8 @@ use std::sync::Mutex;
 use std::thread::{self, sleep};
 use std::time::Duration;
 
-use crate::backend::default_db_address;
+use crate::backend::{build_pool, default_db_address};
+use crate::config::config;
 use crate::dispatcher::finalize::Finalize;
 use crate::dispatcher::sink::Sink;
 use crate::dispatcher::ventilator::Ventilator;
@@ -59,6 +60,10 @@ impl TaskManager {
     let progress_queue_arc = Arc::new(Mutex::new(progress_queue));
     let done_queue_arc = Arc::new(Mutex::new(done_queue));
 
+    // Shared pool for worker-metadata updates: a pooled checkout per ZMQ event instead of a fresh
+    // connection (~4.5ms -> ~11us; see the Arm 14 measurement spike).
+    let worker_pool = build_pool(&self.backend_address, config().database.pool_size);
+
     // First prepare the source ventilator
     let source_port = self.source_port;
     let source_queue_size = self.queue_size;
@@ -87,12 +92,14 @@ impl TaskManager {
     let sink_progress_queue_arc = progress_queue_arc.clone();
 
     let sink_done_queue_arc = done_queue_arc.clone();
+    let sink_pool = worker_pool.clone();
     let sink_thread = thread::spawn(move || {
       Sink {
         port: result_port,
         queue_size: result_queue_size,
         message_size: result_message_size,
         backend_address: result_backend_address.clone(),
+        pool: sink_pool,
       }
       .start(
         &sink_services_arc,
@@ -111,12 +118,14 @@ impl TaskManager {
       let vent_progress_queue_arc = progress_queue_arc.clone();
       let vent_done_queue_arc = done_queue_arc.clone();
       let vent_backend_address = source_backend_address.clone();
+      let vent_pool = worker_pool.clone();
       let vent_thread = thread::spawn(move || {
         let ventilator = Ventilator {
           port: source_port,
           queue_size: source_queue_size,
           message_size: source_message_size,
           backend_address: vent_backend_address,
+          pool: vent_pool,
         };
         ventilator
           .start(

@@ -8,7 +8,7 @@ use diesel::*;
 
 use serde::Serialize;
 
-use crate::backend;
+use crate::backend::DbPool;
 use crate::schema::worker_metadata;
 
 #[derive(Insertable, Debug)]
@@ -146,12 +146,18 @@ impl WorkerMetadata {
     name: String,
     service_id: i32,
     last_dispatched_task_id: i64,
-    backend_address: String,
+    pool: DbPool,
   ) -> Result<(), Error> {
     let now = SystemTime::now();
     let _ = thread::spawn(move || {
-      let mut backend = backend::from_address(&backend_address);
-      match WorkerMetadata::find_by_name(&name, service_id, &mut backend.connection) {
+      // Pooled checkout (~11µs) instead of a fresh PgConnection per ZMQ event (~4.5ms); see the
+      // Arm 14 measurement spike. Still off-thread so the ventilator's hot loop never blocks.
+      let mut pooled = match pool.get() {
+        Ok(connection) => connection,
+        Err(_) => return,
+      };
+      let connection = &mut *pooled;
+      match WorkerMetadata::find_by_name(&name, service_id, connection) {
         Ok(data) => {
           // update with the appropriate fields.
           let session_seen = match data.session_seen {
@@ -165,7 +171,7 @@ impl WorkerMetadata {
               worker_metadata::time_last_dispatch.eq(now),
               worker_metadata::session_seen.eq(Some(session_seen)),
             ))
-            .execute(&mut backend.connection)
+            .execute(connection)
             .unwrap_or(0);
         },
         _ => {
@@ -183,7 +189,7 @@ impl WorkerMetadata {
           };
           insert_into(worker_metadata::table)
             .values(&data)
-            .execute(&mut backend.connection)
+            .execute(connection)
             .unwrap_or(0);
         },
       }
@@ -195,13 +201,16 @@ impl WorkerMetadata {
     identity: String,
     service_id: i32,
     last_returned_task_id: i64,
-    backend_address: String,
+    pool: DbPool,
   ) -> Result<(), Error> {
     let now = SystemTime::now();
     let _ = thread::spawn(move || {
-      let mut backend = backend::from_address(&backend_address);
-      if let Ok(data) = WorkerMetadata::find_by_name(&identity, service_id, &mut backend.connection)
-      {
+      let mut pooled = match pool.get() {
+        Ok(connection) => connection,
+        Err(_) => return,
+      };
+      let connection = &mut *pooled;
+      if let Ok(data) = WorkerMetadata::find_by_name(&identity, service_id, connection) {
         let session_seen = match data.session_seen {
           Some(time) => time,
           None => now,
@@ -213,7 +222,7 @@ impl WorkerMetadata {
             worker_metadata::time_last_return.eq(now),
             worker_metadata::session_seen.eq(Some(session_seen)),
           ))
-          .execute(&mut backend.connection)
+          .execute(connection)
           .unwrap_or(0);
       } else {
         println!("-- Can't record worker metadata for unknown worker: {identity:?} {service_id:?}");

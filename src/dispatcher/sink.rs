@@ -8,6 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use crate::backend::DbPool;
 use crate::dispatcher::server;
 use crate::helpers;
 use crate::helpers::{TaskProgress, TaskReport, TaskStatus};
@@ -25,6 +26,8 @@ pub struct Sink {
   pub message_size: usize,
   /// address for the Task store postgres endpoint
   pub backend_address: String,
+  /// pooled connections for worker-metadata updates (avoids a fresh connection per ZMQ event)
+  pub pool: DbPool,
 }
 
 impl Sink {
@@ -147,7 +150,7 @@ impl Sink {
                 identity.to_string(),
                 service.id,
                 taskid,
-                self.backend_address.clone(),
+                self.pool.clone(),
               )?;
             } else {
               // Otherwise just discard the rest of the message
