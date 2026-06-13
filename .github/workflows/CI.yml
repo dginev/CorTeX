@@ -1,47 +1,75 @@
+name: CI
+
 on: [push, pull_request]
 
-name: CI
+# Mirrors the local quality gates (`.githooks/`: pre-commit `cargo fmt --check`, pre-push
+# `cargo fmt` + `cargo clippy -D warnings`) plus the integration test suite, against the same
+# install requirements as INSTALL.md / CLAUDE.md.
+#
+# Notable current-state facts encoded here:
+#   * Redis is NO LONGER a dependency — frontend reports are served from the `report_summary`
+#     materialized-view rollup (Arm 14 #6), so no redis-server step.
+#   * Toolchain is floating nightly (`rust-toolchain.toml`); installed via the maintained
+#     `dtolnay/rust-toolchain` action (the old `actions-rs/*` actions are archived/unmaintained).
+#   * Migrations are embedded in the binaries, but we still apply them with diesel_cli 2.x here so
+#     the schema (incl. the hand-SQL matview migrations) is present before the tests connect.
+#   * latexmlc is not installed, so `tex_to_html_test` skips itself (by design).
+#
+# Known flake: a few integration binaries that build a Rocket `Client` over an r2d2/libpq pool can
+# SIGSEGV during process *teardown* after their tests pass (KNOWN_ISSUES L-1, pre-existing). If CI
+# goes red on a teardown SIGSEGV rather than a real assertion, that is the bug to chase.
 
 jobs:
   test:
-    name: Cortex
+    name: build + test
     runs-on: ubuntu-latest
     env:
-      DB_HOST: localhost
-      DB_USERNAME: postgres
-      PGPASSWORD: postgres
-      DATABASE_URL: "postgres://cortex_tester:cortex_tester@localhost/cortex_tester"
+      DATABASE_URL: postgres://cortex:cortex@localhost/cortex
+      TEST_DATABASE_URL: postgres://cortex_tester:cortex_tester@localhost/cortex_tester
     steps:
-      - name: Install CorTeX Dependencies
-        uses: ryankurte/action-apt@v0.2.0
-        with:
-          packages: "postgresql postgresql-contrib postgresql-client libpq-dev libarchive-dev libsodium-dev libzmq3-dev"
-      - name: Start PostgreSQL on Ubuntu
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
         run: |
-          sudo systemctl start postgresql.service
-      - name: Setup Postgresql DB
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            postgresql postgresql-contrib libpq-dev \
+            libarchive-dev libsodium-dev libzmq3-dev pkg-config
+
+      - name: Start PostgreSQL
+        run: sudo systemctl start postgresql.service
+
+      - name: Provision databases and roles
         run: |
-          sudo -u postgres psql -c 'create database cortex;'
-          sudo -u postgres psql -c 'create database cortex_tester;'
-          sudo -u postgres psql -c "create user cortex with password 'cortex';"
-          sudo -u postgres psql -c "create user cortex_tester with password 'cortex_tester';"
-          sudo -u postgres psql -c 'GRANT ALL PRIVILEGES ON SCHEMA public TO postgres;'
-          sudo -u postgres psql -c 'GRANT ALL PRIVILEGES ON SCHEMA public TO cortex;'
-          sudo -u postgres psql -c 'GRANT ALL PRIVILEGES ON SCHEMA public TO cortex_tester;'
-          sudo -u postgres psql -c 'ALTER DATABASE cortex OWNER TO cortex;'
-          sudo -u postgres psql -c 'ALTER DATABASE cortex_tester OWNER TO cortex_tester;'
-          sudo -u postgres psql -c 'GRANT ALL PRIVILEGES ON DATABASE cortex TO cortex;'
-          sudo -u postgres psql -c 'GRANT ALL PRIVILEGES ON DATABASE cortex_tester TO cortex_tester;'
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+          sudo -u postgres psql -c "CREATE USER cortex WITH PASSWORD 'cortex';"
+          sudo -u postgres psql -c "CREATE USER cortex_tester WITH PASSWORD 'cortex_tester';"
+          sudo -u postgres psql -c "CREATE DATABASE cortex OWNER cortex;"
+          sudo -u postgres psql -c "CREATE DATABASE cortex_tester OWNER cortex_tester;"
+          # PG15+ no longer grants CREATE on `public` to PUBLIC; grant it to the db owners explicitly.
+          sudo -u postgres psql -d cortex        -c "GRANT ALL ON SCHEMA public TO cortex;"
+          sudo -u postgres psql -d cortex_tester -c "GRANT ALL ON SCHEMA public TO cortex_tester;"
+
+      - name: Install Rust (nightly + rustfmt + clippy)
+        uses: dtolnay/rust-toolchain@nightly
         with:
-          profile: minimal
-          toolchain: nightly
-          override: true
-      - run: |
-          cargo install diesel_cli --vers 1.1.2  --no-default-features --features postgres
-          diesel setup
-          diesel migration run
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
+          components: rustfmt, clippy
+
+      - name: Cache cargo + target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install diesel_cli (postgres only)
+        run: cargo install diesel_cli --no-default-features --features postgres --locked
+
+      - name: Apply migrations to both databases
+        run: |
+          diesel migration run --database-url "$DATABASE_URL"
+          diesel migration run --database-url "$TEST_DATABASE_URL"
+
+      - name: Format check
+        run: cargo fmt --all --check
+
+      - name: Clippy (warnings are errors)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --no-fail-fast

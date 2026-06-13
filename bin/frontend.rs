@@ -10,7 +10,6 @@ extern crate rocket;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::thread;
 
 use chrono::NaiveDateTime;
 use rocket::fs::NamedFile;
@@ -21,7 +20,6 @@ use rocket_dyn_templates::Template;
 
 use cortex::backend::Backend;
 use cortex::config::config;
-use cortex::frontend::cached::cache_worker;
 use cortex::frontend::concerns::{
   serve_entry, serve_entry_preview, serve_report, serve_rerun, serve_savetasks, UNKNOWN,
 };
@@ -551,10 +549,6 @@ async fn files(file: PathBuf) -> Result<NamedFile, NotFound<String>> {
 
 #[launch]
 fn rocket() -> _ {
-  // cache worker in parallel to the main service thread
-  let _ = thread::spawn(move || {
-    cache_worker();
-  });
   // Drive the template directory from the runtime configuration rather than a CWD-relative
   // Rocket.toml, so the binary is not bound to its working directory.
   let figment =

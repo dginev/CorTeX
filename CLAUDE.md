@@ -30,8 +30,11 @@ read it before non-trivial work. Active work branch: **`productize-2026`**.
   more unpooled connections.)
 - **`DATABASE_URL` is baked at COMPILE TIME** via `dotenv!` (`src/backend.rs` `DEFAULT_DB_ADDRESS`).
   Changing the DB needs a recompile until Arm 1 lands. The `.env` file is read at build time.
-- **The frontend hard-requires Redis** at `redis://127.0.0.1/` (`src/frontend/cached/worker.rs`
-  `.expect()`s it at boot). Redis is **not** vestigial.
+- **Redis has been removed** (Arm 14 #6.2). Frontend reports are now served from the
+  `report_summary` materialized-view rollup (`src/backend/rollup.rs`, `reports::task_report`),
+  refreshed on the run-completion path (finalize drain + at-least-daily, plus `mark_new_run`); the
+  old `cached/worker.rs` cache daemon and the `redis` crate are gone. **The frontend boots without
+  Redis.** (`src/frontend/cached/` is now a thin uncached proxy; rename pending.)
 - **CWD-coupled:** `load_config()` reads `config.json` from the CWD (panics if missing), and
   `Rocket.toml`/`templates/`/`public/` are CWD-relative — **run binaries from the repo root.**
 - **The dispatcher panics on purpose** (mutex poisoning → process abort → external restart). Don't

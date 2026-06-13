@@ -4,6 +4,7 @@ use diesel::*;
 use regex::Regex;
 use std::collections::HashMap;
 
+use super::rollup;
 use crate::frontend::helpers::severity_highlight;
 use crate::helpers::TaskStatus;
 use crate::models::{
@@ -76,7 +77,195 @@ pub(crate) fn progress_report(
   stats_hash
 }
 
+/// Computes a `(corpus, service)` progress report at the granularity implied by the optional
+/// `severity`/`category`/`what` selectors.
+///
+/// The aggregate grains — the category report and its `what` drill-down — are served from the
+/// `report_summary` rollup (an indexed lookup, refreshed on the run-completion path) rather than
+/// the expensive live aggregation in [`task_report_live`]. The per-task drill-downs (`no_problem`
+/// and `no_messages` entry lists, the `what`-detail list) and the all-severities (`all_messages`)
+/// view are not materialized, so they fall through to the live path. Both paths share
+/// [`aux_task_rows_stats`], so the rollup-backed numbers are identical to the live ones (pinned by
+/// `tests/report_rollup_test.rs`).
 pub(crate) fn task_report(
+  connection: &mut PgConnection,
+  options: TaskReportOptions,
+) -> Vec<HashMap<String, String>> {
+  if !options.all_messages {
+    if let Some(task_status) = options
+      .severity_opt
+      .as_deref()
+      .and_then(TaskStatus::from_key)
+    {
+      if let Some(severity) = rollup_severity_key(task_status) {
+        match (options.category_opt.as_deref(), options.what_opt.as_deref()) {
+          // Category report: one row per category, plus the severity totals.
+          (None, None) => {
+            return category_grain_from_rollup(
+              connection,
+              options.corpus,
+              options.service,
+              severity,
+              task_status,
+            );
+          },
+          // `what` drill-down within a category. `no_messages` is a per-task entry list, not an
+          // aggregate grain — leave it (and the `what`-detail list) to the live path.
+          (Some(category), None) if category != "no_messages" => {
+            return what_grain_from_rollup(
+              connection,
+              options.corpus,
+              options.service,
+              severity,
+              category,
+            );
+          },
+          _ => {},
+        }
+      }
+    }
+  }
+  task_report_live(connection, options)
+}
+
+/// Maps a task status to its `report_summary` severity key, or `None` for statuses the rollup does
+/// not aggregate over (`NoProblem`, `TODO`, `Queued`, …), which stay on the live path.
+fn rollup_severity_key(task_status: TaskStatus) -> Option<&'static str> {
+  match task_status {
+    TaskStatus::Warning => Some("warning"),
+    TaskStatus::Error => Some("error"),
+    TaskStatus::Fatal => Some("fatal"),
+    TaskStatus::Invalid => Some("invalid"),
+    _ => None,
+  }
+}
+
+/// Total tasks counted toward percentage denominators: all tasks for the pair minus `Invalid` ones
+/// (which were never processed, so they would dilute the service percentages).
+fn total_valid_task_count(
+  connection: &mut PgConnection,
+  corpus: &Corpus,
+  service: &Service,
+) -> i64 {
+  use crate::schema::tasks::dsl::{corpus_id, service_id, status};
+  let total: i64 = tasks::table
+    .filter(service_id.eq(service.id))
+    .filter(corpus_id.eq(corpus.id))
+    .count()
+    .get_result(connection)
+    .unwrap_or(0);
+  let invalid: i64 = tasks::table
+    .filter(service_id.eq(service.id))
+    .filter(corpus_id.eq(corpus.id))
+    .filter(status.eq(TaskStatus::Invalid.raw()))
+    .count()
+    .get_result(connection)
+    .unwrap_or(0);
+  total - invalid
+}
+
+/// Counts the tasks of a `(corpus, service)` pair currently in a given raw status.
+fn count_in_status(
+  connection: &mut PgConnection,
+  corpus: &Corpus,
+  service: &Service,
+  raw_status: i32,
+) -> i64 {
+  use crate::schema::tasks::dsl::{corpus_id, service_id, status};
+  tasks::table
+    .filter(service_id.eq(service.id))
+    .filter(corpus_id.eq(corpus.id))
+    .filter(status.eq(raw_status))
+    .count()
+    .get_result(connection)
+    .unwrap_or(0)
+}
+
+/// Category report for a severity, assembled from the rollup: one row per category (distinct tasks
+/// + messages), a `no_messages` row for tasks that completed silently, and the severity total.
+fn category_grain_from_rollup(
+  connection: &mut PgConnection,
+  corpus: &Corpus,
+  service: &Service,
+  severity: &str,
+  task_status: TaskStatus,
+) -> Vec<HashMap<String, String>> {
+  let category_rows =
+    rollup::category_rollup(connection, corpus.id, service.id, severity).unwrap_or_default();
+  let grand_total =
+    rollup::severity_total(connection, corpus.id, service.id, severity).unwrap_or_default();
+  let total_valid_count = total_valid_task_count(connection, corpus, service);
+  let severity_tasks = count_in_status(connection, corpus, service, task_status.raw());
+  // Tasks that carry at least one message of this severity, and the total message count.
+  let logged_task_count = grand_total.as_ref().map_or(0, |g| g.task_count);
+  let logged_message_count = grand_total.as_ref().map_or(0, |g| g.message_count);
+  let silent_task_count = if logged_task_count >= severity_tasks {
+    None
+  } else {
+    Some(severity_tasks - logged_task_count)
+  };
+  let report_rows = rows_to_aggregates(category_rows, |row| row.category);
+  aux_task_rows_stats(
+    &report_rows,
+    total_valid_count,
+    severity_tasks,
+    logged_message_count,
+    silent_task_count,
+  )
+}
+
+/// `what` drill-down within a category, assembled from the rollup: one row per `what`, with the
+/// owning category's totals as the denominators.
+fn what_grain_from_rollup(
+  connection: &mut PgConnection,
+  corpus: &Corpus,
+  service: &Service,
+  severity: &str,
+  category: &str,
+) -> Vec<HashMap<String, String>> {
+  let what_rows =
+    rollup::what_rollup(connection, corpus.id, service.id, severity, category).unwrap_or_default();
+  let category_total =
+    rollup::category_total(connection, corpus.id, service.id, severity, category)
+      .unwrap_or_default();
+  let total_valid_count = total_valid_task_count(connection, corpus, service);
+  let (category_tasks, category_messages) = category_total
+    .as_ref()
+    .map_or((0, 0), |c| (c.task_count, c.message_count));
+  let report_rows = rows_to_aggregates(what_rows, |row| row.what.unwrap_or_default());
+  aux_task_rows_stats(
+    &report_rows,
+    total_valid_count,
+    category_tasks,
+    category_messages,
+    None,
+  )
+}
+
+/// Adapts rollup rows into the `AggregateReport` shape `aux_task_rows_stats` consumes, naming each
+/// row via `name_of` (the category, or the `what`).
+fn rows_to_aggregates(
+  rows: Vec<rollup::ReportSummaryRow>,
+  name_of: impl Fn(rollup::ReportSummaryRow) -> String,
+) -> Vec<AggregateReport> {
+  rows
+    .into_iter()
+    .map(|row| {
+      let task_count = row.task_count;
+      let message_count = row.message_count;
+      AggregateReport {
+        report_name: Some(name_of(row)),
+        task_count,
+        message_count,
+      }
+    })
+    .collect()
+}
+
+/// Live (non-materialized) computation of a task report, used for the per-task drill-down grains
+/// and the all-severities view, and as the equivalence reference for the rollup-backed aggregate
+/// grains.
+pub(crate) fn task_report_live(
   connection: &mut PgConnection,
   options: TaskReportOptions,
 ) -> Vec<HashMap<String, String>> {
@@ -560,5 +749,241 @@ pub fn summary_task_diffs(
       (dates, tabular)
     },
     _ => (Vec::new(), Vec::new()),
+  }
+}
+
+#[cfg(test)]
+mod rollup_equivalence_tests {
+  //! Pins behavioral equivalence: the rollup-backed [`task_report`] must return exactly what the
+  //! live aggregation ([`task_report_live`]) returns for the category and `what` grains it now
+  //! serves — so wiring reports to the materialized view changed performance, not numbers.
+  use super::{rollup, task_report, task_report_live, TaskReportOptions};
+  use crate::backend;
+  use crate::helpers::TaskStatus;
+  use crate::models::{Corpus, NewCorpus, NewService, Service};
+  use crate::schema::{corpora, log_errors, log_warnings, services, tasks};
+  use diesel::prelude::*;
+  use std::collections::HashMap;
+
+  const CORPUS_NAME: &str = "rollup-equivalence corpus";
+  const SERVICE_NAME: &str = "rollup_equiv_svc";
+
+  fn add_task(conn: &mut PgConnection, entry: &str, service: i32, corpus: i32, status: i32) -> i64 {
+    diesel::insert_into(tasks::table)
+      .values((
+        tasks::entry.eq(entry),
+        tasks::service_id.eq(service),
+        tasks::corpus_id.eq(corpus),
+        tasks::status.eq(status),
+      ))
+      .returning(tasks::id)
+      .get_result(conn)
+      .expect("insert task")
+  }
+
+  fn add_warning(conn: &mut PgConnection, task_id: i64, category: &str, what: &str) {
+    diesel::insert_into(log_warnings::table)
+      .values((
+        log_warnings::task_id.eq(task_id),
+        log_warnings::category.eq(category),
+        log_warnings::what.eq(what),
+        log_warnings::details.eq(""),
+      ))
+      .execute(conn)
+      .expect("insert log_warning");
+  }
+
+  fn add_error(conn: &mut PgConnection, task_id: i64, category: &str, what: &str) {
+    diesel::insert_into(log_errors::table)
+      .values((
+        log_errors::task_id.eq(task_id),
+        log_errors::category.eq(category),
+        log_errors::what.eq(what),
+        log_errors::details.eq(""),
+      ))
+      .execute(conn)
+      .expect("insert log_error");
+  }
+
+  /// Index report rows by their `name` so comparisons are order-independent.
+  fn by_name(rows: Vec<HashMap<String, String>>) -> HashMap<String, HashMap<String, String>> {
+    rows
+      .into_iter()
+      .map(|row| (row.get("name").cloned().unwrap_or_default(), row))
+      .collect()
+  }
+
+  fn options<'a>(
+    corpus: &'a Corpus,
+    service: &'a Service,
+    severity: &str,
+    category: Option<&str>,
+  ) -> TaskReportOptions<'a> {
+    TaskReportOptions {
+      corpus,
+      service,
+      severity_opt: Some(severity.to_string()),
+      category_opt: category.map(str::to_string),
+      what_opt: None,
+      all_messages: false,
+      offset: 0,
+      page_size: 100,
+    }
+  }
+
+  #[test]
+  fn rollup_path_matches_live_path() {
+    let mut backend = backend::testdb();
+
+    // --- Clean slate -----------------------------------------------------------------------------
+    if let Ok(existing) = Corpus::find_by_name(CORPUS_NAME, &mut backend.connection) {
+      let ids: Vec<i64> = tasks::table
+        .filter(tasks::corpus_id.eq(existing.id))
+        .select(tasks::id)
+        .load(&mut backend.connection)
+        .unwrap_or_default();
+      diesel::delete(log_warnings::table.filter(log_warnings::task_id.eq_any(&ids)))
+        .execute(&mut backend.connection)
+        .ok();
+      diesel::delete(log_errors::table.filter(log_errors::task_id.eq_any(&ids)))
+        .execute(&mut backend.connection)
+        .ok();
+      diesel::delete(tasks::table.filter(tasks::corpus_id.eq(existing.id)))
+        .execute(&mut backend.connection)
+        .ok();
+      diesel::delete(corpora::table.filter(corpora::id.eq(existing.id)))
+        .execute(&mut backend.connection)
+        .ok();
+    }
+    diesel::delete(services::table.filter(services::name.eq(SERVICE_NAME)))
+      .execute(&mut backend.connection)
+      .ok();
+
+    // --- Seed corpus + service -------------------------------------------------------------------
+    backend
+      .add(&NewCorpus {
+        name: CORPUS_NAME.to_string(),
+        path: "/tmp/rollup-equivalence".to_string(),
+        complex: true,
+        description: String::new(),
+      })
+      .expect("add corpus");
+    let corpus = Corpus::find_by_name(CORPUS_NAME, &mut backend.connection).expect("corpus");
+    backend
+      .add(&NewService {
+        name: SERVICE_NAME.to_string(),
+        version: 0.1,
+        inputformat: "tex".to_string(),
+        outputformat: "html".to_string(),
+        inputconverter: Some("import".to_string()),
+        complex: true,
+        description: String::from("rollup equivalence service"),
+      })
+      .expect("add service");
+    let service = Service::find_by_name(SERVICE_NAME, &mut backend.connection).expect("service");
+
+    let warning = TaskStatus::Warning.raw();
+    let error = TaskStatus::Error.raw();
+    let conn = &mut backend.connection;
+
+    // Warnings: math{ux,uy} + math{ux} + font{missing}, plus one silent warning task (no logs),
+    // which must surface as a `no_messages` row of 1.
+    let a = add_task(conn, "/eq/a", service.id, corpus.id, warning);
+    let b = add_task(conn, "/eq/b", service.id, corpus.id, warning);
+    let c = add_task(conn, "/eq/c", service.id, corpus.id, warning);
+    let _silent = add_task(conn, "/eq/d", service.id, corpus.id, warning);
+    add_warning(conn, a, "math", "undefined_x");
+    add_warning(conn, a, "math", "undefined_y");
+    add_warning(conn, b, "math", "undefined_x");
+    add_warning(conn, c, "font", "missing");
+
+    // Errors: tex{err1} + tex{err1,err2}.
+    let e = add_task(conn, "/eq/e", service.id, corpus.id, error);
+    let f = add_task(conn, "/eq/f", service.id, corpus.id, error);
+    add_error(conn, e, "tex", "err1");
+    add_error(conn, f, "tex", "err1");
+    add_error(conn, f, "tex", "err2");
+
+    rollup::refresh_report_summary(conn).expect("refresh rollup");
+
+    // --- Equivalence across both severities and both aggregate grains ----------------------------
+    let cases = [
+      ("warning", None),
+      ("warning", Some("math")),
+      ("warning", Some("font")),
+      ("error", None),
+      ("error", Some("tex")),
+    ];
+    for (severity, category) in cases {
+      let fast = by_name(task_report(
+        conn,
+        options(&corpus, &service, severity, category),
+      ));
+      let live = by_name(task_report_live(
+        conn,
+        options(&corpus, &service, severity, category),
+      ));
+      assert_eq!(
+        fast, live,
+        "rollup vs live mismatch for severity={severity} category={category:?}"
+      );
+      assert!(
+        !fast.is_empty(),
+        "rollup path produced an empty report for severity={severity} category={category:?}"
+      );
+    }
+
+    // --- Spot-check absolute values, so equivalence can't pass by both paths being wrong
+    // ----------
+    let warning_cat = by_name(task_report(
+      conn,
+      options(&corpus, &service, "warning", None),
+    ));
+    assert_eq!(
+      warning_cat["math"]["tasks"], "2",
+      "math: distinct tasks A,B"
+    );
+    assert_eq!(warning_cat["math"]["messages"], "3", "math: 2 (A) + 1 (B)");
+    assert_eq!(warning_cat["font"]["tasks"], "1");
+    assert_eq!(
+      warning_cat["no_messages"]["tasks"], "1",
+      "one silent task D"
+    );
+    assert_eq!(warning_cat["total"]["tasks"], "4", "A,B,C,D");
+
+    // --- Guard: a severity with no rollup rows degrades gracefully (no panic; a zeroed total row),
+    //     and the rollup path still matches the live path on that empty case ----------------------
+    let fatal_fast = by_name(task_report(conn, options(&corpus, &service, "fatal", None)));
+    assert!(
+      fatal_fast.contains_key("total"),
+      "an empty-severity report must still carry a total row"
+    );
+    assert_eq!(
+      fatal_fast["total"]["tasks"], "0",
+      "no fatal tasks -> 0 total"
+    );
+    let fatal_live = by_name(task_report_live(
+      conn,
+      options(&corpus, &service, "fatal", None),
+    ));
+    assert_eq!(
+      fatal_fast, fatal_live,
+      "empty severity: rollup vs live mismatch"
+    );
+  }
+
+  #[test]
+  fn rollup_severity_key_routes_only_message_severities() {
+    // The aggregate grains the rollup serves are exactly the four message severities; everything
+    // else (no_problem entry lists, todo/queued/blocked) must fall through to the live path.
+    use super::rollup_severity_key;
+    assert_eq!(rollup_severity_key(TaskStatus::Warning), Some("warning"));
+    assert_eq!(rollup_severity_key(TaskStatus::Error), Some("error"));
+    assert_eq!(rollup_severity_key(TaskStatus::Fatal), Some("fatal"));
+    assert_eq!(rollup_severity_key(TaskStatus::Invalid), Some("invalid"));
+    assert_eq!(rollup_severity_key(TaskStatus::NoProblem), None);
+    assert_eq!(rollup_severity_key(TaskStatus::TODO), None);
+    assert_eq!(rollup_severity_key(TaskStatus::Queued(1)), None);
+    assert_eq!(rollup_severity_key(TaskStatus::Blocked(-6)), None);
   }
 }

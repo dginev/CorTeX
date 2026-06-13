@@ -33,8 +33,10 @@ lazy_static! {
     Regex::new(r"^\((?:Loading|Processing definitions)\s(.+/)?([^/]+[^.])\.\.\.(\s|$)").unwrap();
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
-/// An enumeration of the expected task statuses
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+/// An enumeration of the expected task statuses. A small value type (every variant is a unit or a
+/// single `i32`) that round-trips through `i32` via [`TaskStatus::raw`]/[`TaskStatus::from_raw`],
+/// so it is `Copy`.
 pub enum TaskStatus {
   /// currently queued for processing
   TODO,

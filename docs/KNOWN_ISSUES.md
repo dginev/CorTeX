@@ -34,8 +34,8 @@
 
 | # | Sev | Status | Issue |
 |---|---|---|---|
-| R-1 | S2 | 🟡 | **Hard Redis dependency for reports.** Aggregate reports are O(millions of log rows) and shielded by a Redis cache (staleness + an extra daemon). Arm 14 #6 **#6.1 done**: a Postgres `report_summary` materialized view + read API (`Backend::category_rollup`/`what_rollup`/`refresh_report_summary`) + contract test. **#6.2 remaining**: point `task_report`'s read path at the rollup, refresh on the run-completion path, make Redis optional/removable. |
-| R-4 | S3 | 🔴 | **`report_summary` uses non-concurrent `REFRESH`** (brief `ACCESS EXCLUSIVE` lock during the infrequent run-completion refresh). `REFRESH ... CONCURRENTLY` needs a UNIQUE index, which requires disambiguating the ROLLUP `NULL` `what` from a real NULL (e.g. `what_is_total` + `NULLS NOT DISTINCT`, PG15+). Follow-up once read-path wiring lands. |
+| R-1 | S2 | 🟢 | **Hard Redis dependency for reports — removed.** Aggregate reports were O(millions of log rows) shielded by a Redis cache (staleness + an extra daemon). Arm 14 #6 replaced it with the `report_summary` materialized view: **#6.1** the read model + matview + contract test; **#6.2** wired `task_report`'s category/`what` grains to the rollup (`category_grain_from_rollup`/`what_grain_from_rollup`, sharing `aux_task_rows_stats` with — and pinned equivalent to — the retained live `task_report_live`), refreshes it on the run-completion path (finalize **drain + at-least-daily**, plus `mark_new_run`), and **dropped the `redis` crate** (`cache_worker` + the boot `.expect()` are gone — the frontend now boots without Redis). |
+| R-4 | S3 | 🔴 | **`report_summary` uses non-concurrent `REFRESH`** (brief `ACCESS EXCLUSIVE` lock). The refresh cadence is now run-completion **plus at-least-daily** while long runs are in flight (a single conversion run can take weeks; `finalize.rs`), so the lock is taken more often — `REFRESH ... CONCURRENTLY` (needs a UNIQUE index disambiguating the ROLLUP `NULL`s, e.g. on `category_is_total`/`what_is_total` + `NULLS NOT DISTINCT`, PG15+) is the follow-up. |
 | R-2 | S3 | 🔴 | **`tasks.entry varchar(200)`** length cap — long arXiv paths could exceed it; silent truncation risk. Audit + widen. |
 | R-3 | S4 | 🔴 | **Reports return `Vec<HashMap<String,String>>`** (stringly-typed) rather than DTOs — fragile contract for the agent-first API (Arm 8/9). |
 
@@ -43,8 +43,14 @@
 
 | # | Sev | Status | Issue |
 |---|---|---|---|
-| E-1 | S4 | 🟡 | **CI is broken** (Travis-era); needs a GitHub Actions revival, which also publishes the API docs + rustdoc to GH Pages (Arm 9/12). |
+| E-1 | S4 | 🟡 | **CI refreshed to current requirements** (`/.github/workflows/CI.yml`): Postgres + roles, nightly via `dtolnay/rust-toolchain` (the `actions-rs/*` actions are archived), diesel_cli 2.x migrations on both DBs, **no Redis**, and `fmt --check` + `clippy -D warnings` gates mirroring `.githooks/`. **Still pending:** publishing API docs + rustdoc to GH Pages (Arm 9/12), and the L-1 teardown flake can still red the run. |
 | E-2 | S4 | 🟢 | *(dev-env note, not a product bug)* The sandbox's seccomp filter kills a process that polls `pg_stat_activity` in a tight loop (SIGSTKFLT) and the harness's background-run wrapper signals long jobs — so in-sandbox load tests must run foreground without a live connection sampler. Recorded so the next session doesn't re-discover it. |
+
+## Process lifecycle / shutdown
+
+| # | Sev | Status | Issue |
+|---|---|---|---|
+| L-1 | S2 | 🔴 | **Flaky at-exit SIGSEGV in DB-pool processes.** Integration binaries that build a Rocket `Client` over an r2d2/libpq pool (and the `jobs::spawn_job` detached-thread path) intermittently SIGSEGV **during process teardown, after all their tests pass**. Reproduced on a clean `master` checkout (so pre-existing, not from the rollup/Redis work): ~3–5 of 5 runs for `jobs_api_test` / `management_api_test`, and **never under gdb** → a thread/connection teardown-ordering race, not a logic bug. It aborts `cargo test` (and can red CI) even though the assertions passed; the bench works around the same class with `process::exit(0)`. Fix is clean shutdown: join spawned job threads and drop the pool before exit rather than racing detached threads against libpq teardown (no unbounded detached threads — principles #1/#3). |
 
 ---
 

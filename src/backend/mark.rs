@@ -223,6 +223,12 @@ pub(crate) fn mark_new_run(
     owner,
   };
   hrun.create(connection)?;
+  // Step 3. Refresh the report rollup so the run boundary is reflected in reports. Best-effort: a
+  // refresh failure must not fail the run bookkeeping (the dispatcher also refreshes on drain and
+  // daily). See `src/backend/rollup.rs`.
+  if let Err(e) = super::rollup::refresh_report_summary(connection) {
+    eprintln!("[mark_new_run] report_summary refresh failed (non-fatal): {e:?}");
+  }
   Ok(())
 }
 
