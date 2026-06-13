@@ -1,0 +1,591 @@
+# CorTeX Productizing & Hardening Plan
+
+> **Status:** v1 draft (2026-06-13), produced after a full Phase-0 read of the codebase, the
+> `migrations/`, the `scripts/`, the `examples/`, and every prior-work branch on `origin`.
+> Work branch: **`productize-2026`** (off `master`).
+> **North star:** *every administrative action a human can do through a screen, an agent can do
+> through a documented API — and both see the same live + historical run state.*
+
+This document is the working plan for turning CorTeX from an admin-only prototype into a
+self-installing, agent-first **and** human-first local application. It is organized as:
+
+1. **Current-state map** (the Phase-0 output): data model, task lifecycle, the admin-task
+   inventory, prior-work branches, and the corrected dependency audit.
+2. **Cross-cutting architecture decisions** that multiple arms depend on.
+3. **The arms of work** — each with: goal · current state · target human screen · target agent
+   API (1:1 with the screen) · data-model changes · observability hooks · risks · acceptance
+   criteria.
+4. **Sequencing & milestones.**
+5. **Open questions for the owner.**
+
+Read [`CLAUDE.md`](../CLAUDE.md) for the build/run conventions and the load-bearing facts a new
+agent needs before touching code.
+
+---
+
+## 1. Current-state map (Phase 0)
+
+### 1.1 What CorTeX is, in one paragraph
+
+A distributed corpus-conversion framework. PostgreSQL (via Diesel 2.2) is the **metadata store**:
+it holds corpora, services, and one `tasks` row per `(corpus, service, document-entry)`, plus
+five severity-partitioned `log_*` tables of LaTeXML-convention messages. The actual document bytes
+live on a **shared filesystem** (`/data/...`); a task's `entry` column is the absolute path to its
+source archive. A **ZeroMQ dispatcher** (`bin/dispatcher.rs`) leases queued tasks to remote
+**workers** (the external `pericortex` crate), streams the source to them, receives result archives
+into the sink, parses each result's `cortex.log` into a status + messages, and persists it. A
+**Rocket web frontend** (`bin/frontend.rs`) renders read-only Tera reports over that metadata and
+exposes a handful of token-gated write actions (rerun, save-snapshot). Everything else
+administrative is done by hand — shell scripts, one-off `examples/*.rs` binaries, and raw SQL.
+
+### 1.2 Entity-relationship sketch (verified against `migrations/` + `src/models/`)
+
+```
+corpora(id, path UNIQUE-ish, name UNIQUE, complex, description)
+   │  (no FK — integer corpus_id only)
+   ▼
+tasks(id BIGSERIAL, service_id, corpus_id, status INT, entry varchar(200))
+   │     UNIQUE(entry, service_id, corpus_id); partial indexes per status (-1..-5)
+   │     (no FK to corpora or services)
+   ├──────────────► log_infos / log_warnings / log_errors / log_fatals / log_invalids
+   │                   (id, task_id, category(50), what(50), details(2000))   — NO FK to tasks
+   │                   indexes on (category,what,task_id); fatals/invalids also on task_id
+   └──────────────► historical_tasks(id, task_id → tasks(id) ON DELETE CASCADE, status, saved_at)
+                       ★ the ONLY foreign key in the whole schema
+
+services(id, name, version REAL, inputformat, outputformat, inputconverter?, complex, description)
+   UNIQUE(name, version); seeded rows: id=1 'init', id=2 'import'
+   ▲
+   │ (integer service_id only, no FK)
+worker_metadata(id, service_id, last_dispatched_task_id, last_returned_task_id?,
+                total_dispatched, total_returned, first_seen, session_seen?,
+                time_last_dispatch, time_last_return?, name)  UNIQUE(name, service_id)
+
+historical_runs(id, service_id, corpus_id, total/invalid/fatal/error/warning/no_problem/in_progress,
+                start_time, end_time?, owner, description)   — per (corpus,service) run bookmark
+
+dependencies(master, foundation)  ★ DEAD TABLE — created in 2017, never read or written by any code.
+```
+
+**Status encoding** (`src/helpers.rs::TaskStatus`): `TODO=0`, `NoProblem=-1`, `Warning=-2`,
+`Error=-3`, `Fatal=-4`, `Invalid=-5`, `Blocked = <-5`, `Queued = >0` (a positive "batch mark").
+Severity → log table mapping is enum-derived (`to_table()`). These integers are also hardcoded in
+the shell scripts' raw SQL.
+
+**Magic service-id convention** (hardcoded throughout): `1=init` (bootstrap a corpus), `2=import`
+(ingest sources), `>2` = real processing services. `Corpus::destroy` and `extend_corpora` both rely
+on it.
+
+### 1.3 Task lifecycle (the dispatcher contract)
+
+1. **Import** populates `tasks` with `status=TODO(0)` rows (one per document entry).
+2. **Ventilator** (`src/dispatcher/ventilator.rs`, ZMQ `ROUTER`, port **51695**): on a worker's
+   request for a service name, batch-fetches up to `queue_size` (800) TODO tasks via
+   `fetch_tasks` — a `SELECT … FOR UPDATE` that flips each to `status = positive random mark`
+   (the lease). Streams the source archive to the worker in `message_size` (100 KB) frames.
+   Tracks dispatched tasks in an in-memory `progress_queue`.
+3. **Worker** (external `pericortex`) converts and pushes the result archive to the sink.
+4. **Sink** (`src/dispatcher/sink.rs`, ZMQ `PULL`, port **51696**): writes the result zip next to
+   the source (`<entry-dir>/<service>.zip`), calls `generate_report` (parse `cortex.log` →
+   status + messages), pushes a `TaskReport` onto the shared done-queue.
+5. **Finalize** thread (`src/dispatcher/finalize.rs`): every ~1s drains the done-queue via
+   `mark_done` — a single transaction that updates `tasks.status` and **deletes + reinserts** all
+   `log_*` rows for each task.
+6. **Timeout/retry:** `progress_queue` entries expire at `created_at + (retries+1)*3600s`; expired
+   tasks are re-queued up to 4 times, then marked `Fatal` (`never_completed_with_retries`).
+7. **Restart hygiene:** on ventilator start, `clear_limbo_tasks` resets every `status>0` (leased)
+   back to TODO.
+
+**Supervision model:** the dispatcher deliberately uses `panic!` + mutex poisoning as a crude
+"die and let a process manager restart me" mechanism (e.g. `mark_done` retries 3× then the finalize
+thread panics, poisoning the done-queue mutex so the whole process aborts). The ventilator has a
+known, hard-to-reproduce empty-message fragility (08–09/2025) and is re-spawned in a loop by the
+manager. This is a key hardening surface.
+
+### 1.4 Existing HTTP surface (`bin/frontend.rs`, Rocket 0.5.1)
+
+- **Read (GET, Tera HTML):** `/` (corpora overview) · `/corpus/<c>` (services) ·
+  `/corpus/<c>/<s>[/<severity>[/<category>[/<what>]]]` (drill-down reports) ·
+  `/history/<c>/<s>` · `/diff-summary/<c>/<s>` · `/diff-history/<c>/<s>` · `/workers/<s>` ·
+  `/preview/<c>/<s>/<entry>` · static (`/public/...`, favicon, robots).
+- **Write (POST, JSON):** `/rerun/<c>/<s>[/severity[/category[/what]]]` (4 scoped variants) ·
+  `/savetasks/<c>/<s>` · `/entry/<service>/<id>` (download a result archive).
+- **Auth:** a shared-secret string typed into a modal, matched against `config.json`'s
+  `rerun_tokens: {token → username}` map. No users, no sessions, no per-actor attribution beyond
+  that map. `captcha_secret` is in config but **unused** by current code.
+- **There is no JSON read API and no machine-readable schema.** Every report is HTML-only.
+
+### 1.5 Admin tasks done out-of-band today (each must become a first-class interface)
+
+| Task | How it's done now | Lives in |
+|---|---|---|
+| Stand up a new corpus (import) | run `examples/tex_to_html_import.rs` (hardcoded ports 5757/5758, `corpus_id:1`, destroys prior) | example bin |
+| Extend a corpus with new months | `examples/extend_corpora.rs` + `Importer::extend_corpus` | example bin |
+| Activate a service on a corpus | `examples/register_service.rs` → `Backend::register_service` (**deletes & re-queues all tasks**) | example bin + raw method |
+| Create a service | `NewService` insert inside `tex_to_html_import.rs` / `examples/register_service.rs` | example bin |
+| Re-index info logs | `examples/record_loading_info.rs` | example bin |
+| Disaster-recover statuses from on-disk logs | `examples/recover_log_reports.rs` → `mark_done` | example bin |
+| Build a sandbox archive from an ID list | `examples/sandbox_arxiv.rs` | example bin |
+| Export an HTML dataset (per month / per severity) | `scripts/bundle-html-dataset*.sh` (raw `psql`, magic status ints, `/data` paths) | shell |
+| Tune Postgres for scale | hand-run `ALTER TABLE … autovacuum …` from `INSTALL.md` | manual SQL |
+| Configure everything | hand-edit `config.default.json`, `.env`, `Rocket.toml` | manual |
+
+(Full per-item breakdown — inputs, called methods, hardcoded assumptions, target interface — is in
+the working notes; condensed into the arms below.)
+
+### 1.6 Prior-work branches (git `origin`)
+
+- **`origin/admin-ui`** — **UNMERGED, absent from `master`, 32 ahead / 249 behind, last touched
+  2020-10, built on Rocket 0.4 + diesel 1.4.** A *prior, unfinished attempt at exactly this
+  sprint's goals.* Adds: `users` + `user_permissions(owner/developer/viewer per corpus,service)` +
+  `user_actions` (audit log) tables and models; Google-OAuth sign-in (`verify_oauth`); an admin
+  dashboard with **Add Corpus / Add Service** write forms (`/dashboard`, `/dashboard_task/...`);
+  server-stats reports (`sysinfo`); a `daemons(pid,name)` table + `Backend::ensure_daemon` so the
+  frontend **supervises** dispatcher/worker processes (`bin/cache_worker.rs`, `bin/init_worker.rs`);
+  and a `corpora.import_extension` column. **Too old to merge mechanically (two framework majors
+  behind), but the authoritative design reference** for arms 7 (process supervision) and 9
+  (identity/permissions/audit). Its API is OAuth+form/server-rendered, **not** agent-first JSON — so
+  the agent API is greenfield.
+- **`origin/historical-tasks`** — already on `master` (run-to-run task diff/regression: the
+  `historical_tasks` table, `diff-summary`/`diff-history` screens). Don't redo.
+- **`origin/diesel-2.2`** — already incorporated (master is on diesel 2.2.10 + nightly).
+- **`origin/recover-log-reports`**, **`origin/sandbox-recoveries`** — ops/ventilator reliability
+  fixes; superseded by `master` (which has the evolved versions). The `examples/recover_log_reports.rs`
+  recovery script is on master.
+
+Net: only `admin-ui` carries unmerged, productization-aligned work, and it is reference-only.
+
+### 1.7 Dependency audit (corrected against the live tree)
+
+Confirmed by reading `Cargo.toml` + grepping `src/`:
+
+- 🔴 **`time = "0.1.4"` (RUSTSEC-2020-0071)** — **actively used in ~10 files** via `time::get_time()`
+  / `time::now().rfc822()` (dispatcher server/sink/ventilator, `frontend/concerns.rs`,
+  `frontend/cached/task_report.rs`, several examples). `chrono` is already a dep. Port all uses to
+  `chrono` and drop `time 0.1`. Real, spread-out work — not a one-liner.
+- 🔴 **`dotenv` + `dotenv_codegen` (RUSTSEC-2021-0141, unmaintained)** — and worse, the `dotenv!`
+  **macro bakes `DATABASE_URL`/`TEST_DATABASE_URL` into the binary at compile time**
+  (`src/backend.rs`: `pub const DEFAULT_DB_ADDRESS: &str = dotenv!("DATABASE_URL")`). **This is a
+  productization blocker**: you cannot ship a binary and point it at a different DB without
+  recompiling. Replacing this is folded into Arm 1 (runtime config), not a mere crate swap.
+- ⚠️ **`redis = "1.2.2"` — NOT vestigial.** It is a **hard runtime dependency of the frontend**:
+  `src/frontend/cached/{task_report,worker}.rs` cache report JSON in Redis and the `cache_worker`
+  thread `.expect()`s a connection to `redis://127.0.0.1/` at boot (panics if Redis is down). The
+  handoff's "is Redis still used?" lead resolves to **yes** — see Arm 11 (make it optional/embedded,
+  don't silently require an extra daemon for self-install).
+- `lazy_static` (6 files) → std `LazyLock` (we're on nightly; trivially stable). `rand 0.8` → `0.9`.
+  `zmq 0.10` — newest, thin C binding; **keep, pin, watch** (don't rewrite the transport).
+- **Git deps** `pericortex` + `libarchive-sys` are pinned by branch; pin to exact rev for
+  reproducible builds (ties to Arm 10 provenance).
+- **Build status today:** `libzmq/libarchive/libpq/libsodium` are **not installed** and Postgres
+  isn't present — **the project does not currently build on this box.** (Arm 0.)
+- **CI is stale/broken:** `.github/workflows/CI.yml` installs `diesel_cli --vers 1.1.2` (diesel **1.x**
+  CLI against a diesel **2.2** project) and uses archived `actions-rs/*` + `actions/checkout@v2`.
+- `~113` `unwrap()/expect()/panic!` sites in `src/`+`bin/`; many on DB results inside request
+  handlers (Arm 4).
+- **Dead code:** `src/backend/make_history.rs` (empty stub, **not even declared as a module**) and
+  `src/dispatcher/metadata.rs` (`register_event` no-op, declared but unused). The `dependencies`
+  table. Remove in Arm 12.
+
+---
+
+## 2. Cross-cutting architecture decisions
+
+These are foundations several arms build on. Decide them early (some are Open Questions, §5).
+
+- **D1 — One CLI binary, `cortex`, is the spine.** A new `clap`-derive binary becomes simultaneously
+  the **self-install entry point** (`cortex init`), the **admin tool** (replacing every
+  `examples/*.rs`), and a clean **agent surface** (agents shell out, or hit the HTTP API). The
+  existing `frontend` and `dispatcher` binaries remain but gain a `cortex serve` / `cortex dispatch`
+  front door. *Reduces scope: the example bins, the shell scripts, and the "go run this Rust file"
+  workflows all collapse into subcommands.*
+- **D2 — Layered runtime config via `figment`** (already vendored by Rocket 0.5). One typed
+  `CortexConfig` (DB URL, ZMQ ports, corpus data root, redis URL/optional, auth mode, bind addrs)
+  sourced from defaults → `cortex.toml` → env → CLI flags, validated at startup. Kills the compile-
+  time `dotenv!` baking and the CWD-relative `config.json`/`Rocket.toml`/`templates/` coupling.
+- **D3 — Embedded migrations via `diesel_migrations` (`embed_migrations!`).** `cortex init`
+  self-migrates with **no `diesel_cli` on the host**. Direct self-install win; also fixes the CI
+  diesel-version skew.
+- **D4 — A real connection pool (`r2d2` + `diesel`'s `r2d2` feature).** Today **every** Rocket
+  handler calls `Backend::default()` → a fresh `PgConnection` per request, and `WorkerMetadata`
+  spawns **a new thread + new connection per ZMQ transaction**. Introduce a pooled `Backend` and a
+  Rocket-managed pool. Foundational for any real load.
+- **D5 — Typed errors: `thiserror` (library) + `anyhow` (binaries).** Replace string/`panic!`
+  errors so request handlers degrade gracefully instead of 500-ing or aborting. Keep the
+  dispatcher's *intentional* panic-to-restart semantics, but make them explicit and logged.
+- **D6 — Structured observability from day one: `tracing` (+ `tracing-subscriber`,
+  `tracing-appender`) and `metrics` (+ `metrics-exporter-prometheus`).** Every admin action and
+  task-lifecycle transition emits a span/event; `/metrics` exposes queue depth, throughput,
+  failures. This is the substrate that makes "live + historical, transparent to agents and humans"
+  cheap (Arm 8).
+- **D7 — Machine-readable API for free: `utoipa` (OpenAPI) + `schemars` (JSON Schema).** Derive the
+  spec from the handlers so the agent surface is self-documenting. Serve a `/openapi.json` +
+  `/rapidoc`. *The single biggest scope cut for the agent-first goal.*
+- **D8 — Stable external handles (`uuid`).** Give corpora/services/runs a UUID alongside the serial
+  PK, so the API and public read-only views never expose or depend on guessable serial ids. Additive
+  columns, not a PK change.
+- **D9 — The dispatcher stays the backbone.** Do **not** add a competing job/scheduler framework.
+  Extend the ZMQ ventilator/sink; surface its lifecycle; harden its failure modes.
+- **D10 — Identity is a first-class column, not a token map.** Replace `rerun_tokens` with a
+  `users` + API-token model (harvest the `admin-ui` schema), and thread an **actor** (human or
+  agent) through every write so `historical_runs.owner` and a new audit log are always truthful.
+
+**Convention for every arm (the symmetry contract):** a screen and its agent API are **one
+controller** returning **one shared DTO** — HTML via Tera for `Accept: text/html`, JSON (schema'd)
+otherwise. We do not build screens and APIs separately; we build one capability and render it two
+ways. This is how we *structurally guarantee* the north star instead of hoping for it.
+
+---
+
+## 3. The arms of work
+
+Arms are grouped: **Foundation (0–4)** unblock everything; **Capability (5–10)** are the management
+surfaces; **Quality (11–13)** harden and ship. Within each arm, the agent API is listed 1:1 with the
+screen. Status fields are point-in-time as of this draft.
+
+> Legend for each arm: **Goal · Current · Screen · Agent API · Data model · Observability ·
+> Risks · Acceptance.**
+
+### Arm 0 — Build & dev-environment bring-up  *(prerequisite)*
+- **Goal:** Get CorTeX building, testing, and running on this box; make the toolchain reproducible.
+- **Current:** Nightly Rust works; `libzmq/libarchive/libpq/libsodium` absent; Postgres + diesel_cli
+  absent; git deps pinned by branch; CI references diesel 1.x. Project does not build.
+- **Screen:** n/a (dev concern) — but its *output* feeds the `cortex doctor` screen in Arm 2.
+- **Agent API:** n/a (CLI/CI).
+- **Data model:** none.
+- **Observability:** none yet.
+- **Risks:** Postgres must live on **NVMe**, never `/data` (QLC RAID6 is wrong for an OLTP DB —
+  established lab fact). System-dep install is a privileged action — confirm before running.
+- **Acceptance:** `cargo build` and `cargo test` green on `cortex`; Postgres running on NVMe; git
+  deps pinned to exact revs in `Cargo.lock`; a documented one-shot dev-setup script.
+
+### Arm 1 — Runtime config & addressability  *(foundation; unblocks self-install)*
+- **Goal:** Nothing about a deployment is baked at compile time or tied to the CWD.
+- **Current:** `dotenv!` bakes `DATABASE_URL` into the binary; `load_config()` opens `config.json`
+  from CWD and panics if missing; `Rocket.toml`, `templates/`, `public/` are CWD-relative; ports are
+  hardcoded constants (51695/51696 in prod, 5757/5758 in an example).
+- **Screen:** **Settings** page — view effective config (secrets masked), per-source provenance
+  (default/file/env/flag), validation status; edit + write-back to `cortex.toml`.
+- **Agent API:** `GET /api/config` (effective, masked) · `GET /api/config/schema` (JSON Schema) ·
+  `PATCH /api/config` (validated write). Mirrors the Settings page exactly.
+- **Data model:** none (config is file/env), but defines `CortexConfig` (D2) consumed everywhere.
+- **Observability:** emit a `config.loaded` event with source provenance; a `/healthz` that
+  validates config + DB connectivity.
+- **Risks:** secret handling (don't echo DB password / tokens); embedding template/asset dirs vs.
+  shipping them next to the binary.
+- **Acceptance:** binary runs from any CWD; DB URL/ports/data-root/redis all set at runtime;
+  `dotenv`/`dotenv_codegen` removed; one typed config struct; tests cover precedence + validation.
+
+### Arm 2 — Self-install / bootstrap  *(foundation)*
+- **Goal:** One command stands up CorTeX; a second diagnoses/repairs a partial install.
+- **Current:** `INSTALL.md` is manual ops (install PG by hand, create DB/roles by hand, run diesel
+  migrations by hand, hand-tune autovacuum). No self-install.
+- **Screen:** **First-run wizard** (detect PG / create DB+role / run migrations / write config /
+  seed `init`+`import` services / health summary) and a **`cortex doctor`** status panel.
+- **Agent API:** `POST /api/bootstrap` (idempotent; body = provisioning options) · `GET /api/health`
+  (structured: DB reachable, migrations up-to-date, redis optional-status, dispatcher reachable,
+  data-root writable). Same JSON the wizard renders from.
+- **Data model:** embedded migrations (D3); a `schema_migrations`-aware "is this DB current?" check;
+  optionally apply the `INSTALL.md` autovacuum tuning as a managed migration.
+- **Observability:** every bootstrap step is a `tracing` span with success/failure + remediation
+  hint; doctor output is the same structured payload live and historical.
+- **Risks:** must be **idempotent** and safe to re-run on a live DB; never drop data on "repair".
+- **Acceptance:** `cortex init` on a clean box → working DB + config + seeded services, no
+  `diesel_cli` required; `cortex doctor` detects and offers to fix a missing migration / missing
+  service / unwritable data-root.
+
+### Arm 3 — Database maturity  *(foundation)*
+- **Goal:** Pooled, referentially-sane, API-safe persistence.
+- **Current:** new connection per request and per ZMQ txn; no FKs except `historical_tasks→tasks`;
+  `Corpus::destroy` orphans `log_*` rows; serial PKs exposed; `dependencies` table dead.
+- **Screen:** none of its own (infra) — surfaces via Arm 8 metrics (pool utilization) and Arm 2
+  doctor (integrity checks).
+- **Agent API:** none of its own; enables every other API.
+- **Data model:** add `r2d2` pool (D4); add FKs `tasks.corpus_id→corpora`, `tasks.service_id→services`,
+  `log_*.task_id→tasks ON DELETE CASCADE`, `worker_metadata.service_id→services`,
+  `historical_runs.{corpus,service}_id→…` (with a data-cleanup migration for existing orphans);
+  add `uuid` columns (D8); decide the `dependencies` table's fate (drop vs. revive — see Arm 6).
+- **Observability:** `metrics` gauges for pool size/idle/wait; counters for txn retries/failures.
+- **Risks:** adding FKs to a multi-million-row prod DB needs a careful, online migration + prior
+  orphan cleanup; `WorkerMetadata`'s per-event thread+conn must move to the pool without
+  re-introducing blocking on the dispatcher hot path.
+- **Acceptance:** all DB access goes through the pool; FKs enforced; deleting a corpus leaves no
+  orphans; UUIDs present and used by the API; load test shows stable connection count.
+
+### Arm 4 — Error handling & robustness  *(foundation)*
+- **Goal:** Bad input or a bad query degrades gracefully and is observable, never a silent panic.
+- **Current:** ~113 `unwrap/expect/panic!`; report SQL `.unwrap()`s DB results inside handlers;
+  `load_config` panics; dispatcher uses panic-to-restart deliberately.
+- **Screen:** consistent error pages; a surfaced "last N errors" panel (ties to Arm 8).
+- **Agent API:** typed JSON error envelope (`{error: {code, message, hint}}`) with correct HTTP
+  status codes across all endpoints; documented in the OpenAPI spec.
+- **Data model:** none (optionally an `app_errors` ring buffer for the panel).
+- **Observability:** every handled error is a `tracing` event with a stable `code`; panics in the
+  dispatcher are logged with context before the intentional abort.
+- **Risks:** preserve the dispatcher's *deliberate* fail-fast semantics — convert ad-hoc panics to
+  typed errors **only** where recovery is correct, not where restart is the design.
+- **Acceptance:** no `unwrap/expect` in request paths; `thiserror`/`anyhow` adopted; fuzz/property
+  tests for `parse_log` and the report SQL builders don't panic on adversarial input.
+
+### Arm 5 — Corpus management
+- **Goal:** Full corpus lifecycle as screens + API: create/import, inspect, extend, re-import,
+  delete, sandbox — with progress + provenance.
+- **Current:** `examples/tex_to_html_import.rs` (import, destructive, hardcoded ports/ids),
+  `extend_corpora.rs` (extend), `sandbox_arxiv.rs` (build subset), `Importer` + `Corpus::destroy`.
+  All CLI-only, all assume arXiv directory topology and `/data` paths.
+- **Screen:** **Corpora** index (list, health, sizes) → **Corpus detail** (services, counts,
+  provenance) with actions: *Import new corpus*, *Extend with new entries*, *Build sandbox from ID
+  list*, *Delete* (guarded). Import/extend show live progress.
+- **Agent API:** `GET /api/corpora` · `POST /api/corpora` (import: `{name, path, complex,
+  description}`) · `GET /api/corpora/{uuid}` · `POST /api/corpora/{uuid}/extend` ·
+  `POST /api/corpora/{uuid}/sandbox` (ID list → downloadable archive) · `DELETE /api/corpora/{uuid}`.
+  Long-running ones return a **run/job handle** (Arm 8) the caller polls — same handle the screen's
+  progress bar watches.
+- **Data model:** promote `Importer` into a library service callable from API + CLI; add
+  `corpora.import_extension` (harvest from `admin-ui`) and a provenance record (who imported, when,
+  source path, counts). Run imports as managed background jobs, not inline threads with hardcoded
+  ports.
+- **Observability:** import emits per-checkpoint progress events + a final run summary; counts
+  (entries found/imported/skipped) become metrics.
+- **Risks:** import walks/unpacks huge trees and **deletes source `.gz`** as it goes — must be
+  crash-safe and idempotent; deletion is destructive (confirm + soft-delete option).
+- **Acceptance:** a corpus can be imported, extended, sandboxed, and deleted entirely from the UI
+  and the API, with live progress and a provenance trail; no example binary needed.
+
+### Arm 6 — Service management
+- **Goal:** Define/configure services, their dependency graph, version pinning, and the pinned
+  Docker-worker-image binding — as screens + API.
+- **Current:** services created by ad-hoc `NewService` inserts in example bins;
+  `register_service` (**deletes & re-queues all tasks** for the pair) and `extend_service` are
+  CLI-only; the `dependencies` table exists but is **never used** (the README's "automatic
+  dependency management" is an unfulfilled TODO); `inputconverter` is a loose string, not a FK.
+- **Screen:** **Services** index → **Service detail** (formats, version, inputconverter, description,
+  bound worker image) with actions: *Create service*, *Edit*, *Activate on corpus* (destructive
+  re-queue — guarded), *Extend on corpus* (additive), *Delete*. A **dependency graph** view.
+- **Agent API:** `GET/POST /api/services` · `GET/PATCH/DELETE /api/services/{uuid}` ·
+  `POST /api/corpora/{c}/services/{s}/activate` · `.../extend` · `GET/PUT /api/services/{uuid}/dependencies`
+  · `PUT /api/services/{uuid}/worker-image` (pin `repo@sha256:…`).
+- **Data model:** decide `dependencies`' fate — **revive it with FKs** (`master/foundation →
+  services`) to deliver the long-promised dependency management, *or* drop it; add a
+  `service_worker_images` binding (image ref + digest) feeding Arm 10 provenance and the lab's
+  pinned-Docker-worker plan; make `inputconverter` a real reference.
+- **Observability:** activation/extension emit run events (they already open `historical_runs`);
+  dependency-graph changes are audited.
+- **Risks:** `register_service` is **silently destructive** (wipes tasks + opens a new run) — the UI
+  must make that explicit and require confirmation; version pinning interacts with reproducibility
+  (Arm 10).
+- **Acceptance:** services and their activations, versions, dependencies, and worker-image bindings
+  are fully managed via UI + API; no raw `services`/`dependencies` edits; activating a service is an
+  explicit, audited, confirmable action.
+
+### Arm 7 — Service-run orchestration
+- **Goal:** Start/stop/monitor runs; rerun-failed-only with severity/category/what filters;
+  backpressure; surface and control the dispatcher's task lifecycle.
+- **Current:** rerun exists as 4 token-gated POST routes (`mark_rerun` → opens a `historical_runs`
+  bookmark, blocks→clears logs→sets TODO); the dispatcher is started by hand (`bin/dispatcher.rs`)
+  and self-restarts the ventilator on failure; no UI to start/stop the dispatcher or workers; the
+  `admin-ui` branch's `ensure_daemon`/`daemons` table prototypes frontend-side process supervision.
+- **Screen:** **Runs** dashboard — active run(s) per `(corpus,service)` with live counts &
+  throughput; **Start run / Rerun** (filter by severity/category/what, with the existing
+  `no_messages` special case); **Stop/pause**; **Dispatcher & workers** control panel (status,
+  start/stop, queue depth, backpressure knobs: `queue_size`, `message_size`, retry policy).
+- **Agent API:** `POST /api/corpora/{c}/services/{s}/runs` (start/rerun with filter body) ·
+  `GET /api/runs` / `GET /api/runs/{uuid}` (live status) · `POST /api/runs/{uuid}/stop` ·
+  `GET /api/dispatcher` · `POST /api/dispatcher/{start,stop,reload}` ·
+  `GET /api/workers?service=` (already have the data via `worker_metadata`).
+- **Data model:** make `historical_runs` the run handle (add `uuid`, `status`, `actor`); optionally
+  adopt the `admin-ui` `daemons(pid,name)` table for supervised processes; expose `queue_size`/
+  retry as runtime config (Arm 1) instead of constants in `bin/dispatcher.rs`.
+- **Observability:** **this is half the north star** — every dispatch/return/retry/timeout becomes a
+  `tracing` event + metric (queue depth, in-flight, completion rate, retry/fatal counts); the live
+  Runs view and the agent `GET /api/runs/{uuid}` read the *same* status surface.
+- **Risks:** controlling OS processes from the web app is a security-sensitive, `admin-ui`-style
+  capability — gate hard (Arm 9) and prefer a supervised-process model over `kill(pid)`; don't
+  destabilize the dispatcher's deliberate restart semantics (D9).
+- **Acceptance:** a run can be started, filtered, monitored live, and stopped from UI + API; the
+  dispatcher and worker fleet are observable and controllable; backpressure is tunable at runtime;
+  humans and agents see identical run state.
+
+### Arm 8 — Observability (the reason for all this)
+- **Goal:** One unified, structured, pollable surface for **live** and **historical** runs, identical
+  for humans and agents, with per-run and per-task drill-down and export.
+- **Current:** read-only HTML reports; `historical_runs` (per-run severity tallies) and
+  `historical_tasks` (per-task status snapshots, with `diff-summary`/`diff-history` regression
+  views); `worker_metadata` liveness; report-time logging via the doomed `time 0.1`; Redis-cached
+  report pages. No metrics endpoint, no structured live feed, no JSON of any report.
+- **Screen:** **Observatory** — a live run feed (auto-refreshing, replacing the ad-hoc JS refresh
+  toggle), historical run archive + regression diffs (keep the existing Vega views), per-run and
+  per-task drill-down, and **Export** (CSV/JSON) of any report. A `/metrics` scrape target for
+  external dashboards.
+- **Agent API:** **every** report screen gets a JSON twin (D-symmetry contract): `GET /api/reports/{c}/{s}[/severity[/category[/what]]]` ·
+  `GET /api/history/{c}/{s}` · `GET /api/diff/{c}/{s}` · `GET /api/runs/{uuid}` · `GET /api/tasks/{id}`
+  · `GET /metrics` (Prometheus). Pollable, schema'd, paginated.
+- **Data model:** none required (reads existing tables); optionally a lightweight live-status cache
+  keyed by run uuid; reconcile the Redis cache (Arm 11) so JSON and HTML share one cached source.
+- **Observability:** *is* the deliverable — `tracing` spans across the whole task lifecycle and every
+  admin action; `metrics` for queue/throughput/failure; consistent run/task ids in every log line so
+  an agent can correlate.
+- **Risks:** report SQL is already heavy at arXiv scale (hence the Redis cache and autovacuum
+  tuning) — adding JSON twins must reuse the cached path, not double the query load.
+- **Acceptance:** for any report a human can open, an agent can `GET` the same data as schema'd JSON;
+  live run state is pollable and matches the UI exactly; `/metrics` exposes queue depth, throughput,
+  and failure counts; reports export to CSV/JSON.
+
+### Arm 9 — Agent-first API + identity
+- **Goal:** A documented HTTP/JSON surface mirroring every screen, with agent-vs-human
+  identity/attribution so every run and write is traceable to its initiator.
+- **Current:** no JSON read API, no OpenAPI/schema; writes gated by a shared `rerun_tokens` string →
+  username map; `captcha_secret` unused; no users/sessions; `admin-ui` prototyped
+  `users`/`user_permissions`/`user_actions` + Google OAuth but it's unmerged and on Rocket 0.4.
+- **Screen:** **Auth & API** — login (human), **API tokens** management (create/revoke per actor,
+  scoped), and an **Audit log** of who did what. An embedded **API docs** page (RapiDoc over the
+  generated OpenAPI).
+- **Agent API:** the whole `/api/**` surface, documented via `utoipa` (`GET /openapi.json`); auth via
+  `Authorization: Bearer <api-token>` for agents and session cookies for humans;
+  `GET /api/me` (current actor); `GET/POST/DELETE /api/tokens`.
+- **Data model:** harvest `admin-ui`'s schema — `users`, `api_tokens` (hashed via `argon2`/
+  `password-hash`; or JWT via `jsonwebtoken`), `user_permissions(owner/developer/viewer per
+  corpus/service)`, and `user_actions` (audit). Thread an **actor** into `historical_runs.owner` and
+  every write (D10). Migrate `rerun_tokens` → API tokens with a compat shim.
+- **Observability:** every authenticated action is an audit row **and** a `tracing` event with the
+  actor id; the audit log is itself a report (Arm 8).
+- **Risks:** security-critical — token hashing, scope enforcement, and not regressing the public
+  read-only dashboard (which must stay unauthenticated read-only). OAuth dependency choice is an
+  Open Question (§5).
+- **Acceptance:** every screen has a documented JSON endpoint in the OpenAPI spec; agents
+  authenticate with scoped tokens; every write is attributed to an actor and audited; the public
+  dashboard remains read-only without auth.
+
+### Arm 10 — Data management / datasets
+- **Goal:** Dataset export/bundling as a first-class, parameterized feature with versioning and
+  provenance — results attributable to an exact toolchain.
+- **Current:** two near-duplicate shell scripts (`bundle-html-dataset.sh` per-month,
+  `bundle-html-dataset-by-severity.sh` per-severity) using raw `psql`, magic status ints, `/data`
+  paths, and `tex_to_html.zip` assumptions; `sandbox_arxiv.rs` for source subsets;
+  `libarchive-sys` (C dep) for archive I/O.
+- **Screen:** **Datasets** — define an export (corpus, service, severity filter, partition
+  by month|severity), run it (background job with progress), browse/download produced archives,
+  see each export's provenance (toolchain/service version/worker-image digest, row counts, date).
+- **Agent API:** `POST /api/corpora/{c}/services/{s}/exports` (partition + severity options) ·
+  `GET /api/exports` / `GET /api/exports/{uuid}` (status + artifacts) · `GET /api/exports/{uuid}/download`.
+  Collapses the two shell scripts into one parameterized endpoint.
+- **Data model:** an `exports`/`datasets` table (uuid, corpus, service, filters, partition,
+  toolchain/version/worker-image provenance, artifact paths, counts, created_by, created_at). Pin
+  git deps (Arm 0) so provenance is exact. Consider replacing `libarchive-sys` with pure-Rust
+  `zip`/`tar` + `zstd`/`flate2` (+ `walkdir` for traversal, `csv` for tabular export) to drop the C
+  dep and gain portable, high-ratio bundles — evaluate against existing archive compatibility.
+- **Observability:** export jobs are runs (Arm 8) with progress + provenance; artifact integrity
+  hashes recorded.
+- **Risks:** large exports are I/O-heavy on the QLC RAID `/data`; the per-month/per-severity naming
+  inconsistency in the current scripts (`no_problem` vs `no-problem`) must be reconciled;
+  pure-Rust archive migration must preserve downstream consumers' expectations.
+- **Acceptance:** a dataset can be defined, exported (either partitioning), versioned, and downloaded
+  from UI + API, each carrying exact toolchain/worker provenance; the shell scripts are retired.
+
+### Arm 11 — Caching & scale hardening
+- **Goal:** Make the report cache a help, not a hidden hard dependency; share one cached source
+  between HTML and JSON.
+- **Current:** frontend **hard-requires Redis at `127.0.0.1`** (the `cache_worker` thread panics at
+  boot if it's down); cache keys are corpus/service/severity/category strings; a 2-minute
+  invalidation loop recomputes pages on `queued`-count change. Redis is undocumented in self-install.
+- **Screen:** cache status in **Settings**/**doctor** (hit rate, last invalidation, backend
+  enabled?).
+- **Agent API:** `GET /api/cache/status` · `POST /api/cache/invalidate` (scoped).
+- **Data model:** none.
+- **Observability:** cache hit/miss/invalidation metrics.
+- **Risks:** removing Redis entirely changes scaling characteristics at arXiv volume; making it
+  *optional* (graceful no-cache fallback — already half-present in `task_report.rs`, fully absent in
+  `cache_worker.rs`) is the safer first step.
+- **Acceptance:** the frontend boots and serves correctly with Redis absent (degraded, logged);
+  when present, JSON and HTML reports share one cached entry; Redis is either documented in
+  self-install or made truly optional (Open Question §5).
+
+### Arm 12 — Hardening pass (bugs, races, tests, CI, supply chain)
+- **Goal:** Close prototype-grade defects and stop the tree from rotting.
+- **Current:** ventilator empty-message fragility (manager re-spawns it in a loop as a workaround);
+  panic-driven supervision; orphan-prone deletes (Arm 3); ~113 panic sites (Arm 4); broken CI
+  (diesel 1.x CLI, archived actions); dead code (`make_history.rs`, `dispatcher/metadata.rs`,
+  `dependencies` table); `unwrap` in report SQL; integration-only tests requiring a live DB +
+  `latexmlc`.
+- **Screen:** a "known-issues / self-test" surface in **doctor**.
+- **Agent API:** `GET /api/health` deep-check (reuses Arm 2).
+- **Data model:** migration hygiene — add the missing FKs, write **down** migrations, verify
+  reversibility; remove `dependencies` if not revived (Arm 6).
+- **Observability:** the empty-message and retry-exhaustion paths must emit clear events, not just
+  `eprintln!`.
+- **Risks:** reproducing the ventilator race is hard — instrument first (Arm 8), then fix with a
+  principled framing protocol rather than the current swap/skip heuristics.
+- **Acceptance:** CI green on current toolchain with `cargo-audit` + `cargo-deny` (mirror
+  latexml-oxide's `deny.toml`) gating advisories/licenses/duplicate-majors; dead code removed; unit
+  tests for `parse_log`, status mapping, and report SQL builders; the ventilator race is either
+  reproduced+fixed or fully instrumented with a documented mitigation; `time 0.1`, `dotenv`,
+  `lazy_static` gone.
+
+### Arm 13 — Productization basics & deployment
+- **Goal:** Real docs, packaging, and the end-state deployment topology.
+- **Current:** `MANUAL.md` is literally `### TODO`; `INSTALL.md` is manual ops; `README` says "not
+  ready for off-the-shelf use"; no packaging; deployment is hand-run binaries.
+- **Screen:** in-app **first-run docs** + contextual help; a public **read-only dashboard** mode.
+- **Agent API:** the OpenAPI doc (Arm 9) *is* the agent manual; plus a short "agent quickstart".
+- **Data model:** none.
+- **Observability:** n/a.
+- **Risks:** the public dashboard (exposed via `latexml.rs` Caddy reverse-proxy over Tailscale) must
+  be strictly read-only and must not leak the write API or `/metrics` internals.
+- **Acceptance:** a real `MANUAL.md` (human) + agent quickstart; `cargo`-installable / packaged
+  binaries; documented deployment: **dispatcher + frontend on `cortex`, Postgres on NVMe,
+  pinned-Docker-image workers across cortex/science-kit/science-pup, external workers via Tailscale,
+  public read-only dashboard via `latexml.rs`** — noted now, delivered after the foundation arms.
+
+---
+
+## 4. Sequencing & milestones
+
+The dependency order matters more than calendar estimates (this box is the dev + prod node).
+
+- **M0 — Buildable & observable foundation.** Arm 0 → Arm 1 → Arm 2 → Arm 3 → Arm 4, with Arm 8's
+  `tracing`/`metrics` substrate (D6) wired in as we go. *Exit:* `cortex init` stands up a working
+  node from a clean box; everything runs from runtime config; pooled DB; structured logs/metrics
+  flowing. Nothing user-visible yet, but the prototype's worst foundations are gone.
+- **M1 — The management surfaces, symmetric by construction.** Arm 5 (corpus) → Arm 6 (service) →
+  Arm 7 (runs), each shipping screen **and** JSON API from one controller (D7 + symmetry contract),
+  with Arm 9 identity threaded through writes from the first one. *Exit:* every out-of-band admin
+  task (§1.5) has a first-class screen + API; example bins/shell scripts begin retiring.
+- **M2 — Observatory & data.** Arm 8 (unified live+historical, JSON twins, export) → Arm 10
+  (datasets w/ provenance) → Arm 11 (cache). *Exit:* the north star is demonstrable — a human and an
+  agent watch the same live + historical run state; datasets are reproducible.
+- **M3 — Harden & ship.** Arm 12 (bugs/CI/supply-chain) → Arm 13 (docs/packaging/deployment topology).
+  *Exit:* green CI with audit gates, real manual, packaged binaries, documented production topology.
+
+Each arm ships on its own branch off `master` (per owner workflow: branch + push, no PR). The
+`tracing`/`metrics` and the screen↔API symmetry contract are applied continuously, not as a final
+arm.
+
+---
+
+## 5. Open questions for the owner
+
+These change scope or sequencing; flagged for the review the handoff asked for *before large
+refactors*:
+
+1. **Identity model (Arm 9):** full **user accounts + Google OAuth** (harvested from `admin-ui`),
+   or **API tokens only** (simpler, agent-first) with humans as a thin layer on top? This sets how
+   much of the `admin-ui` auth schema we revive.
+2. **CLI-first vs Web-first (D1):** is the `cortex` CLI the priority deliverable (fastest path to an
+   agent surface + self-install), with screens following — or should the web admin UI lead?
+3. **Redis (Arm 11):** keep it (documented in self-install), make it **optional with graceful
+   fallback**, or replace the report cache with an in-process cache? Affects the "one command, no
+   extra daemons" self-install promise.
+4. **`dependencies` table (Arm 6):** finally implement automatic service dependency management
+   (revive the table with FKs), or drop it as dead weight for now?
+5. **`libarchive-sys` → pure-Rust archives (Arm 10):** worth dropping the C dependency for portable
+   bundles, or keep the battle-tested C path given the arXiv-scale corpus already depends on it?
+6. **UUID external handles (D8):** adopt now (cleaner API/public-view story) or defer (serial PKs
+   are simpler short-term)?
+7. **Scope of "stop":** several operations are intentionally destructive (`register_service` wipes
+   tasks, import deletes source `.gz`, `Corpus::destroy`). Confirm we want **soft-delete / undo**
+   semantics in the productized versions, not just confirmation dialogs.
+
+---
+
+*Appendix pointers:* build/run conventions and load-bearing facts → [`CLAUDE.md`](../CLAUDE.md).
+The owner's original brief → `docs/CorTeX-productizing-HANDOFF.md` (not committed upstream).

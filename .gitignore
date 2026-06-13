@@ -19,5 +19,8 @@ tests/data/cond-mat9912403/tex_to_html.zip
 examples/config.json
 config.json
 
+# Owner's private hand-off brief (lives locally, not committed upstream)
+docs/CorTeX-productizing-HANDOFF.md
+
 # Temp files
 *.rdb
