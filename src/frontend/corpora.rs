@@ -213,5 +213,58 @@ fn count_import_tasks(connection: &mut PgConnection, corpus: i32) -> i32 {
     .unwrap_or(0) as i32
 }
 
+/// Deletes a corpus and all of its tasks and log messages. **Guarded:** the caller must echo the
+/// corpus name via `?confirm=<name>` to proceed (prevents accidental wipes; the UI confirms the
+/// same way). Returns 204 on success, 400 if the confirmation does not match, 404 if unknown.
+#[delete("/api/corpora/<name>?<confirm>")]
+pub fn delete_corpus(name: &str, confirm: Option<&str>, pool: &State<DbPool>) -> Status {
+  if confirm != Some(name) {
+    return Status::BadRequest;
+  }
+  let mut connection = match pool.get() {
+    Ok(connection) => connection,
+    Err(_) => return Status::ServiceUnavailable,
+  };
+  let corpus = match Corpus::find_by_name(name, &mut connection) {
+    Ok(corpus) => corpus,
+    Err(_) => return Status::NotFound,
+  };
+  match delete_corpus_cascade(&mut connection, corpus) {
+    Ok(()) => Status::NoContent,
+    Err(status) => status,
+  }
+}
+
+/// Removes a corpus's log messages (the `log_*` tables have no FK cascade), then its tasks and the
+/// corpus row itself.
+fn delete_corpus_cascade(connection: &mut PgConnection, corpus: Corpus) -> Result<(), Status> {
+  use crate::schema::{log_errors, log_fatals, log_infos, log_invalids, log_warnings, tasks};
+  use diesel::prelude::*;
+  let corpus_id = corpus.id;
+  let task_ids = || {
+    tasks::table
+      .filter(tasks::corpus_id.eq(corpus_id))
+      .select(tasks::id)
+  };
+  let fail = |_| Status::InternalServerError;
+  diesel::delete(log_infos::table.filter(log_infos::task_id.eq_any(task_ids())))
+    .execute(connection)
+    .map_err(fail)?;
+  diesel::delete(log_warnings::table.filter(log_warnings::task_id.eq_any(task_ids())))
+    .execute(connection)
+    .map_err(fail)?;
+  diesel::delete(log_errors::table.filter(log_errors::task_id.eq_any(task_ids())))
+    .execute(connection)
+    .map_err(fail)?;
+  diesel::delete(log_fatals::table.filter(log_fatals::task_id.eq_any(task_ids())))
+    .execute(connection)
+    .map_err(fail)?;
+  diesel::delete(log_invalids::table.filter(log_invalids::task_id.eq_any(task_ids())))
+    .execute(connection)
+    .map_err(fail)?;
+  corpus.destroy(connection).map_err(fail)?;
+  Ok(())
+}
+
 /// The route set for the corpus-management capability.
-pub fn routes() -> Vec<Route> { routes![api_corpora, api_corpus, import_corpus] }
+pub fn routes() -> Vec<Route> { routes![api_corpora, api_corpus, import_corpus, delete_corpus] }

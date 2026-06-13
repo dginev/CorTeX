@@ -9,8 +9,8 @@
 
 use cortex::backend::{self, test_db_address};
 use cortex::frontend::server::mount_api_with;
-use cortex::models::{Corpus, NewCorpus, NewService, NewTask, Service};
-use cortex::schema::{corpora, services, tasks};
+use cortex::models::{Corpus, NewCorpus, NewLogWarning, NewService, NewTask, Service, Task};
+use cortex::schema::{corpora, log_warnings, services, tasks};
 use diesel::prelude::*;
 use rocket::http::{ContentType, Status};
 use rocket::local::blocking::Client;
@@ -205,4 +205,74 @@ fn post_corpora_registers_and_imports_via_a_job() {
 
   cleanup_corpus(&mut db, name);
   let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn delete_corpus_removes_corpus_tasks_and_logs() {
+  let name = "delete_corpus_test";
+  let mut db = backend::testdb();
+  cleanup_corpus(&mut db, name);
+  db.add(&NewCorpus {
+    name: name.to_string(),
+    path: "/tmp/delete_corpus_test".to_string(),
+    complex: true,
+    description: String::new(),
+  })
+  .expect("insert corpus");
+  let corpus = Corpus::find_by_name(name, &mut db.connection).unwrap();
+  db.add(&NewTask {
+    service_id: 2,
+    corpus_id: corpus.id,
+    status: -2,
+    entry: "/tmp/delete_corpus_test/1/1.zip".to_string(),
+  })
+  .expect("insert task");
+  let task: Task = tasks::table
+    .filter(tasks::corpus_id.eq(corpus.id))
+    .first(&mut db.connection)
+    .expect("the task row");
+  db.add(&NewLogWarning {
+    task_id: task.id,
+    category: "c".to_string(),
+    what: "w".to_string(),
+    details: "d".to_string(),
+  })
+  .expect("insert log");
+
+  let client = client();
+  // Missing confirmation -> 400.
+  let unconfirmed_path = format!("/api/corpora/{name}");
+  let unconfirmed = client.delete(unconfirmed_path.as_str()).dispatch();
+  assert_eq!(unconfirmed.status(), Status::BadRequest);
+  // Name echoed as confirmation -> 204.
+  let confirmed_path = format!("/api/corpora/{name}?confirm={name}");
+  let confirmed = client.delete(confirmed_path.as_str()).dispatch();
+  assert_eq!(confirmed.status(), Status::NoContent);
+
+  // The corpus, its tasks, and its logs are all gone (no orphans).
+  assert!(
+    Corpus::find_by_name(name, &mut db.connection).is_err(),
+    "corpus should be deleted"
+  );
+  let task_count: i64 = tasks::table
+    .filter(tasks::corpus_id.eq(corpus.id))
+    .count()
+    .get_result(&mut db.connection)
+    .unwrap();
+  assert_eq!(task_count, 0, "tasks should be deleted");
+  let log_count: i64 = log_warnings::table
+    .filter(log_warnings::task_id.eq(task.id))
+    .count()
+    .get_result(&mut db.connection)
+    .unwrap();
+  assert_eq!(log_count, 0, "logs should be deleted (no orphans)");
+}
+
+#[test]
+fn delete_corpus_is_404_for_unknown() {
+  let client = client();
+  let response = client
+    .delete("/api/corpora/no_such_corpus?confirm=no_such_corpus")
+    .dispatch();
+  assert_eq!(response.status(), Status::NotFound);
 }
