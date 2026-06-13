@@ -21,7 +21,6 @@ CorTeX is three cooperating processes plus two backing services:
 | **frontend** | Rocket web app: dashboards, reports, rerun/snapshot actions | `cargo run --bin frontend` |
 | **worker(s)** | Convert documents (e.g. TeX→HTML); connect to the dispatcher over ZeroMQ | the `pericortex` crate / `examples/tex_to_html_worker.rs` |
 | **PostgreSQL** | The metadata store (corpora, services, tasks, logs, history) | system package |
-| **Redis** | Report cache the frontend depends on at boot | system package |
 
 Document **bytes** live on a shared filesystem (a task's `entry` is an absolute path); the database
 stores only metadata and pointers.
@@ -44,22 +43,20 @@ sudo apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
   postgresql postgresql-contrib \
   libpq-dev libzmq3-dev libarchive-dev libsodium-dev \
-  pkg-config redis-server
+  pkg-config
 ```
 
 - `postgresql` — the database server (installs PostgreSQL 18 on Ubuntu 26.04).
 - `libpq-dev` — PostgreSQL client headers (needed to build Diesel and `diesel_cli`).
 - `libzmq3-dev`, `libsodium-dev` — ZeroMQ transport for the dispatcher/workers.
 - `libarchive-dev` — archive handling for corpus import and result bundles.
-- `redis-server` — the report cache the frontend requires.
 
-Verify the libraries are discoverable and the services are up:
+Verify the libraries are discoverable and the service is up:
 
 ```bash
 pkg-config --modversion libzmq libarchive libsodium   # prints versions, no errors
-sudo systemctl enable --now postgresql redis-server
+sudo systemctl enable --now postgresql
 pg_lsclusters                                          # PostgreSQL cluster should be "online"
-redis-cli ping                                         # -> PONG
 ```
 
 ## 3. PostgreSQL roles and databases
@@ -167,7 +164,7 @@ Start the pieces from the repository root, each in its own shell (or under a pro
 # 1) the dispatcher (ZeroMQ ventilator on :51695, sink on :51696)
 cargo run --release --bin dispatcher
 
-# 2) the web frontend (needs Redis running; serves the dashboards)
+# 2) the web frontend (serves the dashboards)
 cargo run --release --bin frontend
 
 # 3) one or more workers (example: TeX→HTML). Workers connect to the dispatcher over ZeroMQ.
@@ -201,9 +198,6 @@ ALTER TABLE tasks        SET (autovacuum_enabled = true, autovacuum_vacuum_scale
 
 ## 9. Troubleshooting
 
-- **Frontend panics at startup with a Redis error** — the frontend currently *requires* Redis.
-  Ensure `redis-cli ping` returns `PONG` (`sudo systemctl start redis-server`). Making Redis
-  optional is Arm 11 of the plan.
 - **`config.json` not found / parse error** — you must run binaries from the repository root and
   `config.json` must be valid JSON (Step 4).
 - **`password authentication failed`** — re-check Step 3 credentials and that they match `.env`;

@@ -33,8 +33,9 @@ read it before non-trivial work. Active work branch: **`productize-2026`**.
 - **Redis has been removed** (Arm 14 #6.2). Frontend reports are now served from the
   `report_summary` materialized-view rollup (`src/backend/rollup.rs`, `reports::task_report`),
   refreshed on the run-completion path (finalize drain + at-least-daily, plus `mark_new_run`); the
-  old `cached/worker.rs` cache daemon and the `redis` crate are gone. **The frontend boots without
-  Redis.** (`src/frontend/cached/` is now a thin uncached proxy; rename pending.)
+  old `cached/worker.rs` cache daemon, the `redis` crate, and the dead `CacheConfig` (Redis settings,
+  incl. the phantom Settings-page inputs) are gone. **The frontend boots without Redis.**
+  (`src/frontend/cached/` is now a thin uncached proxy; rename pending.)
 - **CWD-coupled:** `load_config()` reads `config.json` from the CWD (panics if missing), and
   `Rocket.toml`/`templates/`/`public/` are CWD-relative — **run binaries from the repo root.**
 - **The dispatcher panics on purpose** (mutex poisoning → process abort → external restart). Don't
@@ -48,11 +49,11 @@ read it before non-trivial work. Active work branch: **`productize-2026`**.
 
 Build deps (Ubuntu; not yet installed on a fresh box):
 ```bash
-sudo apt install -y postgresql libpq-dev libzmq3-dev libarchive-dev libsodium-dev pkg-config redis-server
+sudo apt install -y postgresql libpq-dev libzmq3-dev libarchive-dev libsodium-dev pkg-config
 cargo install diesel_cli --no-default-features --features postgres   # until embedded migrations land
 ```
-Then (from repo root): `diesel migration run`, copy `config.default.json` → `config.json`, ensure
-Redis is up, `cargo build`. Toolchain is **nightly** (`rust-toolchain.toml`, floating). DB on
+Then (from repo root): `diesel migration run`, copy `config.default.json` → `config.json`,
+`cargo build`. Toolchain is **nightly** (`rust-toolchain.toml`, floating). DB on
 **NVMe, never `/data`** (QLC RAID6 is wrong for an OLTP DB).
 
 Tests are integration-heavy and need a live test DB (`TEST_DATABASE_URL`); `tex_to_html_test`

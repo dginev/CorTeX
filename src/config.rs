@@ -9,7 +9,7 @@
 //!
 //! This replaces two prototype-era patterns: the **compile-time** `dotenv!` baking of the database
 //! URL into the binary (so the deployment target could not change without a rebuild), and ad-hoc
-//! hard-coded constants for the dispatcher ports and cache address.
+//! hard-coded constants for the dispatcher ports.
 //!
 //! Values are resolved with the following precedence (lowest to highest):
 //! 1. built-in [`Default`] values,
@@ -86,24 +86,6 @@ impl Default for DispatcherConfig {
   }
 }
 
-/// Report-cache (Redis) settings used by the frontend.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CacheConfig {
-  /// Redis connection URL used to cache frontend report pages.
-  pub redis_url: String,
-  /// Whether the frontend should refuse to start when the cache is unreachable.
-  /// (Graceful degradation when the cache is optional is tracked as plan Arm 11.)
-  pub required: bool,
-}
-impl Default for CacheConfig {
-  fn default() -> Self {
-    CacheConfig {
-      redis_url: "redis://127.0.0.1/".to_string(),
-      required: false,
-    }
-  }
-}
-
 /// Frontend authentication / secrets (formerly the hand-edited `config.json`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AuthConfig {
@@ -137,8 +119,6 @@ pub struct CortexConfig {
   pub database: DatabaseConfig,
   /// ZeroMQ dispatcher settings.
   pub dispatcher: DispatcherConfig,
-  /// Report-cache settings.
-  pub cache: CacheConfig,
   /// Frontend authentication / secrets.
   pub auth: AuthConfig,
   /// On-disk asset locations.
@@ -201,13 +181,11 @@ pub fn to_persisted_toml(config: &CortexConfig) -> Result<String, toml::ser::Err
   struct Persisted<'a> {
     database: &'a DatabaseConfig,
     dispatcher: &'a DispatcherConfig,
-    cache: &'a CacheConfig,
     assets: &'a AssetsConfig,
   }
   toml::to_string_pretty(&Persisted {
     database: &config.database,
     dispatcher: &config.dispatcher,
-    cache: &config.cache,
     assets: &config.assets,
   })
 }

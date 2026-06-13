@@ -162,3 +162,20 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   recovery only in a fully-wedged set, a future refinement, not unbounded growth).
   *Next:* decouple the timeout reaper from refetch (the D-6 residual); migrate the legacy Vega `history`
   page onto `frontend/runs.rs`; or prune the now-dead `CacheConfig` (Redis) leftover in `config.rs`.
+- **Dead Redis cache config purged + backpressure knob surfaced (rationalization + Admin UX):** since
+  Redis was removed (#6.2) the `CacheConfig` (`redis_url`/`required`) was dead — yet still **exposed and
+  editable** through `/api/config`, the Settings page (a phantom "Redis URL" input), and `post_settings`.
+  Removed it end-to-end: the `CacheConfig` struct + `CortexConfig.cache` + its `to_persisted_toml` line
+  (`config.rs`); the `ConfigDto.cache` field, `SettingsForm.cache_*` fields, the import, and the patch
+  branch (`management.rs`); the Cache fieldset (`settings.html.tera`); and the stale assertion
+  (`management_api_test.rs`, now asserting `cache` is **absent**). In the same pass, **surfaced the new
+  D-6 `max_in_flight` backpressure knob in the Settings form** (input + `SettingsForm.dispatcher_max_in_flight`
+  + patch + an `/api/config` assertion) so the safety threshold is admin-manageable — closing the loop on
+  tick-14's backend change with its Admin-UX twin. Also scrubbed the **stale install docs** that still told
+  operators to `apt install redis-server`, `systemctl enable redis-server`, `redis-cli ping`, and a
+  troubleshooting entry claiming "the frontend requires Redis" (`INSTALL.md`, `CLAUDE.md`) — actively wrong
+  since the frontend boots without Redis. `build` + `clippy --all-targets -D warnings` clean; `settings_test`
+  (3) + `management_api_test` (2) green. Net: dead, *misleading* config surface gone from code, UX, and the
+  install path; one real knob gained an editor.
+  *Next:* decouple the D-6 reaper from refetch; migrate the legacy Vega `history` page; or rename the
+  now-misnamed `src/frontend/cached/` proxy (last Redis-era naming debt).

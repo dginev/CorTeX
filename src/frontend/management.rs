@@ -28,7 +28,7 @@ use rocket_dyn_templates::{context, Template};
 use serde::Serialize;
 
 use crate::backend::DbPool;
-use crate::config::{config, AssetsConfig, CacheConfig, CortexConfig, DispatcherConfig};
+use crate::config::{config, AssetsConfig, CortexConfig, DispatcherConfig};
 
 /// Managed state: the path where the write path persists the configuration file.
 pub struct ConfigFile(pub PathBuf);
@@ -56,8 +56,6 @@ pub struct ConfigDto {
   pub database: DatabaseDto,
   /// ZeroMQ dispatcher settings.
   pub dispatcher: DispatcherConfig,
-  /// Report-cache settings.
-  pub cache: CacheConfig,
   /// On-disk asset locations.
   pub assets: AssetsConfig,
   /// Auth settings (secrets masked).
@@ -72,7 +70,6 @@ impl ConfigDto {
         url: mask_db_password(&cfg.database.url),
       },
       dispatcher: cfg.dispatcher.clone(),
-      cache: cfg.cache.clone(),
       assets: cfg.assets.clone(),
       auth: AuthDto {
         captcha_secret_set: !cfg.auth.captcha_secret.is_empty(),
@@ -118,10 +115,8 @@ pub struct SettingsForm {
   pub dispatcher_queue_size: usize,
   /// ZeroMQ chunk size, in bytes.
   pub dispatcher_message_size: usize,
-  /// Redis cache URL.
-  pub cache_redis_url: String,
-  /// Whether the cache is required at boot.
-  pub cache_required: bool,
+  /// Backpressure threshold: max in-flight tasks before the ventilator stops leasing.
+  pub dispatcher_max_in_flight: usize,
   /// Template directory.
   pub assets_template_dir: String,
   /// Public assets directory.
@@ -216,8 +211,8 @@ pub fn post_settings(
       "result_port": f.dispatcher_result_port,
       "queue_size": f.dispatcher_queue_size,
       "message_size": f.dispatcher_message_size,
+      "max_in_flight": f.dispatcher_max_in_flight,
     },
-    "cache": { "redis_url": f.cache_redis_url, "required": f.cache_required },
     "assets": { "template_dir": f.assets_template_dir, "public_dir": f.assets_public_dir },
   });
   merge_and_persist(&patch, &config_file.0)?;

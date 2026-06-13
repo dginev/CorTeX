@@ -39,7 +39,11 @@ fn get_api_config_returns_masked_contract() {
   assert!(body["dispatcher"]["source_port"].is_number());
   assert!(body["dispatcher"]["result_port"].is_number());
   assert!(body["dispatcher"]["queue_size"].is_number());
-  assert!(body["cache"]["redis_url"].is_string());
+  assert!(body["dispatcher"]["max_in_flight"].is_number());
+  assert!(
+    body.get("cache").is_none(),
+    "the removed Redis cache config is no longer exposed"
+  );
   assert!(body["assets"]["template_dir"].is_string());
   assert!(body["assets"]["public_dir"].is_string());
   assert!(body["auth"]["rerun_token_count"].is_number());

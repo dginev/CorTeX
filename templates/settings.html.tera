@@ -37,14 +37,8 @@
       <input id="q" name="dispatcher_queue_size" type="number" value="{{ config.dispatcher.queue_size }}">
       <label for="m">Message size (bytes)</label>
       <input id="m" name="dispatcher_message_size" type="number" value="{{ config.dispatcher.message_size }}">
-    </fieldset>
-
-    <fieldset>
-      <legend>Cache</legend>
-      <label for="redis">Redis URL</label>
-      <input id="redis" name="cache_redis_url" value="{{ config.cache.redis_url }}">
-      <label for="req">Required at boot (true/false)</label>
-      <input id="req" name="cache_required" value="{{ config.cache.required }}">
+      <label for="mif">Max in-flight (backpressure threshold)</label>
+      <input id="mif" name="dispatcher_max_in_flight" type="number" value="{{ config.dispatcher.max_in_flight }}">
     </fieldset>
 
     <fieldset>

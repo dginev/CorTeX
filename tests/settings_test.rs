@@ -78,7 +78,7 @@ fn post_settings_form_persists_and_redirects() {
   let client = client(path.clone());
   let form = "dispatcher_source_port=51695&dispatcher_result_port=51696\
               &dispatcher_queue_size=4242&dispatcher_message_size=100000\
-              &cache_redis_url=redis://127.0.0.1/&cache_required=false\
+              &dispatcher_max_in_flight=5000\
               &assets_template_dir=templates&assets_public_dir=public";
   let response = client
     .post("/settings")
