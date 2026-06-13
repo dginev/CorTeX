@@ -589,6 +589,7 @@ fn rocket() -> _ {
       ],
     )
     .attach(CORS());
-  // Mount the management/health/settings capability; the builder owns the Template fairing.
-  cortex::frontend::server::mount_management(rocket)
+  // Mount the library API/UI surface (management/health/settings, corpora, …); the builder owns the
+  // connection pool and the Template fairing.
+  cortex::frontend::server::mount_api(rocket)
 }
