@@ -559,7 +559,7 @@ fn rocket() -> _ {
   // Rocket.toml, so the binary is not bound to its working directory.
   let figment =
     rocket::Config::figment().merge(("template_dir", config().assets.template_dir.as_str()));
-  rocket::custom(figment)
+  let rocket = rocket::custom(figment)
     .mount(
       "/",
       routes![
@@ -589,5 +589,7 @@ fn rocket() -> _ {
       ],
     )
     .attach(Template::fairing())
-    .attach(CORS())
+    .attach(CORS());
+  // Mount the management & health routes (the same builder the integration tests exercise).
+  cortex::frontend::server::mount_management(rocket)
 }
