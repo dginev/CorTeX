@@ -128,3 +128,42 @@ Then, in order: **#6 rollups** (cheap fresh reports, drop Redis) → **#4** (kil
 churn) → **#2** (NVMe staging) → **#3** (`mark_done` / finalize tuning) → **#1** (async, only if still
 I/O-bound). #5 is resolved (keep Postgres). Each lands as its own TDD increment under the project's
 quality gates.
+
+---
+
+## Measurement spike findings (2026-06-13)
+
+A quick spike on the `cortex` box (quiet, test DB, synthetic uniform data) to make the priorities
+evidence-led. Order-of-magnitude conclusions hold; exact numbers shift with real arXiv data
+distribution and concurrent load.
+
+**#4 — connection churn is a hard wall (highest-confidence result).** 300 iterations each:
+
+| Path | Per connection |
+|---|---|
+| fresh `PgConnection::establish` (today's per-ZMQ-event pattern) | **4.46 ms** (TCP + scram-sha-256 auth) |
+| pooled `pool.get()` | **0.011 ms** |
+| **speedup** | **~395×** |
+
+At 200 tasks/s the dispatcher does ~400 metadata writes/s (dispatch + return) ⇒ **~1.8 s of pure
+connection-open overhead per wall-second** — impossible, so the current `WorkerMetadata` thread+
+connection-per-event pattern **cannot sustain target load**; even 100 tasks/s (~0.9 s/s) nearly
+saturates it, before the `thread::spawn` cost. **Fix:** route `record_dispatched/received` through
+the existing r2d2 pool (Arm 3) and/or batch them — cheap, high-impact.
+
+**#6 — aggregate reports are expensive at scale.** Synthetic: 1 corpus/service, **500k** warning
+tasks, **1.5M** `log_warnings` rows.
+
+| Query | Time | Plan |
+|---|---|---|
+| top-level status counts (`progress_report`) | **~19 ms** | cheap group-by count |
+| **category report** (the Redis-cached one) | **~500 ms** warm | Seq Scan 1.5M + Hash Join + **external merge Sort spilling 38 MB to disk** (exceeds `work_mem`) |
+
+Half a second of DB scan **per uncached category-page load**, spilling to disk — exactly why the
+Redis cache exists. The cost is at the **category/what drill-down** (join+group over `log_*`), not
+the top-level counts. **Fix:** precomputed rollup counts keyed by the report dimensions make this an
+indexed sub-millisecond lookup — cheap *and* fresh, removing the hard Redis dependency. (The
+"rollup read" line in the bench recomputed live and is **not** representative of a true rollup read.)
+
+**Net:** the priority order holds — **#4 (pool the metadata writes)** and **#6 (rollup tables)** are
+the two highest-leverage and both are tractable. Re-measure after each fix to verify the wins.
