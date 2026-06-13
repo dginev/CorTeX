@@ -13,12 +13,13 @@
 //! binary's legacy `history` route toward the testable library surface; the HTML twin migrates in a
 //! later increment (the legacy `history` page still renders today).
 
+use chrono::NaiveDateTime;
 use rocket::http::Status;
 use rocket::serde::json::Json;
 use rocket::{Route, State};
 use serde::Serialize;
 
-use crate::backend::DbPool;
+use crate::backend::{summary_task_diffs, DbPool};
 use crate::models::{Corpus, HistoricalRun, Service};
 
 /// A historical `(corpus, service)` run as exposed over the API: a stable `id` handle,
@@ -116,5 +117,75 @@ pub fn api_run_current(
   Ok(Json(current.map(RunDto::from)))
 }
 
+/// One cell of the run-comparison matrix: how many tasks moved from `previous_status` to
+/// `current_status` between the two snapshots.
+#[derive(Debug, Serialize)]
+pub struct RunDiffTransitionDto {
+  /// Severity key in the earlier snapshot (`no_problem`, `warning`, `error`, `fatal`).
+  pub previous_status: String,
+  /// Severity key in the later snapshot.
+  pub current_status: String,
+  /// Number of tasks that made this transition.
+  pub task_count: usize,
+}
+
+/// A comparison of two saved task-status snapshots of a `(corpus, service)`: the status-transition
+/// matrix (what improved / regressed between runs) plus the snapshot dates available to compare.
+#[derive(Debug, Serialize)]
+pub struct RunDiffDto {
+  /// Snapshot dates available for comparison.
+  pub available_dates: Vec<String>,
+  /// The full previous→current status-transition matrix, with task counts.
+  pub transitions: Vec<RunDiffTransitionDto>,
+}
+
+/// Parses an optional `YYYY-MM-DD hh:mm:ss[.fff]` snapshot timestamp, mapping a malformed value to
+/// `400`. (The legacy HTML diff route `.unwrap()`s here and panics — a dispatch-path panic this
+/// twin fixes; see `docs/KNOWN_ISSUES.md`.)
+fn parse_snapshot_date(raw: Option<&str>) -> Result<Option<NaiveDateTime>, Status> {
+  match raw {
+    None => Ok(None),
+    Some(value) => NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f")
+      .map(Some)
+      .map_err(|_| Status::BadRequest),
+  }
+}
+
+/// Compares two task-status snapshots of a `(corpus, service)` (the agent twin of the diff-summary
+/// screen). `previous`/`current` are snapshot timestamps from `available_dates`; omit them to use
+/// the most recent saved pair. `400` on a malformed date, `404` if the corpus/service is unknown.
+#[get("/api/runs/<corpus>/<service>/diff?<previous>&<current>")]
+pub fn api_run_diff(
+  corpus: &str,
+  service: &str,
+  previous: Option<&str>,
+  current: Option<&str>,
+  pool: &State<DbPool>,
+) -> Result<Json<RunDiffDto>, Status> {
+  let previous_date = parse_snapshot_date(previous)?;
+  let current_date = parse_snapshot_date(current)?;
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let (corpus, service) = resolve(corpus, service, &mut connection)?;
+  let (available_dates, rows) = summary_task_diffs(
+    &mut connection,
+    &corpus,
+    &service,
+    previous_date,
+    current_date,
+  );
+  let transitions = rows
+    .into_iter()
+    .map(|row| RunDiffTransitionDto {
+      previous_status: row.previous_status,
+      current_status: row.current_status,
+      task_count: row.task_count,
+    })
+    .collect();
+  Ok(Json(RunDiffDto {
+    available_dates,
+    transitions,
+  }))
+}
+
 /// The route set for the historical-runs capability.
-pub fn routes() -> Vec<Route> { routes![api_runs, api_run_current] }
+pub fn routes() -> Vec<Route> { routes![api_runs, api_run_current, api_run_diff] }

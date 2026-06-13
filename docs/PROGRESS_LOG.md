@@ -31,5 +31,10 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   per-severity tallies) and the agent twin of the history screen — `GET /api/runs/<corpus>/<service>`
   (list, most-recent-first) and `GET /api/runs/<corpus>/<service>/current` (the open run, or `null`).
   Mounted via `server::mount_api_with`; capability test in `tests/runs_test.rs`. This drains the
-  binary's legacy `history` route toward the library (symmetry contract). *Next:* the HTML twin +
-  run-detail (per-run task diff), then run actions (the rerun path already exists via `mark_rerun`).
+  binary's legacy `history` route toward the library (symmetry contract).
+- **Arm 7 — run comparison API + a robustness fix:** `GET /api/runs/<corpus>/<service>/diff?previous=&current=`
+  exposes `summary_task_diffs` as a typed `RunDiffDto` (the status-transition matrix between two saved
+  snapshots — what regressed/improved between runs), the agent twin of the diff-summary screen. The
+  legacy HTML diff route `.unwrap()`s the date query param and **panics on malformed input**; the twin
+  returns **`400`** instead (recorded as KNOWN_ISSUES F-1). Test covers the JSON shape + the 400 guard.
+  *Next:* the runs HTML twin + per-run task list (`list_task_diffs`); then run actions.

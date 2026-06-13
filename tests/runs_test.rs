@@ -120,6 +120,33 @@ fn api_lists_runs_and_reports_current() {
   let current: Value = response.into_json().expect("a JSON value");
   assert_eq!(current["completed"], false);
   assert_eq!(current["description"], "second run");
+
+  // --- Diff: well-formed even with no saved snapshots ------------------------------------------
+  let response = client
+    .get(format!("/api/runs/{CORPUS_NAME}/{SERVICE_NAME}/diff"))
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  let diff: Value = response.into_json().expect("diff json");
+  assert!(
+    diff["available_dates"].is_array(),
+    "diff carries the available snapshot dates"
+  );
+  assert!(
+    diff["transitions"].is_array(),
+    "diff carries a transition matrix"
+  );
+
+  // Guard: a malformed snapshot date is a 400, not a panic (the legacy HTML route panics here).
+  let response = client
+    .get(format!(
+      "/api/runs/{CORPUS_NAME}/{SERVICE_NAME}/diff?previous=not-a-date"
+    ))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::BadRequest,
+    "malformed date -> 400, not a panic"
+  );
 }
 
 #[test]

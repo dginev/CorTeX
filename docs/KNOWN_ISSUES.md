@@ -46,6 +46,12 @@
 | E-1 | S4 | 🟡 | **CI refreshed to current requirements** (`/.github/workflows/CI.yml`): Postgres + roles, nightly via `dtolnay/rust-toolchain` (the `actions-rs/*` actions are archived), diesel_cli 2.x migrations on both DBs, **no Redis**, and `fmt --check` + `clippy -D warnings` gates mirroring `.githooks/`. **Still pending:** publishing API docs + rustdoc to GH Pages (Arm 9/12), and the L-1 teardown flake can still red the run. |
 | E-2 | S4 | 🟢 | *(dev-env note, not a product bug)* The sandbox's seccomp filter kills a process that polls `pg_stat_activity` in a tight loop (SIGSTKFLT) and the harness's background-run wrapper signals long jobs — so in-sandbox load tests must run foreground without a live connection sampler. Recorded so the next session doesn't re-discover it. |
 
+## Frontend / routes
+
+| # | Sev | Status | Issue |
+|---|---|---|---|
+| F-1 | S2 | 🟡 | **Legacy binary report/diff routes panic on bad input.** The binary's `diff_historical_summary`/`diff_historical_tasks` routes do `NaiveDateTime::parse_from_str(date).unwrap()` on a user-supplied query param — a malformed date **panics the request** (violates principle #2, no panic on the request path). The migrated library twins handle it (`runs::api_run_diff` returns `400`); 🟡 until the legacy routes are removed in favor of the library surface. Audit the other legacy bin routes for the same pattern as they migrate. |
+
 ## Process lifecycle / shutdown
 
 | # | Sev | Status | Issue |
