@@ -356,6 +356,58 @@ pub fn runs_tasks_page(
   ))
 }
 
+/// The human diff-summary screen: the server-rendered status-transition **matrix** between two
+/// snapshots — the 1:1 HTML twin of [`api_run_diff`], sharing [`RunDiffTransitionDto`]. A snapshot
+/// pair is chosen with two date dropdowns (a JS-free `<form method=get>`); each transition cell
+/// links into the [`runs_tasks_page`] drill-down pre-filtered to that `previous → current`
+/// transition. Reuses `parse_snapshot_date`, so a malformed date is a `400` (the legacy
+/// `diff-summary` binary route `.unwrap()`s it and **panics**; see `docs/KNOWN_ISSUES.md` F-1);
+/// `404` on an unknown corpus/service.
+#[get("/runs/<corpus>/<service>/diff?<previous>&<current>")]
+pub fn runs_diff_page(
+  corpus: &str,
+  service: &str,
+  previous: Option<&str>,
+  current: Option<&str>,
+  pool: &State<DbPool>,
+) -> Result<Template, Status> {
+  let previous_date = parse_snapshot_date(previous)?;
+  let current_date = parse_snapshot_date(current)?;
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let (corpus_record, service_record) = resolve(corpus, service, &mut connection)?;
+  let (available_dates, rows) = summary_task_diffs(
+    &mut connection,
+    &corpus_record,
+    &service_record,
+    previous_date,
+    current_date,
+  );
+  let transitions: Vec<RunDiffTransitionDto> = rows
+    .into_iter()
+    .map(|row| RunDiffTransitionDto {
+      previous_status: row.previous_status,
+      current_status: row.current_status,
+      task_count: row.task_count,
+    })
+    .collect();
+  let global = serde_json::json!({
+    "title": format!("Run diff · {service} / {corpus}"),
+    "description": format!("Status-transition matrix of service {service} over corpus {corpus}"),
+  });
+  Ok(Template::render(
+    "runs-diff",
+    context! {
+      global,
+      corpus,
+      service,
+      available_dates,
+      transitions,
+      previous_date: previous.unwrap_or_default(),
+      current_date: current.unwrap_or_default(),
+    },
+  ))
+}
+
 /// The human run-history screen: a server-rendered table of the same runs `GET /api/runs/...`
 /// returns (the 1:1 HTML twin, sharing [`RunDto`]). `404` if the corpus/service is unknown.
 #[get("/runs/<corpus>/<service>")]
@@ -386,6 +438,7 @@ pub fn routes() -> Vec<Route> {
     api_run_diff,
     api_run_task_diffs,
     runs_tasks_page,
+    runs_diff_page,
     runs_page
   ]
 }

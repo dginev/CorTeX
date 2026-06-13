@@ -111,3 +111,19 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   covers the status-param panics too; 🟡 until the legacy `diff-*` bin routes are deleted).
   *Next:* delete/redirect the legacy `diff-historical_*` + `*report*` binary routes onto the library
   surface (closes F-1, kills bin↔library duplication); or pivot to a backend item (D-6 in-flight bound).
+- **Arm 7 — human diff-summary matrix screen (completes the runs HTML surface):** `GET /runs/<corpus>/<service>/diff`
+  (`runs::runs_diff_page`) server-renders the status-transition **matrix** between two snapshots — the HTML
+  twin of `api_run_diff`, sharing `RunDiffTransitionDto`. A JS-free `<form method=get>` with two snapshot
+  date dropdowns picks the pair; each matrix cell links into the `runs_tasks_page` drill-down pre-filtered to
+  that `previous → current` transition. The runs HTML surface is now a complete inspection funnel:
+  **run history → diff matrix → per-task drill-down**, each linked, all sharing the agent DTOs. Reuses
+  `parse_snapshot_date` → `400` on a malformed date (the legacy `diff-summary` route `.unwrap()`s it and
+  panics), `404` on unknown corpus/service; degrades gracefully to "no snapshots to compare" when none are
+  saved. New `templates/runs-diff.html.tera`; nav links added on the history + task-diff screens. Tests
+  (`tests/runs_test.rs`): renders + the empty-snapshot graceful path + the 400 date guard + 404. With both
+  diff twins (matrix + drill-down) now in the library, the legacy `diff_historical_*` bin routes are pure
+  liability — KNOWN_ISSUES **F-1** updated to say they're ready to delete. (`runs_test` is in the L-1 at-exit
+  SIGSEGV set: 2/2 assertions pass every run; the flaky teardown crash is pre-existing, not from this change.)
+  *Next:* **delete** the legacy `diff_historical_summary`/`diff_historical_tasks` routes + their two
+  templates and repoint `report.html.tera`'s "Diff previous runs" link at `/runs/<corpus>/<service>/diff`
+  (closes F-1); or pivot to backend D-6 (bounded in-flight task set + dispatch backpressure).

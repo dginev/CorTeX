@@ -5,6 +5,8 @@
   <p>
     <a href="/runs/{{corpus}}/{{service}}">&larr; Run history</a>
     &nbsp;·&nbsp;
+    <a href="/runs/{{corpus}}/{{service}}/diff">Run differences</a>
+    &nbsp;·&nbsp;
     <a href="/api/runs/{{corpus}}/{{service}}/tasks?previous_status={{selected_previous}}&current_status={{selected_current}}&previous={{previous_date}}&current={{current_date}}&offset={{offset}}&page_size={{page_size}}">JSON</a>
   </p>
 

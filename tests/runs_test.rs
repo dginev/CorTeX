@@ -223,6 +223,36 @@ fn api_lists_runs_and_reports_current() {
     Status::BadRequest,
     "malformed date -> 400 on the HTML screen, not a panic"
   );
+
+  // --- HTML twin: the diff-summary matrix screen (links into the task drill-down) --------------
+  let response = client
+    .get(format!("/runs/{CORPUS_NAME}/{SERVICE_NAME}/diff"))
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  assert_eq!(response.content_type(), Some(ContentType::HTML));
+  let body = response.into_string().expect("html body");
+  assert!(
+    body.contains("Run differences"),
+    "renders the diff-summary matrix screen"
+  );
+  // This seed has runs but no saved task snapshots, so the matrix gracefully reports nothing to
+  // compare (the empty-state robustness path) rather than erroring or showing an empty table.
+  assert!(
+    body.contains("No saved snapshots yet"),
+    "diff matrix degrades gracefully when there are no snapshots to compare"
+  );
+
+  // Guard: a malformed snapshot date is a 400 on the matrix screen too (legacy route panics here).
+  let response = client
+    .get(format!(
+      "/runs/{CORPUS_NAME}/{SERVICE_NAME}/diff?previous=not-a-date"
+    ))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::BadRequest,
+    "malformed date -> 400 on the matrix screen, not a panic"
+  );
 }
 
 #[test]
@@ -239,6 +269,10 @@ fn api_runs_is_404_for_unknown_corpus() {
   assert_eq!(response.status(), Status::NotFound);
   let response = client
     .get("/runs/no-such-corpus-xyz/no_such_service/tasks")
+    .dispatch();
+  assert_eq!(response.status(), Status::NotFound);
+  let response = client
+    .get("/runs/no-such-corpus-xyz/no_such_service/diff")
     .dispatch();
   assert_eq!(response.status(), Status::NotFound);
 }
