@@ -25,6 +25,7 @@ use crate::config::{config, config_file_path};
 use crate::frontend::corpora;
 use crate::frontend::jobs;
 use crate::frontend::management::{self, ConfigFile};
+use crate::frontend::reports;
 use crate::frontend::runs;
 
 /// Mounts the full library API/UI surface from the runtime configuration. The composition root the
@@ -54,6 +55,7 @@ pub fn mount_api_with(
     .manage(pool)
     .mount("/", management::routes())
     .mount("/", corpora::routes())
+    .mount("/", reports::routes())
     .mount("/", runs::routes())
     .mount("/", jobs::routes())
     .attach(Template::fairing())

@@ -67,3 +67,13 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   API from one module). New `templates/runs.html.tera` (server-rendered, no JS framework, per the UI
   guidance); `404` consistent with the API. Test renders the screen and asserts the seeded rows appear
   server-side. (The legacy bin `history` Vega page still renders; it migrates here later.)
+- **Reports agent API (symmetry + rationalization):** the most-used admin screen (severity/category
+  reports) had **no agent API** and returned stringly-typed `Vec<HashMap>`. New `frontend/reports.rs`
+  serves typed, paginated JSON straight off the rollup: `GET /api/reports/<corpus>/<service>/<severity>`
+  → `CategoryReportDto` (category rows + severity totals), `…/<severity>/<category>` → `WhatReportDto`
+  (what rows + category totals); `ReportRowDto {name, tasks, messages}`. Severity-validated (`400`),
+  `404` on unknown corpus/service. Reuses the existing typed rollup reads (`category_rollup`/
+  `what_rollup`/`severity_total`/`category_total`, now re-exported), so the API and the HTML screens
+  reflect the **same** rollup. Contract test pins the numbers + guards. Closes the biggest
+  symmetry-contract gap; KNOWN_ISSUES R-3 → 🟡 (agent contract typed; internal HTML path still uses
+  `HashMap`).

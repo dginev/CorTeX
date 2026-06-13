@@ -7,5 +7,6 @@ pub mod helpers;
 pub mod jobs;
 pub mod management;
 pub mod params;
+pub mod reports;
 pub mod runs;
 pub mod server;
