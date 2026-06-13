@@ -77,3 +77,10 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   reflect the **same** rollup. Contract test pins the numbers + guards. Closes the biggest
   symmetry-contract gap; KNOWN_ISSUES R-3 → 🟡 (agent contract typed; internal HTML path still uses
   `HashMap`).
+- **R-2 — widen `tasks.entry` (data integrity for hostile paths):** `entry` was `varchar(200)`, so a
+  source-archive path past 200 chars **errored on insert** ("value too long") and the document was
+  silently dropped from processing (confirmed: a 250-char insert errors). Migration `20260613170000`
+  widens it to `varchar(4096)` (PATH_MAX) — *increasing* a varchar length is **catalog-only** in
+  Postgres (no table rewrite, no rebuild of the 7 `entry` indexes), so it's safe on the large `tasks`
+  table without a maintenance window. Reversibility verified; regression test `tests/long_entry_test.rs`
+  (a 300-char entry stores + reads back untruncated). Ledger: **R-2 → resolved**.
