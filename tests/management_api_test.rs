@@ -63,4 +63,5 @@ fn healthz_reports_ok_when_db_reachable() {
   let body: serde_json::Value = response.into_json().expect("a JSON body");
   assert_eq!(body["status"], "ok");
   assert_eq!(body["database"]["reachable"], true);
+  assert_eq!(body["migrations"]["current"], true);
 }

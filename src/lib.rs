@@ -28,6 +28,7 @@ pub mod dispatcher;
 pub mod frontend;
 pub mod helpers;
 pub mod importer;
+pub mod migrations;
 pub mod models;
 pub mod reports;
 /// Auto-generated diesel schema for the backend DB

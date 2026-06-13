@@ -47,4 +47,5 @@ figment = { version = "0.10", features = ["toml", "env"] }
 toml = "0.8"
 chrono = "0.4.45"
 diesel = {version="2.2.10", features = ["postgres", "chrono"]}
+diesel_migrations = "2.2"
 lazy_static = "1.0.0"

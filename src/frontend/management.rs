@@ -91,6 +91,13 @@ pub struct DbHealth {
   pub reachable: bool,
 }
 
+/// Health of the schema migrations.
+#[derive(Debug, Serialize)]
+pub struct MigrationsHealth {
+  /// Whether the database schema is at the latest embedded migration.
+  pub current: bool,
+}
+
 /// Structured health report, identical for agents and human supervisors.
 #[derive(Debug, Serialize)]
 pub struct HealthDto {
@@ -98,6 +105,8 @@ pub struct HealthDto {
   pub status: &'static str,
   /// Database dependency health.
   pub database: DbHealth,
+  /// Schema-migration health.
+  pub migrations: MigrationsHealth,
 }
 
 /// The subset of configuration that is safe to persist to the config file (excludes secrets).
@@ -142,13 +151,17 @@ fn mask_db_password(url: &str) -> String {
   url.to_string()
 }
 
-/// Returns whether the configured database accepts a connection and a trivial query.
-fn database_reachable() -> bool {
+/// Probes the database, returning `(reachable, migrations_current)` from a single connection.
+fn diagnose_database() -> (bool, bool) {
   match PgConnection::establish(&config().database.url) {
-    Ok(mut connection) => diesel::sql_query("SELECT 1")
-      .execute(&mut connection)
-      .is_ok(),
-    Err(_) => false,
+    Ok(mut connection) => {
+      let reachable = diesel::sql_query("SELECT 1")
+        .execute(&mut connection)
+        .is_ok();
+      let migrations_current = !crate::migrations::has_pending_migrations(&mut connection);
+      (reachable, migrations_current)
+    },
+    Err(_) => (false, false),
   }
 }
 
@@ -177,10 +190,18 @@ pub fn api_config() -> Json<ConfigDto> { Json(ConfigDto::from_config(config())) 
 /// A structured, pollable health report for humans and agents alike.
 #[get("/healthz")]
 pub fn healthz() -> Json<HealthDto> {
-  let reachable = database_reachable();
+  let (reachable, migrations_current) = diagnose_database();
+  let status = if reachable && migrations_current {
+    "ok"
+  } else {
+    "degraded"
+  };
   Json(HealthDto {
-    status: if reachable { "ok" } else { "degraded" },
+    status,
     database: DbHealth { reachable },
+    migrations: MigrationsHealth {
+      current: migrations_current,
+    },
   })
 }
 
