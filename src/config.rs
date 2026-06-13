@@ -25,6 +25,7 @@ use figment::{
   Figment,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
 /// Database connection settings.
@@ -87,6 +88,32 @@ impl Default for CacheConfig {
   }
 }
 
+/// Frontend authentication / secrets (formerly the hand-edited `config.json`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AuthConfig {
+  /// A captcha secret registered with the captcha provider (currently unused by the codebase).
+  pub captcha_secret: String,
+  /// Password-like tokens mapped to a human-readable owner, gating rerun / save-snapshot actions.
+  pub rerun_tokens: HashMap<String, String>,
+}
+
+/// On-disk asset locations, so the binary is not bound to its working directory.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssetsConfig {
+  /// Directory holding the Tera templates.
+  pub template_dir: String,
+  /// Directory holding the static public assets (css/js/images, favicon, robots.txt).
+  pub public_dir: String,
+}
+impl Default for AssetsConfig {
+  fn default() -> Self {
+    AssetsConfig {
+      template_dir: "templates".to_string(),
+      public_dir: "public".to_string(),
+    }
+  }
+}
+
 /// Top-level `CorTeX` runtime configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CortexConfig {
@@ -96,6 +123,10 @@ pub struct CortexConfig {
   pub dispatcher: DispatcherConfig,
   /// Report-cache settings.
   pub cache: CacheConfig,
+  /// Frontend authentication / secrets.
+  pub auth: AuthConfig,
+  /// On-disk asset locations.
+  pub assets: AssetsConfig,
 }
 
 impl CortexConfig {
@@ -123,8 +154,27 @@ impl CortexConfig {
     if let Ok(url) = std::env::var("TEST_DATABASE_URL") {
       config.database.test_url = url;
     }
+    // Back-compat: the legacy frontend `config.json` (captcha_secret + rerun_tokens), if present in
+    // the working directory, remains authoritative for the auth section so running deployments keep
+    // working. The new home for these values is the `[auth]` section of `cortex.toml` / `CORTEX_AUTH__*`.
+    if let Ok(text) = std::fs::read_to_string("config.json") {
+      match serde_json::from_str::<LegacyFrontendConfig>(&text) {
+        Ok(legacy) => {
+          config.auth.captcha_secret = legacy.captcha_secret;
+          config.auth.rerun_tokens = legacy.rerun_tokens;
+        },
+        Err(e) => eprintln!("-- ignoring malformed config.json: {e}"),
+      }
+    }
     config
   }
+}
+
+/// Legacy on-disk shape of the prototype `config.json`, read only for backwards compatibility.
+#[derive(Deserialize)]
+struct LegacyFrontendConfig {
+  captcha_secret: String,
+  rerun_tokens: HashMap<String, String>,
 }
 
 /// Returns the process-wide, lazily-loaded configuration.

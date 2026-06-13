@@ -21,6 +21,7 @@ use rocket::serde::json::Json;
 use rocket_dyn_templates::Template;
 
 use cortex::backend::Backend;
+use cortex::config::config;
 use cortex::frontend::cached::cache_worker;
 use cortex::frontend::concerns::{
   serve_entry, serve_entry_preview, serve_report, serve_rerun, serve_savetasks, UNKNOWN,
@@ -527,7 +528,7 @@ fn savetasks(
 
 #[get("/favicon.ico")]
 async fn favicon() -> Result<NamedFile, NotFound<String>> {
-  let path = Path::new("public/").join("favicon.ico");
+  let path = Path::new(&config().assets.public_dir).join("favicon.ico");
   NamedFile::open(&path)
     .map_err(|_| NotFound(format!("Bad path: {path:?}")))
     .await
@@ -535,7 +536,7 @@ async fn favicon() -> Result<NamedFile, NotFound<String>> {
 
 #[get("/robots.txt")]
 async fn robots() -> Result<NamedFile, NotFound<String>> {
-  let path = Path::new("public/").join("robots.txt");
+  let path = Path::new(&config().assets.public_dir).join("robots.txt");
   NamedFile::open(&path)
     .map_err(|_| NotFound(format!("Bad path: {path:?}")))
     .await
@@ -543,7 +544,7 @@ async fn robots() -> Result<NamedFile, NotFound<String>> {
 
 #[get("/public/<file..>")]
 async fn files(file: PathBuf) -> Result<NamedFile, NotFound<String>> {
-  let path = Path::new("public/").join(file);
+  let path = Path::new(&config().assets.public_dir).join(file);
   NamedFile::open(&path)
     .map_err(|_| NotFound(format!("Bad path: {path:?}")))
     .await
@@ -555,7 +556,11 @@ fn rocket() -> _ {
   let _ = thread::spawn(move || {
     cache_worker();
   });
-  rocket::build()
+  // Drive the template directory from the runtime configuration rather than a CWD-relative
+  // Rocket.toml, so the binary is not bound to its working directory.
+  let figment =
+    rocket::Config::figment().merge(("template_dir", config().assets.template_dir.as_str()));
+  rocket::custom(figment)
     .mount(
       "/",
       routes![

@@ -25,3 +25,13 @@ message_size = 100000  # bytes per ZeroMQ chunk
 [cache]
 redis_url = "redis://127.0.0.1/"
 required = false       # frontend currently still requires Redis; see plan Arm 11
+
+# Frontend auth / secrets. The legacy `config.json`, if present in the working directory, overrides
+# this section for backwards compatibility.
+# [auth]
+# captcha_secret = ""
+# rerun_tokens = { "secret-token" = "username" }   # gate the rerun / save-snapshot actions
+
+[assets]
+template_dir = "templates"   # use an absolute path for packaged installs (decouples from the CWD)
+public_dir = "public"
