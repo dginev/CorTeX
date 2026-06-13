@@ -213,6 +213,64 @@ fn count_import_tasks(connection: &mut PgConnection, corpus: i32) -> i32 {
     .unwrap_or(0) as i32
 }
 
+/// Extends an existing corpus with newly-arrived entries; starts an in-process job and returns
+/// `202 Accepted` + the job handle (404 if the corpus is unknown).
+#[post("/api/corpora/<name>/extend")]
+pub fn extend_corpus(
+  name: &str,
+  pool: &State<DbPool>,
+  database_url: &State<DatabaseUrl>,
+) -> Result<(Status, Json<JobDto>), Status> {
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let corpus = Corpus::find_by_name(name, &mut connection).map_err(|_| Status::NotFound)?;
+  drop(connection);
+
+  let database_url = database_url.0.clone();
+  let params = serde_json::json!({ "name": name });
+  let job_uuid = jobs::spawn_job(
+    pool.inner().clone(),
+    "corpus_extend",
+    "admin",
+    params,
+    move |progress| run_extend(&database_url, corpus, progress),
+  )
+  .map_err(|_| Status::InternalServerError)?;
+
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let job = jobs::find_job(&mut connection, job_uuid).ok_or(Status::InternalServerError)?;
+  Ok((Status::Accepted, Json(JobDto::from(job))))
+}
+
+/// The body of a `corpus_extend` job: import newly-arrived entries and propagate them to the real
+/// (non-init/import) services, returning the resulting import-task count.
+fn run_extend(database_url: &str, corpus: Corpus, progress: &JobProgress) -> Result<Value, String> {
+  let corpus_id = corpus.id;
+  let corpus_path = corpus.path.clone();
+  let mut importer = Importer {
+    corpus,
+    backend: from_address(database_url),
+    cwd: Importer::cwd(),
+    active_prefixes: HashSet::new(),
+  };
+  progress.step(0, None, "extending corpus");
+  importer
+    .extend_corpus()
+    .map_err(|error| error.to_string())?;
+  let services = importer
+    .corpus
+    .select_services(&mut importer.backend.connection)
+    .unwrap_or_default();
+  for service in services.iter().filter(|service| service.id > 2) {
+    importer
+      .backend
+      .extend_service(service, &corpus_path)
+      .map_err(|error| error.to_string())?;
+  }
+  let imported = count_import_tasks(&mut importer.backend.connection, corpus_id);
+  progress.step(imported, Some(imported), "extend complete");
+  Ok(serde_json::json!({ "import_tasks": imported }))
+}
+
 /// Deletes a corpus and all of its tasks and log messages. **Guarded:** the caller must echo the
 /// corpus name via `?confirm=<name>` to proceed (prevents accidental wipes; the UI confirms the
 /// same way). Returns 204 on success, 400 if the confirmation does not match, 404 if unknown.
@@ -267,4 +325,12 @@ fn delete_corpus_cascade(connection: &mut PgConnection, corpus: Corpus) -> Resul
 }
 
 /// The route set for the corpus-management capability.
-pub fn routes() -> Vec<Route> { routes![api_corpora, api_corpus, import_corpus, delete_corpus] }
+pub fn routes() -> Vec<Route> {
+  routes![
+    api_corpora,
+    api_corpus,
+    import_corpus,
+    extend_corpus,
+    delete_corpus
+  ]
+}

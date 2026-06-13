@@ -276,3 +276,84 @@ fn delete_corpus_is_404_for_unknown() {
     .dispatch();
   assert_eq!(response.status(), Status::NotFound);
 }
+
+#[test]
+fn post_corpora_extend_adds_new_entries() {
+  // Two entries on disk; the corpus initially knows only doc1.
+  let root = std::env::temp_dir().join(format!("cortex_extend_test_{}", std::process::id()));
+  for doc in ["doc1", "doc2"] {
+    let dir = root.join(doc);
+    std::fs::create_dir_all(&dir).expect("create fixture dir");
+    std::fs::write(
+      dir.join(format!("{doc}.tex")),
+      "\\documentclass{article}\\begin{document}x\\end{document}",
+    )
+    .expect("write fixture entry");
+  }
+
+  let name = "extend_test_corpus";
+  let mut db = backend::testdb();
+  cleanup_corpus(&mut db, name);
+  db.add(&NewCorpus {
+    name: name.to_string(),
+    path: root.to_str().unwrap().to_string(),
+    complex: false,
+    description: String::new(),
+  })
+  .expect("insert corpus");
+  let corpus = Corpus::find_by_name(name, &mut db.connection).unwrap();
+  // Seed the pre-existing import task for doc1 (so extend should add only doc2).
+  let doc1_entry = root
+    .join("doc1")
+    .join("doc1.tex")
+    .to_str()
+    .unwrap()
+    .to_string();
+  db.add(&NewTask {
+    service_id: 2,
+    corpus_id: corpus.id,
+    status: 0,
+    entry: doc1_entry,
+  })
+  .expect("seed doc1 task");
+
+  let client = client();
+  let extend_path = format!("/api/corpora/{name}/extend");
+  let response = client.post(extend_path.as_str()).dispatch();
+  assert_eq!(response.status(), Status::Accepted);
+  let job: serde_json::Value = response.into_json().expect("a job handle");
+  assert_eq!(job["kind"], "corpus_extend");
+  let uuid = job["uuid"].as_str().expect("a uuid").to_string();
+
+  let job_path = format!("/api/jobs/{uuid}");
+  let mut last = serde_json::Value::Null;
+  for _ in 0..500 {
+    last = client
+      .get(job_path.as_str())
+      .dispatch()
+      .into_json()
+      .expect("job json");
+    let status = last["status"].as_str().unwrap_or_default();
+    if status == "succeeded" || status == "failed" || status == "interrupted" {
+      break;
+    }
+    std::thread::sleep(std::time::Duration::from_millis(20));
+  }
+  assert_eq!(
+    last["status"], "succeeded",
+    "extend job did not succeed: {}",
+    last["message"]
+  );
+
+  // doc1 (pre-existing) + doc2 (newly imported) == 2 import tasks.
+  let import_tasks: i64 = tasks::table
+    .filter(tasks::corpus_id.eq(corpus.id))
+    .filter(tasks::service_id.eq(2))
+    .count()
+    .get_result(&mut db.connection)
+    .expect("count import tasks");
+  assert_eq!(import_tasks, 2, "extend should add the newly-arrived entry");
+
+  cleanup_corpus(&mut db, name);
+  let _ = std::fs::remove_dir_all(&root);
+}
