@@ -20,6 +20,7 @@ use rocket_dyn_templates::Template;
 
 use crate::backend::{build_pool, DbPool};
 use crate::config::{config, config_file_path};
+use crate::frontend::corpora;
 use crate::frontend::management::{self, ConfigFile};
 
 /// Mounts the full library API/UI surface, building the connection pool and resolving the config
@@ -37,5 +38,6 @@ pub fn mount_api_with(rocket: Rocket<Build>, config_file: PathBuf, pool: DbPool)
     .manage(ConfigFile(config_file))
     .manage(pool)
     .mount("/", management::routes())
+    .mount("/", corpora::routes())
     .attach(Template::fairing())
 }
