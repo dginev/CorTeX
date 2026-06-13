@@ -203,11 +203,11 @@ pub fn serve_report(
     } else {
       Err(NotFound(format!(
         "Service {} does not exist.",
-        &service_name
+        service_name
       )))
     }
   } else {
-    Err(NotFound(format!("Corpus {} does not exist.", &corpus_name)))
+    Err(NotFound(format!("Corpus {} does not exist.", corpus_name)))
   }
 }
 
@@ -222,14 +222,14 @@ pub fn serve_rerun(
 ) -> Result<Accepted<String>, NotFound<String>> {
   let token = rr.token.clone();
   let description = rr.description.clone();
-  let config = load_config();
+  let auth = &crate::config::config().auth;
   let corpus_name = corpus_name.to_lowercase();
   let service_name = service_name.to_lowercase();
 
   // Ensure we're given a valid rerun token to rerun, or anyone can wipe the cortex results
   // let token = safe_data_to_string(data).unwrap_or_else(|_| UNKNOWN.to_string()); // reuse old
   // code by setting data to the String
-  let user_opt = config.rerun_tokens.get(&token);
+  let user_opt = auth.rerun_tokens.get(&token);
   let user = match user_opt {
     None => return Err(NotFound("Access Denied".to_string())), /* TODO: response.
                                                                  * error(Forbidden, */
@@ -281,14 +281,14 @@ pub fn serve_savetasks(
   rr: Json<RerunRequestParams>,
 ) -> Result<Accepted<String>, NotFound<String>> {
   let token = rr.token.clone();
-  let config = load_config();
+  let auth = &crate::config::config().auth;
   let corpus_name = corpus_name.to_lowercase();
   let service_name = service_name.to_lowercase();
 
   // Ensure we're given a valid rerun token to rerun, or anyone can wipe the cortex results
   // let token = safe_data_to_string(data).unwrap_or_else(|_| UNKNOWN.to_string()); // reuse old
   // code by setting data to the String
-  let user_opt = config.rerun_tokens.get(&token);
+  let user_opt = auth.rerun_tokens.get(&token);
   let user = match user_opt {
     None => return Err(NotFound("Access Denied".to_string())),
     Some(user) => user,

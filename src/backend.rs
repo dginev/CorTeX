@@ -16,23 +16,24 @@ mod tasks_aggregate;
 pub(crate) use reports::progress_report;
 pub use reports::TaskReportOptions;
 
+use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use diesel::result::Error;
 use diesel::*;
-use dotenv::dotenv;
 use std::collections::HashMap;
 use std::fmt;
 
 use crate::concerns::{CortexDeletable, CortexInsertable};
+use crate::config::config;
 use crate::helpers::{TaskReport, TaskStatus};
 use crate::models::{
   Corpus, DiffStatusFilter, DiffStatusRow, NewTask, Service, Task, TaskRunMetadata,
 };
 use chrono::NaiveDateTime;
 
-/// The production database postgresql address, set from the .env configuration file
-pub const DEFAULT_DB_ADDRESS: &str = dotenv!("DATABASE_URL");
-/// The test database postgresql address, set from the .env configuration file
-pub const TEST_DB_ADDRESS: &str = dotenv!("TEST_DATABASE_URL");
+/// The production database postgresql address, from the runtime [`crate::config`] configuration
+pub fn default_db_address() -> &'static str { &config().database.url }
+/// The test database postgresql address, from the runtime [`crate::config`] configuration
+pub fn test_db_address() -> &'static str { &config().database.test_url }
 
 /// Provides an interface to the Postgres task store
 pub struct Backend {
@@ -44,9 +45,7 @@ impl fmt::Debug for Backend {
 }
 impl Default for Backend {
   fn default() -> Self {
-    dotenv().ok();
-    let connection = connection_at(DEFAULT_DB_ADDRESS);
-
+    let connection = connection_at(default_db_address());
     Backend { connection }
   }
 }
@@ -55,11 +54,22 @@ impl Default for Backend {
 pub fn connection_at(address: &str) -> PgConnection {
   PgConnection::establish(address).expect("Error connecting to {address}")
 }
+
+/// A pool of PostgreSQL connections (Diesel + r2d2).
+pub type DbPool = Pool<ConnectionManager<PgConnection>>;
+/// A connection checked out from a [`DbPool`]; dereferences to a `PgConnection`.
+pub type PooledConn = PooledConnection<ConnectionManager<PgConnection>>;
+
+/// Builds a lazily-initialized connection pool: connections are established on first checkout, so
+/// this never blocks or fails at startup even if the database is momentarily unavailable.
+pub fn build_pool(database_url: &str, max_size: u32) -> DbPool {
+  let manager = ConnectionManager::<PgConnection>::new(database_url);
+  Pool::builder().max_size(max_size).build_unchecked(manager)
+}
 /// Constructs the default Backend struct for testing
 pub fn testdb() -> Backend {
-  dotenv().ok();
   Backend {
-    connection: connection_at(TEST_DB_ADDRESS),
+    connection: connection_at(test_db_address()),
   }
 }
 /// Constructs a Backend at a given address

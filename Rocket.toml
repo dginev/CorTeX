@@ -1,8 +1,5 @@
-[development]
-template_dir = "templates/"
-
-[staging]
-template_dir = "templates/"
-
-[production]
+# CorTeX serves on Rocket's defaults (127.0.0.1:8000). The template directory is driven at startup
+# by the runtime configuration (`cortex::config`, the `[assets].template_dir` value), so this entry
+# is only a harmless fallback. Profile name `default` applies to every Rocket profile.
+[default]
 template_dir = "templates/"

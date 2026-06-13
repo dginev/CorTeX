@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use std::thread::{self, sleep};
 use std::time::Duration;
 
-use crate::backend::DEFAULT_DB_ADDRESS;
+use crate::backend::default_db_address;
 use crate::dispatcher::finalize::Finalize;
 use crate::dispatcher::sink::Sink;
 use crate::dispatcher::ventilator::Ventilator;
@@ -42,7 +42,7 @@ impl Default for TaskManager {
       result_port: 51696,
       queue_size: 100,
       message_size: 100_000,
-      backend_address: DEFAULT_DB_ADDRESS.to_string(),
+      backend_address: default_db_address().to_string(),
     }
   }
 }
@@ -64,7 +64,6 @@ impl TaskManager {
     let source_queue_size = self.queue_size;
     let source_message_size = self.message_size;
     let source_backend_address = self.backend_address.clone();
-
 
     // Next prepare the finalize thread which will persist finished jobs to the DB
     let finalize_backend_address = self.backend_address.clone();
@@ -107,7 +106,7 @@ impl TaskManager {
     // 09.2025, Currently the ventilator has some hard to reproduce fragility to empty messages
     //          which necessitates a restart of the thread. If we can reproduce that better,
     //          it may be possible to return to the previous single-threaded lifecycle.
-    loop {  
+    loop {
       let vent_services_arc = services_arc.clone();
       let vent_progress_queue_arc = progress_queue_arc.clone();
       let vent_done_queue_arc = done_queue_arc.clone();
@@ -119,12 +118,14 @@ impl TaskManager {
           message_size: source_message_size,
           backend_address: vent_backend_address,
         };
-        ventilator.start(
+        ventilator
+          .start(
             &vent_services_arc,
             &vent_progress_queue_arc,
             &vent_done_queue_arc,
             job_limit,
-          ).unwrap_or_else(|e| panic!("Failed in ventilator thread: {e:?}"));
+          )
+          .unwrap_or_else(|e| panic!("Failed in ventilator thread: {e:?}"));
       });
       if vent_thread.join().is_err() {
         eprintln!("-- Ventilator thread died unexpectedly!");

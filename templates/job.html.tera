@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CorTeX Job {{ uuid }}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 44rem; margin: 2rem auto; padding: 0 1rem; color: #222; }
+    .muted { color: #666; }
+    code { background: #f3f3f3; padding: .1rem .3rem; border-radius: .2rem; }
+    progress { width: 100%; height: 1.1rem; }
+    .status { font-weight: 600; }
+    .ok { color: #1a7f37; } .fail { color: #b02a37; }
+    pre { background: #f6f8fa; padding: .75rem; border-radius: .3rem; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>Job progress</h1>
+  <p class="muted">Job <code id="uuid">{{ uuid }}</code></p>
+  <p>Status: <span id="status" class="status">…</span> &middot; <span id="kind" class="muted"></span></p>
+  <progress id="bar" max="1" value="0"></progress>
+  <p id="message" class="muted"></p>
+  <pre id="result" hidden></pre>
+
+  <script>
+    // Vanilla fetch polling — no JS framework (D11). Light and dependency-free.
+    const uuid = document.getElementById('uuid').textContent;
+    const terminal = ['succeeded', 'failed', 'interrupted'];
+    let timer = null;
+    async function poll() {
+      let resp;
+      try { resp = await fetch('/api/jobs/' + uuid); } catch (e) { return; }
+      if (!resp.ok) { document.getElementById('status').textContent = 'not found'; if (timer) clearInterval(timer); return; }
+      const job = await resp.json();
+      const status = document.getElementById('status');
+      status.textContent = job.status;
+      status.className = 'status' + (job.status === 'succeeded' ? ' ok' : (job.status === 'failed' || job.status === 'interrupted' ? ' fail' : ''));
+      document.getElementById('kind').textContent = job.kind;
+      document.getElementById('message').textContent = job.message || '';
+      const bar = document.getElementById('bar');
+      if (job.progress_total) { bar.max = job.progress_total; bar.value = job.progress_current; }
+      if (terminal.includes(job.status)) {
+        if (timer) clearInterval(timer);
+        if (job.result) { const r = document.getElementById('result'); r.hidden = false; r.textContent = JSON.stringify(job.result, null, 2); }
+      }
+    }
+    timer = setInterval(poll, 1000);
+    poll();
+  </script>
+</body>
+</html>

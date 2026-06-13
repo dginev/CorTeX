@@ -4,7 +4,6 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
-#![feature(proc_macro_hygiene, decl_macro)]
 #![allow(clippy::implicit_hasher, clippy::let_unit_value)]
 #[macro_use]
 extern crate rocket;
@@ -21,6 +20,7 @@ use rocket::serde::json::Json;
 use rocket_dyn_templates::Template;
 
 use cortex::backend::Backend;
+use cortex::config::config;
 use cortex::frontend::cached::cache_worker;
 use cortex::frontend::concerns::{
   serve_entry, serve_entry_preview, serve_report, serve_rerun, serve_savetasks, UNKNOWN,
@@ -70,13 +70,13 @@ fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
     let mut global = HashMap::new();
     global.insert(
       "title".to_string(),
-      format!("Worker report for service {} ", &service_name),
+      format!("Worker report for service {} ", service_name),
     );
     global.insert(
       "description".to_string(),
       format!(
         "Worker report for service {} as registered by the CorTeX dispatcher",
-        &service_name
+        service_name
       ),
     );
     global.insert("service_name".to_string(), service_name.to_string());
@@ -145,7 +145,7 @@ fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
   }
   Err(NotFound(format!(
     "Corpus {} is not registered",
-    &corpus_name
+    corpus_name
   )))
 }
 
@@ -527,7 +527,7 @@ fn savetasks(
 
 #[get("/favicon.ico")]
 async fn favicon() -> Result<NamedFile, NotFound<String>> {
-  let path = Path::new("public/").join("favicon.ico");
+  let path = Path::new(&config().assets.public_dir).join("favicon.ico");
   NamedFile::open(&path)
     .map_err(|_| NotFound(format!("Bad path: {path:?}")))
     .await
@@ -535,7 +535,7 @@ async fn favicon() -> Result<NamedFile, NotFound<String>> {
 
 #[get("/robots.txt")]
 async fn robots() -> Result<NamedFile, NotFound<String>> {
-  let path = Path::new("public/").join("robots.txt");
+  let path = Path::new(&config().assets.public_dir).join("robots.txt");
   NamedFile::open(&path)
     .map_err(|_| NotFound(format!("Bad path: {path:?}")))
     .await
@@ -543,7 +543,7 @@ async fn robots() -> Result<NamedFile, NotFound<String>> {
 
 #[get("/public/<file..>")]
 async fn files(file: PathBuf) -> Result<NamedFile, NotFound<String>> {
-  let path = Path::new("public/").join(file);
+  let path = Path::new(&config().assets.public_dir).join(file);
   NamedFile::open(&path)
     .map_err(|_| NotFound(format!("Bad path: {path:?}")))
     .await
@@ -555,7 +555,11 @@ fn rocket() -> _ {
   let _ = thread::spawn(move || {
     cache_worker();
   });
-  rocket::build()
+  // Drive the template directory from the runtime configuration rather than a CWD-relative
+  // Rocket.toml, so the binary is not bound to its working directory.
+  let figment =
+    rocket::Config::figment().merge(("template_dir", config().assets.template_dir.as_str()));
+  let rocket = rocket::custom(figment)
     .mount(
       "/",
       routes![
@@ -584,6 +588,8 @@ fn rocket() -> _ {
         savetasks
       ],
     )
-    .attach(Template::fairing())
-    .attach(CORS())
+    .attach(CORS());
+  // Mount the library API/UI surface (management/health/settings, corpora, …); the builder owns the
+  // connection pool and the Template fairing.
+  cortex::frontend::server::mount_api(rocket)
 }

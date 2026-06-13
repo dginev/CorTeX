@@ -282,7 +282,7 @@ impl Importer {
   pub fn walk_import(&mut self) -> Result<usize, Box<dyn Error>> {
     let import_extension = if self.corpus.complex { "zip" } else { "tex" };
     let mut walk_q: Vec<PathBuf> = vec![Path::new(&self.corpus.path).to_owned()];
-    println!("-- Starting import walk at {}", &self.corpus.path);
+    println!("-- Starting import walk at {}", self.corpus.path);
     let mut import_q: Vec<NewTask> = Vec::new();
     let mut import_counter = 0;
     while let Some(current_path) = walk_q.pop() {
@@ -406,7 +406,7 @@ pub fn single_file_transfer(tex_target: &str, reader: &Reader, writer: &mut Writ
   // obtaining a size estimate
   let mut raw_data = Vec::new();
   while let Ok(chunk) = reader.read_data(BUFFER_SIZE) {
-    raw_data.extend(chunk.into_iter());
+    raw_data.extend(chunk);
   }
   let mut ok_header = false;
   match writer.write_header_new(tex_target, raw_data.len() as i64) {

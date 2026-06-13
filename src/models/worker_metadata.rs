@@ -147,8 +147,7 @@ impl WorkerMetadata {
     service_id: i32,
     last_dispatched_task_id: i64,
     backend_address: String,
-  ) -> Result<(), Error>
-  {
+  ) -> Result<(), Error> {
     let now = SystemTime::now();
     let _ = thread::spawn(move || {
       let mut backend = backend::from_address(&backend_address);
@@ -201,7 +200,8 @@ impl WorkerMetadata {
     let now = SystemTime::now();
     let _ = thread::spawn(move || {
       let mut backend = backend::from_address(&backend_address);
-      if let Ok(data) = WorkerMetadata::find_by_name(&identity, service_id, &mut backend.connection) {
+      if let Ok(data) = WorkerMetadata::find_by_name(&identity, service_id, &mut backend.connection)
+      {
         let session_seen = match data.session_seen {
           Some(time) => time,
           None => now,
@@ -227,8 +227,7 @@ impl WorkerMetadata {
     identity: &str,
     sid: i32,
     connection: &mut PgConnection,
-  ) -> Result<WorkerMetadata, Error>
-  {
+  ) -> Result<WorkerMetadata, Error> {
     use crate::schema::worker_metadata::{name, service_id};
     worker_metadata::table
       .filter(name.eq(identity))

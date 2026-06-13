@@ -1,9 +1,21 @@
-# Detailed instructions at: https://github.com/rust-lang-nursery/rustfmt/blob/master/Configurations.md
-max_width = 100
-comment_width = 100
-wrap_comments = true
+# CorTeX rustfmt configuration.  Reference: https://rust-lang.github.io/rustfmt/
+#
+# The project pins the nightly toolchain (see rust-toolchain.toml), so a few nightly-only options
+# are used deliberately and marked [nightly]. Apply with `cargo fmt --all`; CI / git hooks enforce
+# `cargo fmt --all --check`.
+
+edition = "2021"                 # match the crate edition explicitly
+max_width = 100                  # line width (rustfmt default, stated for clarity)
+tab_spaces = 2                   # project convention: compact 2-space indentation
+newline_style = "Unix"           # always LF line endings, cross-platform
+
+# Import & initializer hygiene (stable):
+reorder_imports = true           # keep `use` statements sorted
+use_field_init_shorthand = true  # prefer `Foo { x }` over `Foo { x: x }`
 match_block_trailing_comma = true
-fn_single_line = true
-where_single_line = true
-tab_spaces = 2
-error_on_line_overflow = false
+
+# Preserve CorTeX's terse single-line forms and keep comments within the width [nightly]:
+fn_single_line = true            # trivial fn bodies stay on one line
+where_single_line = true         # short `where` clauses stay on one line
+wrap_comments = true             # wrap long comments to comment_width
+comment_width = 100              # comment wrap width (matches max_width)

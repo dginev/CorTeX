@@ -40,15 +40,6 @@ pub struct DiffRequestParams {
   pub page_size: Option<usize>,
 }
 
-/// Global configuration for the frontend executable, read in at boot
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct FrontendConfig {
-  /// a captcha secret registered with google
-  pub captcha_secret: String,
-  /// a list of known password-like tokens that allow users to trigger reruns
-  pub rerun_tokens: HashMap<String, String>,
-}
-
 /// A backend-retrieved report used for filling in Tera-templated pages
 #[derive(Serialize, Default)]
 pub struct TemplateContext {

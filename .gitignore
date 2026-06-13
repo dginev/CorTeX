@@ -18,6 +18,7 @@ tests/data/cond-mat9912403/tex_to_html.zip
 # Config files
 examples/config.json
 config.json
+cortex.toml
 
 # Owner's private hand-off brief (lives locally, not committed upstream)
 docs/CorTeX-productizing-HANDOFF.md

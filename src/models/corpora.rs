@@ -43,6 +43,12 @@ impl Corpus {
     use crate::schema::corpora::path;
     corpora::table.filter(path.eq(path_query)).first(connection)
   }
+  /// Returns all registered corpora, ordered by name.
+  pub fn all(connection: &mut PgConnection) -> Result<Vec<Self>, Error> {
+    corpora::table
+      .order(corpora::name.asc())
+      .get_results(connection)
+  }
   /// Return a hash representation of the corpus, usually for frontend reports
   pub fn to_hash(&self) -> HashMap<String, String> {
     let mut hm = HashMap::new();

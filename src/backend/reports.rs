@@ -153,11 +153,13 @@ pub(crate) fn task_report(
       };
 
       let task_status_raw = task_status.unwrap_or(TaskStatus::NoProblem).raw();
-      let (status_clause,bind_status) = if !all_messages {
+      let (status_clause, bind_status) = if !all_messages {
         (String::from("status=$3 "), task_status_raw)
       } else {
-        (String::from("status < $3 and status > ") + &TaskStatus::Invalid.raw().to_string(),
-          0) // all completed tasks are negative integers, so 0 is a safe upper bound
+        (
+          String::from("status < $3 and status > ") + &TaskStatus::Invalid.raw().to_string(),
+          0,
+        ) // all completed tasks are negative integers, so 0 is a safe upper bound
       };
       match category_opt {
         None => {

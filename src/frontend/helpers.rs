@@ -1,8 +1,6 @@
 //! General purpose auxiliary routines that do not fit the MVC web service paradigm,
 //! tending to minor tasks
-use crate::frontend::params::{FrontendConfig, TemplateContext};
-use std::fs::File;
-use std::io::Read;
+use crate::frontend::params::TemplateContext;
 
 /// Maps a cortex message severity into a bootstrap class for color highlight
 pub fn severity_highlight(severity: &str) -> &str {
@@ -131,26 +129,5 @@ pub fn decorate_uri_encodings(context: &mut TemplateContext) {
     context
       .global
       .insert("current_link_uri".to_string(), current_link);
-  }
-}
-
-/// Loads the global `FrontendConfig` from config.json
-pub fn load_config() -> FrontendConfig {
-  let mut config_file = match File::open("config.json") {
-    Ok(cfg) => cfg,
-    Err(e) => panic!(
-      "You need a well-formed JSON config.json file to run the frontend. Error: {e}"),
-  };
-  let mut config_buffer = String::new();
-  match config_file.read_to_string(&mut config_buffer) {
-    Ok(_) => {},
-    Err(e) => panic!(
-      "You need a well-formed JSON config.json file to run the frontend. Error: {e}"),
-  };
-
-  match serde_json::from_str(&config_buffer) {
-    Ok(decoded) => decoded,
-    Err(e) => panic!(
-      "You need a well-formed JSON config.json file to run the frontend. Error: {e}"),
   }
 }

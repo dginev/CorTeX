@@ -7,8 +7,8 @@ use diesel::*;
 use crate::schema::services;
 use crate::schema::worker_metadata;
 
-use crate::concerns::CortexInsertable;
 use super::worker_metadata::WorkerMetadata;
+use crate::concerns::CortexInsertable;
 
 // Services
 #[derive(Identifiable, Queryable, AsChangeset, Clone, Debug)]
@@ -94,7 +94,10 @@ impl Service {
   }
 
   /// Return a vector of services currently activated on this corpus
-  pub fn select_workers(&self, connection: &mut PgConnection) -> Result<Vec<WorkerMetadata>, Error> {
+  pub fn select_workers(
+    &self,
+    connection: &mut PgConnection,
+  ) -> Result<Vec<WorkerMetadata>, Error> {
     let workers_query = worker_metadata::table
       .filter(worker_metadata::service_id.eq(self.id))
       .order(worker_metadata::name.asc());
