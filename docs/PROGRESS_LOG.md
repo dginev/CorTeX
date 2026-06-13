@@ -26,3 +26,10 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
     pagination metadata — part of the broader stringly-typed-report cleanup, KNOWN_ISSUES R-3); a
     render smoke-test for the report templates (blocked on draining the legacy report routes into the
     testable library surface).
+- **Arm 7 — historical-runs read capability (started):** new testable library module
+  `frontend/runs.rs` with a typed `RunDto` (stable `id` handle, `completed` flag, ISO timestamps,
+  per-severity tallies) and the agent twin of the history screen — `GET /api/runs/<corpus>/<service>`
+  (list, most-recent-first) and `GET /api/runs/<corpus>/<service>/current` (the open run, or `null`).
+  Mounted via `server::mount_api_with`; capability test in `tests/runs_test.rs`. This drains the
+  binary's legacy `history` route toward the library (symmetry contract). *Next:* the HTML twin +
+  run-detail (per-run task diff), then run actions (the rerun path already exists via `mark_rerun`).
