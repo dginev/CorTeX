@@ -233,11 +233,17 @@ These are foundations several arms build on. Decide them early (some are Open Qu
   screens are plain Tera-rendered HTML whose actions are native `<form>` POSTs to the
   symmetry-contract endpoints, using HTML/CSS affordances (`<form>`, `<details>`/`<summary>`,
   `<dialog>`, links, CSS) for interaction. **Light jQuery** (already in the tree alongside Bootstrap)
-  is acceptable for optional polish — e.g. the existing AJAX rerun/preview — but we add **no new JS
-  framework** (no React/Vue/Svelte/Alpine, and **not HTMX** — it is a new JS dependency). Every admin
-  action must work without JavaScript via a form POST; JS is progressive enhancement only. This keeps
-  both the admin app and the public read-only view (Arm 13) cheap to host, audit, and maintain, and
-  dovetails with the symmetry contract (the HTML rendering is just forms over the same controller).
+  is acceptable for optional polish — e.g. the existing AJAX rerun/preview. We add **no SPA / JS
+  framework** (no React/Vue/Svelte/Alpine). Every admin action must work without JavaScript via a
+  form POST; JS is progressive enhancement only. This keeps both the admin app and the public
+  read-only view (Arm 13) cheap to host, audit, and maintain, and dovetails with the symmetry
+  contract (the HTML rendering is just forms over the same controller).
+  - **HTMX exception:** HTMX is *not used by default*, but — being progressive-enhancement-shaped
+    rather than a SPA framework — it **may** be adopted for a specific interaction **only** if a hard
+    constraint makes HTML+CSS+light-jQuery genuinely unworkable, and **only** with explicit
+    justification and owner sign-off. No such hard constraint is identified today: the closest
+    candidates (live import/run **progress**, the Observatory **live feed**) are covered by light
+    jQuery polling the symmetry-contract JSON endpoints. If one emerges, flag it for approval.
 
 **Convention for every arm (the symmetry contract):** a screen and its agent API are **one
 controller** returning **one shared DTO** — HTML via Tera for `Accept: text/html`, JSON (schema'd)
