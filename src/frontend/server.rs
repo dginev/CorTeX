@@ -18,7 +18,8 @@ use std::path::PathBuf;
 use rocket::{Build, Rocket};
 use rocket_dyn_templates::Template;
 
-use crate::config::config_file_path;
+use crate::backend::build_pool;
+use crate::config::{config, config_file_path};
 use crate::frontend::management::{self, ConfigFile};
 
 /// Mounts the management/health/settings capability, persisting edits to the default config file.
@@ -28,8 +29,10 @@ pub fn mount_management(rocket: Rocket<Build>) -> Rocket<Build> {
 
 /// Like [`mount_management`], but with an explicit configuration-file path (used by tests).
 pub fn mount_management_with(rocket: Rocket<Build>, config_file: PathBuf) -> Rocket<Build> {
+  let cfg = config();
   rocket
     .manage(ConfigFile(config_file))
+    .manage(build_pool(&cfg.database.url, cfg.database.pool_size))
     .mount("/", management::routes())
     .attach(Template::fairing())
 }

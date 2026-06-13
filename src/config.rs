@@ -36,12 +36,17 @@ pub struct DatabaseConfig {
   pub url: String,
   /// Connection URL for the test database (used by the integration test-suite).
   pub test_url: String,
+  /// Maximum size of the web frontend connection pool. Sized for the expected load (~2 admins +
+  /// 20 users; the ~200 workers speak ZeroMQ to the dispatcher, not Postgres) within PostgreSQL's
+  /// default `max_connections` of 100, which is shared with the dispatcher.
+  pub pool_size: u32,
 }
 impl Default for DatabaseConfig {
   fn default() -> Self {
     DatabaseConfig {
       url: "postgres://cortex:cortex@localhost/cortex".to_string(),
       test_url: "postgres://cortex_tester:cortex_tester@localhost/cortex_tester".to_string(),
+      pool_size: 32,
     }
   }
 }

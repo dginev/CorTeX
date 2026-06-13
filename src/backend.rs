@@ -16,6 +16,7 @@ mod tasks_aggregate;
 pub(crate) use reports::progress_report;
 pub use reports::TaskReportOptions;
 
+use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use diesel::result::Error;
 use diesel::*;
 use std::collections::HashMap;
@@ -52,6 +53,18 @@ impl Default for Backend {
 /// Constructs a new Task store representation from a Postgres DB address
 pub fn connection_at(address: &str) -> PgConnection {
   PgConnection::establish(address).expect("Error connecting to {address}")
+}
+
+/// A pool of PostgreSQL connections (Diesel + r2d2).
+pub type DbPool = Pool<ConnectionManager<PgConnection>>;
+/// A connection checked out from a [`DbPool`]; dereferences to a `PgConnection`.
+pub type PooledConn = PooledConnection<ConnectionManager<PgConnection>>;
+
+/// Builds a lazily-initialized connection pool: connections are established on first checkout, so
+/// this never blocks or fails at startup even if the database is momentarily unavailable.
+pub fn build_pool(database_url: &str, max_size: u32) -> DbPool {
+  let manager = ConnectionManager::<PgConnection>::new(database_url);
+  Pool::builder().max_size(max_size).build_unchecked(manager)
 }
 /// Constructs the default Backend struct for testing
 pub fn testdb() -> Backend {

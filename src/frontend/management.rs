@@ -16,7 +16,6 @@
 use std::path::Path;
 use std::path::PathBuf;
 
-use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use figment::providers::Serialized;
 use figment::Figment;
@@ -28,6 +27,7 @@ use rocket::{Route, State};
 use rocket_dyn_templates::{context, Template};
 use serde::Serialize;
 
+use crate::backend::DbPool;
 use crate::config::{config, AssetsConfig, CacheConfig, CortexConfig, DispatcherConfig};
 
 /// Managed state: the path where the write path persists the configuration file.
@@ -140,20 +140,6 @@ fn mask_db_password(url: &str) -> String {
   url.to_string()
 }
 
-/// Probes the database, returning `(reachable, migrations_current)` from a single connection.
-fn diagnose_database() -> (bool, bool) {
-  match PgConnection::establish(&config().database.url) {
-    Ok(mut connection) => {
-      let reachable = diesel::sql_query("SELECT 1")
-        .execute(&mut connection)
-        .is_ok();
-      let migrations_current = !crate::migrations::has_pending_migrations(&mut connection);
-      (reachable, migrations_current)
-    },
-    Err(_) => (false, false),
-  }
-}
-
 /// Deep-merges a partial JSON patch onto the running config, validates it, and persists the
 /// non-secret sections to `path` as TOML. Returns the merged configuration.
 fn merge_and_persist(patch: &serde_json::Value, path: &Path) -> Result<CortexConfig, Status> {
@@ -171,10 +157,19 @@ fn merge_and_persist(patch: &serde_json::Value, path: &Path) -> Result<CortexCon
 #[get("/api/config")]
 pub fn api_config() -> Json<ConfigDto> { Json(ConfigDto::from_config(config())) }
 
-/// A structured, pollable health report for humans and agents alike.
+/// A structured, pollable health report for humans and agents alike (probes through the pool).
 #[get("/healthz")]
-pub fn healthz() -> Json<HealthDto> {
-  let (reachable, migrations_current) = diagnose_database();
+pub fn healthz(pool: &State<DbPool>) -> Json<HealthDto> {
+  let (reachable, migrations_current) = match pool.get() {
+    Ok(mut connection) => {
+      let reachable = diesel::sql_query("SELECT 1")
+        .execute(&mut *connection)
+        .is_ok();
+      let migrations_current = !crate::migrations::has_pending_migrations(&mut connection);
+      (reachable, migrations_current)
+    },
+    Err(_) => (false, false),
+  };
   let status = if reachable && migrations_current {
     "ok"
   } else {
