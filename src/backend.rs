@@ -229,23 +229,35 @@ impl Backend {
     rollup::refresh_report_summary(&mut self.connection)
   }
   /// Category-grain report for `(corpus, service, severity)`, read from the `report_summary`
-  /// rollup.
+  /// rollup, windowed to `[offset, offset + limit)` (ordered by descending task count).
   pub fn category_rollup(
     &mut self,
     corpus: &Corpus,
     service: &Service,
     severity: &str,
+    limit: i64,
+    offset: i64,
   ) -> Vec<ReportSummaryRow> {
-    rollup::category_rollup(&mut self.connection, corpus.id, service.id, severity)
-      .unwrap_or_default()
+    rollup::category_rollup(
+      &mut self.connection,
+      corpus.id,
+      service.id,
+      severity,
+      limit,
+      offset,
+    )
+    .unwrap_or_default()
   }
-  /// `what`-grain drill-down for `(corpus, service, severity, category)`, read from the rollup.
+  /// `what`-grain drill-down for `(corpus, service, severity, category)`, read from the rollup,
+  /// windowed to `[offset, offset + limit)` (ordered by descending task count).
   pub fn what_rollup(
     &mut self,
     corpus: &Corpus,
     service: &Service,
     severity: &str,
     category: &str,
+    limit: i64,
+    offset: i64,
   ) -> Vec<ReportSummaryRow> {
     rollup::what_rollup(
       &mut self.connection,
@@ -253,6 +265,8 @@ impl Backend {
       service.id,
       severity,
       category,
+      limit,
+      offset,
     )
     .unwrap_or_default()
   }

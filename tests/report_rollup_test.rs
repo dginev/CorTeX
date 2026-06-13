@@ -109,7 +109,7 @@ fn rollup_matches_seeded_ground_truth() {
   backend.refresh_report_summary().expect("refresh rollup");
 
   // --- Category grain: distinct tasks + total messages per category ----------------------------
-  let categories = backend.category_rollup(&corpus, &service, "warning");
+  let categories = backend.category_rollup(&corpus, &service, "warning", 100, 0);
   let math = categories
     .iter()
     .find(|r| r.category == "math")
@@ -128,7 +128,7 @@ fn rollup_matches_seeded_ground_truth() {
   assert_eq!(categories[0].category, "math");
 
   // --- `what` grain: drill-down within the math category ---------------------------------------
-  let whats = backend.what_rollup(&corpus, &service, "warning", "math");
+  let whats = backend.what_rollup(&corpus, &service, "warning", "math", 100, 0);
   let ux = whats
     .iter()
     .find(|r| r.what.as_deref() == Some("undefined_x"))
@@ -142,4 +142,20 @@ fn rollup_matches_seeded_ground_truth() {
   assert_eq!(uy.task_count, 1, "undefined_y: task A");
   assert_eq!(uy.message_count, 1);
   assert_eq!(whats.len(), 2, "exactly two `what` classes under math");
+
+  // --- Pagination: categories are ordered by descending task count (math=2, font=1), windowed ---
+  let page0 = backend.category_rollup(&corpus, &service, "warning", 1, 0);
+  let page1 = backend.category_rollup(&corpus, &service, "warning", 1, 1);
+  let page2 = backend.category_rollup(&corpus, &service, "warning", 1, 2);
+  assert_eq!(page0.len(), 1);
+  assert_eq!(
+    page0[0].category, "math",
+    "page 0 (offset 0) = the busiest category"
+  );
+  assert_eq!(page1.len(), 1);
+  assert_eq!(
+    page1[0].category, "font",
+    "page 1 (offset 1) = the next category"
+  );
+  assert!(page2.is_empty(), "page 2 (offset 2) is past the end");
 }

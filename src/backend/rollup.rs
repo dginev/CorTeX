@@ -23,7 +23,7 @@
 
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::{Integer, Text};
+use diesel::sql_types::{BigInt, Integer, Text};
 
 /// One precomputed report row from `report_summary`: a `what` (the drill-down report), a
 /// category-grain rollup (`what = None`, the "category" report), or the per-severity grand total
@@ -53,22 +53,27 @@ pub(crate) fn refresh_report_summary(connection: &mut PgConnection) -> QueryResu
 }
 
 /// Category-grain report for a `(corpus, service, severity)`: one row per category with its
-/// distinct-task and message counts.
+/// distinct-task and message counts, ordered by descending task count (ties broken by category name
+/// for a stable paging order), windowed to `[offset, offset + limit)`.
 pub(crate) fn category_rollup(
   connection: &mut PgConnection,
   corpus_id: i32,
   service_id: i32,
   severity: &str,
+  limit: i64,
+  offset: i64,
 ) -> QueryResult<Vec<ReportSummaryRow>> {
   sql_query(
     "SELECT category, what, task_count, message_count FROM report_summary \
      WHERE corpus_id = $1 AND service_id = $2 AND severity = $3 \
        AND category_is_total = 0 AND what_is_total = 1 \
-     ORDER BY task_count DESC, category ASC",
+     ORDER BY task_count DESC, category ASC LIMIT $4 OFFSET $5",
   )
   .bind::<Integer, _>(corpus_id)
   .bind::<Integer, _>(service_id)
   .bind::<Text, _>(severity)
+  .bind::<BigInt, _>(limit)
+  .bind::<BigInt, _>(offset)
   .get_results(connection)
 }
 
@@ -94,24 +99,30 @@ pub(crate) fn category_total(
   .optional()
 }
 
-/// `what`-grain drill-down for a `(corpus, service, severity, category)`: one row per `what`.
+/// `what`-grain drill-down for a `(corpus, service, severity, category)`: one row per `what`,
+/// ordered by descending task count (ties broken by `what` for a stable paging order), windowed to
+/// `[offset, offset + limit)`.
 pub(crate) fn what_rollup(
   connection: &mut PgConnection,
   corpus_id: i32,
   service_id: i32,
   severity: &str,
   category: &str,
+  limit: i64,
+  offset: i64,
 ) -> QueryResult<Vec<ReportSummaryRow>> {
   sql_query(
     "SELECT category, what, task_count, message_count FROM report_summary \
      WHERE corpus_id = $1 AND service_id = $2 AND severity = $3 \
        AND category_is_total = 0 AND what_is_total = 0 AND category = $4 \
-     ORDER BY task_count DESC, what ASC",
+     ORDER BY task_count DESC, what ASC LIMIT $5 OFFSET $6",
   )
   .bind::<Integer, _>(corpus_id)
   .bind::<Integer, _>(service_id)
   .bind::<Text, _>(severity)
   .bind::<Text, _>(category)
+  .bind::<BigInt, _>(limit)
+  .bind::<BigInt, _>(offset)
   .get_results(connection)
 }
 

@@ -107,6 +107,8 @@ pub(crate) fn task_report(
               options.service,
               severity,
               task_status,
+              options.page_size,
+              options.offset,
             );
           },
           // `what` drill-down within a category. `no_messages` is a per-task entry list, not an
@@ -118,6 +120,8 @@ pub(crate) fn task_report(
               options.service,
               severity,
               category,
+              options.page_size,
+              options.offset,
             );
           },
           _ => {},
@@ -189,9 +193,12 @@ fn category_grain_from_rollup(
   service: &Service,
   severity: &str,
   task_status: TaskStatus,
+  limit: i64,
+  offset: i64,
 ) -> Vec<HashMap<String, String>> {
   let category_rows =
-    rollup::category_rollup(connection, corpus.id, service.id, severity).unwrap_or_default();
+    rollup::category_rollup(connection, corpus.id, service.id, severity, limit, offset)
+      .unwrap_or_default();
   let grand_total =
     rollup::severity_total(connection, corpus.id, service.id, severity).unwrap_or_default();
   let total_valid_count = total_valid_task_count(connection, corpus, service);
@@ -222,9 +229,13 @@ fn what_grain_from_rollup(
   service: &Service,
   severity: &str,
   category: &str,
+  limit: i64,
+  offset: i64,
 ) -> Vec<HashMap<String, String>> {
-  let what_rows =
-    rollup::what_rollup(connection, corpus.id, service.id, severity, category).unwrap_or_default();
+  let what_rows = rollup::what_rollup(
+    connection, corpus.id, service.id, severity, category, limit, offset,
+  )
+  .unwrap_or_default();
   let category_total =
     rollup::category_total(connection, corpus.id, service.id, severity, category)
       .unwrap_or_default();
@@ -813,11 +824,13 @@ mod rollup_equivalence_tests {
       .collect()
   }
 
-  fn options<'a>(
+  fn options_paged<'a>(
     corpus: &'a Corpus,
     service: &'a Service,
     severity: &str,
     category: Option<&str>,
+    page_size: i64,
+    offset: i64,
   ) -> TaskReportOptions<'a> {
     TaskReportOptions {
       corpus,
@@ -826,9 +839,18 @@ mod rollup_equivalence_tests {
       category_opt: category.map(str::to_string),
       what_opt: None,
       all_messages: false,
-      offset: 0,
-      page_size: 100,
+      offset,
+      page_size,
     }
+  }
+
+  fn options<'a>(
+    corpus: &'a Corpus,
+    service: &'a Service,
+    severity: &str,
+    category: Option<&str>,
+  ) -> TaskReportOptions<'a> {
+    options_paged(corpus, service, severity, category, 100, 0)
   }
 
   #[test]
@@ -969,6 +991,34 @@ mod rollup_equivalence_tests {
     assert_eq!(
       fatal_fast, fatal_live,
       "empty severity: rollup vs live mismatch"
+    );
+
+    // --- Pagination: page_size 1 over the two warning categories (math=2 tasks, font=1) ----------
+    // Each page carries its single category plus the always-present whole-severity total row.
+    let page0 = by_name(task_report(
+      conn,
+      options_paged(&corpus, &service, "warning", None, 1, 0),
+    ));
+    let page1 = by_name(task_report(
+      conn,
+      options_paged(&corpus, &service, "warning", None, 1, 1),
+    ));
+    assert!(
+      page0.contains_key("math") && !page0.contains_key("font"),
+      "page 0 (busiest first) = math only"
+    );
+    assert!(
+      page1.contains_key("font") && !page1.contains_key("math"),
+      "page 1 = font only"
+    );
+    // Totals are whole-severity on every page, not per-page.
+    assert_eq!(
+      page0["total"]["tasks"], "4",
+      "total is whole-severity on page 0"
+    );
+    assert_eq!(
+      page1["total"]["tasks"], "4",
+      "total is whole-severity on page 1"
     );
   }
 

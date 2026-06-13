@@ -46,5 +46,13 @@
     </div>
     <div class="col-md-3"></div>
   </div>
+  <div class="report-pagination">
+    {% if global.offset_min_false %}
+    <span><a href="{{global.current_link_uri}}?offset={{global.prev_offset}}&page_size={{global.page_size}}&all={{global.all_messages}}">&lt;&lt;</a></span>
+    {% endif %}
+    {% if global.offset_max_false %}
+    <span><a href="{{global.current_link_uri}}?offset={{global.next_offset}}&page_size={{global.page_size}}&all={{global.all_messages}}">&gt;&gt;</a></span>
+    {% endif %}
+  </div>
 </div>
 {% endblock content %}

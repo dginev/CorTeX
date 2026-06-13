@@ -48,7 +48,17 @@ pub fn task_report(
       (from_offset - page_size).to_string(),
     );
   }
-  if fetched_report.len() >= page_size as usize {
+  // A full page of *data* rows implies there may be another page. Aggregate reports append summary
+  // rows (`total`, `no_messages`) that are not part of the paged set, so exclude them from the
+  // count — otherwise the "next" control would over-signal.
+  let data_rows = fetched_report
+    .iter()
+    .filter(|row| {
+      let name = row.get("name").map(String::as_str).unwrap_or("");
+      name != "total" && name != "no_messages"
+    })
+    .count();
+  if data_rows >= page_size as usize {
     global.insert("offset_max_false".to_string(), "true".to_string());
   }
   global.insert(
