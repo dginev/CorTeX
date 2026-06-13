@@ -30,7 +30,7 @@ fn main() {
 
   println!(
     "-- Registering service {:?} on corpus at {:?} ...",
-    &service_name, &corpus_path
+    service_name, corpus_path
   );
   let mut backend = Backend::default();
   let service_registered_result = Service::find_by_name(&service_name, &mut backend.connection);

@@ -4,7 +4,6 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
-#![feature(proc_macro_hygiene, decl_macro)]
 #![allow(clippy::implicit_hasher, clippy::let_unit_value)]
 #[macro_use]
 extern crate rocket;
@@ -71,13 +70,13 @@ fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
     let mut global = HashMap::new();
     global.insert(
       "title".to_string(),
-      format!("Worker report for service {} ", &service_name),
+      format!("Worker report for service {} ", service_name),
     );
     global.insert(
       "description".to_string(),
       format!(
         "Worker report for service {} as registered by the CorTeX dispatcher",
-        &service_name
+        service_name
       ),
     );
     global.insert("service_name".to_string(), service_name.to_string());
@@ -146,7 +145,7 @@ fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
   }
   Err(NotFound(format!(
     "Corpus {} is not registered",
-    &corpus_name
+    corpus_name
   )))
 }
 

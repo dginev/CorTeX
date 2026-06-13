@@ -22,8 +22,8 @@ extern crate lazy_static;
 extern crate rocket;
 
 pub mod backend;
-pub mod config;
 pub mod concerns;
+pub mod config;
 pub mod dispatcher;
 pub mod frontend;
 pub mod helpers;

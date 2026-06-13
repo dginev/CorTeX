@@ -30,7 +30,7 @@ impl Ventilator {
   /// The ventilator shares state with other manager threads via queues for tasks in progress,
   /// as well as a queue for completed tasks pending persisting to disk.
   /// A job limit can be provided as a termination condition for the sink server.
-  /// 
+  ///
   /// Upon premature termination, returns the number of tasks processed.
   pub fn start(
     &self,
@@ -57,8 +57,8 @@ impl Ventilator {
       let mut identity = zmq::Message::new();
       let mut msg = zmq::Message::new();
       // There appears to be a very rare failure mode in 08.2025 sandbox conversion testing,
-      // where 3 adjacent empty messages are received by the ventilator, causing a permanetly shuffled
-      // state. 
+      // where 3 adjacent empty messages are received by the ventilator, causing a permanetly
+      // shuffled state.
       while identity.is_empty() {
         ventilator.recv(&mut identity, 0)?;
       }
@@ -66,11 +66,14 @@ impl Ventilator {
       let identity_str = identity.as_str().unwrap_or_default().to_string();
       let service_name = msg.as_str().unwrap_or_default().to_string();
       if identity_str.is_empty() && service_name.is_empty() {
-        // careful to only skip if both empty, to avoid evenness issues. But a restart would be healthier really.
-        eprintln!("-- FAILURE: empty request {service_name:?} requested by worker {identity_str:?}. Skip.");
+        // careful to only skip if both empty, to avoid evenness issues. But a restart would be
+        // healthier really.
+        eprintln!(
+          "-- FAILURE: empty request {service_name:?} requested by worker {identity_str:?}. Skip."
+        );
         return Ok(source_job_count);
       }
-      
+
       let request_time = time::get_time();
       source_job_count += 1;
       let mut dispatched_task_opt: Option<TaskProgress> = None;
@@ -78,13 +81,14 @@ impl Ventilator {
       let service_opt = match server::get_sync_service(&service_name, services_arc, &mut backend) {
         Some(s) => Some(s),
         None => {
-          // As it happens, we can never survive this mistake with our current zmq code. We need a full reboot to regain sanity.
+          // As it happens, we can never survive this mistake with our current zmq code. We need a
+          // full reboot to regain sanity.
           eprintln!("-- FAILURE: unknown service name {service_name:?} requested by worker {identity_str:?}. Mock response sent.");
           ventilator.send(identity, SNDMORE)?;
           ventilator.send("0", SNDMORE)?;
           ventilator.send(Vec::new(), 0)?;
           continue;
-        }
+        },
       };
       if let Some(service) = service_opt {
         if !queues.contains_key(&service_name) {
@@ -201,7 +205,9 @@ impl Ventilator {
           self.backend_address.clone(),
         )?;
       } else {
-        eprintln!("-- No such service {service_name:?} in ventilator request from {identity_str:?}");
+        eprintln!(
+          "-- No such service {service_name:?} in ventilator request from {identity_str:?}"
+        );
       }
       // Record that a task has been dispatched in the progress queue
       if let Some(dispatched_task) = dispatched_task_opt {

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# CorTeX pre-push gate: the tree must be rustfmt-clean AND clippy-clean (warnings denied)
+# before anything is shared. This compiles, so it is slower than the pre-commit hook.
+set -euo pipefail
+# shellcheck disable=SC1091
+source "$HOME/.cargo/env" 2>/dev/null || true
+cd "$(git rev-parse --show-toplevel)"
+
+echo "[pre-push] cargo fmt --all --check"
+cargo fmt --all --check
+
+echo "[pre-push] cargo clippy --all-targets -- -D warnings"
+cargo clippy --all-targets -- -D warnings
+
+echo "[pre-push] OK"

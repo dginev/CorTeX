@@ -203,11 +203,11 @@ pub fn serve_report(
     } else {
       Err(NotFound(format!(
         "Service {} does not exist.",
-        &service_name
+        service_name
       )))
     }
   } else {
-    Err(NotFound(format!("Corpus {} does not exist.", &corpus_name)))
+    Err(NotFound(format!("Corpus {} does not exist.", corpus_name)))
   }
 }
 

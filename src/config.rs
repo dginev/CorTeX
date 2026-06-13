@@ -14,7 +14,8 @@
 //! Values are resolved with the following precedence (lowest to highest):
 //! 1. built-in [`Default`] values,
 //! 2. an optional `cortex.toml` file in the working directory,
-//! 3. `CORTEX_`-prefixed environment variables (nested with `__`, e.g. `CORTEX_DISPATCHER__SOURCE_PORT`),
+//! 3. `CORTEX_`-prefixed environment variables (nested with `__`, e.g.
+//!    `CORTEX_DISPATCHER__SOURCE_PORT`),
 //! 4. the legacy `DATABASE_URL` / `TEST_DATABASE_URL` variables (also read from a local `.env`),
 //!    which take final precedence so existing deployments keep working unchanged.
 //!
@@ -156,7 +157,8 @@ impl CortexConfig {
     }
     // Back-compat: the legacy frontend `config.json` (captcha_secret + rerun_tokens), if present in
     // the working directory, remains authoritative for the auth section so running deployments keep
-    // working. The new home for these values is the `[auth]` section of `cortex.toml` / `CORTEX_AUTH__*`.
+    // working. The new home for these values is the `[auth]` section of `cortex.toml` /
+    // `CORTEX_AUTH__*`.
     if let Ok(text) = std::fs::read_to_string("config.json") {
       match serde_json::from_str::<LegacyFrontendConfig>(&text) {
         Ok(legacy) => {

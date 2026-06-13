@@ -14,7 +14,11 @@ impl Fairing for CORS {
     }
   }
 
-  async fn on_response<'r>(&self, request: &'r rocket::Request<'_>, response: &mut rocket::Response<'r>) {
+  async fn on_response<'r>(
+    &self,
+    request: &'r rocket::Request<'_>,
+    response: &mut rocket::Response<'r>,
+  ) {
     if request.method() == rocket::http::Method::Options
       || response.content_type() == Some(rocket::http::ContentType::JSON)
     {

@@ -75,7 +75,7 @@ fn main() -> Result<(), Error> {
           }
           let mut raw_entry_data = Vec::new();
           while let Ok(chunk) = archive_reader.read_data(chunk_size) {
-            raw_entry_data.extend(chunk.into_iter());
+            raw_entry_data.extend(chunk);
           }
           if let Ok(log_string) = str::from_utf8(&raw_entry_data) {
             for line in log_string.lines() {

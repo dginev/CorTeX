@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# CorTeX pre-commit gate: the tree must be rustfmt-clean before every commit.
+# Fast (no compilation). The heavier clippy gate runs on pre-push.
+set -euo pipefail
+# shellcheck disable=SC1091
+source "$HOME/.cargo/env" 2>/dev/null || true
+cd "$(git rev-parse --show-toplevel)"
+
+if ! cargo fmt --all --check >/dev/null 2>&1; then
+  echo "[pre-commit] rustfmt check failed." >&2
+  echo "[pre-commit] Run 'cargo fmt --all' and re-stage your changes." >&2
+  exit 1
+fi
+echo "[pre-commit] rustfmt OK"

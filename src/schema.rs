@@ -567,16 +567,16 @@ diesel::table! {
 diesel::joinable!(historical_tasks -> tasks (task_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
-    corpora,
-    dependencies,
-    historical_runs,
-    historical_tasks,
-    log_errors,
-    log_fatals,
-    log_infos,
-    log_invalids,
-    log_warnings,
-    services,
-    tasks,
-    worker_metadata,
+  corpora,
+  dependencies,
+  historical_runs,
+  historical_tasks,
+  log_errors,
+  log_fatals,
+  log_infos,
+  log_invalids,
+  log_warnings,
+  services,
+  tasks,
+  worker_metadata,
 );

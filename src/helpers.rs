@@ -496,7 +496,7 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
           // read the usually manageable log file in memory
           let mut raw_log_data = Vec::new();
           while let Ok(chunk) = archive_reader.read_data(BUFFER_SIZE) {
-            raw_log_data.extend(chunk.into_iter());
+            raw_log_data.extend(chunk);
           }
           let log_string: String = match str::from_utf8(&raw_log_data) {
             Ok(some_utf_string) => some_utf_string.to_string(),
