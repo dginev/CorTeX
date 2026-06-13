@@ -3,5 +3,6 @@ pub mod cached;
 pub mod concerns;
 pub mod cors;
 pub mod helpers;
+pub mod management;
 pub mod params;
 pub mod server;

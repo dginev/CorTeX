@@ -348,6 +348,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "time 0.1.45",
+ "toml",
  "zmq",
 ]
 

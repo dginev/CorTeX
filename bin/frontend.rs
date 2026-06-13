@@ -588,8 +588,7 @@ fn rocket() -> _ {
         savetasks
       ],
     )
-    .attach(Template::fairing())
     .attach(CORS());
-  // Mount the management & health routes (the same builder the integration tests exercise).
+  // Mount the management/health/settings capability; the builder owns the Template fairing.
   cortex::frontend::server::mount_management(rocket)
 }

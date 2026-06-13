@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CorTeX Configuration</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; color: #222; }
+    h1 { margin-bottom: .25rem; }
+    .muted { color: #666; }
+    fieldset { margin: 1rem 0; border: 1px solid #ccc; border-radius: .4rem; padding: .5rem 1rem 1rem; }
+    legend { font-weight: 600; padding: 0 .4rem; }
+    label { display: block; margin: .6rem 0 .15rem; font-size: .9rem; font-weight: 600; }
+    input { width: 100%; padding: .35rem .5rem; border: 1px solid #bbb; border-radius: .25rem; box-sizing: border-box; }
+    button { margin-top: 1rem; padding: .5rem 1.2rem; font-size: 1rem; cursor: pointer; }
+    code { background: #f3f3f3; padding: .1rem .3rem; border-radius: .2rem; }
+  </style>
+</head>
+<body>
+  <h1>CorTeX Configuration</h1>
+  <p class="muted">Changes are saved to the configuration file and take effect on restart. Secrets
+    are masked and edited out-of-band (<code>.env</code> / <code>config.json</code>).</p>
+
+  <fieldset>
+    <legend>Database <span class="muted">(read-only)</span></legend>
+    <p>URL: <code>{{ config.database.url }}</code></p>
+  </fieldset>
+
+  <form method="post" action="/settings">
+    <fieldset>
+      <legend>Dispatcher</legend>
+      <label for="src">Source port</label>
+      <input id="src" name="dispatcher_source_port" type="number" value="{{ config.dispatcher.source_port }}">
+      <label for="res">Result port</label>
+      <input id="res" name="dispatcher_result_port" type="number" value="{{ config.dispatcher.result_port }}">
+      <label for="q">Queue size</label>
+      <input id="q" name="dispatcher_queue_size" type="number" value="{{ config.dispatcher.queue_size }}">
+      <label for="m">Message size (bytes)</label>
+      <input id="m" name="dispatcher_message_size" type="number" value="{{ config.dispatcher.message_size }}">
+    </fieldset>
+
+    <fieldset>
+      <legend>Cache</legend>
+      <label for="redis">Redis URL</label>
+      <input id="redis" name="cache_redis_url" value="{{ config.cache.redis_url }}">
+      <label for="req">Required at boot (true/false)</label>
+      <input id="req" name="cache_required" value="{{ config.cache.required }}">
+    </fieldset>
+
+    <fieldset>
+      <legend>Assets</legend>
+      <label for="tpl">Template directory</label>
+      <input id="tpl" name="assets_template_dir" value="{{ config.assets.template_dir }}">
+      <label for="pubdir">Public directory</label>
+      <input id="pubdir" name="assets_public_dir" value="{{ config.assets.public_dir }}">
+    </fieldset>
+
+    <button type="submit">Save configuration</button>
+  </form>
+
+  <fieldset>
+    <legend>Auth <span class="muted">(read-only)</span></legend>
+    <p class="muted">Captcha secret set: {{ config.auth.captcha_secret_set }} &middot;
+      Rerun tokens: {{ config.auth.rerun_token_count }}</p>
+  </fieldset>
+</body>
+</html>

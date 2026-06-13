@@ -135,7 +135,7 @@ impl CortexConfig {
   /// Does not apply the legacy `DATABASE_URL` overrides; see [`CortexConfig::load`].
   pub fn figment() -> Figment {
     Figment::from(Serialized::defaults(CortexConfig::default()))
-      .merge(Toml::file("cortex.toml"))
+      .merge(Toml::file(config_file_path()))
       .merge(Env::prefixed("CORTEX_").split("__"))
   }
 
@@ -177,6 +177,14 @@ impl CortexConfig {
 struct LegacyFrontendConfig {
   captcha_secret: String,
   rerun_tokens: HashMap<String, String>,
+}
+
+/// The path of the optional `cortex.toml` configuration file, read and written by both the loader
+/// and the Settings write path. Overridable via the `CORTEX_CONFIG_FILE` environment variable.
+pub fn config_file_path() -> std::path::PathBuf {
+  std::env::var("CORTEX_CONFIG_FILE")
+    .map(std::path::PathBuf::from)
+    .unwrap_or_else(|_| std::path::PathBuf::from("cortex.toml"))
 }
 
 /// Returns the process-wide, lazily-loaded configuration.
