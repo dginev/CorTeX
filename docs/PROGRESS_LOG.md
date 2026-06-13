@@ -37,4 +37,10 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   snapshots — what regressed/improved between runs), the agent twin of the diff-summary screen. The
   legacy HTML diff route `.unwrap()`s the date query param and **panics on malformed input**; the twin
   returns **`400`** instead (recorded as KNOWN_ISSUES F-1). Test covers the JSON shape + the 400 guard.
-  *Next:* the runs HTML twin + per-run task list (`list_task_diffs`); then run actions.
+- **Arm 7 — per-task run drill-down:** `GET /api/runs/<corpus>/<service>/tasks?previous=&current=&previous_status=&current_status=&offset=&page_size=`
+  exposes `list_task_diffs` as `Vec<TaskDiffDto>` — *which documents* regressed/improved between two
+  snapshots (the actionable drill-down behind the matrix), **paginated** (default 100), with graceful
+  param parsing (unknown status/date → `400`, empty → no filter). Completes the runs **read** triad
+  (list · current · diff-summary · per-task). Test: shape + the bad-status 400 guard.
+  *Next:* the runs HTML twin; then run **actions** (rerun exists via `mark_rerun`); or pivot to a
+  backend-robustness item (e.g. D-2 worker-metadata upsert).

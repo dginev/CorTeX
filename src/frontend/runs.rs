@@ -19,8 +19,9 @@ use rocket::serde::json::Json;
 use rocket::{Route, State};
 use serde::Serialize;
 
-use crate::backend::{summary_task_diffs, DbPool};
-use crate::models::{Corpus, HistoricalRun, Service};
+use crate::backend::{list_task_diffs, summary_task_diffs, DbPool};
+use crate::helpers::TaskStatus;
+use crate::models::{Corpus, DiffStatusFilter, HistoricalRun, Service, TaskRunMetadata};
 
 /// A historical `(corpus, service)` run as exposed over the API: a stable `id` handle,
 /// who/why/when, whether it has completed, and the per-severity task tallies captured at
@@ -143,11 +144,22 @@ pub struct RunDiffDto {
 /// `400`. (The legacy HTML diff route `.unwrap()`s here and panics — a dispatch-path panic this
 /// twin fixes; see `docs/KNOWN_ISSUES.md`.)
 fn parse_snapshot_date(raw: Option<&str>) -> Result<Option<NaiveDateTime>, Status> {
-  match raw {
+  match raw.map(str::trim).filter(|value| !value.is_empty()) {
     None => Ok(None),
     Some(value) => NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f")
       .map(Some)
       .map_err(|_| Status::BadRequest),
+  }
+}
+
+/// Parses an optional severity key (`no_problem`/`warning`/`error`/`fatal`/…) into a status filter,
+/// mapping a present-but-unknown value to `400`. Absent or empty means "no filter on this side".
+fn parse_status(raw: Option<&str>) -> Result<Option<TaskStatus>, Status> {
+  match raw.map(str::trim).filter(|value| !value.is_empty()) {
+    None => Ok(None),
+    Some(value) => TaskStatus::from_key(value)
+      .map(Some)
+      .ok_or(Status::BadRequest),
   }
 }
 
@@ -187,5 +199,69 @@ pub fn api_run_diff(
   }))
 }
 
+/// A single task's status transition between two snapshots — which document regressed or improved,
+/// and when each snapshot was taken.
+#[derive(Debug, Serialize)]
+pub struct TaskDiffDto {
+  /// Task identifier.
+  pub task_id: String,
+  /// Document entry name (trimmed).
+  pub entry: String,
+  /// Severity key in the earlier snapshot.
+  pub previous_status: String,
+  /// Severity key in the later snapshot.
+  pub current_status: String,
+  /// When the earlier snapshot was saved (`YYYY-MM-DD`).
+  pub previous_saved_at: String,
+  /// When the later snapshot was saved (`YYYY-MM-DD`).
+  pub current_saved_at: String,
+}
+
+impl From<TaskRunMetadata> for TaskDiffDto {
+  fn from(task: TaskRunMetadata) -> TaskDiffDto {
+    TaskDiffDto {
+      task_id: task.task_id,
+      entry: task.entry,
+      previous_status: task.previous_status,
+      current_status: task.current_status,
+      previous_saved_at: task.previous_saved_at,
+      current_saved_at: task.current_saved_at,
+    }
+  }
+}
+
+/// Lists the individual tasks whose status changed between two snapshots of a `(corpus, service)`
+/// — the drill-down behind the comparison matrix (which documents regressed/improved). Optionally
+/// filtered to a `previous_status`/`current_status` transition and paginated (`offset`/`page_size`,
+/// default 100). `400` on a malformed date or status, `404` if the corpus/service is unknown.
+#[allow(clippy::too_many_arguments)]
+#[get("/api/runs/<corpus>/<service>/tasks?<previous>&<current>&<previous_status>&<current_status>&<offset>&<page_size>")]
+pub fn api_run_task_diffs(
+  corpus: &str,
+  service: &str,
+  previous: Option<&str>,
+  current: Option<&str>,
+  previous_status: Option<&str>,
+  current_status: Option<&str>,
+  offset: Option<usize>,
+  page_size: Option<usize>,
+  pool: &State<DbPool>,
+) -> Result<Json<Vec<TaskDiffDto>>, Status> {
+  let filters = DiffStatusFilter {
+    previous_status: parse_status(previous_status)?,
+    current_status: parse_status(current_status)?,
+    previous_date: parse_snapshot_date(previous)?,
+    current_date: parse_snapshot_date(current)?,
+    offset: offset.unwrap_or(0),
+    page_size: page_size.unwrap_or(100),
+  };
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let (corpus, service) = resolve(corpus, service, &mut connection)?;
+  let tasks = list_task_diffs(&mut connection, &corpus, &service, filters);
+  Ok(Json(tasks.into_iter().map(TaskDiffDto::from).collect()))
+}
+
 /// The route set for the historical-runs capability.
-pub fn routes() -> Vec<Route> { routes![api_runs, api_run_current, api_run_diff] }
+pub fn routes() -> Vec<Route> {
+  routes![api_runs, api_run_current, api_run_diff, api_run_task_diffs]
+}

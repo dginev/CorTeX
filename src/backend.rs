@@ -14,6 +14,7 @@ mod reports;
 mod rollup;
 mod services_aggregate;
 mod tasks_aggregate;
+pub(crate) use reports::list_task_diffs;
 pub(crate) use reports::progress_report;
 pub(crate) use reports::summary_task_diffs;
 pub use reports::TaskReportOptions;

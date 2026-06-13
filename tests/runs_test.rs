@@ -147,6 +147,27 @@ fn api_lists_runs_and_reports_current() {
     Status::BadRequest,
     "malformed date -> 400, not a panic"
   );
+
+  // --- Per-task diff: well-formed + paginated; an unknown status filter is a 400 ---------------
+  let response = client
+    .get(format!(
+      "/api/runs/{CORPUS_NAME}/{SERVICE_NAME}/tasks?page_size=5"
+    ))
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  let tasks: Value = response.into_json().expect("tasks json");
+  assert!(tasks.is_array(), "per-task diff is a JSON array");
+
+  let response = client
+    .get(format!(
+      "/api/runs/{CORPUS_NAME}/{SERVICE_NAME}/tasks?previous_status=not-a-status"
+    ))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::BadRequest,
+    "unknown status filter -> 400"
+  );
 }
 
 #[test]
