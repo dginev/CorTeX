@@ -229,6 +229,15 @@ These are foundations several arms build on. Decide them early (some are Open Qu
 - **D10 — Identity is a first-class column, not a token map.** Replace `rerun_tokens` with a
   `users` + API-token model (harvest the `admin-ui` schema), and thread an **actor** (human or
   agent) through every write so `historical_runs.owner` and a new audit log are always truthful.
+- **D11 — Lightweight UI: server-rendered HTML + CSS affordances, no new JS frameworks.** The admin
+  screens are plain Tera-rendered HTML whose actions are native `<form>` POSTs to the
+  symmetry-contract endpoints, using HTML/CSS affordances (`<form>`, `<details>`/`<summary>`,
+  `<dialog>`, links, CSS) for interaction. **Light jQuery** (already in the tree alongside Bootstrap)
+  is acceptable for optional polish — e.g. the existing AJAX rerun/preview — but we add **no new JS
+  framework** (no React/Vue/Svelte/Alpine, and **not HTMX** — it is a new JS dependency). Every admin
+  action must work without JavaScript via a form POST; JS is progressive enhancement only. This keeps
+  both the admin app and the public read-only view (Arm 13) cheap to host, audit, and maintain, and
+  dovetails with the symmetry contract (the HTML rendering is just forms over the same controller).
 
 **Convention for every arm (the symmetry contract):** a screen and its agent API are **one
 controller** returning **one shared DTO** — HTML via Tera for `Accept: text/html`, JSON (schema'd)
