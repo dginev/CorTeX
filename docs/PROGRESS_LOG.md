@@ -44,3 +44,12 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   (list · current · diff-summary · per-task). Test: shape + the bad-status 400 guard.
   *Next:* the runs HTML twin; then run **actions** (rerun exists via `mark_rerun`); or pivot to a
   backend-robustness item (e.g. D-2 worker-metadata upsert).
+- **D-2 — worker-metadata race fixed (backend robustness):** the dispatcher's metadata writer did
+  find-then-update and **silently dropped** the return count when the sink outran the ventilator's
+  insert; with no uniqueness, concurrent inserts could also duplicate rows. Rewrote both writers as
+  **`ON CONFLICT (name, service_id) DO UPDATE` upserts** (synchronous `upsert_dispatched`/
+  `upsert_received` helpers behind the off-thread spawn), added migration `20260613160000`
+  (`UNIQUE(name, service_id)` after a one-time dedupe), and replaced the silent `.unwrap_or(0)` with
+  `eprintln!`. Unit tests: out-of-order (received-before-dispatched isn't dropped) + accumulation in a
+  single row. Full dispatcher round-trip (`echo_roundtrip`) still green. (D-1 thread-per-event spawn
+  remains.) Migration reversibility verified.
