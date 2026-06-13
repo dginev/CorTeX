@@ -32,6 +32,9 @@ pub struct TaskManager {
   /// size of an individual message chunk sent via zeromq
   /// (keep this small to avoid large RAM use, increase to reduce network bandwidth)
   pub message_size: usize,
+  /// backpressure threshold: max in-flight (dispatched-but-unfinished) tasks before the ventilator
+  /// stops leasing new work and mock-replies (KNOWN_ISSUES D-6)
+  pub max_in_flight: usize,
   /// address for the Task store postgres endpoint
   pub backend_address: String,
 }
@@ -43,6 +46,7 @@ impl Default for TaskManager {
       result_port: 51696,
       queue_size: 100,
       message_size: 100_000,
+      max_in_flight: config().dispatcher.max_in_flight,
       backend_address: default_db_address().to_string(),
     }
   }
@@ -73,6 +77,7 @@ impl TaskManager {
     let source_port = self.source_port;
     let source_queue_size = self.queue_size;
     let source_message_size = self.message_size;
+    let source_max_in_flight = self.max_in_flight;
     let source_backend_address = self.backend_address.clone();
 
     // Next prepare the finalize thread which will persist finished jobs to the DB
@@ -129,6 +134,7 @@ impl TaskManager {
           port: source_port,
           queue_size: source_queue_size,
           message_size: source_message_size,
+          max_in_flight: source_max_in_flight,
           backend_address: vent_backend_address,
           metadata: vent_metadata,
         };

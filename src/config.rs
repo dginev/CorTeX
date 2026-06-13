@@ -64,6 +64,15 @@ pub struct DispatcherConfig {
   pub queue_size: usize,
   /// Size of an individual ZeroMQ message chunk, in bytes.
   pub message_size: usize,
+  /// Backpressure threshold: the maximum number of in-flight (dispatched-but-unfinished) tasks the
+  /// ventilator tolerates before it stops leasing new work and mock-replies to requesting workers
+  /// (which back off and retry). This bounds the in-flight set so it drains via the sink as
+  /// results return, instead of growing toward the hard panic bound
+  /// [`crate::dispatcher::server::PROGRESS_QUEUE_HARD_LIMIT`] — graceful degradation under
+  /// overload rather than a crash (KNOWN_ISSUES D-6). Keep it well below that hard bound to
+  /// leave recovery headroom. In steady state the in-flight set is ~the worker count (~200), so
+  /// the default leaves a wide margin.
+  pub max_in_flight: usize,
 }
 impl Default for DispatcherConfig {
   fn default() -> Self {
@@ -72,6 +81,7 @@ impl Default for DispatcherConfig {
       result_port: 51696,
       queue_size: 800,
       message_size: 100_000,
+      max_in_flight: 5000,
     }
   }
 }

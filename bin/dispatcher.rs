@@ -19,6 +19,7 @@ fn main() {
     //   (typically specified in /etc/postgresql/9.1/main/postgresql.conf or similar)
     queue_size: cfg.dispatcher.queue_size,
     message_size: cfg.dispatcher.message_size,
+    max_in_flight: cfg.dispatcher.max_in_flight,
     backend_address: cfg.database.url.clone(),
   };
   manager

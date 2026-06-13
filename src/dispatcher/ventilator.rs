@@ -23,6 +23,10 @@ pub struct Ventilator {
   pub message_size: usize,
   /// address for the Task store postgres endpoint
   pub backend_address: String,
+  /// backpressure threshold: stop leasing new work once this many tasks are in-flight
+  /// (dispatched-but-unfinished), so the in-flight set drains via the sink instead of growing
+  /// toward the hard panic bound (KNOWN_ISSUES D-6)
+  pub max_in_flight: usize,
   /// non-blocking handle to the background worker-metadata writer
   pub metadata: WorkerMetadataSender,
 }
@@ -93,6 +97,23 @@ impl Ventilator {
         },
       };
       if let Some(service) = service_opt {
+        // Backpressure (KNOWN_ISSUES D-6, principle #4): if the in-flight set is saturated, don't
+        // lease more work — mock-reply so the worker backs off and retries. The set then drains as
+        // the sink receives results, instead of growing toward the hard panic bound. Degrade
+        // gracefully under overload rather than crash.
+        if server::in_flight_saturated(
+          server::progress_queue_len(progress_queue_arc),
+          self.max_in_flight,
+        ) {
+          eprintln!(
+            "-- BACKPRESSURE: in-flight set at capacity ({}); mock-replying to worker {identity_str:?}",
+            self.max_in_flight
+          );
+          ventilator.send(identity, SNDMORE)?;
+          ventilator.send("0", SNDMORE)?;
+          ventilator.send(Vec::new(), 0)?;
+          continue;
+        }
         if !queues.contains_key(&service_name) {
           queues.insert(service_name.clone(), Vec::new());
         }

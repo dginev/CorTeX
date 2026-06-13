@@ -144,3 +144,21 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   request-path-unwrap audit so nothing is fix-and-forgotten.
   *Next:* migrate the legacy Vega `history` page onto `frontend/runs.rs` (last runs-screen still in the
   bin); or pivot to backend D-6 (bounded in-flight task set + dispatch backpressure).
+- **D-6 — dispatch backpressure (backend robustness):** the dispatcher's in-flight task set
+  (`progress_queue`) was bounded only by a hard panic at 10k — under overload it grew until the process
+  **crashed** instead of degrading. Added **backpressure** (principle #4): the ventilator now checks the
+  in-flight size before leasing and, once it hits `DispatcherConfig.max_in_flight` (new config knob,
+  default 5000), stops leasing and **mock-replies** so workers back off and retry; the set then drains
+  via the sink (returning results) and holds steady below the panic. Threaded `max_in_flight` through
+  `TaskManager` → `Ventilator` (+ `bin/dispatcher.rs` from config; the 3 explicit test/example
+  constructions take `..TaskManager::default()`). Rationalized the two magic `10_000` bounds into named
+  `server::PROGRESS_QUEUE_HARD_LIMIT` / `DONE_QUEUE_HARD_LIMIT` constants (the hard backstop behind the
+  soft backpressure), and extracted `in_flight_saturated` + `progress_queue_len` helpers. **Tests** (new
+  `server::tests`): saturation boundary is inclusive; `progress_queue_len` tracks dispatch + sink-drain;
+  and the **invariant** `max_in_flight < PROGRESS_QUEUE_HARD_LIMIT` (so backpressure can't be silently
+  configured into dead code, reintroducing the crash) — the "common failures tested, guards asserted"
+  mandate. `echo_roundtrip` (full dispatcher) green (default 5000 ≫ its ~100 tasks, so the normal path is
+  untouched). Ledger: **D-6 → 🟢**; residual noted (timeout reaping still coupled to refetch → slow
+  recovery only in a fully-wedged set, a future refinement, not unbounded growth).
+  *Next:* decouple the timeout reaper from refetch (the D-6 residual); migrate the legacy Vega `history`
+  page onto `frontend/runs.rs`; or prune the now-dead `CacheConfig` (Redis) leftover in `config.rs`.

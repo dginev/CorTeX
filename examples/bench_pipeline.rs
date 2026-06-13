@@ -146,6 +146,7 @@ fn main() {
       queue_size: 100,
       message_size: 100_000,
       backend_address: test_db_address().to_string(),
+      ..TaskManager::default()
     }
     .start(None)
     .expect("manager start");

@@ -56,6 +56,7 @@ fn main() {
       queue_size: 100_000,
       message_size: 100,
       backend_address: default_db_address().to_string(),
+      ..TaskManager::default()
     };
     assert!(manager.start(Some(1)).is_ok());
   });
