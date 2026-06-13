@@ -50,7 +50,8 @@ dotenvy = "0.15.7"
 figment = { version = "0.10", features = ["toml", "env"] }
 toml = "0.8"
 chrono = "0.4.45"
-diesel = {version="2.2.10", features = ["postgres", "chrono", "r2d2"]}
+diesel = {version="2.2.10", features = ["postgres", "chrono", "r2d2", "uuid", "serde_json"]}
 diesel_migrations = "2.2"
 clap = { version = "4", features = ["derive"] }
+uuid = { version = "1", features = ["v4", "serde"] }
 lazy_static = "1.0.0"

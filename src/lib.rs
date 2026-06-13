@@ -29,6 +29,7 @@ pub mod dispatcher;
 pub mod frontend;
 pub mod helpers;
 pub mod importer;
+pub mod jobs;
 pub mod migrations;
 pub mod models;
 pub mod reports;
