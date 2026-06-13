@@ -9,8 +9,8 @@
 
 use cortex::backend::{self, build_pool, test_db_address};
 use cortex::frontend::server::mount_api_with;
-use cortex::models::NewCorpus;
-use cortex::schema::corpora;
+use cortex::models::{Corpus, NewCorpus, NewService, NewTask, Service};
+use cortex::schema::{corpora, services, tasks};
 use diesel::prelude::*;
 use rocket::http::{ContentType, Status};
 use rocket::local::blocking::Client;
@@ -52,4 +52,74 @@ fn api_corpora_lists_registered_corpora() {
   assert!(ours["complex"].is_boolean());
 
   let _ = diesel::delete(corpora::table.filter(corpora::name.eq(name))).execute(&mut db.connection);
+}
+
+fn cleanup(db: &mut backend::Backend, corpus_name: &str, service_name: &str) {
+  if let Ok(corpus) = Corpus::find_by_name(corpus_name, &mut db.connection) {
+    let _ = diesel::delete(tasks::table.filter(tasks::corpus_id.eq(corpus.id)))
+      .execute(&mut db.connection);
+    let _ =
+      diesel::delete(corpora::table.filter(corpora::id.eq(corpus.id))).execute(&mut db.connection);
+  }
+  let _ = diesel::delete(services::table.filter(services::name.eq(service_name)))
+    .execute(&mut db.connection);
+}
+
+#[test]
+fn api_corpus_detail_reports_services_and_counts() {
+  let corpus_name = "corpus_detail_test";
+  let service_name = "corpus_detail_svc";
+  let mut db = backend::testdb();
+  cleanup(&mut db, corpus_name, service_name);
+
+  db.add(&NewCorpus {
+    name: corpus_name.to_string(),
+    path: "/tmp/corpus_detail_test".to_string(),
+    complex: true,
+    description: "d".to_string(),
+  })
+  .expect("insert corpus");
+  let corpus = Corpus::find_by_name(corpus_name, &mut db.connection).unwrap();
+  db.add(&NewService {
+    name: service_name.to_string(),
+    version: 0.1,
+    inputformat: "tex".to_string(),
+    outputformat: "html".to_string(),
+    inputconverter: None,
+    complex: true,
+    description: "d".to_string(),
+  })
+  .expect("insert service");
+  let service = Service::find_by_name(service_name, &mut db.connection).unwrap();
+  db.add(&NewTask {
+    service_id: service.id,
+    corpus_id: corpus.id,
+    status: -1, // no_problem
+    entry: "/tmp/corpus_detail_test/1/1.zip".to_string(),
+  })
+  .expect("insert task");
+
+  let client = client();
+  let path = format!("/api/corpora/{corpus_name}");
+  let response = client.get(path.as_str()).dispatch();
+  assert_eq!(response.status(), Status::Ok);
+
+  let body: serde_json::Value = response.into_json().expect("a JSON body");
+  assert_eq!(body["name"], corpus_name);
+  let services_arr = body["services"].as_array().expect("a services array");
+  let svc = services_arr
+    .iter()
+    .find(|s| s["name"] == service_name)
+    .expect("the activated service is listed");
+  assert_eq!(svc["total"], 1);
+  assert_eq!(svc["no_problem"], 1);
+
+  cleanup(&mut db, corpus_name, service_name);
+}
+
+#[test]
+fn api_corpus_detail_is_404_for_unknown_corpus() {
+  let client = client();
+  let response = client.get("/api/corpora/no_such_corpus_xyz").dispatch();
+  assert_eq!(response.status(), Status::NotFound);
 }
