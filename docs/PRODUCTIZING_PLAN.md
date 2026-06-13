@@ -566,6 +566,28 @@ screen. Status fields are point-in-time as of this draft.
   Postgres on NVMe, pinned-Docker-image workers across cortex/science-kit/science-pup, external
   workers via Tailscale, public read-only dashboard at `corpora.latexml.rs`.**
 
+### Arm 14 — Resource & performance rationalization
+- **Goal:** Make CorTeX's resource use fit a fast-worker reality and stop reports needing a cache.
+- **Current:** legacy workers were compute-bound, so the dispatcher/DB/disk were idle. With
+  **latexml-oxide (~1 s/task × ~200 workers ≈ 200 tasks/s)** the bottleneck moves to the dispatcher,
+  DB, and disk I/O — and per-task overheads dominate: `WorkerMetadata` spawns a thread+connection per
+  ZMQ event; `mark_done` delete+reinserts all five `log_*` tables per task; results write to the slow
+  `/data` QLC RAID6; reports are O(millions of rows) scans shielded by a Redis cache.
+- **Screen / Agent API:** surfaces via Arm 8 metrics (throughput, queue depth, write/commit latency)
+  rather than a dedicated screen.
+- **Data model:** **incremental report rollup tables** (the headline change — per-`(corpus, service,
+  severity, category, what)` counts maintained in the finalize path), generalizing `historical_runs`.
+- **Observability hooks:** a measurement spike (instrument dispatcher + DB at 100→200 tasks/s) gates
+  the work; throughput/latency become first-class metrics.
+- **Risks:** crash-consistency of NVMe staging; not regressing correctness while replacing the blind
+  log delete+reinsert; keeping the ZeroMQ transport (don't rewrite it — D9).
+- **Acceptance:** reports are O(categories) and always fresh (Redis becomes optional); the per-ZMQ
+  -event thread+connection churn is gone; sustained 100→200 tasks/s with latexml-oxide workers without
+  the DB or RAID becoming the wall.
+- **Detail:** six mini-choices + mini-plans (async I/O, NVMe staging, batch/commit tuning, fast-worker
+  re-tune, DB choice = keep Postgres, incremental rollups) in
+  [`RESOURCE_RATIONALIZATION.md`](RESOURCE_RATIONALIZATION.md).
+
 ---
 
 ## 4. Sequencing & dependency plan (who blocks whom)
