@@ -272,10 +272,10 @@ const DIFF_SEVERITY_KEYS: [&str; 6] =
 /// status changed between two snapshots — the 1:1 HTML twin of [`api_run_task_diffs`], sharing
 /// [`TaskDiffDto`]. This is the *filter-driven* heart of run management: pick a
 /// `previous_status → current_status` transition (and optionally a snapshot pair) and see exactly
-/// which documents regressed or improved. Unlike the legacy `diff-history` binary route — which
-/// `.expect()`s the status params and `.unwrap()`s the dates, **panicking on the dispatch path**
-/// (see `docs/KNOWN_ISSUES.md` F-1) — this twin parses gracefully: `400` on a malformed
+/// which documents regressed or improved. This parses gracefully: `400` on a malformed
 /// date/status, `404` on an unknown corpus/service, and an empty filter just lists every change.
+/// It replaced the legacy `diff-history` binary route, which `.expect()`ed the status params and
+/// `.unwrap()`ed the dates — **panicking on the dispatch path** (the F-1 gap, now closed).
 #[allow(clippy::too_many_arguments)]
 #[get("/runs/<corpus>/<service>/tasks?<previous>&<current>&<previous_status>&<current_status>&<offset>&<page_size>")]
 pub fn runs_tasks_page(
@@ -360,9 +360,9 @@ pub fn runs_tasks_page(
 /// snapshots — the 1:1 HTML twin of [`api_run_diff`], sharing [`RunDiffTransitionDto`]. A snapshot
 /// pair is chosen with two date dropdowns (a JS-free `<form method=get>`); each transition cell
 /// links into the [`runs_tasks_page`] drill-down pre-filtered to that `previous → current`
-/// transition. Reuses `parse_snapshot_date`, so a malformed date is a `400` (the legacy
-/// `diff-summary` binary route `.unwrap()`s it and **panics**; see `docs/KNOWN_ISSUES.md` F-1);
-/// `404` on an unknown corpus/service.
+/// transition. Reuses `parse_snapshot_date`, so a malformed date is a `400` and `404` on an unknown
+/// corpus/service. It replaced the legacy `diff-summary` binary route, which `.unwrap()`ed the date
+/// and **panicked on the dispatch path** (the F-1 gap, now closed).
 #[get("/runs/<corpus>/<service>/diff?<previous>&<current>")]
 pub fn runs_diff_page(
   corpus: &str,

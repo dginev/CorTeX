@@ -30,10 +30,7 @@ use std::fmt;
 use crate::concerns::{CortexDeletable, CortexInsertable};
 use crate::config::config;
 use crate::helpers::{TaskReport, TaskStatus};
-use crate::models::{
-  Corpus, DiffStatusFilter, DiffStatusRow, NewTask, Service, Task, TaskRunMetadata,
-};
-use chrono::NaiveDateTime;
+use crate::models::{Corpus, NewTask, Service, Task};
 
 /// The production database postgresql address, from the runtime [`crate::config`] configuration
 pub fn default_db_address() -> &'static str { &config().database.url }
@@ -272,32 +269,5 @@ impl Backend {
       offset,
     )
     .unwrap_or_default()
-  }
-
-  /// Prepares a template-friendly report of task differences
-  pub fn list_task_diffs(
-    &mut self,
-    corpus: &Corpus,
-    service: &Service,
-    filters: DiffStatusFilter,
-  ) -> Vec<TaskRunMetadata> {
-    reports::list_task_diffs(&mut self.connection, corpus, service, filters)
-  }
-
-  /// Prepares a template-friendly summary of task differences
-  pub fn summary_task_diffs(
-    &mut self,
-    corpus: &Corpus,
-    service: &Service,
-    previous_date: Option<NaiveDateTime>,
-    current_date: Option<NaiveDateTime>,
-  ) -> (Vec<String>, Vec<DiffStatusRow>) {
-    reports::summary_task_diffs(
-      &mut self.connection,
-      corpus,
-      service,
-      previous_date,
-      current_date,
-    )
   }
 }

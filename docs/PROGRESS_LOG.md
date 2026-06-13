@@ -127,3 +127,20 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   *Next:* **delete** the legacy `diff_historical_summary`/`diff_historical_tasks` routes + their two
   templates and repoint `report.html.tera`'s "Diff previous runs" link at `/runs/<corpus>/<service>/diff`
   (closes F-1); or pivot to backend D-6 (bounded in-flight task set + dispatch backpressure).
+- **F-1 RESOLVED — deleted the legacy panicking diff routes (robustness + rationalization):** with both
+  diff twins now in the library, removed the dead, panic-prone legacy surface wholesale. Deleted
+  `bin/frontend.rs`'s `diff_historical_summary`/`diff_historical_tasks` routes (each `.unwrap()`ed dates
+  and `.expect()`ed/`.unwrap()`ed user-supplied status params → dispatch-path panics) + their route
+  registrations + `templates/diff-summary.html.tera` + `templates/diff-history.html.tera`. Repointed
+  `report.html.tera`'s "Diff previous runs" link at the library `/runs/<corpus>/<service>/diff`. Pruned
+  everything they alone kept alive: the `DiffRequestParams` struct + the three now-unused
+  `TemplateContext` diff fields (`diff_report`/`diff_summary`/`diff_dates`) in `frontend/params.rs`, the
+  two now-callerless `Backend::{list,summary}_task_diffs` wrapper methods in `backend.rs`, and four
+  thereby-orphaned imports (`NaiveDateTime`, `TaskStatus`, `DiffStatusFilter`, `DiffStatusRow`,
+  `TaskRunMetadata`). Net: **−2 routes, −2 templates, −1 struct, −3 fields, −2 methods, 0 behaviour lost**
+  (the library twins cover every path). `cargo build` (lib + bins) + `clippy --all-targets -D warnings`
+  clean; `runs_test` green. KNOWN_ISSUES **F-1 → 🟢**; the two residual frontend `.unwrap()`s (a
+  worker-query DB unwrap + an ~infallible JSON serialization, neither input-triggered) folded into D-3's
+  request-path-unwrap audit so nothing is fix-and-forgotten.
+  *Next:* migrate the legacy Vega `history` page onto `frontend/runs.rs` (last runs-screen still in the
+  bin); or pivot to backend D-6 (bounded in-flight task set + dispatch backpressure).
