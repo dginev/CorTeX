@@ -21,9 +21,15 @@ use rocket::{Route, State};
 use rocket_dyn_templates::{context, Template};
 use serde::Serialize;
 
+use std::collections::HashMap;
+
 use crate::backend::{list_task_diffs, summary_task_diffs, DbPool};
+use crate::frontend::helpers::decorate_uri_encodings;
+use crate::frontend::params::TemplateContext;
 use crate::helpers::TaskStatus;
-use crate::models::{Corpus, DiffStatusFilter, HistoricalRun, Service, TaskRunMetadata};
+use crate::models::{
+  Corpus, DiffStatusFilter, HistoricalRun, RunMetadata, RunMetadataStack, Service, TaskRunMetadata,
+};
 
 /// A historical `(corpus, service)` run as exposed over the API: a stable `id` handle,
 /// who/why/when, whether it has completed, and the per-severity task tallies captured at
@@ -430,6 +436,48 @@ pub fn runs_page(corpus: &str, service: &str, pool: &State<DbPool>) -> Result<Te
   ))
 }
 
+/// The human run-history **visualization**: the Vega bar-chart of per-run success rates over time
+/// plus the tabular breakdown — the chart view that complements the [`runs_page`] table and the
+/// structured [`api_runs`] feed. Relocated from the legacy binary route onto the library surface
+/// (pooled connection; the legacy serialization `.unwrap()` — a request-path panic — softened to a
+/// graceful empty series). `404` if the corpus/service is unknown.
+#[get("/history/<corpus>/<service>")]
+pub fn history_page(corpus: &str, service: &str, pool: &State<DbPool>) -> Result<Template, Status> {
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let (corpus_record, service_record) = resolve(corpus, service, &mut connection)?;
+  let mut context = TemplateContext::default();
+  let mut global = HashMap::new();
+  if let Ok(runs) = HistoricalRun::find_by(&corpus_record, &service_record, &mut connection) {
+    let runs_meta: Vec<RunMetadata> = runs.into_iter().map(RunMetadata::from).collect();
+    let runs_meta_stack = RunMetadataStack::transform(&runs_meta);
+    // Soften the legacy `.unwrap()` (a request-path panic on a serialization error) to an empty
+    // series: the chart renders nothing rather than crashing the request.
+    context.history_serialized = Some(serde_json::to_string(&runs_meta_stack).unwrap_or_default());
+    global.insert(
+      "history_length".to_string(),
+      runs_meta
+        .iter()
+        .filter(|run| !run.end_time.is_empty())
+        .count()
+        .to_string(),
+    );
+    context.history = Some(runs_meta);
+  }
+  global.insert(
+    "title".to_string(),
+    format!("Run history · {service} / {corpus}"),
+  );
+  global.insert(
+    "description".to_string(),
+    format!("Historical runs of service {service} over corpus {corpus}"),
+  );
+  global.insert("service_name".to_string(), service.to_string());
+  global.insert("corpus_name".to_string(), corpus.to_string());
+  context.global = global;
+  decorate_uri_encodings(&mut context);
+  Ok(Template::render("history", context))
+}
+
 /// The route set for the historical-runs capability.
 pub fn routes() -> Vec<Route> {
   routes![
@@ -439,6 +487,7 @@ pub fn routes() -> Vec<Route> {
     api_run_task_diffs,
     runs_tasks_page,
     runs_diff_page,
-    runs_page
+    runs_page,
+    history_page
   ]
 }

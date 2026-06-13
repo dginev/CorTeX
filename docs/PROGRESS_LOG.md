@@ -179,3 +179,19 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   install path; one real knob gained an editor.
   *Next:* decouple the D-6 reaper from refetch; migrate the legacy Vega `history` page; or rename the
   now-misnamed `src/frontend/cached/` proxy (last Redis-era naming debt).
+- **Arm 7 — run-history Vega chart migrated to the library (symmetry contract; last legacy runs screen):**
+  the `/history/<corpus>/<service>` run-quality bar-chart (Vega) was the only runs screen still in the
+  binary. Relocated it to `runs::history_page` — a faithful move (same `history`/`vega-history` templates,
+  same `RunMetadata`/`RunMetadataStack` transform) but on a **pooled** connection instead of
+  `Backend::default()`, and with the legacy serialization `.unwrap()` (a request-path panic) **softened to
+  `unwrap_or_default()`** (chart degrades to an empty series rather than crashing the request). Deleted the
+  bin `historical_runs` route + registration + its now-unused `HistoricalRun`/`RunMetadata`/`RunMetadataStack`
+  imports; the `/history/...` path and the report-screen "Explore History" link are unchanged (pure
+  relocation). The entire **runs/history surface now lives in `frontend/runs.rs`**: list · current · diff
+  matrix · per-task drill-down · run table · history chart — each a human screen with a 1:1 agent
+  twin/shared DTO. Test: `runs_test` renders the chart screen (heading + a seeded run) + 404 on unknown.
+  Ledger: F-1 residual trimmed (the history `.unwrap()` is resolved; only the worker_report DB-query unwrap
+  remains for D-3). `build`+`clippy --all-targets -D warnings` clean; `runs_test` green.
+  *Next:* decouple the D-6 reaper from refetch (needs service_id-keyed dispatch queues + multi-service test
+  coverage); rename the misnamed `src/frontend/cached/` proxy; or migrate the legacy report HTML routes
+  (the `cached::task_report` consumers) into the library.

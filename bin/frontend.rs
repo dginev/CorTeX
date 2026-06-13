@@ -25,7 +25,7 @@ use cortex::frontend::concerns::{
 use cortex::frontend::cors::CORS;
 use cortex::frontend::helpers::*;
 use cortex::frontend::params::{ReportParams, RerunRequestParams, TemplateContext};
-use cortex::models::{Corpus, HistoricalRun, RunMetadata, RunMetadataStack, Service};
+use cortex::models::{Corpus, Service};
 
 #[get("/")]
 fn root() -> Template {
@@ -242,54 +242,6 @@ fn what_service_report_all(
   )
 }
 
-#[get("/history/<corpus_name>/<service_name>")]
-fn historical_runs(
-  corpus_name: String,
-  service_name: String,
-) -> Result<Template, NotFound<String>> {
-  let mut context = TemplateContext::default();
-  let mut global = HashMap::new();
-  let mut backend = Backend::default();
-  let corpus_name = corpus_name.to_lowercase();
-  if let Ok(corpus) = Corpus::find_by_name(&corpus_name, &mut backend.connection) {
-    if let Ok(service) = Service::find_by_name(&service_name, &mut backend.connection) {
-      if let Ok(runs) = HistoricalRun::find_by(&corpus, &service, &mut backend.connection) {
-        let runs_meta = runs
-          .into_iter()
-          .map(Into::into)
-          .collect::<Vec<RunMetadata>>();
-        let runs_meta_stack: Vec<RunMetadataStack> = RunMetadataStack::transform(&runs_meta);
-        context.history_serialized = Some(serde_json::to_string(&runs_meta_stack).unwrap());
-        global.insert(
-          "history_length".to_string(),
-          runs_meta
-            .iter()
-            .filter(|run| !run.end_time.is_empty())
-            .count()
-            .to_string(),
-        );
-        context.history = Some(runs_meta);
-      }
-    }
-  }
-
-  // Pass the globals(reports+metadata) onto the stash
-  global.insert(
-    "description".to_string(),
-    format!("Historical runs of service {service_name} over corpus {corpus_name}"),
-  );
-  global.insert("service_name".to_string(), service_name);
-  global.insert("corpus_name".to_string(), corpus_name);
-
-  context.global = global;
-  // And pass the handy lambdas
-  // And render the correct template
-  decorate_uri_encodings(&mut context);
-
-  // Report also the query times
-  Ok(Template::render("history", context))
-}
-
 #[get("/preview/<corpus_name>/<service_name>/<entry_name>")]
 fn preview_entry(
   corpus_name: String,
@@ -444,7 +396,6 @@ fn rocket() -> _ {
         rerun_severity,
         rerun_category,
         rerun_what,
-        historical_runs,
         savetasks
       ],
     )

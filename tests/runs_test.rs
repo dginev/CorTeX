@@ -253,6 +253,23 @@ fn api_lists_runs_and_reports_current() {
     Status::BadRequest,
     "malformed date -> 400 on the matrix screen, not a panic"
   );
+
+  // --- HTML twin: the run-history Vega chart screen (relocated from the legacy binary route)
+  // ------
+  let response = client
+    .get(format!("/history/{CORPUS_NAME}/{SERVICE_NAME}"))
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  assert_eq!(response.content_type(), Some(ContentType::HTML));
+  let body = response.into_string().expect("html body");
+  assert!(
+    body.contains("Historical Runs"),
+    "renders the run-history chart screen"
+  );
+  assert!(
+    body.contains("first run"),
+    "renders the seeded completed run in the breakdown table"
+  );
 }
 
 #[test]
@@ -273,6 +290,10 @@ fn api_runs_is_404_for_unknown_corpus() {
   assert_eq!(response.status(), Status::NotFound);
   let response = client
     .get("/runs/no-such-corpus-xyz/no_such_service/diff")
+    .dispatch();
+  assert_eq!(response.status(), Status::NotFound);
+  let response = client
+    .get("/history/no-such-corpus-xyz/no_such_service")
     .dispatch();
   assert_eq!(response.status(), Status::NotFound);
 }
