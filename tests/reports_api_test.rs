@@ -172,4 +172,26 @@ fn category_and_what_reports_match_seed() {
     .get("/api/reports/no-such-corpus-xyz/no_svc/warning")
     .dispatch();
   assert_eq!(response.status(), Status::NotFound, "unknown corpus -> 404");
+
+  // --- Rerun is token-gated: denied by default (the critical security property) ----------------
+  let response = client
+    .post(format!(
+      "/api/reports/{CORPUS_NAME}/{SERVICE_NAME}/rerun?severity=warning"
+    ))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Unauthorized,
+    "rerun without a token is 401 (no unauthenticated result wipes)"
+  );
+  let response = client
+    .post(format!(
+      "/api/reports/{CORPUS_NAME}/{SERVICE_NAME}/rerun?severity=warning&token=bogus"
+    ))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Unauthorized,
+    "rerun with an unknown token is 401"
+  );
 }

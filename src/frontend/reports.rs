@@ -19,8 +19,10 @@ use rocket::{Route, State};
 use serde::Serialize;
 
 use crate::backend::{
-  category_rollup, category_total, severity_total, what_rollup, DbPool, ReportSummaryRow,
+  category_rollup, category_total, from_address, severity_total, what_rollup, DatabaseUrl, DbPool,
+  ReportSummaryRow, RerunOptions,
 };
+use crate::frontend::actor::Actor;
 use crate::models::{Corpus, Service};
 
 /// One report row: a category (in the category report) or a `what` class (in the drill-down), with
@@ -180,5 +182,70 @@ pub fn api_what_report(
   }))
 }
 
+/// Acknowledgement of a rerun: the scope that was marked and who marked it.
+#[derive(Debug, Serialize)]
+pub struct RerunAckDto {
+  /// Corpus the rerun targeted.
+  pub corpus: String,
+  /// Service the rerun targeted.
+  pub service: String,
+  /// The authenticated initiator (the run's `owner`).
+  pub actor: String,
+  /// The recorded run description.
+  pub description: String,
+}
+
+/// Marks the selected `(corpus, service[, severity, category, what])` scope for reprocessing — the
+/// agent twin of the report screen's rerun action, and a new historical run. **Token-gated** via
+/// the [`Actor`] guard (`X-Cortex-Token` header or `?token=`); `401` without a valid token, so
+/// results can't be wiped by an unauthenticated caller. `400` on an unknown severity, `404` on an
+/// unknown corpus/service. Returns `202 Accepted`.
+#[post("/api/reports/<corpus>/<service>/rerun?<severity>&<category>&<what>&<description>")]
+#[allow(clippy::too_many_arguments)]
+pub fn rerun_report(
+  corpus: &str,
+  service: &str,
+  severity: Option<&str>,
+  category: Option<&str>,
+  what: Option<&str>,
+  description: Option<&str>,
+  actor: Actor,
+  database_url: &State<DatabaseUrl>,
+) -> Result<(Status, Json<RerunAckDto>), Status> {
+  if let Some(severity) = severity {
+    if !is_rollup_severity(severity) {
+      return Err(Status::BadRequest);
+    }
+  }
+  let description = description.unwrap_or("rerun via API").to_string();
+  // A fresh connection for this low-frequency, consequential admin action (mirrors the legacy
+  // path).
+  let mut backend = from_address(&database_url.0);
+  let corpus_record =
+    Corpus::find_by_name(corpus, &mut backend.connection).map_err(|_| Status::NotFound)?;
+  let service_record =
+    Service::find_by_name(service, &mut backend.connection).map_err(|_| Status::NotFound)?;
+  backend
+    .mark_rerun(RerunOptions {
+      corpus: &corpus_record,
+      service: &service_record,
+      severity_opt: severity.map(str::to_string),
+      category_opt: category.map(str::to_string),
+      what_opt: what.map(str::to_string),
+      description_opt: Some(description.clone()),
+      owner_opt: Some(actor.owner.clone()),
+    })
+    .map_err(|_| Status::InternalServerError)?;
+  Ok((
+    Status::Accepted,
+    Json(RerunAckDto {
+      corpus: corpus.to_string(),
+      service: service.to_string(),
+      actor: actor.owner,
+      description,
+    }),
+  ))
+}
+
 /// The route set for the reports capability.
-pub fn routes() -> Vec<Route> { routes![api_category_report, api_what_report] }
+pub fn routes() -> Vec<Route> { routes![api_category_report, api_what_report, rerun_report] }

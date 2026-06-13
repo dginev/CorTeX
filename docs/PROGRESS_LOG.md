@@ -84,3 +84,15 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   Postgres (no table rewrite, no rebuild of the 7 `entry` indexes), so it's safe on the large `tasks`
   table without a maintenance window. Reversibility verified; regression test `tests/long_entry_test.rs`
   (a 300-char entry stores + reads back untruncated). Ledger: **R-2 → resolved**.
+- **Run actions — token-gated rerun + the `Actor` guard (Arm 9a foundation):** reusable `Actor` request
+  guard (`frontend/actor.rs`) resolves a rerun token (`X-Cortex-Token` header or `?token=`) to an owner
+  via `config().auth.rerun_tokens`, else **`401`** — so writes are **denied by default** (an empty token
+  map rejects everyone; no unauthenticated result-wipe). First write API on it:
+  `POST /api/reports/<corpus>/<service>/rerun?severity=&category=&what=&description=` marks the
+  **filtered** scope for reprocessing as a new historical run, threading the authenticated actor as the
+  run `owner` (the "actor through every write" mandate). Tests: `401` denial through the route +
+  `mark_rerun` effect (warning tasks → TODO, logs cleared).
+  - *Owner steer (2026-06-13):* run-management is **filter-driven** — rerun acts on a *filtered* scope,
+    complementing the already-built task-diff filters (`/api/runs/<corpus>/<service>/tasks?previous_status=&current_status=`:
+    which individual tasks changed conversion severity between runs). Next: surface that filter as a
+    human screen (the visual severity-transition diff).
