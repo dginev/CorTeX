@@ -50,7 +50,7 @@
 
 | # | Sev | Status | Issue |
 |---|---|---|---|
-| F-1 | S2 | 🟡 | **Legacy binary report/diff routes panic on bad input.** The binary's `diff_historical_summary`/`diff_historical_tasks` routes do `NaiveDateTime::parse_from_str(date).unwrap()` on a user-supplied query param — a malformed date **panics the request** (violates principle #2, no panic on the request path). The migrated library twins handle it (`runs::api_run_diff` returns `400`); 🟡 until the legacy routes are removed in favor of the library surface. Audit the other legacy bin routes for the same pattern as they migrate. |
+| F-1 | S2 | 🟡 | **Legacy binary report/diff routes panic on bad input.** The binary's `diff_historical_summary`/`diff_historical_tasks` routes do `NaiveDateTime::parse_from_str(date).unwrap()` on a user-supplied query param — a malformed date **panics the request** (violates principle #2, no panic on the request path); `diff_historical_tasks` additionally `.expect()`s the `previous_status`/`current_status` params (a missing status panics) and `.unwrap()`s `from_key` (an unknown status panics). The migrated library twins handle all of these (`runs::api_run_diff` → `400`; `runs::api_run_task_diffs` + its HTML twin `runs::runs_tasks_page` → `400` on malformed/unknown date *or* status, empty = no filter). 🟡 until the legacy `diff-*` + `*report*` binary routes are removed in favor of the library surface. Audit the other legacy bin routes for the same pattern as they migrate. |
 
 ## Process lifecycle / shutdown
 

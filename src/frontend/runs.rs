@@ -263,6 +263,99 @@ pub fn api_run_task_diffs(
   Ok(Json(tasks.into_iter().map(TaskDiffDto::from).collect()))
 }
 
+/// Severity keys a human can filter a task-diff on (the transition endpoints we record snapshots
+/// for). Offered as the dropdown options on the task-diff screen.
+const DIFF_SEVERITY_KEYS: [&str; 6] =
+  ["no_problem", "warning", "error", "fatal", "invalid", "todo"];
+
+/// The human task-diff screen: a server-rendered, filterable table of the individual tasks whose
+/// status changed between two snapshots — the 1:1 HTML twin of [`api_run_task_diffs`], sharing
+/// [`TaskDiffDto`]. This is the *filter-driven* heart of run management: pick a
+/// `previous_status → current_status` transition (and optionally a snapshot pair) and see exactly
+/// which documents regressed or improved. Unlike the legacy `diff-history` binary route — which
+/// `.expect()`s the status params and `.unwrap()`s the dates, **panicking on the dispatch path**
+/// (see `docs/KNOWN_ISSUES.md` F-1) — this twin parses gracefully: `400` on a malformed
+/// date/status, `404` on an unknown corpus/service, and an empty filter just lists every change.
+#[allow(clippy::too_many_arguments)]
+#[get("/runs/<corpus>/<service>/tasks?<previous>&<current>&<previous_status>&<current_status>&<offset>&<page_size>")]
+pub fn runs_tasks_page(
+  corpus: &str,
+  service: &str,
+  previous: Option<&str>,
+  current: Option<&str>,
+  previous_status: Option<&str>,
+  current_status: Option<&str>,
+  offset: Option<usize>,
+  page_size: Option<usize>,
+  pool: &State<DbPool>,
+) -> Result<Template, Status> {
+  // Parse before touching the DB so bad input fails fast and cheaply (mirrors the agent twin).
+  let previous_status_filter = parse_status(previous_status)?;
+  let current_status_filter = parse_status(current_status)?;
+  let previous_date = parse_snapshot_date(previous)?;
+  let current_date = parse_snapshot_date(current)?;
+  let offset = offset.unwrap_or(0);
+  let page_size = page_size.unwrap_or(100).max(1);
+
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let (corpus_record, service_record) = resolve(corpus, service, &mut connection)?;
+  let tasks: Vec<TaskDiffDto> = list_task_diffs(
+    &mut connection,
+    &corpus_record,
+    &service_record,
+    DiffStatusFilter {
+      previous_status: previous_status_filter,
+      current_status: current_status_filter,
+      previous_date,
+      current_date,
+      offset,
+      page_size,
+    },
+  )
+  .into_iter()
+  .map(TaskDiffDto::from)
+  .collect();
+
+  // A full page implies there may be more; any non-zero offset implies a previous page exists.
+  let page_len = tasks.len();
+  let has_next = page_len == page_size;
+  let has_prev = offset > 0;
+  // Normalize the selected filter back to canonical keys for the form's `selected` state, so a
+  // round-trip preserves the choice (and an unknown-but-accepted alias collapses to its key).
+  let selected_previous = previous_status_filter
+    .map(|s| s.to_key())
+    .unwrap_or_default();
+  let selected_current = current_status_filter
+    .map(|s| s.to_key())
+    .unwrap_or_default();
+  let global = serde_json::json!({
+    "title": format!("Task changes · {service} / {corpus}"),
+    "description": format!("Per-task severity changes of service {service} over corpus {corpus}"),
+  });
+  Ok(Template::render(
+    "runs-tasks",
+    context! {
+      global,
+      corpus,
+      service,
+      tasks,
+      severities: DIFF_SEVERITY_KEYS,
+      selected_previous,
+      selected_current,
+      previous_date: previous.unwrap_or_default(),
+      current_date: current.unwrap_or_default(),
+      offset: offset as i64,
+      page_size: page_size as i64,
+      from_offset: offset as i64 + 1,
+      to_offset: offset as i64 + page_len as i64,
+      prev_offset: offset.saturating_sub(page_size) as i64,
+      next_offset: (offset + page_size) as i64,
+      has_prev,
+      has_next,
+    },
+  ))
+}
+
 /// The human run-history screen: a server-rendered table of the same runs `GET /api/runs/...`
 /// returns (the 1:1 HTML twin, sharing [`RunDto`]). `404` if the corpus/service is unknown.
 #[get("/runs/<corpus>/<service>")]
@@ -292,6 +385,7 @@ pub fn routes() -> Vec<Route> {
     api_run_current,
     api_run_diff,
     api_run_task_diffs,
+    runs_tasks_page,
     runs_page
   ]
 }

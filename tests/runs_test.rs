@@ -184,6 +184,45 @@ fn api_lists_runs_and_reports_current() {
     body.contains("second run"),
     "renders the seeded run rows server-side"
   );
+
+  // --- HTML twin: the human task-diff screen (the filter-driven heart of run management) --------
+  let response = client
+    .get(format!("/runs/{CORPUS_NAME}/{SERVICE_NAME}/tasks"))
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  assert_eq!(response.content_type(), Some(ContentType::HTML));
+  let body = response.into_string().expect("html body");
+  assert!(
+    body.contains("Task severity changes"),
+    "renders the task-diff screen"
+  );
+  assert!(
+    body.contains("select-previous-status") && body.contains("select-current-status"),
+    "renders the status-transition filter form"
+  );
+
+  // Guard: an unknown status filter is a 400 on the HTML twin too (the legacy route panics here).
+  let response = client
+    .get(format!(
+      "/runs/{CORPUS_NAME}/{SERVICE_NAME}/tasks?previous_status=not-a-status"
+    ))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::BadRequest,
+    "unknown status filter -> 400 on the HTML screen, not a panic"
+  );
+  // Guard: a malformed snapshot date is a 400, not a panic.
+  let response = client
+    .get(format!(
+      "/runs/{CORPUS_NAME}/{SERVICE_NAME}/tasks?previous=not-a-date"
+    ))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::BadRequest,
+    "malformed date -> 400 on the HTML screen, not a panic"
+  );
 }
 
 #[test]
@@ -196,6 +235,10 @@ fn api_runs_is_404_for_unknown_corpus() {
   assert_eq!(response.status(), Status::NotFound);
   let response = client
     .get("/runs/no-such-corpus-xyz/no_such_service")
+    .dispatch();
+  assert_eq!(response.status(), Status::NotFound);
+  let response = client
+    .get("/runs/no-such-corpus-xyz/no_such_service/tasks")
     .dispatch();
   assert_eq!(response.status(), Status::NotFound);
 }

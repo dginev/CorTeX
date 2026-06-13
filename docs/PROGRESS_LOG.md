@@ -96,3 +96,18 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
     complementing the already-built task-diff filters (`/api/runs/<corpus>/<service>/tasks?previous_status=&current_status=`:
     which individual tasks changed conversion severity between runs). Next: surface that filter as a
     human screen (the visual severity-transition diff).
+- **Arm 7 — human task-diff screen (the filter-driven heart of run management):** the owner steer's
+  "next" is done — `GET /runs/<corpus>/<service>/tasks` (`runs::runs_tasks_page`) is the server-rendered
+  HTML twin of the `…/tasks` agent API, sharing `TaskDiffDto`. A `previous_status → current_status`
+  transition picker (server-rendered `<form method=get>`, no JS) drives the filter; the table lists the
+  individual documents that changed conversion severity between snapshots, paginated (prev/next preserve
+  every filter param). Reached from the run-history screen and links back to its JSON twin.
+  **Robustness:** unlike the legacy `diff-history` binary route — which `.expect()`s the status params,
+  `.unwrap()`s `from_key`, and `.unwrap()`s the dates, **panicking on the dispatch path** — this twin
+  reuses `parse_status`/`parse_snapshot_date`: `400` on a malformed/unknown date *or* status, `404` on an
+  unknown corpus/service, empty = list every change. New `templates/runs-tasks.html.tera`. Tests (in
+  `tests/runs_test.rs`): the screen renders with its filter form; the two 400 guards (bad status, bad
+  date) hold on the HTML path; 404 on unknown corpus. KNOWN_ISSUES **F-1** note expanded (the twin now
+  covers the status-param panics too; 🟡 until the legacy `diff-*` bin routes are deleted).
+  *Next:* delete/redirect the legacy `diff-historical_*` + `*report*` binary routes onto the library
+  surface (closes F-1, kills bin↔library duplication); or pivot to a backend item (D-6 in-flight bound).

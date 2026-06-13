@@ -3,6 +3,8 @@
   <h1>Run history</h1>
   <h5>{{service}} over {{corpus}}</h5>
   <p>
+    <a href="/runs/{{corpus}}/{{service}}/tasks">Task severity changes</a>
+    &nbsp;·&nbsp;
     <a href="/api/runs/{{corpus}}/{{service}}">JSON</a>
   </p>
   <br>
