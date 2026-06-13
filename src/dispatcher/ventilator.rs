@@ -3,11 +3,11 @@ use std::io::Read;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use crate::backend::{self, DbPool};
+use crate::backend;
 use crate::dispatcher::server;
 use crate::helpers;
 use crate::helpers::{NewTaskMessage, TaskProgress, TaskReport, TaskStatus};
-use crate::models::{Service, WorkerMetadata};
+use crate::models::{Service, WorkerMetadataSender};
 use std::error::Error;
 use zmq::SNDMORE;
 
@@ -23,8 +23,8 @@ pub struct Ventilator {
   pub message_size: usize,
   /// address for the Task store postgres endpoint
   pub backend_address: String,
-  /// pooled connections for worker-metadata updates (avoids a fresh connection per ZMQ event)
-  pub pool: DbPool,
+  /// non-blocking handle to the background worker-metadata writer
+  pub metadata: WorkerMetadataSender,
 }
 
 impl Ventilator {
@@ -199,8 +199,8 @@ impl Ventilator {
           ventilator.send("0", SNDMORE)?;
           ventilator.send(Vec::new(), 0)?;
         }
-        // Update this worker's metadata
-        WorkerMetadata::record_dispatched(identity_str, service.id, taskid, self.pool.clone())?;
+        // Update this worker's metadata (non-blocking enqueue to the background writer)
+        self.metadata.dispatched(identity_str, service.id, taskid);
       } else {
         eprintln!(
           "-- No such service {service_name:?} in ventilator request from {identity_str:?}"

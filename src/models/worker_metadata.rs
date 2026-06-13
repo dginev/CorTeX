@@ -1,5 +1,6 @@
 #![allow(clippy::extra_unused_lifetimes)]
 use std::collections::HashMap;
+use std::sync::mpsc::{sync_channel, SyncSender};
 use std::thread;
 use std::time::SystemTime;
 
@@ -141,65 +142,6 @@ fn since_string(then: SystemTime, is_fresh: &mut bool) -> String {
 }
 
 impl WorkerMetadata {
-  /// Records a dispatch to a worker. Upserts (insert-or-increment) keyed by `(name, service_id)`,
-  /// so the write is correct regardless of the order in which this and the matching return
-  /// event's metadata writes complete (KNOWN_ISSUES D-2). Runs off-thread so the ventilator's hot
-  /// loop never blocks on the DB; a pooled checkout (~11µs) replaces a fresh `PgConnection`
-  /// (~4.5ms, the Arm 14 spike). NB: the thread-per-event spawn itself is still unbounded (D-1).
-  pub fn record_dispatched(
-    name: String,
-    service_id: i32,
-    last_dispatched_task_id: i64,
-    pool: DbPool,
-  ) -> Result<(), Error> {
-    let now = SystemTime::now();
-    let _ = thread::spawn(move || {
-      let mut pooled = match pool.get() {
-        Ok(connection) => connection,
-        Err(_) => return,
-      };
-      if let Err(error) =
-        upsert_dispatched(&mut pooled, &name, service_id, last_dispatched_task_id, now)
-      {
-        eprintln!(
-          "-- worker metadata (dispatched) upsert failed for {name:?}/{service_id}: {error:?}"
-        );
-      }
-    });
-    Ok(())
-  }
-
-  /// Records a result returned by a worker. Upserts keyed by `(name, service_id)`: unlike the old
-  /// find-then-update, this never drops the count when the worker row does not exist yet (the
-  /// sink's metadata write can outrun the ventilator's insert) — it inserts a row carrying the
-  /// return (KNOWN_ISSUES D-2). Off-thread so the sink never blocks on the DB.
-  pub fn record_received(
-    identity: String,
-    service_id: i32,
-    last_returned_task_id: i64,
-    pool: DbPool,
-  ) -> Result<(), Error> {
-    let now = SystemTime::now();
-    let _ = thread::spawn(move || {
-      let mut pooled = match pool.get() {
-        Ok(connection) => connection,
-        Err(_) => return,
-      };
-      if let Err(error) = upsert_received(
-        &mut pooled,
-        &identity,
-        service_id,
-        last_returned_task_id,
-        now,
-      ) {
-        eprintln!(
-          "-- worker metadata (received) upsert failed for {identity:?}/{service_id}: {error:?}"
-        );
-      }
-    });
-    Ok(())
-  }
-
   /// Load worker metadata record by identity and service id
   pub fn find_by_name(
     identity: &str,
@@ -212,6 +154,96 @@ impl WorkerMetadata {
       .filter(service_id.eq(sid))
       .get_result(connection)
   }
+}
+
+/// Capacity of the worker-metadata event queue. A few seconds of headroom at the deployment's
+/// ~100–200 events/s; if the writer falls this far behind (e.g. the DB is stalled), further events
+/// are dropped rather than growing memory or blocking dispatch — observability metadata is
+/// best-effort under overload (cf. backpressure, KNOWN_ISSUES D-6).
+const METADATA_QUEUE_BOUND: usize = 8192;
+
+/// A worker-metadata event enqueued by the ventilator (dispatch) or sink (return) for the single
+/// background writer to apply as an upsert.
+enum WorkerEvent {
+  /// A task was dispatched to `name` for `service_id` (carrying the dispatched task id).
+  Dispatched {
+    /// Worker identity.
+    name: String,
+    /// Service the worker is registered against.
+    service_id: i32,
+    /// The dispatched task id.
+    task_id: i64,
+  },
+  /// A result was returned by `name` for `service_id` (carrying the returned task id).
+  Received {
+    /// Worker identity.
+    name: String,
+    /// Service the worker is registered against.
+    service_id: i32,
+    /// The returned task id.
+    task_id: i64,
+  },
+}
+
+/// A cloneable, non-blocking handle the ventilator and sink use to enqueue worker-metadata events.
+/// Sends never block the dispatch hot loop: if the background writer is saturated the event is
+/// dropped (see [`METADATA_QUEUE_BOUND`]).
+#[derive(Clone)]
+pub struct WorkerMetadataSender {
+  tx: SyncSender<WorkerEvent>,
+}
+impl WorkerMetadataSender {
+  /// Enqueue a dispatch event (non-blocking, best-effort).
+  pub fn dispatched(&self, name: String, service_id: i32, task_id: i64) {
+    let _ = self.tx.try_send(WorkerEvent::Dispatched {
+      name,
+      service_id,
+      task_id,
+    });
+  }
+  /// Enqueue a return event (non-blocking, best-effort).
+  pub fn received(&self, name: String, service_id: i32, task_id: i64) {
+    let _ = self.tx.try_send(WorkerEvent::Received {
+      name,
+      service_id,
+      task_id,
+    });
+  }
+}
+
+/// Spawns the single background worker-metadata writer and returns a cloneable
+/// [`WorkerMetadataSender`]. The writer drains events and applies the race-free upserts on pooled
+/// connections; it exits cleanly once every sender has dropped. This bounds metadata bookkeeping to
+/// **one** thread regardless of dispatch rate — replacing the unbounded thread-per-event spawn
+/// (KNOWN_ISSUES D-1) — while keeping the DB work off the dispatch hot path.
+pub fn start_metadata_writer(pool: DbPool) -> WorkerMetadataSender {
+  let (tx, rx) = sync_channel::<WorkerEvent>(METADATA_QUEUE_BOUND);
+  let _ = thread::spawn(move || {
+    for event in rx {
+      // Pooled checkout (~11µs) vs a fresh PgConnection (~4.5ms, the Arm 14 spike).
+      let mut pooled = match pool.get() {
+        Ok(connection) => connection,
+        Err(_) => continue,
+      };
+      let now = SystemTime::now();
+      let result = match event {
+        WorkerEvent::Dispatched {
+          name,
+          service_id,
+          task_id,
+        } => upsert_dispatched(&mut pooled, &name, service_id, task_id, now),
+        WorkerEvent::Received {
+          name,
+          service_id,
+          task_id,
+        } => upsert_received(&mut pooled, &name, service_id, task_id, now),
+      };
+      if let Err(error) = result {
+        eprintln!("-- worker metadata writer: upsert failed: {error:?}");
+      }
+    }
+  });
+  WorkerMetadataSender { tx }
 }
 
 /// Inserts — or, on `(name, service_id)` conflict, increments — the dispatch tallies for a worker.

@@ -53,3 +53,11 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   `eprintln!`. Unit tests: out-of-order (received-before-dispatched isn't dropped) + accumulation in a
   single row. Full dispatcher round-trip (`echo_roundtrip`) still green. (D-1 thread-per-event spawn
   remains.) Migration reversibility verified.
+- **D-1 — bounded worker-metadata writer (robustness + performance):** replaced the **unbounded
+  thread-per-event spawn** (~400 detached threads/s at 200 tasks/s) with a **single background writer**
+  (`start_metadata_writer`) fed by a bounded, non-blocking `sync_channel`. The ventilator/sink now hold
+  a cloneable `WorkerMetadataSender` and `try_send` events (never blocking the dispatch hot loop; a
+  saturated queue drops rather than OOMs/stalls). O(1) metadata threads, ≤1 metadata DB connection at a
+  time, clean shutdown when senders drop. Wired through `manager.rs`; `echo_roundtrip` (full dispatcher)
+  green. Ledger: **D-1 → resolved**, **D-6 → 🟡** (metadata fan-out bounded; in-flight task set still
+  unbounded). The dispatcher metadata subsystem is now race-free (D-2) *and* bounded (D-1).

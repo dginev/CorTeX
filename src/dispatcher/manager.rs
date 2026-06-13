@@ -17,7 +17,7 @@ use crate::dispatcher::finalize::Finalize;
 use crate::dispatcher::sink::Sink;
 use crate::dispatcher::ventilator::Ventilator;
 use crate::helpers::{TaskProgress, TaskReport};
-use crate::models::Service;
+use crate::models::{start_metadata_writer, Service};
 use zmq::Error;
 
 /// Manager struct responsible for dispatching and receiving tasks
@@ -60,9 +60,14 @@ impl TaskManager {
     let progress_queue_arc = Arc::new(Mutex::new(progress_queue));
     let done_queue_arc = Arc::new(Mutex::new(done_queue));
 
-    // Shared pool for worker-metadata updates: a pooled checkout per ZMQ event instead of a fresh
-    // connection (~4.5ms -> ~11us; see the Arm 14 measurement spike).
-    let worker_pool = build_pool(&self.backend_address, config().database.pool_size);
+    // Single background worker-metadata writer fed by a non-blocking channel: O(1) threads instead
+    // of a detached thread per ZMQ event (KNOWN_ISSUES D-1), writing over a pooled connection
+    // (~11us vs a ~4.5ms fresh connect; the Arm 14 spike). The ventilator/sink clone the sender;
+    // the writer stops when all senders drop (i.e. when this method returns).
+    let metadata = start_metadata_writer(build_pool(
+      &self.backend_address,
+      config().database.pool_size,
+    ));
 
     // First prepare the source ventilator
     let source_port = self.source_port;
@@ -92,14 +97,14 @@ impl TaskManager {
     let sink_progress_queue_arc = progress_queue_arc.clone();
 
     let sink_done_queue_arc = done_queue_arc.clone();
-    let sink_pool = worker_pool.clone();
+    let sink_metadata = metadata.clone();
     let sink_thread = thread::spawn(move || {
       Sink {
         port: result_port,
         queue_size: result_queue_size,
         message_size: result_message_size,
         backend_address: result_backend_address.clone(),
-        pool: sink_pool,
+        metadata: sink_metadata,
       }
       .start(
         &sink_services_arc,
@@ -118,14 +123,14 @@ impl TaskManager {
       let vent_progress_queue_arc = progress_queue_arc.clone();
       let vent_done_queue_arc = done_queue_arc.clone();
       let vent_backend_address = source_backend_address.clone();
-      let vent_pool = worker_pool.clone();
+      let vent_metadata = metadata.clone();
       let vent_thread = thread::spawn(move || {
         let ventilator = Ventilator {
           port: source_port,
           queue_size: source_queue_size,
           message_size: source_message_size,
           backend_address: vent_backend_address,
-          pool: vent_pool,
+          metadata: vent_metadata,
         };
         ventilator
           .start(

@@ -8,11 +8,10 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use crate::backend::DbPool;
 use crate::dispatcher::server;
 use crate::helpers;
 use crate::helpers::{TaskProgress, TaskReport, TaskStatus};
-use crate::models::{Service, WorkerMetadata};
+use crate::models::{Service, WorkerMetadataSender};
 
 /// Specifies the binding and operation parameters for a ZMQ sink component
 pub struct Sink {
@@ -26,8 +25,8 @@ pub struct Sink {
   pub message_size: usize,
   /// address for the Task store postgres endpoint
   pub backend_address: String,
-  /// pooled connections for worker-metadata updates (avoids a fresh connection per ZMQ event)
-  pub pool: DbPool,
+  /// non-blocking handle to the background worker-metadata writer
+  pub metadata: WorkerMetadataSender,
 }
 
 impl Sink {
@@ -145,13 +144,10 @@ impl Sink {
                   },
                 }
               }
-              // Also update worker metadata for transparency
-              WorkerMetadata::record_received(
-                identity.to_string(),
-                service.id,
-                taskid,
-                self.pool.clone(),
-              )?;
+              // Also update worker metadata (non-blocking enqueue to the background writer)
+              self
+                .metadata
+                .received(identity.to_string(), service.id, taskid);
             } else {
               // Otherwise just discard the rest of the message
               println!(
