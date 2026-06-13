@@ -14,11 +14,14 @@ use rocket::http::{ContentType, Status};
 use rocket::local::blocking::Client;
 
 fn client() -> Client {
-  let pool = build_pool(test_db_address(), 4);
   let figment = rocket::Config::figment().merge(("template_dir", "templates"));
   let config_file = std::env::temp_dir().join("cortex_jobs_api_test.toml");
-  Client::tracked(mount_api_with(rocket::custom(figment), config_file, pool))
-    .expect("a valid rocket instance")
+  Client::tracked(mount_api_with(
+    rocket::custom(figment),
+    config_file,
+    test_db_address(),
+  ))
+  .expect("a valid rocket instance")
 }
 
 #[test]

@@ -7,7 +7,7 @@
 
 //! High-level contract test for the corpus-management capability (read side).
 
-use cortex::backend::{self, build_pool, test_db_address};
+use cortex::backend::{self, test_db_address};
 use cortex::frontend::server::mount_api_with;
 use cortex::models::{Corpus, NewCorpus, NewService, NewTask, Service};
 use cortex::schema::{corpora, services, tasks};
@@ -16,10 +16,13 @@ use rocket::http::{ContentType, Status};
 use rocket::local::blocking::Client;
 
 fn client() -> Client {
-  let pool = build_pool(test_db_address(), 4);
   let config_file = std::env::temp_dir().join("cortex_corpora_test.toml");
-  Client::tracked(mount_api_with(rocket::build(), config_file, pool))
-    .expect("a valid rocket instance")
+  Client::tracked(mount_api_with(
+    rocket::build(),
+    config_file,
+    test_db_address(),
+  ))
+  .expect("a valid rocket instance")
 }
 
 #[test]
@@ -122,4 +125,84 @@ fn api_corpus_detail_is_404_for_unknown_corpus() {
   let client = client();
   let response = client.get("/api/corpora/no_such_corpus_xyz").dispatch();
   assert_eq!(response.status(), Status::NotFound);
+}
+
+fn cleanup_corpus(db: &mut backend::Backend, corpus_name: &str) {
+  if let Ok(corpus) = Corpus::find_by_name(corpus_name, &mut db.connection) {
+    let _ = diesel::delete(tasks::table.filter(tasks::corpus_id.eq(corpus.id)))
+      .execute(&mut db.connection);
+    let _ =
+      diesel::delete(corpora::table.filter(corpora::id.eq(corpus.id))).execute(&mut db.connection);
+  }
+}
+
+#[test]
+fn post_corpora_registers_and_imports_via_a_job() {
+  // A tiny non-complex corpus fixture: <root>/doc1/doc1.tex
+  let root = std::env::temp_dir().join(format!("cortex_import_test_{}", std::process::id()));
+  let entry_dir = root.join("doc1");
+  std::fs::create_dir_all(&entry_dir).expect("create fixture dir");
+  std::fs::write(
+    entry_dir.join("doc1.tex"),
+    "\\documentclass{article}\\begin{document}x\\end{document}",
+  )
+  .expect("write fixture entry");
+
+  let name = "import_via_job_test";
+  let mut db = backend::testdb();
+  cleanup_corpus(&mut db, name);
+
+  let client = client();
+  let body = serde_json::json!({
+    "name": name,
+    "path": root.to_str().unwrap(),
+    "complex": false,
+    "description": "imported in a test",
+  });
+  let response = client
+    .post("/api/corpora")
+    .header(ContentType::JSON)
+    .body(body.to_string())
+    .dispatch();
+  assert_eq!(response.status(), Status::Accepted);
+  let job: serde_json::Value = response.into_json().expect("a job handle");
+  assert_eq!(job["kind"], "corpus_import");
+  let uuid = job["uuid"].as_str().expect("a uuid").to_string();
+
+  // Poll the import job to a terminal state.
+  let path = format!("/api/jobs/{uuid}");
+  let mut last = serde_json::Value::Null;
+  for _ in 0..500 {
+    last = client
+      .get(path.as_str())
+      .dispatch()
+      .into_json()
+      .expect("job json");
+    let status = last["status"].as_str().unwrap_or_default();
+    if status == "succeeded" || status == "failed" || status == "interrupted" {
+      break;
+    }
+    std::thread::sleep(std::time::Duration::from_millis(20));
+  }
+  assert_eq!(
+    last["status"], "succeeded",
+    "import job did not succeed: {}",
+    last["message"]
+  );
+
+  // The corpus is registered and has import-service tasks.
+  let corpus = Corpus::find_by_name(name, &mut db.connection).expect("corpus registered");
+  let import_tasks: i64 = tasks::table
+    .filter(tasks::corpus_id.eq(corpus.id))
+    .filter(tasks::service_id.eq(2))
+    .count()
+    .get_result(&mut db.connection)
+    .expect("count import tasks");
+  assert!(
+    import_tasks >= 1,
+    "import should create >=1 import-service task, got {import_tasks}"
+  );
+
+  cleanup_corpus(&mut db, name);
+  let _ = std::fs::remove_dir_all(&root);
 }

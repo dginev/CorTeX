@@ -66,6 +66,11 @@ pub fn build_pool(database_url: &str, max_size: u32) -> DbPool {
   let manager = ConnectionManager::<PgConnection>::new(database_url);
   Pool::builder().max_size(max_size).build_unchecked(manager)
 }
+
+/// The configured database URL, managed as Rocket state so background jobs open their own
+/// connection against the same database as the request pool (notably the test database in
+/// integration tests).
+pub struct DatabaseUrl(pub String);
 /// Constructs the default Backend struct for testing
 pub fn testdb() -> Backend {
   Backend {

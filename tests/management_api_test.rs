@@ -10,16 +10,19 @@
 //! These hold the *shape* of the interfaces and the happy-path data contracts that the agent API
 //! and the human UI both depend on — not the internals.
 
-use cortex::backend::{build_pool, test_db_address};
+use cortex::backend::test_db_address;
 use cortex::frontend::server::mount_api_with;
 use rocket::http::{Accept, ContentType, Status};
 use rocket::local::blocking::Client;
 
 fn client() -> Client {
-  let pool = build_pool(test_db_address(), 4);
   let config_file = std::env::temp_dir().join("cortex_mgmt_api_test.toml");
-  Client::tracked(mount_api_with(rocket::build(), config_file, pool))
-    .expect("a valid rocket instance")
+  Client::tracked(mount_api_with(
+    rocket::build(),
+    config_file,
+    test_db_address(),
+  ))
+  .expect("a valid rocket instance")
 }
 
 #[test]

@@ -11,13 +11,21 @@
 //! as HTML for humans. Handlers live here; the app is assembled in [`crate::frontend::server`].
 //! This is the first capability drained out of the binary's legacy routes; more land per increment.
 
+use std::collections::HashSet;
+
+use diesel::pg::PgConnection;
 use rocket::http::Status;
 use rocket::serde::json::Json;
 use rocket::{Route, State};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-use crate::backend::{progress_report, DbPool};
-use crate::models::Corpus;
+use crate::backend::{from_address, progress_report, DatabaseUrl, DbPool};
+use crate::concerns::CortexInsertable;
+use crate::frontend::jobs::JobDto;
+use crate::importer::Importer;
+use crate::jobs::{self, JobProgress};
+use crate::models::{Corpus, NewCorpus};
 
 /// A corpus as exposed over the API/UI. `name` is the stable external handle used by every route.
 #[derive(Debug, Serialize)]
@@ -122,5 +130,88 @@ pub fn api_corpus(name: &str, pool: &State<DbPool>) -> Result<Json<CorpusDetailD
   }))
 }
 
+/// Request body for registering and importing a corpus.
+#[derive(Debug, Deserialize)]
+pub struct ImportRequest {
+  /// Corpus name (external handle).
+  pub name: String,
+  /// Filesystem path to the corpus root.
+  pub path: String,
+  /// Whether documents are multi-file (complex).
+  pub complex: bool,
+  /// Optional human-readable description.
+  pub description: Option<String>,
+}
+
+/// Registers a corpus and starts an in-process import job; returns `202 Accepted` + the job handle.
+/// Agents and humans poll `GET /api/jobs/<uuid>` (or the progress page) for completion.
+#[post("/api/corpora", format = "json", data = "<request>")]
+pub fn import_corpus(
+  request: Json<ImportRequest>,
+  pool: &State<DbPool>,
+  database_url: &State<DatabaseUrl>,
+) -> Result<(Status, Json<JobDto>), Status> {
+  let request = request.into_inner();
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  if Corpus::find_by_name(&request.name, &mut connection).is_ok() {
+    return Err(Status::Conflict);
+  }
+  NewCorpus {
+    name: request.name.clone(),
+    path: request.path.clone(),
+    complex: request.complex,
+    description: request.description.clone().unwrap_or_default(),
+  }
+  .create(&mut connection)
+  .map_err(|_| Status::InternalServerError)?;
+  let corpus = Corpus::find_by_name(&request.name, &mut connection)
+    .map_err(|_| Status::InternalServerError)?;
+  drop(connection);
+
+  let database_url = database_url.0.clone();
+  let params = serde_json::json!({ "name": request.name, "path": request.path });
+  let job_uuid = jobs::spawn_job(
+    pool.inner().clone(),
+    "corpus_import",
+    "admin",
+    params,
+    move |progress| run_import(&database_url, corpus, progress),
+  )
+  .map_err(|_| Status::InternalServerError)?;
+
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let job = jobs::find_job(&mut connection, job_uuid).ok_or(Status::InternalServerError)?;
+  Ok((Status::Accepted, Json(JobDto::from(job))))
+}
+
+/// The body of a `corpus_import` job: run the importer in-process against `corpus`, reporting
+/// progress, and return the number of import-service tasks created.
+fn run_import(database_url: &str, corpus: Corpus, progress: &JobProgress) -> Result<Value, String> {
+  let corpus_id = corpus.id;
+  let mut importer = Importer {
+    corpus,
+    backend: from_address(database_url),
+    cwd: Importer::cwd(),
+    active_prefixes: HashSet::new(),
+  };
+  progress.step(0, None, "importing corpus");
+  importer.process().map_err(|error| error.to_string())?;
+  let imported = count_import_tasks(&mut importer.backend.connection, corpus_id);
+  progress.step(imported, Some(imported), "import complete");
+  Ok(serde_json::json!({ "imported": imported }))
+}
+
+/// Counts the import-service tasks (service id 2) registered for a corpus.
+fn count_import_tasks(connection: &mut PgConnection, corpus: i32) -> i32 {
+  use crate::schema::tasks::dsl::{corpus_id, service_id, tasks};
+  use diesel::prelude::*;
+  tasks
+    .filter(corpus_id.eq(corpus))
+    .filter(service_id.eq(2))
+    .count()
+    .get_result::<i64>(connection)
+    .unwrap_or(0) as i32
+}
+
 /// The route set for the corpus-management capability.
-pub fn routes() -> Vec<Route> { routes![api_corpora, api_corpus] }
+pub fn routes() -> Vec<Route> { routes![api_corpora, api_corpus, import_corpus] }

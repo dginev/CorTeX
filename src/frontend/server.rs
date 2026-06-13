@@ -7,41 +7,49 @@
 
 //! The library-resident Rocket composition root.
 //!
-//! `server` assembles the per-capability route groups (`management`, and from Arm 5 onward
-//! `corpora`, …), the shared fairings, and the managed state (config-file path + connection pool)
+//! `server` assembles the per-capability route groups (`management`, `corpora`, `jobs`, …), the
+//! shared fairings, and the managed state (config-file path, database URL, and connection pool)
 //! into a testable app that the binary and the integration tests both build. Route handlers live in
 //! their capability modules; this file only wires them together. As later arms land, their routes
 //! are mounted here too (the binary's legacy routes migrate in incrementally).
 
 use std::path::PathBuf;
 
+use diesel::pg::PgConnection;
+use diesel::Connection;
 use rocket::{Build, Rocket};
 use rocket_dyn_templates::Template;
 
-use crate::backend::{build_pool, DbPool};
+use crate::backend::{build_pool, DatabaseUrl};
 use crate::config::{config, config_file_path};
 use crate::frontend::corpora;
 use crate::frontend::jobs;
 use crate::frontend::management::{self, ConfigFile};
 
-/// Mounts the full library API/UI surface, building the connection pool and resolving the config
-/// file from the runtime configuration. This is the composition root the binary uses.
+/// Mounts the full library API/UI surface from the runtime configuration. The composition root the
+/// binary uses.
 pub fn mount_api(rocket: Rocket<Build>) -> Rocket<Build> {
-  let cfg = config();
-  let pool = build_pool(&cfg.database.url, cfg.database.pool_size);
+  let database_url = config().database.url.clone();
   // Best-effort: mark jobs left 'running' by a previous process as interrupted (prod startup only;
   // tests build via mount_api_with, so their in-flight jobs are never touched).
-  if let Ok(mut connection) = pool.get() {
+  if let Ok(mut connection) = PgConnection::establish(&database_url) {
     crate::jobs::interrupt_orphans(&mut connection);
   }
-  mount_api_with(rocket, config_file_path(), pool)
+  mount_api_with(rocket, config_file_path(), &database_url)
 }
 
-/// Like [`mount_api`], but with an explicit config-file path and connection pool. Tests use this to
-/// target the test database and a temporary config file.
-pub fn mount_api_with(rocket: Rocket<Build>, config_file: PathBuf, pool: DbPool) -> Rocket<Build> {
+/// Like [`mount_api`], but with an explicit config-file path and database URL (tests target the
+/// test database and a temporary config file). Builds the connection pool and manages it alongside
+/// the URL, so background jobs open their own connection against the same database.
+pub fn mount_api_with(
+  rocket: Rocket<Build>,
+  config_file: PathBuf,
+  database_url: &str,
+) -> Rocket<Build> {
+  let pool = build_pool(database_url, config().database.pool_size);
   rocket
     .manage(ConfigFile(config_file))
+    .manage(DatabaseUrl(database_url.to_string()))
     .manage(pool)
     .mount("/", management::routes())
     .mount("/", corpora::routes())

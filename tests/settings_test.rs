@@ -9,7 +9,7 @@
 //! High level: they hold the interface shape and the happy-path data contract, including the
 //! security contract that secrets are neither shown nor persisted.
 
-use cortex::backend::{build_pool, test_db_address};
+use cortex::backend::test_db_address;
 use cortex::frontend::server::mount_api_with;
 use rocket::http::{ContentType, Status};
 use rocket::local::blocking::Client;
@@ -25,8 +25,7 @@ fn temp_config_path(tag: &str) -> PathBuf {
 fn client(config_file: PathBuf) -> Client {
   // The builder attaches the template fairing; we only point it at the repo templates.
   let figment = rocket::Config::figment().merge(("template_dir", "templates"));
-  let pool = build_pool(test_db_address(), 4);
-  let rocket = mount_api_with(rocket::custom(figment), config_file, pool);
+  let rocket = mount_api_with(rocket::custom(figment), config_file, test_db_address());
   Client::tracked(rocket).expect("a valid rocket instance")
 }
 
