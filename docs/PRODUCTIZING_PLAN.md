@@ -450,8 +450,8 @@ screen. Status fields are point-in-time as of this draft.
 - **Observability:** every authenticated action is an audit row **and** a `tracing` event with the
   actor id; the audit log is itself a report (Arm 8).
 - **Risks:** security-critical — token hashing, scope enforcement, and not regressing the public
-  read-only dashboard (which must stay unauthenticated read-only). OAuth dependency choice is an
-  Open Question (§5).
+  read-only dashboard (which must stay unauthenticated read-only). **Identity is tokens-first
+  (decided §5.1)** — human accounts layer on after the token/actor model.
 - **Acceptance:** every screen has a documented JSON endpoint in the OpenAPI spec; agents
   authenticate with scoped tokens; every write is attributed to an actor and audited; the public
   dashboard remains read-only without auth.
@@ -521,44 +521,110 @@ screen. Status fields are point-in-time as of this draft.
   reproduced+fixed or fully instrumented with a documented mitigation; `time 0.1`, `dotenv`,
   `lazy_static` gone.
 
-### Arm 13 — Productization basics & deployment
-- **Goal:** Real docs, packaging, and the end-state deployment topology.
-- **Current:** `MANUAL.md` is literally `### TODO`; `INSTALL.md` is manual ops; `README` says "not
-  ready for off-the-shelf use"; no packaging; deployment is hand-run binaries.
-- **Screen:** in-app **first-run docs** + contextual help; a public **read-only dashboard** mode.
-- **Agent API:** the OpenAPI doc (Arm 9) *is* the agent manual; plus a short "agent quickstart".
-- **Data model:** none.
-- **Observability:** n/a.
-- **Risks:** the public dashboard (exposed via `latexml.rs` Caddy reverse-proxy over Tailscale) must
-  be strictly read-only and must not leak the write API or `/metrics` internals.
-- **Acceptance:** a real `MANUAL.md` (human) + agent quickstart; `cargo`-installable / packaged
-  binaries; documented deployment: **dispatcher + frontend on `cortex`, Postgres on NVMe,
-  pinned-Docker-image workers across cortex/science-kit/science-pup, external workers via Tailscale,
-  public read-only dashboard via `latexml.rs`** — noted now, delivered after the foundation arms.
+### Arm 13 — Productization basics, public dashboard & deployment
+- **Goal:** Real docs, packaging, and the end-state deployment topology — including the public
+  read-only web view at **`https://corpora.latexml.rs`** that hosts the ar5iv browsing +
+  conversion-report UIs for the wider community.
+- **Current:** `INSTALL.md` is now a complete, verified installation (Arm 0 ✅); `MANUAL.md` is still
+  literally `### TODO`; `README` says "not ready for off-the-shelf use"; no packaging; deployment is
+  hand-run binaries. `src/frontend/cors.rs` sends `Access-Control-Allow-Origin: *` **together with**
+  `Access-Control-Allow-Credentials: true` — an invalid/unsafe combination (see Risks).
+- **Screen:** the **public read-only dashboard at `corpora.latexml.rs`** — the existing overview /
+  reports / history / diff / **ar5iv document-preview** screens, served read-only; plus in-app
+  first-run docs + contextual help on the internal admin app.
+- **Agent API:** the OpenAPI doc (Arm 9) *is* the agent manual + a short "agent quickstart". The
+  public host exposes **only** the read-only JSON twins; the write API, admin UIs, token endpoints,
+  and `/metrics` stay on the internal (Tailscale / token-authed) surface.
+- **Data model:** none. Config (Arm 1) gains `web.public_base_url = "https://corpora.latexml.rs"`,
+  a `web.public_readonly` mode (serve only safe GETs), and a **CORS origin allowlist** replacing the
+  `*`.
+- **Observability:** public-traffic metrics (requests, cache hit rate) feed Arms 8/11; the public
+  view is the most cache-sensitive surface (Arm 11b) and the most read-amplified.
+- **Risks:** the public boundary is security-critical — it must serve **only** read-only dashboards +
+  previews and never the write API, admin UIs, token endpoints, or `/metrics`. Fix the CORS
+  misconfiguration (`*` + credentials) into a proper origin allowlist. The ar5iv preview renders
+  untrusted converted HTML client-side — keep the existing consent/sandbox posture and a tight CSP.
+- **Acceptance:** a real `MANUAL.md` (human) + agent quickstart; packaged/installable binaries;
+  **`https://corpora.latexml.rs` live**, serving the read-only ar5iv dashboards + previews via a
+  Caddy reverse-proxy over Tailscale to the frontend on `cortex`, with write/admin/metrics surfaces
+  unreachable from the public host; documented full topology: **dispatcher + frontend on `cortex`,
+  Postgres on NVMe, pinned-Docker-image workers across cortex/science-kit/science-pup, external
+  workers via Tailscale, public read-only dashboard at `corpora.latexml.rs`.**
 
 ---
 
-## 4. Sequencing & milestones
+## 4. Sequencing & dependency plan (who blocks whom)
 
-The dependency order matters more than calendar estimates (this box is the dev + prod node).
+Calendar estimates matter less than the blocking structure (this box is the dev *and* prod node).
+The **symmetry contract** (§2) reshapes the naive "config + UIs first" order: three capabilities
+each split into an *early substrate* and a *late surface*, and the substrate is a foundation, not a
+late arm:
 
-- **M0 — Buildable & observable foundation.** Arm 0 → Arm 1 → Arm 2 → Arm 3 → Arm 4, with Arm 8's
-  `tracing`/`metrics` substrate (D6) wired in as we go. *Exit:* `cortex init` stands up a working
-  node from a clean box; everything runs from runtime config; pooled DB; structured logs/metrics
-  flowing. Nothing user-visible yet, but the prototype's worst foundations are gone.
-- **M1 — The management surfaces, symmetric by construction.** Arm 5 (corpus) → Arm 6 (service) →
-  Arm 7 (runs), each shipping screen **and** JSON API from one controller (D7 + symmetry contract),
-  with Arm 9 identity threaded through writes from the first one. *Exit:* every out-of-band admin
-  task (§1.5) has a first-class screen + API; example bins/shell scripts begin retiring.
-- **M2 — Observatory & data.** Arm 8 (unified live+historical, JSON twins, export) → Arm 10
-  (datasets w/ provenance) → Arm 11 (cache). *Exit:* the north star is demonstrable — a human and an
-  agent watch the same live + historical run state; datasets are reproducible.
-- **M3 — Harden & ship.** Arm 12 (bugs/CI/supply-chain) → Arm 13 (docs/packaging/deployment topology).
-  *Exit:* green CI with audit gates, real manual, packaged binaries, documented production topology.
+- **Observability (Arm 8)** → **8a** `tracing`/`metrics` rails (early) + **8b** the Observatory
+  screens (late). Lay the rails before the track, or retrofit instrumentation into every feature.
+- **Agent API + identity (Arm 9)** → **9a** tokens + `actor` + content-negotiation + OpenAPI
+  derivation (early foundation) + **9b** the per-screen endpoints — which are *not a separate arm*:
+  each management screen's JSON twin ships with the screen under the symmetry contract.
+- **Cache (Arm 11)** → **11a** make Redis optional (early; self-install needs no extra daemon) +
+  **11b** unified HTML+JSON cache (late, with 8b).
 
-Each arm ships on its own branch off `master` (per owner workflow: branch + push, no PR). The
-`tracing`/`metrics` and the screen↔API symmetry contract are applied continuously, not as a final
-arm.
+**Layer 0 — Foundation bring-up. ✅ DONE** (Arm 0): box builds, Postgres on NVMe, migrations
+applied on both DBs, frontend boots + serves (HTTP 200); `INSTALL.md` rewritten and verified
+end-to-end.
+
+**Layer 1 — Invisible foundations** (block the *trustworthy* version of everything):
+- **Arm 1 (runtime config)** — the deepest root: kills the compile-time `dotenv!` DB URL and the CWD
+  coupling, defines `CortexConfig` that ports/data-root/redis-url/auth-mode/bind all read. Home for
+  the `dotenv`/`time-0.1` purge. **Do this first** — everything reads it.
+- **Arm 4 (typed errors)** — the JSON error envelope every endpoint needs.
+- **Arm 8a (tracing/metrics rails)** — so 5/6/7/10 emit signal for free; also a prerequisite for
+  *fixing* the ventilator race (instrument, then fix).
+- **Arm 3 (pool + FKs + uuid)** — pool for scale under the new endpoints; FKs for *safe delete* in
+  the corpus/service UIs (today deletes orphan `log_*` rows).
+- **Arm 9a (tokens + actor + OpenAPI plumbing)** — blocks the API half and the attribution of every
+  capability below. **Tokens-first** (decided §5.1): a token model + `Bearer` guard + an `actor`
+  abstraction; no OAuth on the critical path, human accounts layered on later.
+- **CI revival + `cargo-audit`/`cargo-deny`** (from Arm 12) — guard refactors from here on.
+- *Internal order:* Arm 1 first; then 4, 8a, 3, 9a are largely orthogonal and parallelizable.
+
+**Layer 2 — The management surfaces** (the "admin UIs hardened"; M1):
+- **Pilot: the Settings/Config screen** (Arm 1's own UI: `GET/PATCH /api/config` + page) — the
+  lowest-risk surface to prove the symmetry contract before the corpus/service UIs bet on it.
+- Then the trio in **data-dependency order: Corpus (5) → Service (6) → Runs (7)** — a service
+  activates *on a corpus*; a run executes *a service*. Each ships screen + JSON twin + telemetry +
+  `actor`-attribution by construction. Example bins / shell scripts retire as each lands.
+- **Self-install (Arm 2)** runs **in parallel** here on the CLI track (needs only Arm 1 + embedded
+  migrations), reusing the `clap` scaffolding that also becomes the agent shell-out surface.
+
+**Layer 3 — Transparent + reproducible** (M2):
+- **Arm 8b (Observatory)** — consumes 8a's signal + Arm 7's run model: live + historical run state
+  as one pollable surface, identical for humans and agents. **Arm 11b (unified cache)** ships with
+  it; **Arm 10 (datasets)** consumes Arm 7's jobs + Arm 6's worker-image provenance; the
+  **ventilator-race fix** lands here.
+
+**Layer 4 — Ship** (M3): Arm 12 finish (remaining bugs/hygiene) + Arm 13 (real `MANUAL.md`,
+packaging, deployment topology, public read-only dashboard — which needs 9a to separate public from
+authed surfaces).
+
+**Critical path (the spine):**
+`Arm 1 (config) → 9a (tokens + actor + API plumbing) → Arm 7 (runs) → 8b (Observatory) → Arm 13 (ship)`.
+Everything else parallelizes off this spine.
+
+| This… | …must precede | …because |
+|---|---|---|
+| **1 config** | 2, 9a, 11a, 13 | runtime DB/ports/data-root/auth-mode; kills compile-time + CWD coupling |
+| **4 errors** | 9a + all endpoints | the JSON error envelope |
+| **8a rails** | 5, 6, 7, 10; race-fix | instrument before you build / before you fix |
+| **3 pool+FKs** | robust 5/6/7/8b; safe delete | scale + referential integrity |
+| **9a tokens+actor** | API-half & attribution of 5/6/7 | symmetry contract + truthful `owner`/audit from day one |
+| **5 corpus** | 6 | services activate on a corpus |
+| **6 service** | 7, 10 | runs execute a service; datasets need worker-image provenance |
+| **7 runs** | 8b, 10 | run state to observe; job machinery to export |
+| **2 self-install** | (parallel) | only needs 1 + embedded migrations |
+
+Each arm ships on its own branch off `master` (owner workflow: branch + push, no PR). The
+`tracing`/`metrics` rails and the screen↔API symmetry contract are applied **continuously**, not as
+a final arm.
 
 ---
 
@@ -567,9 +633,10 @@ arm.
 These change scope or sequencing; flagged for the review the handoff asked for *before large
 refactors*:
 
-1. **Identity model (Arm 9):** full **user accounts + Google OAuth** (harvested from `admin-ui`),
-   or **API tokens only** (simpler, agent-first) with humans as a thin layer on top? This sets how
-   much of the `admin-ui` auth schema we revive.
+1. **Identity model (Arm 9):** ✅ **RESOLVED 2026-06-13 — tokens-first.** Build the API-token model
+   + `Bearer` guard + `actor` abstraction first; human accounts (sessions/login) layer on later;
+   revive the `admin-ui` `user_permissions`/`user_actions` audit schema incrementally. No Google
+   OAuth on the critical path.
 2. **CLI-first vs Web-first (D1):** is the `cortex` CLI the priority deliverable (fastest path to an
    agent surface + self-install), with screens following — or should the web admin UI lead?
 3. **Redis (Arm 11):** keep it (documented in self-install), make it **optional with graceful
