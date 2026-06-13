@@ -17,7 +17,7 @@ use std::time::Duration;
 use zmq::{Context, Message, SNDMORE};
 
 use crate::backend;
-use crate::backend::DEFAULT_DB_ADDRESS;
+use crate::backend::default_db_address;
 use crate::importer::Importer;
 use crate::models::{Corpus, NewCorpus, Task};
 use pericortex::worker::Worker;
@@ -50,7 +50,7 @@ impl Default for InitWorker {
       message_size: 100_000,
       source: "tcp://localhost:51695".to_string(),
       sink: "tcp://localhost:51696".to_string(),
-      backend_address: DEFAULT_DB_ADDRESS.to_string(),
+      backend_address: default_db_address().to_string(),
       identity: String::new(),
     }
   }

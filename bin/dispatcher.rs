@@ -4,20 +4,22 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
-use cortex::backend::DEFAULT_DB_ADDRESS;
+use cortex::config::config;
 use cortex::dispatcher::manager::TaskManager;
 
 /// A dispatcher executable for `CorTeX` distributed processing with ZMQ
 fn main() {
+  // All operational parameters come from the runtime configuration
+  // (defaults → cortex.toml → CORTEX_ env); see `cortex::config`.
+  let cfg = config();
   let manager = TaskManager {
-    source_port: 51695,
-    result_port: 51696,
-    // Note that queue_size must never be larged than postgresql's max_locks_per_transaction setting
+    source_port: cfg.dispatcher.source_port,
+    result_port: cfg.dispatcher.result_port,
+    // Note that queue_size must never be larger than postgresql's max_locks_per_transaction setting
     //   (typically specified in /etc/postgresql/9.1/main/postgresql.conf or similar)
-    queue_size: 800, /* If we have 400 CPUs, this is allows us two task dispatches before
-                      * reload, should be fine. */
-    message_size: 100_000,
-    backend_address: DEFAULT_DB_ADDRESS.to_string(),
+    queue_size: cfg.dispatcher.queue_size,
+    message_size: cfg.dispatcher.message_size,
+    backend_address: cfg.database.url.clone(),
   };
   manager
     .start(None)

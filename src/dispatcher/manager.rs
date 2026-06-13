@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use std::thread::{self, sleep};
 use std::time::Duration;
 
-use crate::backend::DEFAULT_DB_ADDRESS;
+use crate::backend::default_db_address;
 use crate::dispatcher::finalize::Finalize;
 use crate::dispatcher::sink::Sink;
 use crate::dispatcher::ventilator::Ventilator;
@@ -42,7 +42,7 @@ impl Default for TaskManager {
       result_port: 51696,
       queue_size: 100,
       message_size: 100_000,
-      backend_address: DEFAULT_DB_ADDRESS.to_string(),
+      backend_address: default_db_address().to_string(),
     }
   }
 }

@@ -9,7 +9,7 @@
 //! Example run: `$ cargo run --release --example tex_to_html_import /data/arxmliv/ arXMLiv`
 use std::env;
 
-use cortex::backend::{Backend, DEFAULT_DB_ADDRESS};
+use cortex::backend::{default_db_address, Backend};
 use cortex::dispatcher::manager::TaskManager;
 use cortex::helpers::TaskStatus;
 use cortex::models::{Corpus, NewService, NewTask, Service};
@@ -55,7 +55,7 @@ fn main() {
       result_port: 5758,
       queue_size: 100_000,
       message_size: 100,
-      backend_address: DEFAULT_DB_ADDRESS.to_string(),
+      backend_address: default_db_address().to_string(),
     };
     assert!(manager.start(Some(1)).is_ok());
   });
@@ -67,7 +67,7 @@ fn main() {
     message_size: 100_000,
     source: "tcp://localhost:5757".to_string(),
     sink: "tcp://localhost:5758".to_string(),
-    backend_address: DEFAULT_DB_ADDRESS.to_string(),
+    backend_address: default_db_address().to_string(),
     identity: "unknown:init:1".to_string(),
   };
   // Perform a single echo task

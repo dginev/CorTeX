@@ -18,21 +18,21 @@ pub use reports::TaskReportOptions;
 
 use diesel::result::Error;
 use diesel::*;
-use dotenv::dotenv;
 use std::collections::HashMap;
 use std::fmt;
 
 use crate::concerns::{CortexDeletable, CortexInsertable};
+use crate::config::config;
 use crate::helpers::{TaskReport, TaskStatus};
 use crate::models::{
   Corpus, DiffStatusFilter, DiffStatusRow, NewTask, Service, Task, TaskRunMetadata,
 };
 use chrono::NaiveDateTime;
 
-/// The production database postgresql address, set from the .env configuration file
-pub const DEFAULT_DB_ADDRESS: &str = dotenv!("DATABASE_URL");
-/// The test database postgresql address, set from the .env configuration file
-pub const TEST_DB_ADDRESS: &str = dotenv!("TEST_DATABASE_URL");
+/// The production database postgresql address, from the runtime [`crate::config`] configuration
+pub fn default_db_address() -> &'static str { &config().database.url }
+/// The test database postgresql address, from the runtime [`crate::config`] configuration
+pub fn test_db_address() -> &'static str { &config().database.test_url }
 
 /// Provides an interface to the Postgres task store
 pub struct Backend {
@@ -44,9 +44,7 @@ impl fmt::Debug for Backend {
 }
 impl Default for Backend {
   fn default() -> Self {
-    dotenv().ok();
-    let connection = connection_at(DEFAULT_DB_ADDRESS);
-
+    let connection = connection_at(default_db_address());
     Backend { connection }
   }
 }
@@ -57,9 +55,8 @@ pub fn connection_at(address: &str) -> PgConnection {
 }
 /// Constructs the default Backend struct for testing
 pub fn testdb() -> Backend {
-  dotenv().ok();
   Backend {
-    connection: connection_at(TEST_DB_ADDRESS),
+    connection: connection_at(test_db_address()),
   }
 }
 /// Constructs a Backend at a given address

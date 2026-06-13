@@ -17,13 +17,12 @@
 #[macro_use]
 extern crate diesel;
 #[macro_use]
-extern crate dotenv_codegen;
-#[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate rocket;
 
 pub mod backend;
+pub mod config;
 pub mod concerns;
 pub mod dispatcher;
 pub mod frontend;
