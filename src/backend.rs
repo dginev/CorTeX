@@ -11,10 +11,12 @@
 mod corpora_aggregate;
 mod mark;
 mod reports;
+mod rollup;
 mod services_aggregate;
 mod tasks_aggregate;
 pub(crate) use reports::progress_report;
 pub use reports::TaskReportOptions;
+pub use rollup::ReportSummaryRow;
 
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use diesel::result::Error;
@@ -219,6 +221,40 @@ impl Backend {
   /// Provides a progress report, grouped by severity, for a given `Corpus` and `Service` pair
   pub fn progress_report(&mut self, corpus: &Corpus, service: &Service) -> HashMap<String, f64> {
     reports::progress_report(&mut self.connection, corpus.id, service.id)
+  }
+
+  /// Recomputes the `report_summary` rollup (Arm 14 #6); call on the run-completion path so the
+  /// cheap category/what report reads stay fresh.
+  pub fn refresh_report_summary(&mut self) -> Result<(), Error> {
+    rollup::refresh_report_summary(&mut self.connection)
+  }
+  /// Category-grain report for `(corpus, service, severity)`, read from the `report_summary`
+  /// rollup.
+  pub fn category_rollup(
+    &mut self,
+    corpus: &Corpus,
+    service: &Service,
+    severity: &str,
+  ) -> Vec<ReportSummaryRow> {
+    rollup::category_rollup(&mut self.connection, corpus.id, service.id, severity)
+      .unwrap_or_default()
+  }
+  /// `what`-grain drill-down for `(corpus, service, severity, category)`, read from the rollup.
+  pub fn what_rollup(
+    &mut self,
+    corpus: &Corpus,
+    service: &Service,
+    severity: &str,
+    category: &str,
+  ) -> Vec<ReportSummaryRow> {
+    rollup::what_rollup(
+      &mut self.connection,
+      corpus.id,
+      service.id,
+      severity,
+      category,
+    )
+    .unwrap_or_default()
   }
 
   /// Prepares a template-friendly report of task differences

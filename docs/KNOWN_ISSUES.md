@@ -34,7 +34,8 @@
 
 | # | Sev | Status | Issue |
 |---|---|---|---|
-| R-1 | S2 | 🟡 | **Hard Redis dependency for reports.** Aggregate reports are O(millions of log rows) and shielded by a Redis cache (staleness + an extra daemon). Being replaced by a Postgres **materialized-view rollup** (Arm 14 #6) to make reports cheap, fresh, and Redis-optional. |
+| R-1 | S2 | 🟡 | **Hard Redis dependency for reports.** Aggregate reports are O(millions of log rows) and shielded by a Redis cache (staleness + an extra daemon). Arm 14 #6 **#6.1 done**: a Postgres `report_summary` materialized view + read API (`Backend::category_rollup`/`what_rollup`/`refresh_report_summary`) + contract test. **#6.2 remaining**: point `task_report`'s read path at the rollup, refresh on the run-completion path, make Redis optional/removable. |
+| R-4 | S3 | 🔴 | **`report_summary` uses non-concurrent `REFRESH`** (brief `ACCESS EXCLUSIVE` lock during the infrequent run-completion refresh). `REFRESH ... CONCURRENTLY` needs a UNIQUE index, which requires disambiguating the ROLLUP `NULL` `what` from a real NULL (e.g. `what_is_total` + `NULLS NOT DISTINCT`, PG15+). Follow-up once read-path wiring lands. |
 | R-2 | S3 | 🔴 | **`tasks.entry varchar(200)`** length cap — long arXiv paths could exceed it; silent truncation risk. Audit + widen. |
 | R-3 | S4 | 🔴 | **Reports return `Vec<HashMap<String,String>>`** (stringly-typed) rather than DTOs — fragile contract for the agent-first API (Arm 8/9). |
 
