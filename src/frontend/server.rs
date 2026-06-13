@@ -21,6 +21,7 @@ use rocket_dyn_templates::Template;
 use crate::backend::{build_pool, DbPool};
 use crate::config::{config, config_file_path};
 use crate::frontend::corpora;
+use crate::frontend::jobs;
 use crate::frontend::management::{self, ConfigFile};
 
 /// Mounts the full library API/UI surface, building the connection pool and resolving the config
@@ -28,6 +29,11 @@ use crate::frontend::management::{self, ConfigFile};
 pub fn mount_api(rocket: Rocket<Build>) -> Rocket<Build> {
   let cfg = config();
   let pool = build_pool(&cfg.database.url, cfg.database.pool_size);
+  // Best-effort: mark jobs left 'running' by a previous process as interrupted (prod startup only;
+  // tests build via mount_api_with, so their in-flight jobs are never touched).
+  if let Ok(mut connection) = pool.get() {
+    crate::jobs::interrupt_orphans(&mut connection);
+  }
   mount_api_with(rocket, config_file_path(), pool)
 }
 
@@ -39,5 +45,6 @@ pub fn mount_api_with(rocket: Rocket<Build>, config_file: PathBuf, pool: DbPool)
     .manage(pool)
     .mount("/", management::routes())
     .mount("/", corpora::routes())
+    .mount("/", jobs::routes())
     .attach(Template::fairing())
 }
