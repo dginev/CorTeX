@@ -168,13 +168,34 @@ fn api_lists_runs_and_reports_current() {
     Status::BadRequest,
     "unknown status filter -> 400"
   );
+
+  // --- HTML twin: the human run-history screen renders the same runs server-side ---------------
+  let response = client
+    .get(format!("/runs/{CORPUS_NAME}/{SERVICE_NAME}"))
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  assert_eq!(response.content_type(), Some(ContentType::HTML));
+  let body = response.into_string().expect("html body");
+  assert!(
+    body.contains("Run history"),
+    "renders the run-history screen"
+  );
+  assert!(
+    body.contains("second run"),
+    "renders the seeded run rows server-side"
+  );
 }
 
 #[test]
 fn api_runs_is_404_for_unknown_corpus() {
   let client = client();
+  // The agent API and its human twin both 404 on an unknown corpus/service.
   let response = client
     .get("/api/runs/no-such-corpus-xyz/no_such_service")
+    .dispatch();
+  assert_eq!(response.status(), Status::NotFound);
+  let response = client
+    .get("/runs/no-such-corpus-xyz/no_such_service")
     .dispatch();
   assert_eq!(response.status(), Status::NotFound);
 }

@@ -1,0 +1,50 @@
+{% extends "layout" %} {% block content %}
+<div class="center">
+  <h1>Run history</h1>
+  <h5>{{service}} over {{corpus}}</h5>
+  <p>
+    <a href="/api/runs/{{corpus}}/{{service}}">JSON</a>
+  </p>
+  <br>
+  {% if runs | length == 0 %}
+  <p>No runs recorded yet for this corpus/service.</p>
+  {% else %}
+  <div class="row">
+    <div class="col-md-1"></div>
+    <div class="col-md-10">
+      <table id="runs-report" class="table">
+        <thead>
+          <tr>
+            <th class="left">Started</th>
+            <th class="left">Ended</th>
+            <th class="left">Owner</th>
+            <th class="left">Description</th>
+            <th class="right">Total</th>
+            <th class="right">No problem</th>
+            <th class="right">Warning</th>
+            <th class="right">Error</th>
+            <th class="right">Fatal</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for run in runs %}
+          <tr>
+            <td class="left">{{run.start_time}}</td>
+            <td class="left">{% if run.completed %}{{run.end_time}}{% else %}<em>ongoing</em>{% endif %}</td>
+            <td class="left">{{run.owner}}</td>
+            <td class="left">{{run.description}}</td>
+            <td class="right">{{run.total}}</td>
+            <td class="right">{{run.no_problem}}</td>
+            <td class="right">{{run.warning}}</td>
+            <td class="right">{{run.error}}</td>
+            <td class="right">{{run.fatal}}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="col-md-1"></div>
+  </div>
+  {% endif %}
+</div>
+{% endblock content %}

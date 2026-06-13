@@ -8,15 +8,17 @@
 //! Historical-runs capability: inspect the run history of a `(corpus, service)` as an agent API
 //! (the JSON twin of the human history screen).
 //!
-//! Follows the symmetry contract — one shared [`RunDto`] is the read model for both surfaces.
-//! Handlers live here; the app is assembled in [`crate::frontend::server`]. This drains the
-//! binary's legacy `history` route toward the testable library surface; the HTML twin migrates in a
-//! later increment (the legacy `history` page still renders today).
+//! Follows the symmetry contract — one shared [`RunDto`] is the read model for both the agent API
+//! (`GET /api/runs/...`) and the server-rendered human screen ([`runs_page`], `GET /runs/...`).
+//! Handlers live here; the app is assembled in [`crate::frontend::server`]. The binary's legacy
+//! `history` page (Vega charts) still renders today and migrates onto this surface in a later
+//! increment.
 
 use chrono::NaiveDateTime;
 use rocket::http::Status;
 use rocket::serde::json::Json;
 use rocket::{Route, State};
+use rocket_dyn_templates::{context, Template};
 use serde::Serialize;
 
 use crate::backend::{list_task_diffs, summary_task_diffs, DbPool};
@@ -261,7 +263,35 @@ pub fn api_run_task_diffs(
   Ok(Json(tasks.into_iter().map(TaskDiffDto::from).collect()))
 }
 
+/// The human run-history screen: a server-rendered table of the same runs `GET /api/runs/...`
+/// returns (the 1:1 HTML twin, sharing [`RunDto`]). `404` if the corpus/service is unknown.
+#[get("/runs/<corpus>/<service>")]
+pub fn runs_page(corpus: &str, service: &str, pool: &State<DbPool>) -> Result<Template, Status> {
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let (corpus_record, service_record) = resolve(corpus, service, &mut connection)?;
+  let runs: Vec<RunDto> = HistoricalRun::find_by(&corpus_record, &service_record, &mut connection)
+    .unwrap_or_default()
+    .into_iter()
+    .map(RunDto::from)
+    .collect();
+  // `global` carries the title/description the shared `layout` template expects.
+  let global = serde_json::json!({
+    "title": format!("Run history · {service} / {corpus}"),
+    "description": format!("Historical runs of service {service} over corpus {corpus}"),
+  });
+  Ok(Template::render(
+    "runs",
+    context! { global, corpus, service, runs },
+  ))
+}
+
 /// The route set for the historical-runs capability.
 pub fn routes() -> Vec<Route> {
-  routes![api_runs, api_run_current, api_run_diff, api_run_task_diffs]
+  routes![
+    api_runs,
+    api_run_current,
+    api_run_diff,
+    api_run_task_diffs,
+    runs_page
+  ]
 }

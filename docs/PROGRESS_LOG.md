@@ -61,3 +61,9 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   time, clean shutdown when senders drop. Wired through `manager.rs`; `echo_roundtrip` (full dispatcher)
   green. Ledger: **D-1 → resolved**, **D-6 → 🟡** (metadata fan-out bounded; in-flight task set still
   unbounded). The dispatcher metadata subsystem is now race-free (D-2) *and* bounded (D-1).
+- **Arm 7 — runs HTML twin (Admin UX):** the human run-history **screen** now lives in the library:
+  `GET /runs/<corpus>/<service>` server-renders a table of the same runs `GET /api/runs/...` returns,
+  sharing `RunDto` (the symmetry contract realized end-to-end for a screen — human screen + 1:1 agent
+  API from one module). New `templates/runs.html.tera` (server-rendered, no JS framework, per the UI
+  guidance); `404` consistent with the API. Test renders the screen and asserts the seeded rows appear
+  server-side. (The legacy bin `history` Vega page still renders; it migrates here later.)
