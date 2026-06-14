@@ -95,6 +95,24 @@ impl Sink {
       sink.recv(&mut taskid_msg, 0)?;
       let taskid_str = taskid_msg.as_str().unwrap_or("-1");
       let taskid = taskid_str.parse::<i64>().unwrap_or(-1);
+      if !sink.get_rcvmore().unwrap_or(false) {
+        // A well-formed reply is `[identity, service, taskid, <≥1 data frame>]` — even an empty
+        // result carries one empty data frame (the worker's `respond_to_cortex` always sends one).
+        // No frame after the taskid means a truncated / malformed reply whose frames are *already
+        // fully consumed*. We must `continue` WITHOUT draining: the drain loops below `recv()`
+        // first and only then check `RCVMORE`, so on an already-complete message that first
+        // `recv()` would cross the message boundary and swallow the *entire next reply* — a
+        // real worker result read as this one's payload and lost, stranding its task
+        // `Queued` (KNOWN_ISSUES D-12). This is the taskid-frame analogue of the
+        // identity/service `RCVMORE` guards above; it completes the envelope hardening
+        // (D-4) for the no-data-frame case.
+        if let Some(n) = discard_log.record() {
+          eprintln!(
+            "-- sink: discarded {n} malformed reply(ies) [latest: no data frame after taskid {taskid:?}, worker {identity:?}] (rate-limited)"
+          );
+        }
+        continue;
+      }
 
       // We have a job, count it
       sink_job_count += 1;

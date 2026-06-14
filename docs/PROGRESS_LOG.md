@@ -6,6 +6,29 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **Dispatcher D-12 RESOLVED — root-caused to a sink framing desync (NOT the worker throttle, the
+  original suspicion was wrong) + ventilator-flood gate re-added.** Re-investigated the straggler now
+  that the worker throttle is configurable (#14). The throttle was **exonerated** — stragglers persist
+  at `CORTEX_WORKER_THROTTLE_SECS=1` (a 1 s nap would recover any tail). Localized by elimination in an
+  instrumented `dispatcher_torture_test`: sink-flood-only and vent-flood-only are each clean; **only
+  the two floods together** strand tasks (~25–33%), and within the vent flood only the unknown-service
+  **mock-reply** shapes (skip-only is clean) — the mock-replies *steady* the worker so its results
+  interleave 1:1 with the sink barrage. **Root cause:** the sink read `[identity, service, taskid,
+  …data]` with `RCVMORE` guards after identity and service but **not after the taskid frame**; a
+  malformed 3-frame reply with no data (the barrage's `n%5==3` shape) left `RCVMORE` false after the
+  taskid, yet the drain paths `recv()` first then check `RCVMORE` → read the first frame of the *next*
+  reply and consumed that whole reply, **swallowing a real worker result** and stranding its task
+  `Queued` until the ≥1 h reaper (genuinely dropped/delayed work → this was an **S2**, not the filed
+  S3). Period-5 loss ⇔ the barrage's 5-shape cycle; both floods required ⇔ the vent flood paces the
+  worker into the barrage. **Confirmed**: skipping only the no-data shape → 0/15 fail (vs 5/15 with
+  it). **Fix:** one `RCVMORE` guard right after the taskid frame in `sink.rs` (skip a no-data reply
+  without draining), completing the D-4 envelope hardening for the no-data case. **Verified**:
+  previously-failing config now **0/25** mixed + **0/25** vent=mock, default gate 0/6, `echo_roundtrip`
+  + `cargo test --lib` (27) green, clippy clean. The **ventilator request-framing flood is re-added as
+  a permanent regression gate** (now reliable) alongside the byte-exact integrity check. *(Box also
+  brought current after the `~/CorTeX` → `~/git/cortex` move + restart: build green, dev DB
+  self-migrated up 6 versions via `cortex init`.)*
+
 - **Admin UX — signed-in `/admin` dashboard (consolidates the admin actions off the public root).**
   Owner request: a separate, **signed-in-admins-only** web UI for the admin actions that were
   sprinkled on the root homepage (Registered services · Background jobs · System health · Settings ·

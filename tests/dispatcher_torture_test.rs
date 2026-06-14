@@ -11,10 +11,18 @@
 //!      with real work — exercising the `[identity, service, taskid, …]` envelope hardening. It
 //!      asserts both that every real task still **finalizes** (the sink does not desync / strand a
 //!      reply) and — the **data-integrity** guard — that every *accepted* result is a **byte-exact
-//!      echo of its source** (no malformed message was ever accepted/written for a real task). (The
-//!      analogous ventilator *request*-framing hardening, D-4, is validated by `dispatcher_bench` +
-//!      the `RateLimitedLog` unit test rather than a concurrent request-flood here — see the note
-//!      at the drain.)
+//!      echo of its source** (no malformed message was ever accepted/written for a real task).
+//!
+//! A concurrent **ventilator request-framing flood** (D-4) runs alongside test 1: a raw `DEALER`
+//! floods the ventilator ROUTER with empty-service, over-long, and unknown-service requests. Run
+//! together with the sink barrage it is the regression gate for **KNOWN_ISSUES D-12**: the
+//! unknown-service *mock-replies* steady the worker so its results interleave 1:1 with the sink
+//! barrage, which used to expose a sink desync — a 3-frame `[identity, service, taskid]` reply with
+//! no data made the sink read past the message boundary and swallow the *next* real worker result,
+//! stranding its task `Queued`. Fixed by the taskid-frame `RCVMORE` guard in `sink.rs`. Knobs:
+//! `CORTEX_TORTURE_{SINK,VENT}_FLOOD=0`, `CORTEX_TORTURE_VENT_SHAPE` (`skip`|`mock`|`mixed`),
+//! `CORTEX_TORTURE_DEADLINE_SECS`, `CORTEX_WORKER_THROTTLE_SECS`.
+//!
 //!   2. The **hard result-size cap** (`dispatcher.max_result_bytes`): a result under the cap is
 //!      accepted + written; a result over the cap is rejected (task `Invalid`, no oversized file
 //!      left on disk). Fast by default (1 MiB cap, KB–MB payloads); set `CORTEX_TORTURE_BIG=1` to
@@ -116,6 +124,20 @@ fn main() {
   // The cap is config-driven; set it before anything reads `config()`.
   std::env::set_var("CORTEX_DISPATCHER__MAX_RESULT_BYTES", cap.to_string());
 
+  // On an empty / mock reply (`taskid 0` — momentary-empty-queue, backpressure, or unknown-service)
+  // the `pericortex` worker sends an empty reply and then *naps* `CORTEX_WORKER_THROTTLE_SECS`
+  // (default 60). The D-12 straggler was originally *suspected* to be this nap; the investigation
+  // (2026-06-14, see KNOWN_ISSUES D-12) instead found a sink framing desync (a 3-frame reply with
+  // no data swallowing the next real result — now fixed). The throttle is set *short* here only
+  // so a worker that naps once the corpus drains doesn't dominate the tail of the drain window;
+  // set `CORTEX_WORKER_THROTTLE_SECS=60` to mimic the slower production nap. Must be set before
+  // the worker thread reads it. (Throttle is configurable since pericortex 0.2.5, OPEN_QUESTIONS
+  // #14.)
+  if std::env::var("CORTEX_WORKER_THROTTLE_SECS").is_err() {
+    std::env::set_var("CORTEX_WORKER_THROTTLE_SECS", "1");
+  }
+  let worker_throttle = std::env::var("CORTEX_WORKER_THROTTLE_SECS").unwrap();
+
   let accept_filler = if big { 1900 * 1024 * 1024 } else { cap * 3 / 4 }; // under the cap
   let reject_gb: usize = std::env::var("CORTEX_TORTURE_REJECT_GB")
     .ok()
@@ -176,7 +198,7 @@ fn main() {
   let reject_entry = stage_task(&mut backend, &corpus, &service, "cap_reject", reject_filler);
 
   println!(
-    "[torture] cap {cap} bytes; barrage {barrage_tasks} tasks; cap accept {accept_filler}B / reject {reject_filler}B"
+    "[torture] cap {cap} bytes; barrage {barrage_tasks} tasks; cap accept {accept_filler}B / reject {reject_filler}B; worker_throttle {worker_throttle}s"
   );
 
   // Start the real dispatcher + a real EchoWorker (both perpetual).
@@ -210,50 +232,115 @@ fn main() {
   // short* (would desync framing without the RCVMORE hardening) or carry bogus task ids. If the
   // sink desyncs, it eats a real worker reply and that task never finalizes → the drain below
   // times out.
-  thread::spawn(move || {
-    let ctx = zmq::Context::new();
-    let push = ctx.socket(zmq::PUSH).unwrap();
-    push
-      .connect(&format!("tcp://127.0.0.1:{RESULT_PORT}"))
-      .unwrap();
-    // A heavy but bounded barrage. (Discard logging is now rate-limited — KNOWN_ISSUES D-11 — so
-    // the flood no longer self-throttles the sink via per-message stderr; a one-off 200k run
-    // drained in ~4 s vs. stranding tasks before that fix. Kept moderate here so the
-    // framing/integrity gate stays reliable rather than racing the worker's empty-queue
-    // throttle under a max-rate flood.)
-    for n in 0..20_000u64 {
-      // Cycle the malformed shapes.
-      let frames: Vec<&[u8]> = match n % 5 {
-        0 => vec![b""],                                               // single empty frame
-        1 => vec![b"badworker"],                                      // id only
-        2 => vec![b"badworker", SERVICE_NAME.as_bytes()],             // id + service, no taskid
-        3 => vec![b"badworker", SERVICE_NAME.as_bytes(), b"-999999"], // bogus taskid, no data
-        _ => vec![
-          b"badworker",
-          SERVICE_NAME.as_bytes(),
-          b"-999999",
-          b"junkjunkjunk",
-        ], // bogus + data
-      };
-      if push.send_multipart(&frames, 0).is_err() {
-        break;
+  let sink_flood = std::env::var("CORTEX_TORTURE_SINK_FLOOD")
+    .map(|v| v != "0")
+    .unwrap_or(true);
+  let vent_flood = std::env::var("CORTEX_TORTURE_VENT_FLOOD")
+    .map(|v| v != "0")
+    .unwrap_or(true);
+  eprintln!("[torture] sink_flood={sink_flood} vent_flood={vent_flood}");
+  if sink_flood {
+    thread::spawn(move || {
+      let ctx = zmq::Context::new();
+      let push = ctx.socket(zmq::PUSH).unwrap();
+      push
+        .connect(&format!("tcp://127.0.0.1:{RESULT_PORT}"))
+        .unwrap();
+      // A heavy but bounded barrage. (Discard logging is now rate-limited — KNOWN_ISSUES D-11 — so
+      // the flood no longer self-throttles the sink via per-message stderr; a one-off 200k run
+      // drained in ~4 s vs. stranding tasks before that fix. Kept moderate here so the
+      // framing/integrity gate stays reliable rather than racing the worker's empty-queue
+      // throttle under a max-rate flood.)
+      for n in 0..20_000u64 {
+        // Cycle the malformed shapes. Shape 3 — `[identity, service, taskid]` with **no data
+        // frame** — is the one that, before the taskid `RCVMORE` guard (KNOWN_ISSUES D-12), made
+        // the sink read past the message boundary and swallow the *next* real reply.
+        let frames: Vec<&[u8]> = match n % 5 {
+          0 => vec![b""],                                               // single empty frame
+          1 => vec![b"badworker"],                                      // id only
+          2 => vec![b"badworker", SERVICE_NAME.as_bytes()],             // id + service, no taskid
+          3 => vec![b"badworker", SERVICE_NAME.as_bytes(), b"-999999"], // bogus taskid, no data
+          _ => vec![
+            b"badworker",
+            SERVICE_NAME.as_bytes(),
+            b"-999999",
+            b"junkjunkjunk",
+          ], // bogus + data
+        };
+        if push.send_multipart(&frames, 0).is_err() {
+          break;
+        }
+        if n % 1000 == 0 {
+          thread::sleep(Duration::from_millis(1));
+        }
       }
-      if n % 1000 == 0 {
-        thread::sleep(Duration::from_millis(1));
-      }
-    }
-  });
+    });
+  }
 
-  // NB: the analogous *ventilator* request-framing hardening (D-4 — the "3 adjacent empty
-  // messages") is validated by `dispatcher_bench` (4/8/16 workers, no normal-path regression) +
-  // the `RateLimitedLog` unit test, not here: a concurrent malformed-request flood on the
-  // *shared* ROUTER socket perturbs the real worker's timing enough to make this drain flaky (a
-  // residual interaction with the worker's empty-queue throttle, OPEN_QUESTIONS #14), so it is
-  // kept out of this gate.
+  // --- Test 1b: ventilator request-framing flood (D-4 hardening), injected concurrently
+  // -------------------------------- A raw DEALER floods the ventilator ROUTER with malformed
+  // *requests*: empty service (the "3 adjacent empty messages" root cause), and over-long /
+  // unknown-service requests (exercising the RCVMORE trailing-frame drain + unknown-service
+  // mock-reply). The ROUTER prepends this DEALER's identity, so each send arrives as
+  // `[identity, <frames>]`. **Deliberately never sends the real `SERVICE_NAME` in a dispatchable
+  // request** — a valid over-long request would have the ventilator (correctly) lease a real task
+  // to this non-responding peer, stranding it for the reaper (a "worker died mid-task" case, not a
+  // framing fault). Restricting to skip / mock-reply shapes isolates the D-12 question: does the
+  // flood perturb the *real* worker into an empty-queue nap (the suspected straggler cause), or
+  // desync the ventilator (a framing fault)? If the ventilator desyncs, the real worker's request
+  // gets a wrong/empty reply and its task never finalizes → the drain below times out.
+  if vent_flood {
+    thread::spawn(move || {
+      let ctx = zmq::Context::new();
+      let dealer = ctx.socket(zmq::DEALER).unwrap();
+      dealer.set_identity(b"torture-flood-peer").ok();
+      if dealer
+        .connect(&format!("tcp://127.0.0.1:{SOURCE_PORT}"))
+        .is_err()
+      {
+        return;
+      }
+      // Shape selector lets the investigation isolate *skip* (no reply emitted) from *mock-reply*
+      // (the ventilator answers the bad request) paths. "mixed" (default) cycles all four.
+      let shape = std::env::var("CORTEX_TORTURE_VENT_SHAPE").unwrap_or_else(|_| "mixed".into());
+      for n in 0..20_000u64 {
+        let sel = match shape.as_str() {
+          "skip" => n % 2,     // 0,1 -> empty-service skips only
+          "mock" => 2 + n % 2, // 2,3 -> unknown-service mock-replies only
+          _ => n % 4,
+        };
+        let ok = match sel {
+          0 => dealer.send_multipart([b"".as_ref()], 0), // empty service -> skip
+          1 => dealer.send_multipart([b"".as_ref(), b"".as_ref()], 0), // adjacent empties -> skip
+          2 => dealer.send_multipart([b"no_such_service".as_ref()], 0), /* unknown service -> */
+          // mock-reply
+          _ => dealer.send_multipart(
+            [
+              b"no_such_service".as_ref(),
+              b"trailing1".as_ref(),
+              b"trailing2".as_ref(),
+            ],
+            0,
+          ), // over-long unknown -> drain trailing + mock-reply
+        };
+        if ok.is_err() {
+          break;
+        }
+        if n % 1000 == 0 {
+          thread::sleep(Duration::from_millis(1));
+        }
+      }
+    });
+  }
 
   // Drain: every barrage task must finalize despite the malformed-reply flood (proves the sink does
   // not desync / crash on a short/empty/bogus reply).
-  let deadline = Duration::from_secs(if big { 600 } else { 60 });
+  let deadline = Duration::from_secs(
+    std::env::var("CORTEX_TORTURE_DEADLINE_SECS")
+      .ok()
+      .and_then(|v| v.parse().ok())
+      .unwrap_or(if big { 600 } else { 60 }),
+  );
   let start = Instant::now();
   let all_terminal = |conn: &mut diesel::PgConnection, entries: &[String]| {
     entries.iter().all(|e| status_of(conn, e, service.id) < 0)
@@ -270,14 +357,30 @@ fn main() {
     let mut todo = 0;
     let mut queued = 0;
     let mut terminal = 0;
+    let mut stuck = Vec::new();
     for e in &barrage_entries {
       match status_of(&mut backend.connection, e, service.id) {
         0 => todo += 1,
-        s if s > 0 => queued += 1,
+        s if s > 0 => {
+          queued += 1;
+          stuck.push((e.clone(), s));
+        },
         _ => terminal += 1,
       }
     }
     eprintln!("[diag] barrage at deadline: terminal={terminal} todo={todo} queued={queued}");
+    for (e, s) in &stuck {
+      let result_exists = result_path(e).exists();
+      let tid = tasks::table
+        .filter(tasks::entry.eq(e))
+        .filter(tasks::service_id.eq(service.id))
+        .select(tasks::id)
+        .first::<i64>(&mut backend.connection)
+        .unwrap_or(-1);
+      eprintln!(
+        "[diag] stuck Queued taskid={tid} status={s} result_on_disk={result_exists} entry={e}"
+      );
+    }
   }
   assert!(
     barrage_ok,
