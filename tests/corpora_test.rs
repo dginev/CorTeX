@@ -804,6 +804,14 @@ fn deactivate_service_removes_pair_tasks_and_logs() {
       .status(),
     Status::NotFound
   );
+  // The magic `import` service (id 2) is infrastructure — deactivating it would wipe the corpus's
+  // document registry, so it is forbidden even with a valid token + matching confirmation.
+  let guarded = format!("/api/corpora/{corpus_name}/services/import?confirm=import&token=token1");
+  assert_eq!(
+    client.delete(guarded.as_str()).dispatch().status(),
+    Status::Forbidden,
+    "deactivating the magic import service is forbidden"
+  );
 
   cleanup(&mut db, corpus_name, target_svc);
 }

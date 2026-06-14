@@ -32,6 +32,8 @@
             <a href="/runs/{{global.corpus_name_uri}}/{{service.name_uri}}">runs</a> &middot;
             <a href="/runs/{{global.corpus_name_uri}}/{{service.name_uri}}/diff">diff</a> &middot;
             <a href="/history/{{global.corpus_name_uri}}/{{service.name_uri}}">chart</a>
+            {# init (1) / import (2) are magic infrastructure services — never deactivatable. #}
+            {% if service.id != "1" and service.id != "2" %}
             <form method="post"
               action="/corpus/{{global.corpus_name_uri}}/services/{{service.name_uri}}/deactivate"
               style="display:inline; margin-left:0.5rem;"
@@ -40,6 +42,7 @@
               <input type="password" name="token" placeholder="token" size="8" required>
               <button type="submit" title="Retire this service from this corpus (delete its tasks + logs)">deactivate</button>
             </form>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}

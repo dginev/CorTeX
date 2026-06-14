@@ -6,6 +6,18 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **Deactivate-service — guarded the magic `init`/`import` services (closed a footgun).** The corpus
+  screen lists every service with tasks on the corpus, which **includes** the magic `init` (1) /
+  `import` (2) infrastructure services — so the deactivate affordance I'd just added would have
+  offered to deactivate `import`, whose deletion wipes the corpus's document registry. Closed it both
+  ways: the backend handlers (`DELETE /api/corpora/<c>/services/<s>` + the human form) now return
+  **403** for `service.id <= IMPORT_SERVICE_ID` (the new named constant for the `1=init`/`2=import`
+  boundary, also replacing the magic `id > 2` in the activate picker — a small rationalization), and
+  the corpus template hides the deactivate button for `init`/`import`. Test: extended
+  `deactivate_service_removes_pair_tasks_and_logs` to assert deactivating `import` is `403` even with
+  a valid token + matching confirmation (verified the test DB has `init=1`/`import=2`). fmt + clippy
+  clean; `corpora_test` green.
+
 - **Admin UX — "deactivate (retire) a service from a corpus" (the symmetric counterpart of
   activate).** Closes the management gap recorded in R-6 last increment: you could register/activate a
   service on a corpus but not remove one. New `Service::deactivate_from_corpus` (models/services.rs) —

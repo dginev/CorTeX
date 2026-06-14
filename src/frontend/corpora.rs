@@ -34,6 +34,11 @@ use crate::importer::Importer;
 use crate::jobs::{self, JobProgress};
 use crate::models::{Corpus, NewCorpus, Service};
 
+/// The magic `import` service id. Service ids `1` (`init`) and `2` (`import`) are infrastructure
+/// (CLAUDE.md: real conversion services have id `> 2`); a service with id `≤` this is never
+/// user-activatable in the picker nor deactivatable from a corpus.
+const IMPORT_SERVICE_ID: i32 = 2;
+
 /// A corpus as exposed over the API/UI. `name` is the stable external handle used by every route.
 #[derive(Debug, Serialize)]
 pub struct CorpusDto {
@@ -568,6 +573,11 @@ pub fn deactivate_service(
     Ok(service) => service,
     Err(_) => return Status::NotFound,
   };
+  // The magic `init` (1) / `import` (2) services are infrastructure — deactivating `import` would
+  // wipe the corpus's document registry. Never deactivatable.
+  if service_record.id <= IMPORT_SERVICE_ID {
+    return Status::Forbidden;
+  }
   match service_record.deactivate_from_corpus(&corpus_record, &mut connection) {
     Ok(_) => Status::NoContent,
     Err(_) => Status::InternalServerError,
@@ -604,6 +614,10 @@ pub fn deactivate_service_human(
     Corpus::find_by_name(corpus, &mut connection).map_err(|_| Status::NotFound)?;
   let service_record =
     Service::find_by_name(service, &mut connection).map_err(|_| Status::NotFound)?;
+  // Guard the magic init/import services (see [`deactivate_service`]).
+  if service_record.id <= IMPORT_SERVICE_ID {
+    return Err(Status::Forbidden);
+  }
   service_record
     .deactivate_from_corpus(&corpus_record, &mut connection)
     .map_err(|_| Status::InternalServerError)?;
@@ -701,7 +715,7 @@ pub fn corpus_page(name: &str, pool: &State<DbPool>) -> Result<Template, Status>
   let all_services = Service::all(&mut connection)
     .unwrap_or_default()
     .iter()
-    .filter(|service| service.id > 2)
+    .filter(|service| service.id > IMPORT_SERVICE_ID)
     .map(Service::to_hash)
     .collect::<Vec<_>>();
   let mut context = TemplateContext {
