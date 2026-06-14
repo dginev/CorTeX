@@ -16,6 +16,7 @@
 use rocket::http::Status;
 use rocket::serde::json::Json;
 use rocket::{Route, State};
+use rocket_dyn_templates::Template;
 use serde::Serialize;
 
 use crate::backend::{
@@ -23,6 +24,8 @@ use crate::backend::{
   ReportSummaryRow, RerunOptions,
 };
 use crate::frontend::actor::Actor;
+use crate::frontend::concerns::serve_report;
+use crate::frontend::params::ReportParams;
 use crate::models::{Corpus, Service};
 
 /// One report row: a category (in the category report) or a `what` class (in the drill-down), with
@@ -247,5 +250,180 @@ pub fn rerun_report(
   ))
 }
 
-/// The route set for the reports capability.
-pub fn routes() -> Vec<Route> { routes![api_category_report, api_what_report, rerun_report] }
+// --- The human report screens (HTML twins of the typed report API above) -----------------------
+//
+// These render the corpus/service report hierarchy (top → severity → category → `what` → task
+// list) via the shared [`serve_report`] controller, now reading over a **pooled** connection
+// instead of the prototype per-request `Backend::default()`. Relocated from `bin/frontend.rs` onto
+// the library surface so they are testable and share the pool with the agent API. `404` on an
+// unknown corpus/service; `503` if the pool is exhausted.
+
+/// Checks out a pooled connection, mapping exhaustion to `503`.
+fn pooled(pool: &State<DbPool>) -> Result<crate::backend::PooledConn, Status> {
+  pool.get().map_err(|_| Status::ServiceUnavailable)
+}
+
+/// Top-level corpus/service report (overall progress).
+#[get("/corpus/<corpus_name>/<service_name>")]
+pub fn top_service_report(
+  corpus_name: String,
+  service_name: String,
+  pool: &State<DbPool>,
+) -> Result<Template, Status> {
+  let mut connection = pooled(pool)?;
+  serve_report(
+    &mut connection,
+    corpus_name,
+    service_name,
+    None,
+    None,
+    None,
+    None,
+  )
+}
+
+/// Severity-level report: the categories carrying messages of `severity`.
+#[get("/corpus/<corpus_name>/<service_name>/<severity>")]
+pub fn severity_service_report(
+  corpus_name: String,
+  service_name: String,
+  severity: String,
+  pool: &State<DbPool>,
+) -> Result<Template, Status> {
+  let mut connection = pooled(pool)?;
+  serve_report(
+    &mut connection,
+    corpus_name,
+    service_name,
+    Some(severity),
+    None,
+    None,
+    None,
+  )
+}
+
+/// Severity-level report with paging/all-messages query params.
+#[get("/corpus/<corpus_name>/<service_name>/<severity>?<params..>")]
+pub fn severity_service_report_all(
+  corpus_name: String,
+  service_name: String,
+  severity: String,
+  params: Option<ReportParams>,
+  pool: &State<DbPool>,
+) -> Result<Template, Status> {
+  let mut connection = pooled(pool)?;
+  serve_report(
+    &mut connection,
+    corpus_name,
+    service_name,
+    Some(severity),
+    None,
+    None,
+    params,
+  )
+}
+
+/// Category-level report: the `what` classes within a `(severity, category)`.
+#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>")]
+pub fn category_service_report(
+  corpus_name: String,
+  service_name: String,
+  severity: String,
+  category: String,
+  pool: &State<DbPool>,
+) -> Result<Template, Status> {
+  let mut connection = pooled(pool)?;
+  serve_report(
+    &mut connection,
+    corpus_name,
+    service_name,
+    Some(severity),
+    Some(category),
+    None,
+    None,
+  )
+}
+
+/// Category-level report with paging/all-messages query params.
+#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>?<params..>")]
+pub fn category_service_report_all(
+  corpus_name: String,
+  service_name: String,
+  severity: String,
+  category: String,
+  params: Option<ReportParams>,
+  pool: &State<DbPool>,
+) -> Result<Template, Status> {
+  let mut connection = pooled(pool)?;
+  serve_report(
+    &mut connection,
+    corpus_name,
+    service_name,
+    Some(severity),
+    Some(category),
+    None,
+    params,
+  )
+}
+
+/// `what`-level report: the task list for a `(severity, category, what)`.
+#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>/<what>")]
+pub fn what_service_report(
+  corpus_name: String,
+  service_name: String,
+  severity: String,
+  category: String,
+  what: String,
+  pool: &State<DbPool>,
+) -> Result<Template, Status> {
+  let mut connection = pooled(pool)?;
+  serve_report(
+    &mut connection,
+    corpus_name,
+    service_name,
+    Some(severity),
+    Some(category),
+    Some(what),
+    None,
+  )
+}
+
+/// `what`-level report with paging/all-messages query params.
+#[allow(clippy::too_many_arguments)]
+#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>/<what>?<params..>")]
+pub fn what_service_report_all(
+  corpus_name: String,
+  service_name: String,
+  severity: String,
+  category: String,
+  what: String,
+  params: Option<ReportParams>,
+  pool: &State<DbPool>,
+) -> Result<Template, Status> {
+  let mut connection = pooled(pool)?;
+  serve_report(
+    &mut connection,
+    corpus_name,
+    service_name,
+    Some(severity),
+    Some(category),
+    Some(what),
+    params,
+  )
+}
+
+/// The route set for the reports capability (typed API + the human report screens).
+pub fn routes() -> Vec<Route> {
+  routes![
+    api_category_report,
+    api_what_report,
+    rerun_report,
+    top_service_report,
+    severity_service_report,
+    severity_service_report_all,
+    category_service_report,
+    category_service_report_all,
+    what_service_report,
+    what_service_report_all
+  ]
+}

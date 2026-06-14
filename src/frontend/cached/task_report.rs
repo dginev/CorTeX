@@ -5,14 +5,18 @@
 //! expensive live aggregation is gone — Redis is no longer a hard dependency of the frontend. This
 //! function now only translates request params into a [`TaskReportOptions`], delegates, and records
 //! the pagination/`report_time` globals the report templates expect.
-use crate::backend::Backend;
-use crate::backend::TaskReportOptions;
+use crate::backend::{task_report as backend_task_report, TaskReportOptions};
 use crate::frontend::params::ReportParams;
 use crate::models::{Corpus, Service};
+use diesel::PgConnection;
 use std::collections::HashMap;
 
 /// Renders a task report, filling in the pagination + provenance globals the templates consume.
+/// Reads over the caller-supplied (pooled) `connection` — no per-request fresh
+/// `Backend::default()`.
+#[allow(clippy::too_many_arguments)]
 pub fn task_report(
+  connection: &mut PgConnection,
   global: &mut HashMap<String, String>,
   corpus: &Corpus,
   service: &Service,
@@ -25,17 +29,19 @@ pub fn task_report(
   let offset = params.as_ref().and_then(|p| p.offset).unwrap_or(0);
   let page_size = params.as_ref().and_then(|p| p.page_size).unwrap_or(100);
 
-  let mut backend = Backend::default();
-  let fetched_report = backend.task_report(TaskReportOptions {
-    corpus,
-    service,
-    severity_opt: severity,
-    category_opt: category,
-    what_opt: what,
-    all_messages,
-    offset,
-    page_size,
-  });
+  let fetched_report = backend_task_report(
+    connection,
+    TaskReportOptions {
+      corpus,
+      service,
+      severity_opt: severity,
+      category_opt: category,
+      what_opt: what,
+      all_messages,
+      offset,
+      page_size,
+    },
+  );
 
   // Pagination + provenance globals for the templates.
   let from_offset = offset;

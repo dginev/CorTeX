@@ -20,11 +20,11 @@ use rocket_dyn_templates::Template;
 use cortex::backend::Backend;
 use cortex::config::config;
 use cortex::frontend::concerns::{
-  serve_entry, serve_entry_preview, serve_report, serve_rerun, serve_savetasks, UNKNOWN,
+  serve_entry, serve_entry_preview, serve_rerun, serve_savetasks, UNKNOWN,
 };
 use cortex::frontend::cors::CORS;
 use cortex::frontend::helpers::*;
-use cortex::frontend::params::{ReportParams, RerunRequestParams, TemplateContext};
+use cortex::frontend::params::{RerunRequestParams, TemplateContext};
 use cortex::models::{Corpus, Service};
 
 #[get("/")]
@@ -139,107 +139,6 @@ fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
     "Corpus {} is not registered",
     corpus_name
   )))
-}
-
-#[get("/corpus/<corpus_name>/<service_name>")]
-fn top_service_report(
-  corpus_name: String,
-  service_name: String,
-) -> Result<Template, NotFound<String>> {
-  serve_report(corpus_name, service_name, None, None, None, None)
-}
-#[get("/corpus/<corpus_name>/<service_name>/<severity>")]
-fn severity_service_report(
-  corpus_name: String,
-  service_name: String,
-  severity: String,
-) -> Result<Template, NotFound<String>> {
-  serve_report(corpus_name, service_name, Some(severity), None, None, None)
-}
-#[get("/corpus/<corpus_name>/<service_name>/<severity>?<params..>")]
-fn severity_service_report_all(
-  corpus_name: String,
-  service_name: String,
-  severity: String,
-  params: Option<ReportParams>,
-) -> Result<Template, NotFound<String>> {
-  serve_report(
-    corpus_name,
-    service_name,
-    Some(severity),
-    None,
-    None,
-    params,
-  )
-}
-#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>")]
-fn category_service_report(
-  corpus_name: String,
-  service_name: String,
-  severity: String,
-  category: String,
-) -> Result<Template, NotFound<String>> {
-  serve_report(
-    corpus_name,
-    service_name,
-    Some(severity),
-    Some(category),
-    None,
-    None,
-  )
-}
-#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>?<params..>")]
-fn category_service_report_all(
-  corpus_name: String,
-  service_name: String,
-  severity: String,
-  category: String,
-  params: Option<ReportParams>,
-) -> Result<Template, NotFound<String>> {
-  serve_report(
-    corpus_name,
-    service_name,
-    Some(severity),
-    Some(category),
-    None,
-    params,
-  )
-}
-
-#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>/<what>")]
-fn what_service_report(
-  corpus_name: String,
-  service_name: String,
-  severity: String,
-  category: String,
-  what: String,
-) -> Result<Template, NotFound<String>> {
-  serve_report(
-    corpus_name,
-    service_name,
-    Some(severity),
-    Some(category),
-    Some(what),
-    None,
-  )
-}
-#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>/<what>?<params..>")]
-fn what_service_report_all(
-  corpus_name: String,
-  service_name: String,
-  severity: String,
-  category: String,
-  what: String,
-  params: Option<ReportParams>,
-) -> Result<Template, NotFound<String>> {
-  serve_report(
-    corpus_name,
-    service_name,
-    Some(severity),
-    Some(category),
-    Some(what),
-    params,
-  )
 }
 
 #[get("/preview/<corpus_name>/<service_name>/<entry_name>")]
@@ -383,13 +282,6 @@ fn rocket() -> _ {
         robots,
         files,
         worker_report,
-        top_service_report,
-        severity_service_report,
-        category_service_report,
-        what_service_report,
-        severity_service_report_all,
-        category_service_report_all,
-        what_service_report_all,
         preview_entry,
         entry_fetch,
         rerun_corpus,

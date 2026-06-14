@@ -195,3 +195,21 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   *Next:* decouple the D-6 reaper from refetch (needs service_id-keyed dispatch queues + multi-service test
   coverage); rename the misnamed `src/frontend/cached/` proxy; or migrate the legacy report HTML routes
   (the `cached::task_report` consumers) into the library.
+- **Report HTML screens migrated to the library + POOLED (symmetry contract + performance, Arm 3/7):** the
+  7 corpus/service report routes (top → severity → category → `what` → task-list, incl. the `?<params..>`
+  paging variants) were the binary's biggest remaining cluster and the most-used admin screens. Each load
+  opened **two** fresh `Backend::default()` libpq connections (one in `serve_report`, one inside
+  `cached::task_report`) — ~4.5ms each per the Arm-14 spike (~395× a pooled checkout). Refactored the read
+  path onto a **single pooled connection**: `serve_report(&mut PgConnection, …)` and
+  `cached::task_report(&mut PgConnection, …)` now take the caller's connection and call the existing free
+  `backend::{progress_report, task_report}` functions (re-exported `task_report`); `serve_report` also now
+  returns `Result<Template, Status>` (a clean `404`) instead of `NotFound<String>`. Relocated all 7 route
+  declarations from `bin/frontend.rs` into the library `frontend/reports.rs` (each checks out from the pool),
+  so the HTML report screens and the typed agent API now live in **one module** reading the **same**
+  rollup — and the screens are testable via `rocket::local`. Deleted the bin routes + registrations + the
+  now-unused `serve_report`/`ReportParams` imports. Test: `reports_api_test` now also renders the top +
+  severity HTML screens (server-side `math` category) and asserts `404` on an unknown corpus (the relocated
+  controller returns a Status, no panic). `report_rollup_test` + lib tests green (numbers unchanged);
+  `clippy --all-targets -D warnings` clean. Net per report page-load: **2 fresh libpq connects → 0** (pooled).
+  *Next:* pool the remaining `Backend::default()` routes (`serve_rerun`/`serve_entry`/`serve_savetasks` in
+  concerns; root/corpus-overview/worker in the bin); decouple the D-6 reaper; or rename the `cached/` proxy.

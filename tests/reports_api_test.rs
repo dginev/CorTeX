@@ -194,4 +194,31 @@ fn category_and_what_reports_match_seed() {
     Status::Unauthorized,
     "rerun with an unknown token is 401"
   );
+
+  // --- HTML report screens (relocated to the library + pooled): top + severity drill-down --------
+  let response = client
+    .get(format!("/corpus/{CORPUS_NAME}/{SERVICE_NAME}"))
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok, "top report renders");
+  assert_eq!(response.content_type(), Some(ContentType::HTML));
+  let body = response.into_string().expect("html body");
+  assert!(
+    body.contains(CORPUS_NAME),
+    "top report names the corpus it reports on"
+  );
+
+  let response = client
+    .get(format!("/corpus/{CORPUS_NAME}/{SERVICE_NAME}/warning"))
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok, "severity report renders");
+  assert_eq!(response.content_type(), Some(ContentType::HTML));
+  let body = response.into_string().expect("html body");
+  assert!(
+    body.contains("math"),
+    "severity report lists the seeded `math` category server-side"
+  );
+
+  // Unknown corpus -> 404 (the relocated serve_report now returns a Status, not a panic).
+  let response = client.get("/corpus/no-such-xyz/no_svc/warning").dispatch();
+  assert_eq!(response.status(), Status::NotFound, "unknown corpus -> 404");
 }

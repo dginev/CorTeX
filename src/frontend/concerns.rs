@@ -1,7 +1,9 @@
 //! Common concerns for frontend routes
 use crate::rocket::futures::TryFutureExt;
+use diesel::PgConnection;
 use regex::Regex;
 use rocket::fs::NamedFile;
+use rocket::http::Status;
 use rocket::response::status::{Accepted, NotFound};
 use rocket::serde::json::Json;
 use rocket_dyn_templates::Template;
@@ -9,7 +11,7 @@ use std::collections::HashMap;
 use std::str;
 
 use crate::backend::Backend;
-use crate::backend::RerunOptions;
+use crate::backend::{progress_report, RerunOptions};
 use crate::frontend::cached::task_report;
 use crate::frontend::helpers::*;
 use crate::frontend::params::{ReportParams, RerunRequestParams, TemplateContext};
@@ -21,25 +23,27 @@ lazy_static! {
 /// Placeholder word for unknown filters/fields
 pub const UNKNOWN: &str = "_unknown_";
 
-/// Prepare a configurable report for a <corpus,server> pair
+/// Prepare a configurable report for a <corpus,server> pair, reading over the caller-supplied
+/// (pooled) `connection` — no per-request fresh `Backend::default()`. `404` on unknown
+/// corpus/service.
 pub fn serve_report(
+  connection: &mut PgConnection,
   corpus_name: String,
   service_name: String,
   severity: Option<String>,
   category: Option<String>,
   what: Option<String>,
   params: Option<ReportParams>,
-) -> Result<Template, NotFound<String>> {
+) -> Result<Template, Status> {
   let report_start = time::get_time();
   let mut context = TemplateContext::default();
   let mut global = HashMap::new();
-  let mut backend = Backend::default();
 
   let corpus_name = corpus_name.to_lowercase();
   let service_name = service_name.to_lowercase();
-  let corpus_result = Corpus::find_by_name(&corpus_name, &mut backend.connection);
+  let corpus_result = Corpus::find_by_name(&corpus_name, connection);
   if let Ok(corpus) = corpus_result {
-    let service_result = Service::find_by_name(&service_name, &mut backend.connection);
+    let service_result = Service::find_by_name(&service_name, connection);
     if let Ok(service) = service_result {
       // Metadata in all reports
       global.insert(
@@ -63,9 +67,7 @@ pub fn serve_report(
       global.insert("inputformat".to_string(), service.inputformat.clone());
       global.insert("outputformat".to_string(), service.outputformat.clone());
 
-      if let Ok(Some(historical_run)) =
-        HistoricalRun::find_current(&corpus, &service, &mut backend.connection)
-      {
+      if let Ok(Some(historical_run)) = HistoricalRun::find_current(&corpus, &service, connection) {
         global.insert(
           "run_start_time".to_string(),
           historical_run
@@ -97,7 +99,7 @@ pub fn serve_report(
       let template;
       if severity.is_none() {
         // Top-level report
-        report = backend.progress_report(&corpus, &service);
+        report = progress_report(connection, corpus.id, service.id);
         // Record the report into the globals
         for (key, val) in report {
           global.insert(key.clone(), val.to_string());
@@ -116,6 +118,7 @@ pub fn serve_report(
           None => false,
         };
         let fetched_report = task_report(
+          connection,
           &mut global,
           &corpus,
           &service,
@@ -145,6 +148,7 @@ pub fn serve_report(
         global.insert("category".to_string(), category.clone().unwrap());
         let no_messages_kind = category.is_some() && (category.as_ref().unwrap() == "no_messages");
         let fetched_report = task_report(
+          connection,
           &mut global,
           &corpus,
           &service,
@@ -174,6 +178,7 @@ pub fn serve_report(
         global.insert("category".to_string(), category.clone().unwrap());
         global.insert("what".to_string(), what.clone().unwrap());
         let entries = task_report(
+          connection,
           &mut global,
           &corpus,
           &service,
@@ -201,13 +206,10 @@ pub fn serve_report(
         .insert("report_duration".to_string(), report_duration.to_string());
       Ok(Template::render(template, context))
     } else {
-      Err(NotFound(format!(
-        "Service {} does not exist.",
-        service_name
-      )))
+      Err(Status::NotFound)
     }
   } else {
-    Err(NotFound(format!("Corpus {} does not exist.", corpus_name)))
+    Err(Status::NotFound)
   }
 }
 
