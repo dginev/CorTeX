@@ -1,0 +1,45 @@
+{% extends "layout" %} {% block content %}
+<div class="center">
+  <h1>Registered services</h1>
+  <p>
+    <a href="/api/services">JSON</a>
+  </p>
+  <br>
+  {% if services | length == 0 %}
+  <p>No services registered yet.</p>
+  {% else %}
+  <div class="row">
+    <div class="col-md-1"></div>
+    <div class="col-md-10">
+      <table id="service-registry" class="table table-striped">
+        <thead>
+          <tr>
+            <th class="left">Service</th>
+            <th class="right">Version</th>
+            <th class="left">Input &rarr; Output</th>
+            <th class="left">Input converter</th>
+            <th class="center">Complex</th>
+            <th class="left">Description</th>
+            <th class="left">Workers</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for service in services %}
+          <tr>
+            <td class="left">{{service.name}}</td>
+            <td class="right">{{service.version}}</td>
+            <td class="left">{{service.inputformat}} &rarr; {{service.outputformat}}</td>
+            <td class="left">{{service.inputconverter}}</td>
+            <td class="center">{{service.complex}}</td>
+            <td class="left">{{service.description}}</td>
+            <td class="left"><a href="/workers/{{service.name_uri}}">fleet</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="col-md-1"></div>
+  </div>
+  {% endif %}
+</div>
+{% endblock content %}

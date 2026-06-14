@@ -99,6 +99,30 @@ fn worker_fleet_api_and_screen() {
     "lists the seeded worker server-side"
   );
 
+  // --- Service registry: the agent API lists our service, the HTML screen renders it ----------
+  let response = client.get("/api/services").dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  assert_eq!(response.content_type(), Some(ContentType::JSON));
+  let services: Value = response.into_json().expect("services json");
+  let ours = services
+    .as_array()
+    .expect("array")
+    .iter()
+    .find(|s| s["name"] == SERVICE_NAME)
+    .expect("the registered service is listed");
+  assert_eq!(ours["inputformat"], "tex");
+  assert_eq!(ours["outputformat"], "html");
+
+  let response = client.get("/services").dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  assert_eq!(response.content_type(), Some(ContentType::HTML));
+  let body = response.into_string().expect("html body");
+  assert!(body.contains("Registered services"), "renders the registry");
+  assert!(
+    body.contains(SERVICE_NAME),
+    "lists the registered service server-side"
+  );
+
   // --- Guards: unknown service is 404 on both surfaces ----------------------------------------
   let response = client
     .get("/api/services/no_such_svc_xyz/workers")

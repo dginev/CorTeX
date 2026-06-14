@@ -293,3 +293,14 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   Schema/array-body quality is identical. Recommendation recorded: lean **okapi** (route-derived, no
   duplication — enrich the few guarded/error endpoints by hand), unless framework-independence is weighted
   higher. **Awaiting the owner's final pick after viewing**, then prune the loser's dev-dep + example.
+- **Service registry capability (Admin UX — services list/screen):** admins could see services *activated on
+  a corpus* (corpus screen) but had no view of all defined services. Added `Service::all` (mirrors
+  `Corpus::all`) and extended `frontend/services.rs` with `GET /api/services` → `Vec<ServiceDto>` + its HTML
+  twin `GET /services` (a registry table, each row linking to that service's worker-fleet view), both pooled.
+  New `templates/service-registry.html.tera`; linked from the landing page for discoverability. Also fixed a
+  stale doc comment on `Service::select_workers` (claimed to "return services activated on a corpus" but
+  returns workers). Test `services_test`: the API lists the registered service with its formats, the screen
+  renders it. The services capability now covers **registry + per-service worker fleet**, screens + agent
+  APIs. `clippy --all-targets -D warnings` clean.
+  *Next:* service *activation* UX (Arm 6 — register/extend a service on a corpus as a background job, the
+  remaining service-management write gap); pool the 4 `concerns` helpers; or (on backup) the load test.

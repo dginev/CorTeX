@@ -73,6 +73,14 @@ impl Service {
       .get_result(connection)
   }
 
+  /// Returns all registered services, ordered by name (the service registry). Includes the magic
+  /// `init` (id 1) and `import` (id 2) services alongside the real conversion services (id > 2).
+  pub fn all(connection: &mut PgConnection) -> Result<Vec<Self>, Error> {
+    services::table
+      .order(services::name.asc())
+      .get_results(connection)
+  }
+
   /// Returns a hash representation of the `Service`, usually for frontend reports
   pub fn to_hash(&self) -> HashMap<String, String> {
     let mut hm = HashMap::new();
@@ -93,7 +101,7 @@ impl Service {
     hm
   }
 
-  /// Return a vector of services currently activated on this corpus
+  /// Return the dispatcher's registered workers for this service
   pub fn select_workers(
     &self,
     connection: &mut PgConnection,
