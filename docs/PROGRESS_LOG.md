@@ -1584,3 +1584,17 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   file left). Fast by default (1 MiB cap, KB–MB payloads); `CORTEX_TORTURE_BIG=1` runs the **real
   sizes** — validated a **1.99 GB result written** + a 3 GB result capped/rejected (full 10 GB is the
   default reject, tunable via `CORTEX_TORTURE_REJECT_GB`; staged payload removed on cleanup). All green.
+- **Dispatcher phase 2: DB finalize batching (N-or-T coalescing window).** The finalize thread now
+  blocks for the first report, then `accumulate_batch`es more until **N** reports
+  (`dispatcher.finalize_batch_size`, default **1024**) **or** **T** ms (`finalize_flush_ms`, default
+  **300**) — whichever first — then persists the whole batch in one `mark_done` transaction + rollup
+  refresh. Answers the owner's flush-knob question concretely: **T** is set from the crash *re-work* +
+  report-staleness budget (an unflushed batch is never *lost* — tasks stay `Queued`, recovered on
+  restart — so T trades latency, not safety); **N** is the empirical throughput **knee** found with
+  `dispatcher_bench` (tasks/s climbs to ~1024, plateaus, then *regresses* by 4096 as the long
+  transaction stalls the pipeline — table in `docs/DISPATCHER_BENCH.md`). Preserves `Queued`-until-flush
+  + `on_conflict` (crash-safe + idempotent), `job_limit` (counts batches), and the refresh cadence. The
+  pure size-vs-time logic is unit-tested (3 cases). Validated: `dispatcher_bench` 20000 tasks → batches
+  of exactly 1024 in ~8 ms each (~17 DB writes/s vs up-to-per-task before), **no loss, all NoProblem**;
+  `echo_roundtrip` (job_limit=1) green. `finalize.rs` + `config.rs`; DISPATCHER_RATIONALIZATION phase 2
+  ✅, DISPATCHER_BENCH knee table.

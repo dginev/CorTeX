@@ -87,6 +87,28 @@ pub struct DispatcherConfig {
   /// from a runaway worker. We accept genuinely large jobs but draw the line here. Default 2
   /// GiB.
   pub max_result_bytes: usize,
+  /// **Finalize batch coalescing — size threshold (N).** The finalize thread accumulates returned
+  /// task reports and persists them to Postgres in **one** transaction per batch
+  /// ([`crate::backend::Backend::mark_done`]), flushing when the batch reaches this many reports —
+  /// or `finalize_flush_ms` elapses, whichever fires first. Larger N amortizes the DB round-trip
+  /// harder under load (fewer, bigger writes) at the cost of more rows per transaction. It is a
+  /// *ceiling* that mainly bites under burst/saturation; at steady-state load the time window
+  /// usually flushes first. Unlike `queue_size`, N is **not** bound by
+  /// `max_locks_per_transaction` (that limits *object* locks; `mark_done` takes only row locks),
+  /// so it can be large. Default **1024** — the empirical throughput knee from
+  /// `examples/dispatcher_bench.rs` (tasks/s rises to ~1024 then plateaus, and *regresses* by
+  /// ~4096 where a single transaction holds row locks long enough to stall the pipeline; see
+  /// `docs/DISPATCHER_BENCH.md`). 1024 also bounds worst-case crash re-work to ~1024 tasks.
+  /// (Dispatcher rationalization phase 2, `docs/DISPATCHER_RATIONALIZATION.md`.)
+  pub finalize_batch_size: usize,
+  /// **Finalize batch coalescing — time threshold (T), milliseconds.** The maximum time a report
+  /// waits in an accumulating batch before it is flushed, bounding both report staleness and
+  /// worst-case crash **re-work**. An unflushed in-memory batch is never *lost* — its tasks stay
+  /// `Queued` and are recovered on restart — so T trades a little latency for far fewer DB writes,
+  /// not safety. At steady-state load this is usually the threshold that fires. Default 300 ms (at
+  /// ~200 tasks/s it coalesces ~60 tasks per write instead of one write per task, for a few
+  /// hundred ms of staleness).
+  pub finalize_flush_ms: u64,
 }
 impl Default for DispatcherConfig {
   fn default() -> Self {
@@ -98,6 +120,8 @@ impl Default for DispatcherConfig {
       max_in_flight: 5000,
       report_refresh_interval_seconds: 3600,
       max_result_bytes: 2 * 1024 * 1024 * 1024, // 2 GiB
+      finalize_batch_size: 1024,
+      finalize_flush_ms: 300,
     }
   }
 }

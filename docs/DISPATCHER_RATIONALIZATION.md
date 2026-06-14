@@ -248,9 +248,17 @@ de-risk.
    `try_recv` batch-drain. Backpressure = a full channel blocks (no drop, no panic). Green on
    `echo_roundtrip` + `bench_pipeline` (~8 k tasks/s, 1 worker). `server.rs`/`finalize.rs`/`sink.rs`/
    `ventilator.rs`/`manager.rs`.
-2. **DB finalize batching.** Drain up to N (or a time-window) per flush → one multi-row write + one
-   rollup refresh. Knob `finalize_batch`. *Time-bound flush too, so idle periods still persist
-   promptly.* Keep `Queued`-until-flush + `on_conflict` (crash-safe + idempotent).
+2. **DB finalize batching. ✅ DONE (2026-06-14).** The finalize thread now blocks for the first report,
+   then **accumulates** more (`accumulate_batch`) until **N** reports (`finalize_batch_size`, default
+   **1024**) **or** **T** ms elapse (`finalize_flush_ms`, default **300**) — whichever first — and
+   persists the whole batch in one `mark_done` transaction + one rollup refresh. N/T derivation
+   (owner's flush-knob question): **T** from the acceptable crash *re-work* + report-staleness budget
+   (an unflushed batch is never *lost* — tasks stay `Queued` and recover on restart — so this trades a
+   little latency, not safety); **N** is the empirical throughput knee from `dispatcher_bench`
+   (tasks/s climbs to ~1024 then plateaus and *regresses* by 4096; see `docs/DISPATCHER_BENCH.md`).
+   Keeps `Queued`-until-flush + `on_conflict` (crash-safe + idempotent), `job_limit` (counts batches),
+   and the refresh-on-drain/-at-least-daily cadence. Pure size-vs-time logic unit-tested. Green on
+   `dispatcher_bench` (20000 tasks, no loss, all `NoProblem`). `finalize.rs`/`config.rs`.
 3. **Sink writer fan-out + async file I/O (closes D-7).** Receive loop + pool of async `/data` writers;
    ventilator source reads go async too. Receiving no longer hostage to disk latency.
 4. **In-flight set → DashMap + AtomicUsize; service cache → DashMap/arc-swap.** Backpressure reads the

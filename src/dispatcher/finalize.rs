@@ -26,16 +26,57 @@ pub struct Finalize {
   pub job_limit: Option<usize>,
 }
 
+/// Accumulates a finalize batch off the bounded done channel: starting from `first`, keep pulling
+/// reports until the batch reaches `batch_size` (N) **or** `flush_window` (T) elapses since `first`
+/// landed — whichever fires first. Returns the batch and whether the channel **disconnected**
+/// mid-accumulation (all producers gone → shutdown).
+///
+/// This is the heart of the phase-2 DB coalescing knob: rather than flushing the instant a result
+/// lands (one DB write per result under light load), it deliberately groups writes — fewer, bigger
+/// transactions — while bounding the wait (and thus report staleness + crash re-work) to T. It is
+/// loss-free: an unflushed batch is never *lost*; its tasks remain `Queued` and recover on restart.
+/// Pure (no DB, no I/O), so its size-vs-time flush logic is unit-tested directly.
+fn accumulate_batch(
+  done_rx: &Receiver<TaskReport>,
+  first: TaskReport,
+  batch_size: usize,
+  flush_window: Duration,
+) -> (Vec<TaskReport>, bool) {
+  let batch_start = Instant::now();
+  let mut batch = vec![first];
+  let mut disconnected = false;
+  while batch.len() < batch_size {
+    let elapsed = batch_start.elapsed();
+    if elapsed >= flush_window {
+      break;
+    }
+    match done_rx.recv_timeout(flush_window - elapsed) {
+      Ok(report) => batch.push(report),
+      Err(RecvTimeoutError::Timeout) => break,
+      Err(RecvTimeoutError::Disconnected) => {
+        disconnected = true;
+        break;
+      },
+    }
+  }
+  (batch, disconnected)
+}
+
 impl Finalize {
-  /// Start the finalize loop: block on the bounded done channel, drain everything currently queued
-  /// into one batch, and persist it (the existing batched-persist, now **event-driven** — woken the
-  /// instant a result lands instead of a 1s poll — and **backpressured** by the bounded channel
-  /// rather than the old `Mutex<Vec>` + panic-backstop). `recv_timeout(1s)` preserves the 1s idle
-  /// cadence for the `job_limit` check + the refresh-on-drain. `Disconnected` (all producers gone)
-  /// is a clean shutdown. `jobs_count` counts **drains** (batches), as before, so `job_limit`
-  /// semantics are unchanged.
+  /// Start the finalize loop: block on the bounded done channel for the first report of a batch,
+  /// then **accumulate** more via [`accumulate_batch`] until the size (N,
+  /// `finalize_batch_size`) or time (T, `finalize_flush_ms`) threshold trips, and persist the
+  /// whole batch in one `mark_done` transaction. This is **event-driven** (woken the instant a
+  /// result lands), **backpressured** by the bounded channel (not the old `Mutex<Vec>` +
+  /// panic-backstop), and **coalesced** so DB write frequency stays bounded under load (phase 2).
+  /// The outer `recv_timeout(1s)` preserves the 1s idle cadence for the `job_limit` check + the
+  /// refresh-on-drain. `Disconnected` (all producers gone) is a clean shutdown. `jobs_count` counts
+  /// **batches**, as before, so `job_limit` semantics are unchanged.
   pub fn start(&self, done_rx: Receiver<TaskReport>) -> Result<(), Box<dyn Error>> {
     let mut backend = backend::from_address(&self.backend_address);
+    let dispatcher = &crate::config::config().dispatcher;
+    let batch_size = dispatcher.finalize_batch_size.max(1);
+    let flush_window = Duration::from_millis(dispatcher.finalize_flush_ms);
     let mut jobs_count: usize = 0;
     // Whether finalized work has landed since the report rollup was last refreshed, and when that
     // refresh happened — together these drive a "refresh on drain, but at least daily" cadence.
@@ -44,11 +85,8 @@ impl Finalize {
     loop {
       match done_rx.recv_timeout(Duration::from_secs(1)) {
         Ok(first) => {
-          // Drain everything currently queued into one batch — amortizes the DB round-trip.
-          let mut batch = vec![first];
-          while let Ok(report) = done_rx.try_recv() {
-            batch.push(report);
-          }
+          // Coalesce a batch (up to N reports, or T elapsed) into one DB round-trip.
+          let (batch, disconnected) = accumulate_batch(&done_rx, first, batch_size, flush_window);
           server::mark_done_batch(&mut backend, &batch)?;
           jobs_count += 1;
           reports_dirty = true;
@@ -60,6 +98,13 @@ impl Finalize {
             refresh_reports(&mut backend);
             reports_dirty = false;
             last_report_refresh = Instant::now();
+          }
+          if disconnected {
+            // Producers vanished mid-batch: we persisted what we had; make it visible and stop.
+            if reports_dirty {
+              refresh_reports(&mut backend);
+            }
+            break;
           }
         },
         Err(RecvTimeoutError::Timeout) => {
@@ -99,5 +144,83 @@ impl Finalize {
 fn refresh_reports(backend: &mut backend::Backend) {
   if let Err(e) = backend.refresh_report_summary() {
     eprintln!("-- finalize: report_summary refresh failed (non-fatal): {e:?}");
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::helpers::TaskStatus;
+  use crate::models::Task;
+  use std::sync::mpsc::sync_channel;
+
+  fn report(id: i64) -> TaskReport {
+    TaskReport {
+      task: Task {
+        id,
+        service_id: 2,
+        corpus_id: 1,
+        status: 0,
+        entry: String::new(),
+      },
+      status: TaskStatus::NoProblem,
+      messages: Vec::new(),
+    }
+  }
+
+  #[test]
+  fn batch_flushes_at_the_size_threshold_without_waiting() {
+    // With more than N reports already queued, the batch fills to exactly N and returns at once —
+    // it must NOT block for the (long) time window. This is the under-load path: bounded batches,
+    // no added latency.
+    let (tx, rx) = sync_channel::<TaskReport>(100);
+    for id in 1..=5 {
+      tx.send(report(id)).unwrap();
+    }
+    let first = rx.recv().unwrap(); // id 1, as the outer loop would have taken it
+    let start = Instant::now();
+    let (batch, disconnected) = accumulate_batch(&rx, first, 3, Duration::from_secs(30));
+    assert_eq!(batch.len(), 3, "fills to exactly the size threshold N");
+    assert!(!disconnected);
+    assert!(
+      start.elapsed() < Duration::from_secs(1),
+      "must return immediately on the size threshold, not wait out the window"
+    );
+    // The surplus stays queued for the next batch (loss-free hand-off).
+    assert_eq!(rx.try_iter().count(), 2);
+  }
+
+  #[test]
+  fn batch_flushes_at_the_time_threshold_when_under_n() {
+    // Under N reports and no more arriving: the batch flushes when the time window T elapses,
+    // bounding staleness. (Short T keeps the test fast.)
+    let (_tx, rx) = sync_channel::<TaskReport>(100);
+    let start = Instant::now();
+    let (batch, disconnected) = accumulate_batch(&rx, report(1), 512, Duration::from_millis(60));
+    assert_eq!(
+      batch.len(),
+      1,
+      "flushes the lone report at the time threshold"
+    );
+    assert!(!disconnected);
+    assert!(
+      start.elapsed() >= Duration::from_millis(60),
+      "waited out the time window before flushing"
+    );
+  }
+
+  #[test]
+  fn batch_signals_disconnect_when_producers_drop_mid_accumulation() {
+    // All producers gone while we are still under N and within T: accumulation ends early and
+    // signals shutdown, with whatever was collected so far still returned (persisted, not lost).
+    let (tx, rx) = sync_channel::<TaskReport>(100);
+    tx.send(report(2)).unwrap();
+    drop(tx);
+    let (batch, disconnected) = accumulate_batch(&rx, report(1), 512, Duration::from_secs(30));
+    assert_eq!(batch.len(), 2, "the first report plus the one still queued");
+    assert!(
+      disconnected,
+      "a dropped sender ends accumulation as a shutdown"
+    );
   }
 }

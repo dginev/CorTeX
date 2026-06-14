@@ -65,6 +65,26 @@ before it failed consistently. So a **deeper, racy single-task-loss remains** �
 (the ventilator-restart boundary stranding one in-flight task). Still open; needs a dedicated repro
 (the bench is the repro harness — run the 8-worker config in a loop). **Tracked here so it isn't lost.**
 
+## Finalize batch-size (N) knee — `finalize_batch_size` tuning (2026-06-14)
+
+The phase-2 DB-coalescing knob `dispatcher.finalize_batch_size` (N) was tuned with this bench
+(`CORTEX_DISPATCHER__FINALIZE_BATCH_SIZE=<N>`, 20000 tasks · 4 workers · 8 KB, two trials each):
+
+| N | tasks/s (trial 1 / 2) | note |
+| --- | --- | --- |
+| 256 | 8900 / 9834 | below the knee; dips |
+| 512 | 8944 / 9836 | below the knee; dips |
+| **1024** | **9852 / 9846** | **knee — tightest, reliably high** |
+| 2048 | 10963 / 9848 | marginal/noisy gain over 1024 |
+| 4096 | 8217 / 8222 | **regresses** — a 4096-row transaction holds row locks long enough to stall the pipeline |
+
+So **N = 1024** is the chosen default: it captures the throughput gain with the lowest run-to-run
+variance, sits clear of the 4096 cliff, and bounds worst-case crash *re-work* to ~1024 tasks. Under
+saturation the size threshold fires (batches of exactly N in one ~8 ms transaction, ~17 writes/s);
+at steady-state load the **T** time window (`finalize_flush_ms`, default 300 ms) fires first. N only
+governs the burst/saturation regime — row locks don't pressure `max_locks_per_transaction`, so it is
+safe to raise, but past ~2048 the long transaction backs up the pipeline faster than it drains.
+
 ## Relationship to `bench_pipeline.rs`
 
 `bench_pipeline.rs` is the older, narrower A/B harness for the Arm-14 worker-metadata pooling change
