@@ -29,7 +29,9 @@ use serde::Serialize;
 
 use crate::backend::DbPool;
 use crate::config::{config, AssetsConfig, CortexConfig, DispatcherConfig};
-use crate::frontend::actor::{require_admin, Actor, AdminReject, AdminSession};
+use crate::frontend::actor::{
+  require_admin, require_admin_to, Actor, AdminReject, AdminSession, ReturnTo,
+};
 
 /// Managed state: the path where the write path persists the configuration file.
 pub struct ConfigFile(pub PathBuf);
@@ -369,9 +371,10 @@ pub fn healthz(pool: &State<DbPool>) -> Json<HealthDto> { Json(health_report(poo
 #[get("/health")]
 pub fn health_page(
   session: Option<AdminSession>,
+  return_to: ReturnTo,
   pool: &State<DbPool>,
 ) -> Result<Template, AdminReject> {
-  require_admin(session)?;
+  require_admin_to(session, &return_to)?;
   let health = health_report(pool);
   let global = serde_json::json!({
     "title": format!("System health — {}", health.status),
@@ -384,8 +387,11 @@ pub fn health_page(
 /// (unauthenticated → sign-in page); the agent twin keeps the token guard.
 #[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
 #[get("/settings")]
-pub fn settings(session: Option<AdminSession>) -> Result<Template, AdminReject> {
-  require_admin(session)?;
+pub fn settings(
+  session: Option<AdminSession>,
+  return_to: ReturnTo,
+) -> Result<Template, AdminReject> {
+  require_admin_to(session, &return_to)?;
   Ok(Template::render(
     "settings",
     context! { config: ConfigDto::from_config(config()) },

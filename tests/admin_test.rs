@@ -31,14 +31,26 @@ fn is_redirect(code: u16) -> bool { (300..400).contains(&code) }
 fn admin_requires_sign_in_then_grants_access() {
   let client = client();
 
-  // Unauthenticated /admin redirects to the sign-in page.
+  // Unauthenticated /admin redirects to the sign-in page, carrying a `?next=` back to where it was.
   let response = client.get("/admin").dispatch();
   assert!(
     is_redirect(response.status().code),
     "unauthenticated /admin redirects, got {}",
     response.status()
   );
-  assert_eq!(response.headers().get_one("Location"), Some("/admin/login"));
+  assert_eq!(
+    response.headers().get_one("Location"),
+    Some("/admin/login?next=%2Fadmin"),
+    "the redirect carries a next= back to the requested screen"
+  );
+
+  // A gated screen with a path + query is preserved in `next` too.
+  let response = client.get("/admin/audit?actor=alice").dispatch();
+  let location = response.headers().get_one("Location").unwrap_or("");
+  assert!(
+    location.starts_with("/admin/login?next=") && location.contains("audit"),
+    "the deep destination is preserved in next=, got {location}"
+  );
 
   // The sign-in page renders.
   let response = client.get("/admin/login").dispatch();
@@ -62,13 +74,17 @@ fn admin_requires_sign_in_then_grants_access() {
     "a rejected sign-in does not unlock /admin"
   );
 
-  // A valid token (token1 is configured in the test rerun_tokens) signs in + redirects to /admin.
+  // A valid token signs in and returns to the `next` destination it was sent to sign-in from.
   let response = client
     .post("/admin/login")
     .header(ContentType::Form)
-    .body("token=token1")
+    .body("token=token1&next=%2Fadmin%2Faudit")
     .dispatch();
-  assert_eq!(response.headers().get_one("Location"), Some("/admin"));
+  assert_eq!(
+    response.headers().get_one("Location"),
+    Some("/admin/audit"),
+    "a successful sign-in returns to next="
+  );
 
   // Security: the session cookie carries an opaque server-side session id, NOT the raw token.
   let cookie_value = client

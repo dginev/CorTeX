@@ -67,8 +67,8 @@
     else { alert("Passkey enrollment failed to verify (status " + finish.status + ")."); }
   }
 
-  // Sign in with a passkey for `owner`. On success the server set the session cookie; go to /admin.
-  async function signInWithPasskey(owner) {
+  // Sign in with a passkey for `owner`. On success the server set the session cookie; go to `next`.
+  async function signInWithPasskey(owner, next) {
     var err = document.getElementById("passkey-error");
     function fail(msg) { if (err) { err.textContent = msg; } else { alert(msg); } }
     if (err) { err.textContent = ""; }
@@ -110,7 +110,7 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
-    if (finish.ok) { window.location = "/admin"; }
+    if (finish.ok) { window.location = next || "/admin"; }
     else { fail("Passkey sign-in failed to verify (status " + finish.status + ")."); }
   }
 
@@ -127,7 +127,7 @@
     if (signin) {
       signin.addEventListener("click", function () {
         var owner = document.getElementById("passkey-owner");
-        signInWithPasskey(owner ? owner.value.trim() : "");
+        signInWithPasskey(owner ? owner.value.trim() : "", signin.getAttribute("data-next") || "/admin");
       });
     }
   });

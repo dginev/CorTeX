@@ -84,10 +84,13 @@ fn job_progress_page_renders_html() {
   let response = client
     .get("/jobs/00000000-0000-0000-0000-000000000000")
     .dispatch();
-  assert_eq!(
-    response.headers().get_one("Location"),
-    Some("/admin/login"),
-    "the job progress page requires sign-in"
+  assert!(
+    response
+      .headers()
+      .get_one("Location")
+      .unwrap_or("")
+      .starts_with("/admin/login?next="),
+    "the job progress page requires sign-in (with a return path)"
   );
   sign_in(&client);
   let response = client

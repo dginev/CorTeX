@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::backend::DbPool;
 use crate::concerns::CortexInsertable;
-use crate::frontend::actor::{require_admin, Actor, AdminReject, AdminSession};
+use crate::frontend::actor::{require_admin_to, Actor, AdminReject, AdminSession, ReturnTo};
 use crate::frontend::helpers::decorate_uri_encodings;
 use crate::frontend::params::TemplateContext;
 use crate::models::{NewService, Service, WorkerMetadata};
@@ -251,9 +251,10 @@ pub fn register_service_human(
 #[get("/services")]
 pub fn services_page(
   session: Option<AdminSession>,
+  return_to: ReturnTo,
   pool: &State<DbPool>,
 ) -> Result<Template, AdminReject> {
-  require_admin(session)?;
+  require_admin_to(session, &return_to)?;
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let services: Vec<HashMap<String, String>> = Service::all(&mut connection)
     .unwrap_or_default()
@@ -297,9 +298,10 @@ pub fn api_service_workers(
 pub fn worker_report_page(
   service: &str,
   session: Option<AdminSession>,
+  return_to: ReturnTo,
   pool: &State<DbPool>,
 ) -> Result<Template, AdminReject> {
-  require_admin(session)?;
+  require_admin_to(session, &return_to)?;
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let service_record = resolve(service, &mut connection)?;
   let workers: Vec<HashMap<String, String>> = service_record

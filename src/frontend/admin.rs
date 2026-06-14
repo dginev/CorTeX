@@ -17,7 +17,9 @@ use rocket::{Route, State};
 use rocket_dyn_templates::{context, Template};
 
 use crate::backend::DbPool;
-use crate::frontend::actor::{owner_for_token, AdminSession, ADMIN_COOKIE};
+use crate::frontend::actor::{
+  owner_for_token, safe_next, sign_in_url, AdminSession, ReturnTo, ADMIN_COOKIE,
+};
 use crate::models::{Corpus, Session};
 
 /// The admin dashboard (`GET /admin`): the consolidated home for admin actions. **Signed-in admins
@@ -29,9 +31,10 @@ use crate::models::{Corpus, Session};
 #[get("/admin")]
 pub fn admin_page(
   session: Option<AdminSession>,
+  return_to: ReturnTo,
   pool: &State<DbPool>,
 ) -> Result<Template, Redirect> {
-  let session = session.ok_or_else(|| Redirect::to("/admin/login"))?;
+  let session = session.ok_or_else(|| Redirect::to(sign_in_url(false, Some(&return_to.0))))?;
   // A small corpus count for context (best-effort; never blocks the dashboard).
   let corpus_count = pool
     .get()
@@ -48,34 +51,42 @@ pub fn admin_page(
   ))
 }
 
-/// The sign-in page (`GET /admin/login`): a form to enter an admin token, plus a "sign in with a
-/// passkey" affordance when passkeys are enabled. `?bad=true` flags a failed previous attempt.
-#[get("/admin/login?<bad>")]
+/// The sign-in page (`GET /admin/login?<bad>&<next>`): a form to enter an admin token, plus a "sign
+/// in with a passkey" affordance when passkeys are enabled. `?bad=true` flags a failed previous
+/// attempt; `?next=` is the destination to return to after signing in (carried through the form).
+#[get("/admin/login?<bad>&<next>")]
 pub fn admin_login_page(
   bad: Option<bool>,
+  next: Option<String>,
   webauthn: &State<Option<crate::frontend::webauthn::WebauthnState>>,
 ) -> Template {
   let global = serde_json::json!({
     "title": "Admin sign-in",
     "description": "Sign in to the CorTeX admin dashboard",
   });
+  // Only carry a safe local `next` into the page (open-redirect guard; also avoids reflecting
+  // junk).
+  let next = next.filter(|path| path.starts_with('/') && !path.starts_with("//"));
   Template::render(
     "admin-login",
-    context! { global, bad: bad.unwrap_or(false), passkeys_enabled: webauthn.inner().is_some() },
+    context! { global, bad: bad.unwrap_or(false), next, passkeys_enabled: webauthn.inner().is_some() },
   )
 }
 
-/// The sign-in form field.
+/// The sign-in form fields.
 #[derive(FromForm)]
 pub struct LoginForm {
   /// A rerun token (resolved to an owner via `auth.rerun_tokens`).
   pub token: String,
+  /// Where to return after a successful sign-in (validated to a safe local path).
+  pub next: Option<String>,
 }
 
 /// Processes sign-in (`POST /admin/login`): validates the token against `auth.rerun_tokens`; on
 /// success **opens a server-side session** and sets the [`ADMIN_COOKIE`] cookie to its random
 /// opaque id (HttpOnly, SameSite=Lax) — the cookie no longer carries the token — then redirects to
-/// `/admin`. A bad token (or a DB hiccup opening the session) returns to the sign-in page flagged.
+/// the validated `next` destination (default `/admin`). A bad token (or a DB hiccup opening the
+/// session) returns to the sign-in page flagged, preserving `next`.
 #[post("/admin/login", data = "<form>")]
 pub fn admin_login(
   form: Form<LoginForm>,
@@ -95,9 +106,10 @@ pub fn admin_login(
           .path("/")
           .build(),
       );
-      Redirect::to("/admin")
+      Redirect::to(safe_next(form.next.as_deref()))
     },
-    None => Redirect::to("/admin/login?bad=true"),
+    // Preserve the return destination across a failed attempt.
+    None => Redirect::to(sign_in_url(true, form.next.as_deref())),
   }
 }
 

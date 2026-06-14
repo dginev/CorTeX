@@ -18,7 +18,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::backend::DbPool;
-use crate::frontend::actor::{require_admin, AdminReject, AdminSession};
+use crate::frontend::actor::{require_admin_to, AdminReject, AdminSession, ReturnTo};
 use crate::jobs::{self, Job};
 
 /// A job as exposed over the API/UI (uuid handle, no internal serial id).
@@ -143,9 +143,10 @@ pub fn jobs_page(
   active: Option<bool>,
   limit: Option<i64>,
   session: Option<AdminSession>,
+  return_to: ReturnTo,
   pool: &State<DbPool>,
 ) -> Result<Template, AdminReject> {
-  require_admin(session)?;
+  require_admin_to(session, &return_to)?;
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let limit = limit.unwrap_or(50).clamp(1, 200);
   let active = active.unwrap_or(false);
@@ -175,8 +176,12 @@ pub fn jobs_page(
 /// surface.
 #[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
 #[get("/jobs/<uuid>")]
-pub fn job_page(uuid: &str, session: Option<AdminSession>) -> Result<Template, AdminReject> {
-  require_admin(session)?;
+pub fn job_page(
+  uuid: &str,
+  session: Option<AdminSession>,
+  return_to: ReturnTo,
+) -> Result<Template, AdminReject> {
+  require_admin_to(session, &return_to)?;
   Ok(Template::render("job", context! { uuid }))
 }
 

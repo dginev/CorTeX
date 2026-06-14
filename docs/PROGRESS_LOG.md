@@ -1120,3 +1120,20 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   biometric round-trip needs a real/virtual authenticator (manual). Passkeys arm: foundation →
   sessions → enrollment → **sign-in** all landed; remaining is the deferred confirmation-dialog
   refactor. clippy -D warnings + all auth tests green.
+- **Auth — confirmation dialogs use the session cookie; gated GETs redirect with a return path
+  (autonomous-day progress, completes the owner's auth requests):** (1) every human write/confirm
+  form dropped its typed token and now gates on the signed-in `AdminSession` — the plain `<form>`
+  handlers (corpora import/extend/activate/delete/deactivate, services register, management reindex/
+  analyze/**post_settings** which had been UNGATED, reports refresh) return a redirect to sign-in when
+  anonymous; the rerun + savetasks JSON-XHR endpoints (bin/frontend.rs) `401` when anonymous and the
+  dialogs redirect to `/admin/login` on 401. Removed every `name="token"` write-form input from the
+  templates + the now-dead TokenForm/MaintenanceForm/RerunRequestParams.token. (2) Per owner: **gated
+  GET routes redirect to `/admin/login?next=<dest>`** and return there after login. New `actor::
+  {ReturnTo guard, require_admin_to, sign_in_url, safe_next}` with an **open-redirect guard**
+  (`is_safe_local_path`: absolute, non-protocol-relative); threaded `ReturnTo` through the 8 gated GET
+  screens (admin, audit, passkeys, services, workers, jobs, job, health, settings); `/admin/login`
+  carries `next` through a hidden field + the passkey button's `data-next`, and `admin_login`
+  redirects to the validated `safe_next` (default `/admin`). `admin_test` asserts the `next=` round
+  trip; the other gated-screen tests updated to expect `/admin/login?next=`. clippy -D warnings + the
+  full auth/render test sweep green. **The owner's AAA + dialog + return-path requests are now all
+  satisfied; CI check is next.**

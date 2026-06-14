@@ -41,14 +41,14 @@ fn sign_in(client: &Client) {
 
 fn settings_page_renders_masked_html() {
   let client = client(temp_config_path("read"));
-  // Admin-only: unauthenticated → redirect to sign-in.
-  assert_eq!(
-    client
-      .get("/settings")
-      .dispatch()
+  // Admin-only: unauthenticated → redirect to sign-in (with a return path).
+  let unauth = client.get("/settings").dispatch();
+  assert!(
+    unauth
       .headers()
-      .get_one("Location"),
-    Some("/admin/login"),
+      .get_one("Location")
+      .unwrap_or("")
+      .starts_with("/admin/login?next="),
     "the settings screen requires sign-in"
   );
   sign_in(&client);

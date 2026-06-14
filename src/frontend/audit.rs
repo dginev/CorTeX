@@ -20,7 +20,9 @@ use rocket_dyn_templates::{context, Template};
 use serde::Serialize;
 
 use crate::backend::DbPool;
-use crate::frontend::actor::{actor_carriers, resolve_carriers, Actor, AdminSession};
+use crate::frontend::actor::{
+  actor_carriers, resolve_carriers, sign_in_url, Actor, AdminSession, ReturnTo,
+};
 use crate::models::{AuditEntry, NewAuditEntry};
 
 /// The default and maximum number of audit rows a read returns (the read is most-recent-first, so
@@ -164,9 +166,10 @@ pub fn audit_page(
   limit: Option<i64>,
   actor: Option<String>,
   session: Option<AdminSession>,
+  return_to: ReturnTo,
   pool: &State<DbPool>,
 ) -> Result<Template, Redirect> {
-  let session = session.ok_or_else(|| Redirect::to("/admin/login"))?;
+  let session = session.ok_or_else(|| Redirect::to(sign_in_url(false, Some(&return_to.0))))?;
   // Best-effort, like the dashboard: a pool/db hiccup renders an empty table, never an error page.
   let rows = load_audit(pool, actor.as_deref(), limit).unwrap_or_default();
   let global = serde_json::json!({

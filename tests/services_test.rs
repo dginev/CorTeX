@@ -82,14 +82,11 @@ fn worker_fleet_api_and_screen() {
 
   // The /services + /workers screens are admin-only: an unauthenticated browser is bounced to
   // sign-in. After signing in (tracked client carries the cookie) they render.
-  assert_eq!(
-    client
-      .get("/services")
-      .dispatch()
-      .headers()
-      .get_one("Location"),
-    Some("/admin/login"),
-    "the services screen requires sign-in"
+  let unauth = client.get("/services").dispatch();
+  let location = unauth.headers().get_one("Location").unwrap_or("");
+  assert!(
+    location.starts_with("/admin/login?next="),
+    "the services screen requires sign-in (with a return path), got {location}"
   );
   sign_in(&client);
 

@@ -124,14 +124,14 @@ fn healthz_reports_ok_when_db_reachable() {
 
   // The human twin renders the same report as an HTML screen (shared HealthDto). Unlike the open
   // `/healthz` liveness probe above, the `/health` screen is admin-only: unauthenticated → sign-in.
-  assert_eq!(
-    client
-      .get("/health")
-      .dispatch()
+  let unauth = client.get("/health").dispatch();
+  assert!(
+    unauth
       .headers()
-      .get_one("Location"),
-    Some("/admin/login"),
-    "the health screen requires sign-in (the /healthz probe stays open)"
+      .get_one("Location")
+      .unwrap_or("")
+      .starts_with("/admin/login?next="),
+    "the health screen requires sign-in with a return path (the /healthz probe stays open)"
   );
   sign_in(&client);
   let response = client.get("/health").dispatch();

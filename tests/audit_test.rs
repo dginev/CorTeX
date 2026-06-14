@@ -130,7 +130,14 @@ fn audit_read_view() {
     "unauthenticated /admin/audit redirects, got {}",
     response.status()
   );
-  assert_eq!(response.headers().get_one("Location"), Some("/admin/login"));
+  assert!(
+    response
+      .headers()
+      .get_one("Location")
+      .unwrap_or("")
+      .starts_with("/admin/login?next="),
+    "the audit screen requires sign-in (with a return path)"
+  );
 
   // Signed in (tracked client carries the cookie), the screen renders.
   client

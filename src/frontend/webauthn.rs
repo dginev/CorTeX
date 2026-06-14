@@ -33,7 +33,9 @@ use webauthn_rs::prelude::*;
 
 use crate::backend::DbPool;
 use crate::config::WebauthnConfig;
-use crate::frontend::actor::{require_admin, AdminReject, AdminSession, ADMIN_COOKIE};
+use crate::frontend::actor::{
+  require_admin, require_admin_to, AdminReject, AdminSession, ReturnTo, ADMIN_COOKIE,
+};
 use crate::models::{Session, WebauthnCredential, WebauthnUser};
 
 /// The cookie carrying the in-flight ceremony id between a `…/begin` and its `…/finish` (scoped to
@@ -358,10 +360,11 @@ pub struct PasskeyDto {
 #[get("/admin/passkeys")]
 pub fn passkeys_page(
   session: Option<AdminSession>,
+  return_to: ReturnTo,
   webauthn: &State<Option<WebauthnState>>,
   pool: &State<DbPool>,
 ) -> Result<Template, AdminReject> {
-  let session = require_admin(session)?;
+  let session = require_admin_to(session, &return_to)?;
   let passkeys: Vec<PasskeyDto> = pool
     .get()
     .ok()

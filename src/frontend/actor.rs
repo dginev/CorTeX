@@ -15,6 +15,7 @@
 //! everyone, rather than letting anyone wipe results).
 
 use diesel::pg::PgConnection;
+use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use rocket::http::Status;
 use rocket::request::{FromRequest, Outcome, Request};
 use rocket::response::{Redirect, Responder};
@@ -168,6 +169,63 @@ impl<'r> FromRequest<'r> for AdminSession {
       None => Outcome::Error((Status::Unauthorized, ())),
     }
   }
+}
+
+/// Whether `path` is a safe local path to redirect to — an absolute path that is **not**
+/// protocol-relative (`//host`) or a backslash trick (`/\host`). The open-redirect guard for the
+/// `?next=` return-to-after-login flow.
+fn is_safe_local_path(path: &str) -> bool {
+  path.starts_with('/') && !path.starts_with("//") && !path.starts_with("/\\")
+}
+
+/// Builds the sign-in URL: `/admin/login`, with `?bad=true` when a previous attempt failed and
+/// `&next=<encoded>` when `next` is a safe local path to return to after login (open-redirect
+/// guarded — a non-local `next` is dropped).
+pub fn sign_in_url(bad: bool, next: Option<&str>) -> String {
+  let mut url = String::from("/admin/login");
+  let mut separator = '?';
+  if bad {
+    url.push_str("?bad=true");
+    separator = '&';
+  }
+  if let Some(path) = next.filter(|path| is_safe_local_path(path)) {
+    url.push(separator);
+    url.push_str("next=");
+    url.push_str(&utf8_percent_encode(path, NON_ALPHANUMERIC).to_string());
+  }
+  url
+}
+
+/// Validates a post-login `next` destination: the path if it is a safe local path, else `/admin`.
+pub fn safe_next(next: Option<&str>) -> String {
+  match next {
+    Some(path) if is_safe_local_path(path) => path.to_string(),
+    _ => "/admin".to_string(),
+  }
+}
+
+/// The current request's path + query, captured for the `?next=` return-to-after-login flow on
+/// gated **GET** screens. An infallible request guard (always succeeds).
+pub struct ReturnTo(pub String);
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for ReturnTo {
+  type Error = ();
+
+  async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+    Outcome::Success(ReturnTo(request.uri().to_string()))
+  }
+}
+
+/// Like [`require_admin`], but for a **GET** screen: an unauthenticated browser is redirected to
+/// the sign-in page with a `?next=` pointing back at `return_to`, so it lands here again after
+/// signing in.
+#[allow(clippy::result_large_err)] // see require_admin.
+pub fn require_admin_to(
+  session: Option<AdminSession>,
+  return_to: &ReturnTo,
+) -> Result<AdminSession, AdminReject> {
+  session.ok_or_else(|| AdminReject::Redirect(Redirect::to(sign_in_url(false, Some(&return_to.0)))))
 }
 
 /// The rejection of an admin-gated **human screen**: either a redirect to the sign-in page (the
