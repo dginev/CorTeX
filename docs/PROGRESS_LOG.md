@@ -374,3 +374,14 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   trips it (validated against the captured CI log: catches the real `; 3 failed`, ignores `5432 failed`,
   still tolerates the L-1 SIGSEGV). KNOWN_ISSUES updated.
   *Next:* confirm CI green via `gh` once this run completes; then the API-docs pick / load test / hardening.
+  - **CI confirmed GREEN** (run for `95bfc2e` → success): the connection-exhaustion fix + tightened wrapper
+    worked. The earlier red was real (connection limits), not the L-1 flake.
+- **Dependabot security pass (with `gh` now authed):** triaged the 6 open advisories. The **diesel** ones
+  (incl. the lone *high*, "SQLite UTF-8 corruption") are SQLite-/`COPY`-specific — we use **Postgres only,
+  no `COPY`** — and this branch already resolves **diesel 2.3.10 ≥ the 2.3.8 patch**, so they're a
+  master-branch artifact that clears on merge. Cleared the two genuinely-bumpable ones with no code change:
+  **rand 0.8.5 → 0.8.6** (low) and the transitive **time 0.3.41 → 0.3.47** (medium). `build` +
+  `clippy --all-targets` + lib tests clean. **Remaining:** the `time = "0.1.4"` direct dep (1 medium, an
+  unmaintained crate — `time::get_time()` in the dispatcher) needs a real **migration off `time` 0.1 → chrono**
+  (a rationalization win, deferred — it touches the dispatcher hot loop, do it deliberately with tests).
+  *Next:* migrate off `time` 0.1; the API-docs pick (awaiting owner); or (on backup) the load test.
