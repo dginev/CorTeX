@@ -151,6 +151,9 @@ pub struct SettingsForm {
   pub dispatcher_message_size: usize,
   /// Backpressure threshold: max in-flight tasks before the ventilator stops leasing.
   pub dispatcher_max_in_flight: usize,
+  /// How often (seconds) the finalize thread refreshes the report rollup (the freshness
+  /// guarantee).
+  pub dispatcher_report_refresh_interval_seconds: u64,
   /// Template directory.
   pub assets_template_dir: String,
   /// Public assets directory.
@@ -352,6 +355,7 @@ pub fn post_settings(
       "queue_size": f.dispatcher_queue_size,
       "message_size": f.dispatcher_message_size,
       "max_in_flight": f.dispatcher_max_in_flight,
+      "report_refresh_interval_seconds": f.dispatcher_report_refresh_interval_seconds,
     },
     "assets": { "template_dir": f.assets_template_dir, "public_dir": f.assets_public_dir },
   });

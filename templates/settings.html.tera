@@ -39,6 +39,9 @@
       <input id="m" name="dispatcher_message_size" type="number" value="{{ config.dispatcher.message_size }}">
       <label for="mif">Max in-flight (backpressure threshold)</label>
       <input id="mif" name="dispatcher_max_in_flight" type="number" value="{{ config.dispatcher.max_in_flight }}">
+      <label for="rri">Report refresh interval (seconds)</label>
+      <input id="rri" name="dispatcher_report_refresh_interval_seconds" type="number"
+        value="{{ config.dispatcher.report_refresh_interval_seconds }}">
     </fieldset>
 
     <fieldset>

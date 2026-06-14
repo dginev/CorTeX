@@ -75,7 +75,7 @@ fn post_settings_form_persists_and_redirects() {
   let client = client(path.clone());
   let form = "dispatcher_source_port=51695&dispatcher_result_port=51696\
               &dispatcher_queue_size=4242&dispatcher_message_size=100000\
-              &dispatcher_max_in_flight=5000\
+              &dispatcher_max_in_flight=5000&dispatcher_report_refresh_interval_seconds=7200\
               &assets_template_dir=templates&assets_public_dir=public";
   let response = client
     .post("/settings")
@@ -92,6 +92,10 @@ fn post_settings_form_persists_and_redirects() {
 
   let written = std::fs::read_to_string(&path).expect("config file written");
   assert!(written.contains("4242"));
+  assert!(
+    written.contains("7200"),
+    "the report-refresh interval is editable + persisted"
+  );
 }
 
 // Custom harness (Cargo.toml `harness = false`): run the cases then `_exit(0)` to skip the racy

@@ -696,3 +696,13 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   Debugging note: a seeded `running` job is marked `interrupted` by `interrupt_orphans` on *production*
   startup, so the regression test seeds it under `mount_api_with` (which skips orphan-interruption) and
   asserts the meta-refresh renders (`jobs_api_test`). clippy/fmt clean.
+- **Frontend request-path panic audit (clean) + settings completeness (autonomous-night progress):**
+  swept `src/frontend/` for `.unwrap()`/`.expect()`/`panic!` on request paths — **no genuine risks**:
+  `uri_escape(Some(_))` always returns `Some` (so those unwraps can't panic) and the `serve_report`
+  severity/category/what unwraps are all guarded by prior `is_none()` branch checks. Hardened the two
+  `uri_escape(...).unwrap()` calls to `.unwrap_or_default()` anyway (mandate-compliant + future-proof if
+  `uri_escape` ever changes). Confirms the F-1/F-2/F-3 fixes + the catchers leave the frontend free of
+  input-triggerable request-path panics. **Settings completeness:** the `report_refresh_interval_seconds`
+  config field I'd added was *shown* on the Settings page but not *editable* — added it to `SettingsForm` +
+  the persist patch + the form (`settings_test` now asserts it round-trips to `cortex.toml`). clippy/fmt
+  clean.
