@@ -93,6 +93,20 @@ pub struct MigrationsHealth {
   pub current: bool,
 }
 
+/// Utilization of the web frontend's database connection pool — a key load / saturation signal
+/// (when `in_use` approaches `max`, requests start waiting on `pool.get()` and may `503`).
+#[derive(Debug, Serialize)]
+pub struct PoolHealth {
+  /// Configured maximum pool size (`database.pool_size`).
+  pub max: u32,
+  /// Connections currently established (idle + in-use).
+  pub connections: u32,
+  /// Idle, immediately-available connections.
+  pub idle: u32,
+  /// Connections currently checked out (in use).
+  pub in_use: u32,
+}
+
 /// Structured health report, identical for agents and human supervisors.
 #[derive(Debug, Serialize)]
 pub struct HealthDto {
@@ -102,6 +116,8 @@ pub struct HealthDto {
   pub database: DbHealth,
   /// Schema-migration health.
   pub migrations: MigrationsHealth,
+  /// Connection-pool utilization.
+  pub pool: PoolHealth,
 }
 
 /// The editable, non-secret fields of the Settings form (database/auth are edited out-of-band).
@@ -152,9 +168,10 @@ fn merge_and_persist(patch: &serde_json::Value, path: &Path) -> Result<CortexCon
 #[get("/api/config")]
 pub fn api_config() -> Json<ConfigDto> { Json(ConfigDto::from_config(config())) }
 
-/// A structured, pollable health report for humans and agents alike (probes through the pool).
-#[get("/healthz")]
-pub fn healthz(pool: &State<DbPool>) -> Json<HealthDto> {
+/// Builds the health report: probes the database through the pool (so reachability reflects the
+/// same path requests use) and samples pool utilization. Shared by the agent (`/healthz`) and human
+/// (`/health`) routes so both report identical state.
+fn health_report(pool: &DbPool) -> HealthDto {
   let (reachable, migrations_current) = match pool.get() {
     Ok(mut connection) => {
       let reachable = diesel::sql_query("SELECT 1")
@@ -165,18 +182,43 @@ pub fn healthz(pool: &State<DbPool>) -> Json<HealthDto> {
     },
     Err(_) => (false, false),
   };
+  // Sample utilization after the probe connection is returned, so it reflects concurrent load.
+  let state = pool.state();
   let status = if reachable && migrations_current {
     "ok"
   } else {
     "degraded"
   };
-  Json(HealthDto {
+  HealthDto {
     status,
     database: DbHealth { reachable },
     migrations: MigrationsHealth {
       current: migrations_current,
     },
-  })
+    pool: PoolHealth {
+      max: pool.max_size(),
+      connections: state.connections,
+      idle: state.idle_connections,
+      in_use: state.connections.saturating_sub(state.idle_connections),
+    },
+  }
+}
+
+/// A structured, pollable health report for agents (probes through the pool, samples pool
+/// utilization). The JSON twin of the human [`health_page`] screen.
+#[get("/healthz")]
+pub fn healthz(pool: &State<DbPool>) -> Json<HealthDto> { Json(health_report(pool)) }
+
+/// The human health screen: the HTML twin of `GET /healthz`, sharing [`HealthDto`] — database
+/// reachability, migration currency, and live connection-pool utilization at a glance.
+#[get("/health")]
+pub fn health_page(pool: &State<DbPool>) -> Template {
+  let health = health_report(pool);
+  let global = serde_json::json!({
+    "title": format!("System health — {}", health.status),
+    "description": "CorTeX system health: database, schema migrations, connection pool.",
+  });
+  Template::render("health", context! { global, health })
 }
 
 /// The Settings page: the human (HTML) twin of `GET /api/config`.
@@ -220,4 +262,13 @@ pub fn post_settings(
 }
 
 /// The route set for the management/health/settings capability.
-pub fn routes() -> Vec<Route> { routes![api_config, healthz, settings, put_config, post_settings] }
+pub fn routes() -> Vec<Route> {
+  routes![
+    api_config,
+    healthz,
+    health_page,
+    settings,
+    put_config,
+    post_settings
+  ]
+}

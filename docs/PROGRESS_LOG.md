@@ -565,3 +565,12 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   `allow_tables_to_appear_in_same_query!` entry), reversibility verified by `migration redo`. Future
   service-dependency management (Arm 6) would design a fresh schema with real service FKs, so nothing is
   lost. CLAUDE.md load-bearing facts updated (the dead-files + dead-table notes are now obsolete).
+- **Health surface enriched with pool utilization + a human `/health` screen (Arm 2/8 observability;
+  autonomous-night progress):** `/healthz` (the agent JSON health report) now also carries **connection-pool
+  utilization** (`max`, `connections`, `idle`, `in_use`) — the key load/saturation signal (when `in_use`
+  nears `max`, requests wait on `pool.get()` and may `503`). Refactored the probe into a shared
+  `health_report(pool)` builder, added the **human `/health` screen** as the HTML twin (shared `HealthDto`
+  — symmetry), and linked **System health** + **Settings** from the overview nav (Admin-UX discoverability).
+  Verified on the live dump (pool `32/32 idle`; correctly reports `degraded` when a DB is behind on
+  migrations — caught that `cortex_load` lacks the latest migrations). Regression in `management_api_test`
+  (pool fields present + `in_use ≤ max`; `/health` renders HTML). clippy/fmt clean.

@@ -73,6 +73,27 @@ fn healthz_reports_ok_when_db_reachable() {
   assert_eq!(body["status"], "ok");
   assert_eq!(body["database"]["reachable"], true);
   assert_eq!(body["migrations"]["current"], true);
+  // Pool utilization is reported (the load/saturation signal): max ≥ in_use, all fields present.
+  let pool = &body["pool"];
+  assert!(
+    pool["max"].as_u64().expect("pool max") >= 1,
+    "pool max is reported"
+  );
+  assert!(pool["in_use"].is_u64() && pool["idle"].is_u64() && pool["connections"].is_u64());
+  assert!(
+    pool["in_use"].as_u64().unwrap() <= pool["max"].as_u64().unwrap(),
+    "in_use never exceeds max"
+  );
+
+  // The human twin renders the same report as an HTML screen (shared HealthDto).
+  let response = client.get("/health").dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  assert_eq!(response.content_type(), Some(ContentType::HTML));
+  let html = response.into_string().expect("html body");
+  assert!(
+    html.contains("System health"),
+    "the human health screen renders"
+  );
 }
 
 // Custom harness (Cargo.toml `harness = false`): run the cases then `_exit(0)`, skipping the racy

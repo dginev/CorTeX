@@ -1,0 +1,27 @@
+{% extends "layout" %} {% block content %}
+<div class="center">
+  <h1>System health</h1>
+  <p class="lead">Overall status: <strong>{{ health.status }}</strong></p>
+  <table class="table" style="max-width: 34rem; margin: 0 auto;">
+    <tbody>
+      <tr>
+        <td class="left">Database reachable</td>
+        <td class="right">{% if health.database.reachable %}yes{% else %}<strong>no</strong>{% endif %}</td>
+      </tr>
+      <tr>
+        <td class="left">Schema migrations current</td>
+        <td class="right">{% if health.migrations.current %}yes{% else %}<strong>pending</strong>{% endif %}</td>
+      </tr>
+      <tr>
+        <td class="left">Connection pool — in use / max</td>
+        <td class="right">{{ health.pool.in_use }} / {{ health.pool.max }}</td>
+      </tr>
+      <tr>
+        <td class="left">Connection pool — idle / established</td>
+        <td class="right">{{ health.pool.idle }} / {{ health.pool.connections }}</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>&nbsp;·&nbsp; <a href="/healthz">JSON</a> &nbsp;·&nbsp; <a href="/settings">Settings</a></p>
+</div>
+{% endblock content %}
