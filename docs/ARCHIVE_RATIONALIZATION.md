@@ -1,5 +1,13 @@
 # Archive-library rationalization — pure-Rust, streaming, auto-detecting
 
+> **STATUS: DONE (2026-06-14) — Path A shipped.** Owner chose pure-Rust ("the pure rust recommendation
+> wins, go"). `libarchive-sys` (the personal C-FFI fork) is **removed**; archive handling is now
+> `flate2` + `tar` + `zip` + `infer`, all pure-Rust + streaming. Migrated: `helpers::generate_report`
+> (per-task result parse → `zip` `by_name`), `importer.rs` unpack (`unpack_top_tar` + `unpack_one_gz`,
+> with I-1 hardening + `infer` detection), and the `record_loading_info` / `sandbox_arxiv` examples.
+> The `libarchive-dev` system package is no longer a build dependency. Green on `echo_roundtrip`,
+> `importer_test`, and the new unit tests. The evaluation below is retained as the rationale.
+
 Owner directive (2026-06-14): *"rationalize our use of the libarchive crate. There may be better
 maintained alternatives in the Rust ecosystem. We have .tar.gz, .gz and .zip inputs/outputs, so we want
 flexible generality in archive handling. And extremely high efficiency, this is a hot path."* Plus:

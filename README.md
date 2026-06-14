@@ -29,7 +29,7 @@
 **Getting started** (full steps in [INSTALL.md](INSTALL.md); day-to-day operation in [MANUAL.md](MANUAL.md)):
 
 ```bash
-sudo apt install -y postgresql libpq-dev libzmq3-dev libarchive-dev libsodium-dev pkg-config
+sudo apt install -y postgresql libpq-dev libzmq3-dev libsodium-dev pkg-config
 cargo run --bin cortex -- init                                  # migrate + scaffold config
 cargo run --bin cortex -- set-admin-token --generate --owner me # first admin credential
 cargo run --bin cortex -- doctor                                # verify: => healthy

@@ -55,7 +55,7 @@ read it before non-trivial work. Active work branch: **`productize-2026`**.
 
 Build deps (Ubuntu; not yet installed on a fresh box):
 ```bash
-sudo apt install -y postgresql libpq-dev libzmq3-dev libarchive-dev libsodium-dev pkg-config
+sudo apt install -y postgresql libpq-dev libzmq3-dev libsodium-dev pkg-config
 cargo install diesel_cli --no-default-features --features postgres   # until embedded migrations land
 ```
 Then (from repo root): `diesel migration run`, copy `config.default.json` → `config.json`,

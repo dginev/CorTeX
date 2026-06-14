@@ -13,7 +13,7 @@ use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Read;
-use Archive::*;
+use std::io::Write;
 
 /// Reads a lit of arXiv ids given on input, and packages the respective `CorTeX` entries into a
 /// new sandbox.
@@ -52,12 +52,18 @@ fn main() {
     },
   };
 
-  // Prepare a sandbox archive file writer
-  let mut sandbox_writer = Writer::new()
-    .unwrap()
-    .set_compression(ArchiveFilter::None)
-    .set_format(ArchiveFormat::Zip);
-  sandbox_writer.open_filename(&sandbox_path).unwrap();
+  // Prepare a sandbox .zip writer (Stored, i.e. uncompressed — the per-paper sources are already
+  // compressed .zips, so re-compressing wastes CPU for ~no gain).
+  let sandbox_fh = match File::create(&sandbox_path) {
+    Ok(fh) => fh,
+    _ => {
+      println!("-- Couldn't create sandbox archive {sandbox_path:?}, aborting.");
+      return;
+    },
+  };
+  let mut sandbox_writer = zip::ZipWriter::new(sandbox_fh);
+  let entry_opts: zip::write::FileOptions<()> =
+    zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
   // Read in ids, and whenever a source exists, write it to the sandbox archive
   let reader = BufReader::new(&ids_fh);
@@ -108,24 +114,20 @@ fn main() {
         if entry_fh.read_to_end(&mut buffer).is_ok() {
           // Everything looks ok with this paper, adding it to the sandbox:
           counter += 1;
-          match sandbox_writer.write_header_new(&relative_entry_path, buffer.len() as i64) {
-            Ok(_) => {},
-            Err(e) => {
-              println!("Couldn't write header {relative_entry_path:?}: {e:?}");
-              continue;
-            },
-          };
-          match sandbox_writer.write_data(buffer) {
-            Ok(_) => {},
-            Err(e) => println!(
-              "Failed to write data to {:?} because {:?}",
-              relative_entry_path.clone(),
-              e
-            ),
-          };
+          if let Err(e) = sandbox_writer.start_file(&relative_entry_path, entry_opts) {
+            println!("Couldn't add {relative_entry_path:?} to the sandbox: {e:?}");
+            continue;
+          }
+          if let Err(e) = sandbox_writer.write_all(&buffer) {
+            println!("Failed to write {relative_entry_path:?} to the sandbox: {e:?}");
+          }
         }
       },
     };
+  }
+
+  if let Err(e) = sandbox_writer.finish() {
+    println!("-- Failed to finalize the sandbox archive: {e:?}");
   }
 
   let sandbox_end = chrono::Utc::now();

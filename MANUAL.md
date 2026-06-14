@@ -28,8 +28,8 @@ repository root** (templates, `Rocket.toml`, and `config.json` are resolved rela
 Full, verified steps are in **[`INSTALL.md`](INSTALL.md)**. The short path on a fresh Ubuntu box:
 
 ```bash
-# 1. Build dependencies (Postgres, ZeroMQ, libarchive, libsodium)
-sudo apt install -y postgresql libpq-dev libzmq3-dev libarchive-dev libsodium-dev pkg-config
+# 1. Build dependencies (Postgres, ZeroMQ, libsodium)
+sudo apt install -y postgresql libpq-dev libzmq3-dev libsodium-dev pkg-config
 
 # 2. Initialize: runs embedded migrations + scaffolds cortex.toml if missing
 cargo run --bin cortex -- init

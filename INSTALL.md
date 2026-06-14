@@ -42,19 +42,18 @@ stores only metadata and pointers.
 sudo apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
   postgresql postgresql-contrib \
-  libpq-dev libzmq3-dev libarchive-dev libsodium-dev \
+  libpq-dev libzmq3-dev libsodium-dev \
   pkg-config
 ```
 
 - `postgresql` — the database server (installs PostgreSQL 18 on Ubuntu 26.04).
 - `libpq-dev` — PostgreSQL client headers (needed to build Diesel and `diesel_cli`).
 - `libzmq3-dev`, `libsodium-dev` — ZeroMQ transport for the dispatcher/workers.
-- `libarchive-dev` — archive handling for corpus import and result bundles.
 
 Verify the libraries are discoverable and the service is up:
 
 ```bash
-pkg-config --modversion libzmq libarchive libsodium   # prints versions, no errors
+pkg-config --modversion libzmq libsodium   # prints versions, no errors
 sudo systemctl enable --now postgresql
 pg_lsclusters                                          # PostgreSQL cluster should be "online"
 ```
@@ -156,7 +155,7 @@ The `services` table is seeded with the two built-in services `init` (id 1) and 
 cargo build            # add --release for production binaries
 ```
 
-This compiles the workspace plus the git dependencies (`pericortex`, `libarchive-sys`). The first
+This compiles the workspace plus the git dependency (`pericortex`). The first
 build downloads and compiles ~360 crates and takes several minutes; subsequent builds are
 incremental.
 
@@ -213,7 +212,7 @@ online with `REINDEX (CONCURRENTLY) …` (see `docs/DB_TUNING.md` for the mainte
   `config.json` must be valid JSON (Step 4).
 - **`password authentication failed`** — re-check Step 3 credentials and that they match `.env`;
   remember a changed `.env` needs a rebuild (Step 6 note).
-- **`libpq`/`libzmq`/`libarchive` not found at build time** — re-run Step 2 and confirm
+- **`libpq`/`libzmq` not found at build time** — re-run Step 2 and confirm
   `pkg-config --modversion <lib>` succeeds.
 - **A migration fails on the public schema** — re-run the `GRANT ALL ON SCHEMA public` commands from
   Step 3 against the affected database.

@@ -1530,3 +1530,19 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   (`read_cortex_log_extracts_from_zip_and_errors_gracefully`: extracts cortex.log past a 200KB output
   entry; errors gracefully on a non-zip). **Remaining Path A:** migrate `importer.rs` unpack
   (.tar/.gz → flate2+tar, .zip output, infer detection + I-1 hardening) and remove libarchive-sys.
+- **Archive Path A COMPLETE — libarchive-sys removed (owner: "go" on pure-Rust):** migrated the
+  `importer.rs` unpack off the self-maintained libarchive-sys C-FFI fork to the pure-Rust stack.
+  `unpack_top_tar` (.tar extraction via `tar::Archive`) + `unpack_one_gz` (.gz → .zip repack via
+  `flate2::GzDecoder` + `tar` + `zip::ZipWriter`) are now `Result`-returning per-archive primitives
+  with **I-1 hardening** (bad entry / non-UTF8 / gunzip-or-zip error logged + skipped, import
+  continues) and **`infer` content-detection** (a tar.gz → its entries; a plain gzipped `.tex` →
+  `<base>.tex` (the arXiv "surprise"); a mislabeled non-source type e.g. a raw PDF is **rejected**,
+  the `.gz` kept). Removed `single_file_transfer` + `use Archive::*` + the dead `BUFFER_SIZE`. Migrated
+  the two libarchive examples too (`record_loading_info` → zip `by_name`; `sandbox_arxiv` → zip
+  `ZipWriter`), retired the throwaway `archive_bench` A/B spike, and **removed `[dependencies]`
+  libarchive-sys** — the `libarchive-dev` system package is no longer a build dependency (stripped from
+  README/CLAUDE/INSTALL/MANUAL). **Green:** all-targets build + clippy clean; new
+  `importer::tests::unpack_one_gz_handles_targz_plaintex_and_rejects_wrong_content`; existing
+  `importer_test` (4) + `echo_roundtrip` pass. Docs: KNOWN_ISSUES **I-1 → 🟢**, ARCHIVE_RATIONALIZATION
+  marked **DONE (Path A shipped)**. Net: the libarchive C dependency is fully gone from the Rust build;
+  the per-task result-scan hot path + the import path are both pure-Rust + streaming.
