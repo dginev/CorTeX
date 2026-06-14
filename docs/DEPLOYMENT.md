@@ -43,6 +43,29 @@ rp_origin = "https://corpora.latexml.rs"
 WebAuthn requires HTTPS in production (satisfied by the Caddy TLS termination). The **admin token**
 (`cortex set-admin-token`) remains the bootstrap / break-glass + agent credential.
 
+## Metrics (Prometheus)
+
+CorTeX exposes operational gauges at **`GET /metrics`** in Prometheus exposition format —
+connection-pool saturation (`cortex_pool_in_use` / `cortex_pool_max`), background-job backlog
+(`cortex_jobs_active`), active admin sessions, registered corpora/services, and the dispatcher worker
+fleet (`cortex_workers_total`, `cortex_workers_in_flight_total`), plus `cortex_db_reachable` and
+`cortex_build_info`. It is **token-gated** (the same `auth.rerun_tokens`), so it is not public; keep
+it internal regardless. Scrape it by passing the token as a query param:
+
+```yaml
+scrape_configs:
+  - job_name: cortex
+    metrics_path: /metrics
+    params:
+      token: ["<an admin token>"]   # or set an Authorization-style X-Cortex-Token header
+    static_configs:
+      - targets: ["cortex:8000"]
+```
+
+These are cheap current-state gauges read per scrape (no dispatcher instrumentation, no ZMQ/storage
+probe — that is `/healthz`'s job). Real-time event counters (request rates, per-task tallies) are a
+follow-on that needs hot-path instrumentation.
+
 ## Checklist (preview)
 
 1. `cortex init` (migrate + scaffold `cortex.toml`); tune Postgres (`cortex tune-db`).

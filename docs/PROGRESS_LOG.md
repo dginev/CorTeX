@@ -1202,3 +1202,18 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   (indexes aren't in the diesel `table!` macro). The win materializes at production scale (the tiny
   test DB still seq-scans). Also corrected a stale memory note (the `make_history.rs`/`metadata.rs`
   "dead files" are already gone; the `dependencies` table was dropped). runs_test green.
+- **Observability — Prometheus `/metrics` endpoint (autonomous-day progress, Arm 8):** the owner's
+  CLAUDE.md calls observability "the reason for all this" and prefers the `metrics` foundation; the
+  ~200-worker deployment needs scrape-able ops signals. Added `GET /metrics` (`frontend::metrics`),
+  **token-gated** via the existing `Actor` guard (Prometheus scrapes with `?token=` or the
+  `X-Cortex-Token` header — resolves the auth question without a new mechanism). Exposes cheap,
+  current-state gauges read per scrape: connection-pool saturation (`cortex_pool_{max,connections,
+  idle,in_use}`), `cortex_db_reachable`, `cortex_{corpora,services}_total`, `cortex_jobs_active`,
+  `cortex_sessions_active`, dispatcher worker fleet (`cortex_workers_total` + `cortex_workers_in_flight
+  _total` via new `WorkerMetadata::fleet_summary` — one aggregate query), and `cortex_build_info`.
+  Pool gauges always emit (in-memory); DB gauges are best-effort (omitted + `db_reachable=0` on a
+  hiccup, never a wrong value). **Deliberately scoped to safe reads** — no hot-path/dispatcher
+  instrumentation, no `/healthz` ZMQ/storage probe; real-time event counters (via the `metrics` crate)
+  are a flagged follow-on needing hot-path instrumentation (owner-reviewed). `tests/metrics_test`
+  (token-gated 401, both auth forms, Prometheus format + the gauge set). DEPLOYMENT.md gains a scrape-
+  config snippet. clippy -D warnings + fmt green.

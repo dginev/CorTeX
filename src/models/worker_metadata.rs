@@ -159,6 +159,20 @@ impl WorkerMetadata {
       .filter(service_id.eq(sid))
       .get_result(connection)
   }
+
+  /// Fleet-wide totals for observability (`/metrics`): the number of registered worker rows and the
+  /// total in-flight (dispatched-but-not-yet-returned) tasks summed across the whole fleet. One
+  /// aggregate query over the small `worker_metadata` table — cheap enough to compute per scrape.
+  pub fn fleet_summary(connection: &mut PgConnection) -> Result<(i64, i64), Error> {
+    use crate::schema::worker_metadata::dsl;
+    let (count, in_flight): (i64, Option<i64>) = worker_metadata::table
+      .select((
+        diesel::dsl::count_star(),
+        diesel::dsl::sum(dsl::total_dispatched - dsl::total_returned),
+      ))
+      .first(connection)?;
+    Ok((count, in_flight.unwrap_or(0)))
+  }
 }
 
 /// Capacity of the worker-metadata event queue. A few seconds of headroom at the deployment's

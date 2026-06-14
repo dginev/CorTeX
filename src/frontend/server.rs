@@ -67,6 +67,7 @@ pub fn mount_api_with(
     .mount("/", crate::frontend::admin::routes())
     .mount("/", crate::frontend::audit::routes())
     .mount("/", crate::frontend::sessions::routes())
+    .mount("/", crate::frontend::metrics::routes())
     .mount("/", crate::frontend::webauthn::routes())
     .register("/", crate::frontend::catchers::catchers())
     .attach(Template::fairing())

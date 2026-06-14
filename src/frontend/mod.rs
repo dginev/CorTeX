@@ -10,6 +10,7 @@ pub mod cors;
 pub mod helpers;
 pub mod jobs;
 pub mod management;
+pub mod metrics;
 pub mod params;
 pub mod render;
 pub mod reports;
