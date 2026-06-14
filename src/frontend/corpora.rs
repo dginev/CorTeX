@@ -11,21 +11,24 @@
 //! as HTML for humans. Handlers live here; the app is assembled in [`crate::frontend::server`].
 //! This is the first capability drained out of the binary's legacy routes; more land per increment.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use diesel::pg::PgConnection;
 use rocket::http::Status;
 use rocket::serde::json::Json;
 use rocket::{Route, State};
+use rocket_dyn_templates::Template;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::backend::{from_address, progress_report, DatabaseUrl, DbPool};
 use crate::concerns::CortexInsertable;
+use crate::frontend::helpers::decorate_uri_encodings;
 use crate::frontend::jobs::JobDto;
+use crate::frontend::params::TemplateContext;
 use crate::importer::Importer;
 use crate::jobs::{self, JobProgress};
-use crate::models::{Corpus, NewCorpus};
+use crate::models::{Corpus, NewCorpus, Service};
 
 /// A corpus as exposed over the API/UI. `name` is the stable external handle used by every route.
 #[derive(Debug, Serialize)]
@@ -324,13 +327,83 @@ fn delete_corpus_cascade(connection: &mut PgConnection, corpus: Corpus) -> Resul
   Ok(())
 }
 
-/// The route set for the corpus-management capability.
+// --- Human screens (HTML twins of the corpora API above) ---------------------------------------
+//
+// Relocated from `bin/frontend.rs` onto the library surface so they share the connection **pool**
+// (no per-request `Backend::default()` fresh libpq connect) and are testable via `rocket::local`.
+
+/// The overview screen (HTML twin of [`api_corpora`]): the table of registered corpora — the
+/// admin landing page. `503` if the pool is exhausted.
+#[get("/")]
+pub fn overview_page(pool: &State<DbPool>) -> Result<Template, Status> {
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let corpora = Corpus::all(&mut connection)
+    .unwrap_or_default()
+    .iter()
+    .map(Corpus::to_hash)
+    .collect::<Vec<_>>();
+  let mut global = HashMap::new();
+  global.insert(
+    "title".to_string(),
+    "Overview of available Corpora".to_string(),
+  );
+  global.insert(
+    "description".to_string(),
+    "An analysis framework for corpora of TeX/LaTeX documents - overview page".to_string(),
+  );
+  let mut context = TemplateContext {
+    global,
+    corpora: Some(corpora),
+    ..TemplateContext::default()
+  };
+  decorate_uri_encodings(&mut context);
+  Ok(Template::render("overview", context))
+}
+
+/// The corpus screen (HTML twin of [`api_corpus`]): the services registered on a corpus. `404` if
+/// the corpus is unknown, `503` if the pool is exhausted.
+#[get("/corpus/<name>")]
+pub fn corpus_page(name: &str, pool: &State<DbPool>) -> Result<Template, Status> {
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let corpus = Corpus::find_by_name(name, &mut connection).map_err(|_| Status::NotFound)?;
+  let mut global = HashMap::new();
+  global.insert(
+    "title".to_string(),
+    format!("Registered services for {}", corpus.name),
+  );
+  global.insert(
+    "description".to_string(),
+    format!(
+      "An analysis framework for corpora of TeX/LaTeX documents - registered services for {}",
+      corpus.name
+    ),
+  );
+  global.insert("corpus_name".to_string(), corpus.name.clone());
+  global.insert("corpus_description".to_string(), corpus.description.clone());
+  let services = corpus
+    .select_services(&mut connection)
+    .unwrap_or_default()
+    .iter()
+    .map(Service::to_hash)
+    .collect::<Vec<_>>();
+  let mut context = TemplateContext {
+    global,
+    services: Some(services),
+    ..TemplateContext::default()
+  };
+  decorate_uri_encodings(&mut context);
+  Ok(Template::render("services", context))
+}
+
+/// The route set for the corpus-management capability (API + human screens).
 pub fn routes() -> Vec<Route> {
   routes![
     api_corpora,
     api_corpus,
     import_corpus,
     extend_corpus,
-    delete_corpus
+    delete_corpus,
+    overview_page,
+    corpus_page
   ]
 }

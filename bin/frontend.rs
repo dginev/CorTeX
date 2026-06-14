@@ -25,34 +25,7 @@ use cortex::frontend::concerns::{
 use cortex::frontend::cors::CORS;
 use cortex::frontend::helpers::*;
 use cortex::frontend::params::{RerunRequestParams, TemplateContext};
-use cortex::models::{Corpus, Service};
-
-#[get("/")]
-fn root() -> Template {
-  let mut context = TemplateContext::default();
-  let mut global = HashMap::new();
-  global.insert(
-    "title".to_string(),
-    "Overview of available Corpora".to_string(),
-  );
-  global.insert(
-    "description".to_string(),
-    "An analysis framework for corpora of TeX/LaTeX documents - overview page".to_string(),
-  );
-
-  let mut backend = Backend::default();
-  let corpora = backend
-    .corpora()
-    .iter()
-    .map(Corpus::to_hash)
-    .collect::<Vec<_>>();
-
-  context.global = global;
-  context.corpora = Some(corpora);
-  decorate_uri_encodings(&mut context);
-
-  Template::render("overview", context)
-}
+use cortex::models::Service;
 
 #[get("/workers/<service_name>")]
 fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
@@ -83,7 +56,7 @@ fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
 
     let workers = service
       .select_workers(&mut backend.connection)
-      .unwrap()
+      .unwrap_or_default()
       .into_iter()
       .map(Into::into)
       .collect();
@@ -92,53 +65,6 @@ fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
   } else {
     Err(NotFound(String::from("no such service")))
   }
-}
-
-#[get("/corpus/<corpus_name>")]
-fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
-  let mut backend = Backend::default();
-  let corpus_name = uri_unescape(Some(&corpus_name)).unwrap_or_else(|| UNKNOWN.to_string());
-  let corpus_result = Corpus::find_by_name(&corpus_name, &mut backend.connection);
-  if let Ok(corpus) = corpus_result {
-    let mut global = HashMap::new();
-    global.insert(
-      "title".to_string(),
-      "Registered services for ".to_string() + &corpus_name,
-    );
-    global.insert(
-      "description".to_string(),
-      "An analysis framework for corpora of TeX/LaTeX documents - registered services for "
-        .to_string()
-        + &corpus_name,
-    );
-    global.insert("corpus_name".to_string(), corpus_name);
-    global.insert("corpus_description".to_string(), corpus.description.clone());
-    let mut context = TemplateContext {
-      global,
-      ..TemplateContext::default()
-    };
-
-    let services_result = corpus.select_services(&mut backend.connection);
-    if let Ok(backend_services) = services_result {
-      let services = backend_services
-        .iter()
-        .map(Service::to_hash)
-        .collect::<Vec<_>>();
-      let mut service_reports = Vec::new();
-      for service in services {
-        // TODO: Report on the service status when we improve on the service report UX
-        // service.insert("status".to_string(), "Running".to_string());
-        service_reports.push(service);
-      }
-      context.services = Some(service_reports);
-    }
-    decorate_uri_encodings(&mut context);
-    return Ok(Template::render("services", context));
-  }
-  Err(NotFound(format!(
-    "Corpus {} is not registered",
-    corpus_name
-  )))
 }
 
 #[get("/preview/<corpus_name>/<service_name>/<entry_name>")]
@@ -276,8 +202,6 @@ fn rocket() -> _ {
     .mount(
       "/",
       routes![
-        root,
-        corpus,
         favicon,
         robots,
         files,

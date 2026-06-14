@@ -213,3 +213,18 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   `clippy --all-targets -D warnings` clean. Net per report page-load: **2 fresh libpq connects → 0** (pooled).
   *Next:* pool the remaining `Backend::default()` routes (`serve_rerun`/`serve_entry`/`serve_savetasks` in
   concerns; root/corpus-overview/worker in the bin); decouple the D-6 reaper; or rename the `cached/` proxy.
+- **Corpus overview + detail screens migrated to the library + pooled (symmetry + Arm 3):** `corpora.rs`
+  had the agent API but no HTML twins (the module doc said "(later) as HTML"). Added `overview_page`
+  (`GET /`, the admin **landing page** — table of corpora, twin of `api_corpora`) and `corpus_page`
+  (`GET /corpus/<name>`, the services on a corpus, twin of `api_corpus`), both **pooled** (no per-request
+  `Backend::default()`). Deleted the bin `root`/`corpus` routes + registrations + the now-unused `Corpus`
+  import. Also **softened the last frontend request-path unwrap**: `worker_report`'s
+  `service.select_workers(...).unwrap()` → `.unwrap_or_default()` (worker table degrades to empty instead
+  of panicking) — closes the F-1/D-3 residual; **no known input-triggerable request-path panics remain in
+  the frontend**. Tests: `corpora_test` renders the overview (lists the seeded corpus) + corpus screen
+  (lists the activated service) server-side + 404 on the HTML twin for an unknown corpus (8 pass). `build`
+  + `clippy --all-targets -D warnings` clean. Remaining `Backend::default()`: concerns
+  `serve_rerun`/`serve_entry`/`serve_entry_preview`/`serve_savetasks` + bin `worker_report` (future ticks).
+  *Next:* seed the **live DB backup** for migration verification + real-world load testing (owner request,
+  2026-06-13 — see KNOWN_ISSUES / a new load-test plan); then continue pooling, the D-6 reaper, or
+  service-management UX.

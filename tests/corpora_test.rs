@@ -16,9 +16,10 @@ use rocket::http::{ContentType, Status};
 use rocket::local::blocking::Client;
 
 fn client() -> Client {
+  let figment = rocket::Config::figment().merge(("template_dir", "templates"));
   let config_file = std::env::temp_dir().join("cortex_corpora_test.toml");
   Client::tracked(mount_api_with(
-    rocket::build(),
+    rocket::custom(figment),
     config_file,
     test_db_address(),
   ))
@@ -125,6 +126,68 @@ fn api_corpus_detail_is_404_for_unknown_corpus() {
   let client = client();
   let response = client.get("/api/corpora/no_such_corpus_xyz").dispatch();
   assert_eq!(response.status(), Status::NotFound);
+  // The HTML twin 404s on an unknown corpus too.
+  let response = client.get("/corpus/no_such_corpus_xyz").dispatch();
+  assert_eq!(response.status(), Status::NotFound);
+}
+
+#[test]
+fn overview_and_corpus_pages_render_server_side() {
+  let corpus_name = "corpus_html_test";
+  let service_name = "corpus_html_svc";
+  let mut db = backend::testdb();
+  cleanup(&mut db, corpus_name, service_name);
+  db.add(&NewCorpus {
+    name: corpus_name.to_string(),
+    path: "/tmp/corpus_html_test".to_string(),
+    complex: true,
+    description: "d".to_string(),
+  })
+  .expect("insert corpus");
+  let corpus = Corpus::find_by_name(corpus_name, &mut db.connection).unwrap();
+  db.add(&NewService {
+    name: service_name.to_string(),
+    version: 0.1,
+    inputformat: "tex".to_string(),
+    outputformat: "html".to_string(),
+    inputconverter: None,
+    complex: true,
+    description: "d".to_string(),
+  })
+  .expect("insert service");
+  let service = Service::find_by_name(service_name, &mut db.connection).unwrap();
+  // A task makes the service appear in `corpus.select_services` (the screen's source).
+  db.add(&NewTask {
+    service_id: service.id,
+    corpus_id: corpus.id,
+    status: -1,
+    entry: "/tmp/corpus_html_test/1/1.zip".to_string(),
+  })
+  .expect("insert task");
+
+  let client = client();
+
+  // Overview screen (HTML twin of /api/corpora): lists our corpus, pooled + server-rendered.
+  let response = client.get("/").dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  assert_eq!(response.content_type(), Some(ContentType::HTML));
+  let body = response.into_string().expect("html body");
+  assert!(
+    body.contains(corpus_name),
+    "overview lists the seeded corpus server-side"
+  );
+
+  // Corpus screen (HTML twin of /api/corpora/<name>): lists the activated service.
+  let response = client.get(format!("/corpus/{corpus_name}")).dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  assert_eq!(response.content_type(), Some(ContentType::HTML));
+  let body = response.into_string().expect("html body");
+  assert!(
+    body.contains(service_name),
+    "corpus screen lists the activated service server-side"
+  );
+
+  cleanup(&mut db, corpus_name, service_name);
 }
 
 fn cleanup_corpus(db: &mut backend::Backend, corpus_name: &str) {
