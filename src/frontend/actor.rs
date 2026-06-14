@@ -81,3 +81,33 @@ impl<'r> rocket_okapi::request::OpenApiFromRequest<'r> for Actor {
     ))
   }
 }
+
+/// The cookie carrying a signed-in admin's session token (set by the `/admin/login` page).
+pub const ADMIN_COOKIE: &str = "cortex_admin";
+
+/// A signed-in admin's **browser** session — the [`Actor`]'s counterpart for the human admin UI,
+/// using the same lightweight scheme. A rerun token from `auth.rerun_tokens` is stored in the
+/// [`ADMIN_COOKIE`] cookie at sign-in and **re-validated against the live token map on every
+/// request**: the cookie is only a carrier, so revoking a token immediately ends the session and a
+/// forged cookie is rejected. Gated admin screens take an `AdminSession`; an unauthenticated
+/// browser is sent to the sign-in page (handled per-route via `Option<AdminSession>`).
+pub struct AdminSession {
+  /// The owner the session's token maps to (recorded as the actor of admin actions).
+  pub owner: String,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for AdminSession {
+  type Error = ();
+
+  async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+    let owner = request
+      .cookies()
+      .get(ADMIN_COOKIE)
+      .and_then(|cookie| config().auth.rerun_tokens.get(cookie.value()).cloned());
+    match owner {
+      Some(owner) => Outcome::Success(AdminSession { owner }),
+      None => Outcome::Error((Status::Unauthorized, ())),
+    }
+  }
+}

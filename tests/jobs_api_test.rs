@@ -131,16 +131,16 @@ fn jobs_list_carries_health_and_duration_and_supports_pending() {
   assert_eq!(response.content_type(), Some(ContentType::HTML));
   let dashboard = response.into_string().expect("html");
   assert!(dashboard.contains("Background jobs"));
-  // The persistent admin nav is present on every page (not just the landing overview), so every
-  // management surface is reachable from here — the Admin-UX cohesion contract.
+  // The persistent nav is present on every page (not just the landing overview); the admin actions
+  // are consolidated behind a single sign-in-gated /admin entry (Admin-UX cohesion contract).
   assert!(
     dashboard.contains("cortex-admin-nav"),
     "the persistent admin nav renders on non-landing pages"
   );
-  for link in ["/services", "/health", "/settings", "/api/docs"] {
+  for link in ["/", "/admin"] {
     assert!(
       dashboard.contains(&format!("href=\"{link}\"")),
-      "the admin nav links to {link}"
+      "the nav links to {link}"
     );
   }
 

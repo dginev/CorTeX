@@ -8,8 +8,8 @@
     <h2 class="welcome-subtitle">A general-purpose processing framework for corpora of scientific documents</h2>
 
     <br>
-    <p><a href="/services">Registered services</a> &nbsp;·&nbsp; <a href="/jobs">Background jobs</a>
-      &nbsp;·&nbsp; <a href="/health">System health</a> &nbsp;·&nbsp; <a href="/settings">Settings</a></p>
+    <p><a href="/admin"><i class="fa fa-lock"></i>&nbsp;Admin dashboard</a> — sign in to manage
+      services, jobs, health, settings, and to add a corpus.</p>
   </div>
 
   {% for corpus in corpora %}
@@ -20,20 +20,6 @@
   {% if corpus.description %}
   <p class="corpus-description">{{ corpus.description }}</p>
   {% endif %} {% endfor %}
-
-  <hr>
-  <details class="add-corpus">
-    <summary><strong>+ Add a corpus</strong></summary>
-    <form method="post" action="/corpus/import">
-      <p><label>Name <input type="text" name="name" required></label></p>
-      <p><label>Path (server-side corpus root)
-          <input type="text" name="path" size="48" required></label></p>
-      <p><label>Description <input type="text" name="description" size="48"></label></p>
-      <p><label><input type="checkbox" name="complex" value="true"> Multi-file documents (complex)</label></p>
-      <p><label>Admin token <input type="password" name="token" required></label></p>
-      <button type="submit">Register &amp; import</button>
-    </form>
-  </details>
 
 </div>
 <div class="col-md-2"></div>

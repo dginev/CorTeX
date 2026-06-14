@@ -6,6 +6,24 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **Admin UX — signed-in `/admin` dashboard (consolidates the admin actions off the public root).**
+  Owner request: a separate, **signed-in-admins-only** web UI for the admin actions that were
+  sprinkled on the root homepage (Registered services · Background jobs · System health · Settings ·
+  Add-a-corpus), using the lightweight token scheme. Built: a new `AdminSession` request guard
+  (`frontend::actor`) — a rerun token from `auth.rerun_tokens` is entered once on `GET /admin/login`,
+  stored in an HttpOnly `cortex_admin` cookie at `POST /admin/login`, and **re-validated against the
+  live token map on every request** (the cookie is only a carrier; revoking a token ends the session,
+  a forged cookie is rejected). New `frontend::admin` module: `GET /admin` (the gated dashboard —
+  links to services/jobs/health/settings/API-docs + the add-corpus form), the sign-in page, and
+  `POST /admin/logout`. An unauthenticated `/admin` redirects to the sign-in page. **De-sprinkled the
+  root**: `overview.html.tera` is now just the welcome + corpora list + a single "Admin dashboard"
+  link; the persistent nav consolidated from five admin links to one "Admin" entry. Test:
+  `admin_test` (full flow — unauth redirect → bad token rejected → valid token signs in → dashboard
+  renders → sign-out ends the session). fmt + clippy clean; full suite green. **Stage 2 (next):**
+  gate the individual admin *screens* (`/services`, `/jobs`, `/health`, `/settings`) behind the same
+  `AdminSession` so they're reachable only when signed in (their existing tests will be updated to
+  carry the session cookie).
+
 - **API docs (Arm 9) — owner chose `rocket_okapi`; generated OpenAPI 3 spec + RapiDoc page landed
   (foundation).** After the owner previewed both spikes side by side (the `docs/api-spike/index.html`
   CSS bug was fixed so the comparison renders) and picked `rocket_okapi`, wired it in: `rocket_okapi`

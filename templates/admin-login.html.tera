@@ -1,0 +1,18 @@
+{% extends "layout" %} {% block content %}
+<div class="col-md-4"></div>
+<div class="col-md-4">
+  <div class="center">
+    <h1>Admin sign-in</h1>
+    {% if bad %}
+    <p style="color:#a00;"><strong>That token was not recognized.</strong> Please try again.</p>
+    {% endif %}
+    <p>Enter a CorTeX admin token to reach the administration dashboard.</p>
+    <form method="post" action="/admin/login">
+      <p><input type="password" name="token" placeholder="admin token" required autofocus></p>
+      <button type="submit">Sign in</button>
+    </form>
+    <p style="margin-top:1.5rem;"><a href="/">&larr; back to the public overview</a></p>
+  </div>
+</div>
+<div class="col-md-4"></div>
+{% endblock content %}

@@ -60,6 +60,7 @@ pub fn mount_api_with(
     .mount("/", runs::routes())
     .mount("/", jobs::routes())
     .mount("/", services::routes())
+    .mount("/", crate::frontend::admin::routes())
     .register("/", crate::frontend::catchers::catchers())
     .attach(Template::fairing());
   // Mount the generated OpenAPI spec (`/api/openapi.json`), the `#[openapi]`-documented agent

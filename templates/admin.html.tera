@@ -1,0 +1,37 @@
+{% extends "layout" %} {% block content %}
+<div class="col-md-2"></div>
+<div class="col-md-8">
+  <div class="center">
+    <h1>Admin dashboard</h1>
+    <p>Signed in as <strong>{{ owner }}</strong> &nbsp;·&nbsp;
+      <form method="post" action="/admin/logout" style="display:inline;">
+        <button type="submit" class="btn btn-link" style="padding:0; vertical-align:baseline;">Sign out</button>
+      </form>
+    </p>
+    <p>{{ corpus_count }} registered corpora &nbsp;·&nbsp; <a href="/">view public overview</a></p>
+  </div>
+
+  <hr>
+  <h3>Manage</h3>
+  <ul class="admin-actions" style="line-height:1.9;">
+    <li><a href="/services"><i class="fa fa-cogs"></i>&nbsp; Registered services</a> — the service registry &amp; worker fleets</li>
+    <li><a href="/jobs"><i class="fa fa-tasks"></i>&nbsp; Background jobs</a> — imports, reruns, reindex/analyze, with health</li>
+    <li><a href="/health"><i class="fa fa-heartbeat"></i>&nbsp; System health</a> — DB, migrations, pool, dispatcher, storage + maintenance</li>
+    <li><a href="/settings"><i class="fa fa-sliders"></i>&nbsp; Settings</a> — dispatcher &amp; framework configuration</li>
+    <li><a href="/api/docs"><i class="fa fa-code"></i>&nbsp; Agent API docs</a> — the generated OpenAPI / RapiDoc reference</li>
+  </ul>
+
+  <hr>
+  <h3>Add a corpus</h3>
+  <form method="post" action="/corpus/import">
+    <p><label>Name <input type="text" name="name" required></label></p>
+    <p><label>Path (server-side corpus root)
+        <input type="text" name="path" size="48" required></label></p>
+    <p><label>Description <input type="text" name="description" size="48"></label></p>
+    <p><label><input type="checkbox" name="complex" value="true"> Multi-file documents (complex)</label></p>
+    <p><label>Admin token <input type="password" name="token" required></label></p>
+    <button type="submit">Register &amp; import</button>
+  </form>
+</div>
+<div class="col-md-2"></div>
+{% endblock content %}
