@@ -29,6 +29,7 @@ use serde::Serialize;
 
 use crate::backend::DbPool;
 use crate::config::{config, AssetsConfig, CortexConfig, DispatcherConfig};
+use crate::frontend::actor::{owner_for_token, Actor};
 
 /// Managed state: the path where the write path persists the configuration file.
 pub struct ConfigFile(pub PathBuf);
@@ -358,6 +359,58 @@ pub fn post_settings(
   Ok(Redirect::to("/settings"))
 }
 
+/// Acknowledgement for a maintenance job: the background [`crate::jobs`] handle to poll.
+#[derive(Debug, Serialize)]
+pub struct MaintenanceAckDto {
+  /// The spawned (or already-running, if debounced) maintenance job's external uuid.
+  pub job: String,
+  /// Where to poll the job's status / health / per-table progress.
+  pub poll: String,
+  /// The token-resolved actor recorded as the job's initiator.
+  pub actor: String,
+}
+
+/// Triggers an **online** index rebuild (`REINDEX (CONCURRENTLY)` over the high-churn tables) as a
+/// background job — index bloat slows scans over time, and this rebuilds without an exclusive lock
+/// (DB ongoing-maintenance; `docs/DB_TUNING.md`). **Token-gated**; returns `202` + the job handle,
+/// poll `GET /api/jobs/<job>` for per-table progress. Debounced.
+#[post("/api/maintenance/reindex")]
+pub fn reindex(
+  actor: Actor,
+  pool: &State<DbPool>,
+) -> Result<(Status, Json<MaintenanceAckDto>), Status> {
+  let job_uuid = crate::jobs::spawn_reindex(pool.inner().clone(), &actor.owner)
+    .map_err(|_| Status::InternalServerError)?;
+  Ok((
+    Status::Accepted,
+    Json(MaintenanceAckDto {
+      job: job_uuid.to_string(),
+      poll: format!("/api/jobs/{job_uuid}"),
+      actor: actor.owner,
+    }),
+  ))
+}
+
+/// The token field of the human "Reindex database" form on the health screen.
+#[derive(FromForm)]
+pub struct MaintenanceForm {
+  /// A rerun token, resolved to the acting owner.
+  pub token: String,
+}
+
+/// The human twin of [`reindex`]: the health screen's "Reindex database now" button. Spawns the
+/// same debounced reindex job and redirects to `/jobs` to watch it. `401` on a bad token.
+#[post("/maintenance/reindex", data = "<form>")]
+pub fn reindex_human(
+  form: rocket::form::Form<MaintenanceForm>,
+  pool: &State<DbPool>,
+) -> Result<rocket::response::Redirect, Status> {
+  let owner = owner_for_token(&form.token).ok_or(Status::Unauthorized)?;
+  crate::jobs::spawn_reindex(pool.inner().clone(), &owner)
+    .map_err(|_| Status::InternalServerError)?;
+  Ok(rocket::response::Redirect::to("/jobs"))
+}
+
 /// The route set for the management/health/settings capability.
 pub fn routes() -> Vec<Route> {
   routes![
@@ -365,6 +418,8 @@ pub fn routes() -> Vec<Route> {
     api_config,
     healthz,
     health_page,
+    reindex,
+    reindex_human,
     settings,
     put_config,
     post_settings

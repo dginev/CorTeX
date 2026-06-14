@@ -139,12 +139,27 @@ fn api_index_lists_the_agent_surface() {
   );
 }
 
+fn reindex_is_token_gated() {
+  // The online-reindex maintenance trigger is a token-gated write. We assert *only* the 401 path
+  // here so the test never spawns a real REINDEX (which `_exit` would interrupt, leaving an
+  // invalid index in the test DB); the 202 + job-handle path mirrors the tested refresh endpoint
+  // and is smoke-tested against the scratch DB.
+  let client = client();
+  let response = client.post("/api/maintenance/reindex").dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Unauthorized,
+    "reindex without a token is 401 (no unauthenticated maintenance)"
+  );
+}
+
 // Custom harness (Cargo.toml `harness = false`): run the cases then `_exit(0)`, skipping the racy
 // libpq/OpenSSL atexit teardown that SIGSEGVs after assertions pass (KNOWN_ISSUES L-1).
 fn main() {
   get_api_config_returns_masked_contract();
   healthz_reports_ok_when_db_reachable();
   api_index_lists_the_agent_surface();
+  reindex_is_token_gated();
   eprintln!("management_api_test: all cases passed");
   unsafe { libc::_exit(0) }
 }

@@ -158,6 +158,59 @@ pub fn spawn_report_refresh(pool: DbPool, actor: &str) -> Result<Uuid, String> {
   })
 }
 
+/// The job `kind` for an online index rebuild.
+pub const REINDEX_KIND: &str = "reindex";
+
+/// The high-churn / append-heavy tables whose indexes bloat over time and benefit from periodic
+/// rebuilds (mirrors the autovacuum-tuned set + `docs/DB_TUNING.md`).
+const REINDEX_TABLES: [&str; 7] = [
+  "tasks",
+  "log_infos",
+  "log_warnings",
+  "log_errors",
+  "log_fatals",
+  "log_invalids",
+  "historical_tasks",
+];
+
+/// Spawns a background job that rebuilds the high-churn tables' indexes **online** with
+/// `REINDEX (CONCURRENTLY)` — no exclusive lock, so reads/writes continue (DB ongoing-maintenance;
+/// `docs/DB_TUNING.md`). Runs **off** the request path (rebuilds are minutes-to-hours at scale) and
+/// reports per-table progress. **Debounced:** a reindex already queued/running is reused.
+///
+/// `REINDEX ... CONCURRENTLY` forbids running inside a transaction — the job body uses a fresh
+/// pooled connection in autocommit, so this holds.
+pub fn spawn_reindex(pool: DbPool, actor: &str) -> Result<Uuid, String> {
+  {
+    let mut connection = pool.get().map_err(|e| e.to_string())?;
+    if let Some(existing) = list_recent(&mut connection, true, 200)
+      .into_iter()
+      .find(|job| job.kind == REINDEX_KIND)
+    {
+      return Ok(existing.uuid);
+    }
+  }
+  spawn_job(
+    pool,
+    REINDEX_KIND,
+    actor,
+    serde_json::json!({ "tables": REINDEX_TABLES }),
+    |progress| {
+      let mut connection = progress.pool.get().map_err(|e| e.to_string())?;
+      let total = REINDEX_TABLES.len() as i32;
+      for (index, table) in REINDEX_TABLES.iter().enumerate() {
+        progress.step(index as i32, Some(total), &format!("reindexing {table}"));
+        // `table` is a fixed identifier (not user input), so the interpolation is injection-safe.
+        diesel::sql_query(format!("REINDEX (CONCURRENTLY) TABLE {table}"))
+          .execute(&mut connection)
+          .map_err(|e| format!("reindex {table} failed: {e}"))?;
+      }
+      progress.step(total, Some(total), "reindex complete");
+      Ok(serde_json::json!({ "reindexed": REINDEX_TABLES }))
+    },
+  )
+}
+
 /// Best-effort extraction of a human-readable message from a caught panic payload.
 fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
   if let Some(s) = panic.downcast_ref::<&str>() {

@@ -27,5 +27,14 @@
     </tbody>
   </table>
   <p>&nbsp;·&nbsp; <a href="/healthz">JSON</a> &nbsp;·&nbsp; <a href="/settings">Settings</a></p>
+
+  <hr>
+  <h3>Maintenance</h3>
+  <form method="post" action="/maintenance/reindex">
+    <label>Rebuild the high-churn tables' indexes online (REINDEX CONCURRENTLY; runs as a background
+      job):</label>
+    <p><input type="password" name="token" placeholder="admin token" required>
+      <button type="submit">Reindex database now</button></p>
+  </form>
 </div>
 {% endblock content %}

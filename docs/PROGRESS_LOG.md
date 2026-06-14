@@ -677,3 +677,13 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   `cortex init`. Verified on the host (`Total RAM = 246 GB`, `CPUs = 128`). `bootstrap_test` asserts the
   guidance links pgtune + names Mixed + points at DB_TUNING.md. INSTALL.md §8 references `cortex tune-db`.
   clippy/fmt clean. (Closes the gap between the *decision* and the *tool*.)
+- **Online reindex as an observable maintenance job (owner: "reindexing … DB health and ongoing
+  performance maintenance are very important"; autonomous-night progress):** delivered the explicitly-asked
+  reindex capability — `jobs::spawn_reindex` runs **`REINDEX (CONCURRENTLY)`** over the high-churn tables
+  (`tasks` · `log_*` · `historical_tasks`) **online** (no exclusive lock), **off the request path**, with
+  **per-table progress** and **debounce** (mirrors the refresh-job pattern + the jobs-observability mandate).
+  Surfaced as **`POST /api/maintenance/reindex`** (token-gated, `202` + job handle) and a **"Reindex database
+  now"** button on the `/health` screen → redirect to `/jobs`. Verified end-to-end on `cortex_tester`: the
+  job **succeeded** (rebuilt all 7 tables' indexes, health `ok`); `/health` button renders; `management_api_test`
+  asserts the 401-without-token gate. CONCURRENTLY can't run in a transaction — the job body uses a fresh
+  autocommit pooled connection. clippy/fmt clean.
