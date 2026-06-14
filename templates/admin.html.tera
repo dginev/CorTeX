@@ -8,7 +8,32 @@
         <button type="submit" class="btn btn-link" style="padding:0; vertical-align:baseline;">Sign out</button>
       </form>
     </p>
-    <p>{{ corpus_count }} registered corpora &nbsp;·&nbsp; <a href="/">view public overview</a></p>
+    <p><a href="/">view public overview</a></p>
+  </div>
+
+  <div class="admin-status" style="display:flex; flex-wrap:wrap; gap:0.75rem; margin:1rem 0;">
+    <div style="flex:1; min-width:8rem; border:1px solid #ddd; border-radius:6px; padding:0.6rem 0.9rem; text-align:center;">
+      <div style="font-size:1.6rem; font-weight:bold;">{{ corpus_count }}</div>
+      <div class="muted"><a href="/">corpora</a></div>
+    </div>
+    <div style="flex:1; min-width:8rem; border:1px solid #ddd; border-radius:6px; padding:0.6rem 0.9rem; text-align:center;">
+      <div style="font-size:1.6rem; font-weight:bold;{% if active_jobs > 0 %} color:#1a7e1a;{% endif %}">{{ active_jobs }}</div>
+      <div class="muted"><a href="/jobs">active jobs</a></div>
+    </div>
+    <div style="flex:1; min-width:8rem; border:1px solid #ddd; border-radius:6px; padding:0.6rem 0.9rem; text-align:center;">
+      <div style="font-size:1.6rem; font-weight:bold;">{{ active_sessions }}</div>
+      <div class="muted"><a href="/admin/sessions">active sessions</a></div>
+    </div>
+    <div style="flex:2; min-width:12rem; border:1px solid #ddd; border-radius:6px; padding:0.6rem 0.9rem;">
+      <div class="muted">Last run &nbsp;<a href="/admin/runs">(all runs)</a></div>
+      {% if last_run %}
+      <div><strong>{{ last_run.when }}</strong>{% if last_run.open %} <span style="color:#1a7e1a;">· open</span>{% endif %}
+        &nbsp;by {{ last_run.owner }}</div>
+      <div class="muted" style="font-size:0.9em;">{{ last_run.total }} tasks — {{ last_run.description }}</div>
+      {% else %}
+      <div class="muted">no runs yet</div>
+      {% endif %}
+    </div>
   </div>
 
   <hr>

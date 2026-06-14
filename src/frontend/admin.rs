@@ -20,7 +20,7 @@ use crate::backend::DbPool;
 use crate::frontend::actor::{
   owner_for_token, safe_next, sign_in_url, AdminSession, ReturnTo, ADMIN_COOKIE,
 };
-use crate::models::{Corpus, Session};
+use crate::models::{Corpus, HistoricalRun, Session};
 
 /// The admin dashboard (`GET /admin`): the consolidated home for admin actions. **Signed-in admins
 /// only** — an unauthenticated browser is redirected to the sign-in page (`Err(Redirect)`).
@@ -35,19 +35,37 @@ pub fn admin_page(
   pool: &State<DbPool>,
 ) -> Result<Template, Redirect> {
   let session = session.ok_or_else(|| Redirect::to(sign_in_url(false, Some(&return_to.0))))?;
-  // A small corpus count for context (best-effort; never blocks the dashboard).
-  let corpus_count = pool
-    .get()
-    .ok()
-    .and_then(|mut connection| Corpus::all(&mut connection).ok())
-    .map_or(0, |corpora| corpora.len());
+  // At-a-glance status for the command center — all best-effort over one pooled connection: a db
+  // hiccup degrades each card to zero/blank, never blocks the dashboard. Kept to cheap queries on
+  // small tables (no dispatcher/storage probe — that is what the System Health screen is for).
+  let mut corpus_count = 0usize;
+  let mut active_jobs = 0usize;
+  let mut active_sessions = 0usize;
+  let mut last_run: Option<serde_json::Value> = None;
+  if let Ok(mut connection) = pool.get() {
+    corpus_count = Corpus::all(&mut connection).map_or(0, |corpora| corpora.len());
+    active_jobs = crate::jobs::list_recent(&mut connection, true, 200).len();
+    active_sessions = Session::active(&mut connection).map_or(0, |sessions| sessions.len());
+    last_run = HistoricalRun::recent_all(&mut connection, 1)
+      .ok()
+      .and_then(|runs| runs.into_iter().next())
+      .map(|run| {
+        serde_json::json!({
+          "when": run.start_time.format("%Y-%m-%d %H:%M").to_string(),
+          "owner": run.owner,
+          "description": run.description,
+          "total": run.total,
+          "open": run.end_time.is_none(),
+        })
+      });
+  }
   let global = serde_json::json!({
     "title": "Admin",
     "description": "CorTeX administration dashboard",
   });
   Ok(Template::render(
     "admin",
-    context! { global, owner: session.owner, corpus_count },
+    context! { global, owner: session.owner, corpus_count, active_jobs, active_sessions, last_run },
   ))
 }
 

@@ -33,7 +33,7 @@ jobs:
       # small (the blocking Client uses one connection at a time) and give Postgres headroom below.
       CORTEX_DATABASE__POOL_SIZE: "8"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install system dependencies
         run: |

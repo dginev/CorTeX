@@ -107,6 +107,11 @@ fn admin_requires_sign_in_then_grants_access() {
     body.contains("Add a corpus"),
     "the add-corpus action is consolidated on the admin dashboard"
   );
+  // The command-center status cards render (at-a-glance system state).
+  assert!(
+    body.contains("active jobs") && body.contains("active sessions") && body.contains("Last run"),
+    "the dashboard shows at-a-glance status (jobs / sessions / last run)"
+  );
 
   // Sign out ends the session; /admin redirects to sign-in again.
   let response = client.post("/admin/logout").dispatch();

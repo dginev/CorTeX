@@ -1167,3 +1167,14 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   retention/prune of `historical_tasks`/`historical_runs` (unbounded growth) is deliberately deferred
   for explicit owner sign-off (policy + irreversibility), noted in the ledger. clippy -D warnings +
   the auth/runs test sweep green.
+- **CI: bump actions/checkout@v4→v5 (time-sensitive) + Admin dashboard command-center (autonomous-day
+  progress):** (1) GitHub's CI annotation warned Node-20 actions are force-migrated to Node 24 on
+  2026-06-16; bumped `actions/checkout@v4`→`@v5` (Node 24 native) so CI keeps running past the cutoff.
+  (2) Turned `/admin` from a link list into an at-a-glance **command center**: `admin_page` now
+  aggregates — over ONE pooled connection, every card best-effort (a db hiccup degrades a card to
+  zero/blank, never blocks the page) — registered **corpora**, **active jobs** (`jobs::list_recent`
+  active), **active sessions** (`Session::active`), and the **last run** (`HistoricalRun::recent_all`:
+  when/owner/total/open), each linking to its full screen (/jobs, /admin/sessions, /admin/runs).
+  Deliberately cheap queries on small tables only — no dispatcher/storage probe (that is the System
+  Health screen's job). `templates/admin.html.tera` renders the status row; `admin_test` asserts the
+  cards render. clippy -D warnings + fmt + admin_test green.
