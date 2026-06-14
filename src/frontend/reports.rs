@@ -31,7 +31,7 @@ use crate::models::{Corpus, Service};
 
 /// One report row: a category (in the category report) or a `what` class (in the drill-down), with
 /// its distinct-task and message counts.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct ReportRowDto {
   /// Category or `what` name (the empty string for uncategorized messages).
   pub name: String,
@@ -43,7 +43,7 @@ pub struct ReportRowDto {
 
 /// The category report for a `(corpus, service, severity)`: one row per category (a page of them),
 /// plus the severity grand totals to compute shares against.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct CategoryReportDto {
   /// The severity reported on.
   pub severity: String,
@@ -57,7 +57,7 @@ pub struct CategoryReportDto {
 
 /// The `what` drill-down for a `(corpus, service, severity, category)`: one row per `what` (a
 /// page), plus the category totals.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct WhatReportDto {
   /// The severity reported on.
   pub severity: String,
@@ -95,6 +95,7 @@ fn totals(row: Option<ReportSummaryRow>) -> (i64, i64) {
 
 /// The category report (agent twin of the severity screen): one row per category, descending by
 /// task count, paginated. `400` on an unknown severity, `404` on an unknown corpus/service.
+#[rocket_okapi::openapi(tag = "Reports")]
 #[get("/api/reports/<corpus>/<service>/<severity>?<offset>&<page_size>")]
 pub fn api_category_report(
   corpus: &str,
@@ -140,6 +141,7 @@ pub fn api_category_report(
 /// The `what` drill-down (agent twin of the category screen): one row per `what` within a category,
 /// descending by task count, paginated. `400` on an unknown severity, `404` on an unknown
 /// corpus/service.
+#[rocket_okapi::openapi(tag = "Reports")]
 #[get("/api/reports/<corpus>/<service>/<severity>/<category>?<offset>&<page_size>")]
 pub fn api_what_report(
   corpus: &str,
@@ -482,9 +484,9 @@ pub fn what_service_report_all(
 
 /// The route set for the reports capability (typed API + the human report screens).
 pub fn routes() -> Vec<Route> {
+  // NB: `api_category_report` + `api_what_report` are mounted via `frontend::apidoc`
+  // (rocket_okapi).
   routes![
-    api_category_report,
-    api_what_report,
     rerun_report,
     refresh_reports,
     refresh_reports_human,

@@ -238,7 +238,13 @@ fn openapi_spec_and_rapidoc_are_served() {
     "an OpenAPI 3.x document, got {:?}",
     spec["openapi"]
   );
-  for path in ["/api/corpora", "/api/services", "/api/jobs"] {
+  for path in [
+    "/api/corpora",
+    "/api/services",
+    "/api/jobs",
+    "/api/runs/{corpus}/{service}",
+    "/api/reports/{corpus}/{service}/{severity}",
+  ] {
     assert!(
       spec["paths"][path]["get"].is_object(),
       "{path} is documented in the OpenAPI spec"

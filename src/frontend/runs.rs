@@ -34,7 +34,7 @@ use crate::models::{
 /// A historical `(corpus, service)` run as exposed over the API: a stable `id` handle,
 /// who/why/when, whether it has completed, and the per-severity task tallies captured at
 /// completion.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct RunDto {
   /// Stable run identifier (the external handle for managing a specific run).
   pub id: i32,
@@ -99,6 +99,7 @@ fn resolve(
 
 /// Lists the run history of a `(corpus, service)`, most-recent first (the agent twin of the history
 /// screen). `404` if the corpus or service is unknown.
+#[rocket_okapi::openapi(tag = "Runs")]
 #[get("/api/runs/<corpus>/<service>")]
 pub fn api_runs(
   corpus: &str,
@@ -113,6 +114,7 @@ pub fn api_runs(
 
 /// Returns the currently open run of a `(corpus, service)`, or `null` if none is in progress. `404`
 /// if the corpus or service is unknown.
+#[rocket_okapi::openapi(tag = "Runs")]
 #[get("/api/runs/<corpus>/<service>/current")]
 pub fn api_run_current(
   corpus: &str,
@@ -128,7 +130,7 @@ pub fn api_run_current(
 
 /// One cell of the run-comparison matrix: how many tasks moved from `previous_status` to
 /// `current_status` between the two snapshots.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct RunDiffTransitionDto {
   /// Severity key in the earlier snapshot (`no_problem`, `warning`, `error`, `fatal`).
   pub previous_status: String,
@@ -140,7 +142,7 @@ pub struct RunDiffTransitionDto {
 
 /// A comparison of two saved task-status snapshots of a `(corpus, service)`: the status-transition
 /// matrix (what improved / regressed between runs) plus the snapshot dates available to compare.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct RunDiffDto {
   /// Snapshot dates available for comparison.
   pub available_dates: Vec<String>,
@@ -174,6 +176,7 @@ fn parse_status(raw: Option<&str>) -> Result<Option<TaskStatus>, Status> {
 /// Compares two task-status snapshots of a `(corpus, service)` (the agent twin of the diff-summary
 /// screen). `previous`/`current` are snapshot timestamps from `available_dates`; omit them to use
 /// the most recent saved pair. `400` on a malformed date, `404` if the corpus/service is unknown.
+#[rocket_okapi::openapi(tag = "Runs")]
 #[get("/api/runs/<corpus>/<service>/diff?<previous>&<current>")]
 pub fn api_run_diff(
   corpus: &str,
@@ -209,7 +212,7 @@ pub fn api_run_diff(
 
 /// A single task's status transition between two snapshots — which document regressed or improved,
 /// and when each snapshot was taken.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct TaskDiffDto {
   /// Task identifier.
   pub task_id: String,
@@ -243,6 +246,7 @@ impl From<TaskRunMetadata> for TaskDiffDto {
 /// filtered to a `previous_status`/`current_status` transition and paginated (`offset`/`page_size`,
 /// default 100). `400` on a malformed date or status, `404` if the corpus/service is unknown.
 #[allow(clippy::too_many_arguments)]
+#[rocket_okapi::openapi(tag = "Runs")]
 #[get("/api/runs/<corpus>/<service>/tasks?<previous>&<current>&<previous_status>&<current_status>&<offset>&<page_size>")]
 pub fn api_run_task_diffs(
   corpus: &str,
@@ -480,14 +484,6 @@ pub fn history_page(corpus: &str, service: &str, pool: &State<DbPool>) -> Result
 
 /// The route set for the historical-runs capability.
 pub fn routes() -> Vec<Route> {
-  routes![
-    api_runs,
-    api_run_current,
-    api_run_diff,
-    api_run_task_diffs,
-    runs_tasks_page,
-    runs_diff_page,
-    runs_page,
-    history_page
-  ]
+  // NB: the `api_run*` routes are mounted via `frontend::apidoc` (rocket_okapi).
+  routes![runs_tasks_page, runs_diff_page, runs_page, history_page]
 }

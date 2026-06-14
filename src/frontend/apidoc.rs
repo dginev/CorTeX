@@ -32,6 +32,15 @@ use crate::frontend::corpora::{
 use crate::frontend::jobs::{
   api_job, api_jobs, okapi_add_operation_for_api_job_, okapi_add_operation_for_api_jobs_,
 };
+use crate::frontend::reports::{
+  api_category_report, api_what_report, okapi_add_operation_for_api_category_report_,
+  okapi_add_operation_for_api_what_report_,
+};
+use crate::frontend::runs::{
+  api_run_current, api_run_diff, api_run_task_diffs, api_runs,
+  okapi_add_operation_for_api_run_current_, okapi_add_operation_for_api_run_diff_,
+  okapi_add_operation_for_api_run_task_diffs_, okapi_add_operation_for_api_runs_,
+};
 use crate::frontend::services::{
   api_service_workers, api_services, okapi_add_operation_for_api_service_workers_,
   okapi_add_operation_for_api_services_,
@@ -65,6 +74,12 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
     api_service_workers,
     api_jobs,
     api_job,
+    api_runs,
+    api_run_current,
+    api_run_diff,
+    api_run_task_diffs,
+    api_category_report,
+    api_what_report,
   ];
   let spec_json = serde_json::to_string_pretty(&spec).unwrap_or_default();
   rocket
