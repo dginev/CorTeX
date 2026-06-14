@@ -1574,3 +1574,13 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   desync; a deeper D-4-suspect race remains, tracked in DISPATCHER_BENCH.md). **Still to add:** the
   dedicated torture tests (the bad-reply barrage + a 2 GB-accepted / 10 GB-rejected oversized test with
   cleanup) and the residual-race repro.
+- **Dispatcher torture tests (owner ask): bad-reply barrage + 2 GB/10 GB result cap.** Added
+  `tests/dispatcher_torture_test.rs` (harness=false) against the real TaskManager + EchoWorker. (1)
+  **Barrage:** a raw ZMQ PUSH floods the sink with 200k malformed replies (empty / id-only / truncated
+  envelope / bogus-taskid) interleaved with 20 real tasks — asserts every real task still finalizes
+  (regression guard for the RCVMORE envelope hardening; a desync would strand a real reply → timeout).
+  (2) **Hard cap:** drives the cap by echoing an oversized SOURCE (EchoWorker echoes source→result):
+  an under-cap result is accepted + written; an over-cap result is rejected (task Invalid, no oversized
+  file left). Fast by default (1 MiB cap, KB–MB payloads); `CORTEX_TORTURE_BIG=1` runs the **real
+  sizes** — validated a **1.99 GB result written** + a 3 GB result capped/rejected (full 10 GB is the
+  default reject, tunable via `CORTEX_TORTURE_REJECT_GB`; staged payload removed on cleanup). All green.
