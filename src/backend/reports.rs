@@ -329,20 +329,23 @@ pub(crate) fn task_report_live(
       // distributions are all valid tasks (total - invalid), as we don't want to dilute
       // the service percentage with jobs that were never processed. For now the fastest
       // way to obtain that number is using 2 queries for each and subtracting the numbers in Rust
+      // Degrade to 0 on a query error rather than panicking the report request (principle #2,
+      // matching the `unwrap_or_default` siblings on this path); the percentage math clamps the
+      // denominator to ≥1, so a degraded total yields 0% instead of a div-by-zero.
       let total_count: i64 = tasks::table
         .filter(service_id.eq(service.id))
         .filter(corpus_id.eq(corpus.id))
         .count()
         .get_result(connection)
-        .unwrap();
+        .unwrap_or(0);
       let invalid_count: i64 = tasks::table
         .filter(service_id.eq(service.id))
         .filter(corpus_id.eq(corpus.id))
         .filter(status.eq(TaskStatus::Invalid.raw()))
         .count()
         .get_result(connection)
-        .unwrap();
-      let total_valid_count = total_count - invalid_count;
+        .unwrap_or(0);
+      let total_valid_count = (total_count - invalid_count).max(0);
 
       let log_table = match task_status {
         Some(ref ts) => ts.to_table(),
@@ -405,8 +408,9 @@ pub(crate) fn task_report_live(
             .bind::<BigInt, i64>(i64::from(service.id))
             .bind::<BigInt, i64>(i64::from(corpus.id))
             .bind::<BigInt, i64>(i64::from(bind_status));
-          let status_report_rows_result = status_report_query.get_result(connection);
-          let status_report_rows: AggregateReport = status_report_rows_result.unwrap();
+          let status_report_rows: AggregateReport = status_report_query
+            .get_result(connection)
+            .unwrap_or_default();
 
           let logged_task_count: i64 = status_report_rows.task_count;
           let logged_message_count: i64 = status_report_rows.message_count;
@@ -481,8 +485,9 @@ pub(crate) fn task_report_live(
                   .bind::<BigInt, i64>(i64::from(corpus.id))
                   .bind::<BigInt, i64>(i64::from(bind_status))
                   .bind::<Text, _>(category_name);
-                let this_category_report: AggregateReport =
-                  this_category_report_query.get_result(connection).unwrap();
+                let this_category_report: AggregateReport = this_category_report_query
+                  .get_result(connection)
+                  .unwrap_or_default();
 
                 report = aux_task_rows_stats(
                   &what_report,
@@ -538,10 +543,9 @@ pub(crate) fn task_report_live(
 fn aux_stats_compute_percentages(stats_hash: &mut HashMap<String, f64>, total_given: Option<f64>) {
   // Compute percentages, now that we have a total
   let total: f64 = 1.0_f64.max(match total_given {
-    None => {
-      let total_entry = stats_hash.get_mut("total").unwrap();
-      *total_entry
-    },
+    // Defensive: fall back to 0.0 (then clamped to 1.0 below) if a caller omitted the "total" key,
+    // rather than `.unwrap()`-panicking on this report path.
+    None => stats_hash.get("total").copied().unwrap_or(0.0),
     Some(total_num) => total_num,
   });
   let stats_keys = stats_hash.keys().cloned().collect::<Vec<_>>();

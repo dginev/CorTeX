@@ -6,6 +6,20 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **F-5 — hardened the last request-path panics in the live report engine.** Audited the
+  request-reachable layer (frontend handlers + the models/helpers they call) for `.unwrap()`/
+  `.expect()`/`panic!` — most candidates were guarded-safe (the `concerns.rs` severity/category/what
+  unwraps are provably `Some` per the if/else chain; `from_key("in_progress")` is handled;
+  `peek().next().unwrap()` follows a successful peek; `uri_escape(Some(_))` always returns `Some`).
+  The real gap: `backend::reports::task_report_live` (reached from every report screen via
+  `task_report`'s fall-through) had **4 bare `.unwrap()`s** — `total_count`/`invalid_count` and two
+  `AggregateReport` grain queries — that panicked the request → 500 on a DB error mid-report, even
+  though their siblings on the same path already used `.unwrap_or_default()`. Made them consistent:
+  counts → `.unwrap_or(0)` (total clamped `≥0`), grains → `.unwrap_or_default()` (added `Default` to
+  `AggregateReport`); the percentage helper already clamps the denominator `≥1.0` (no div-by-zero) and
+  its `"total"` lookup is now defensive too. Normal-path output unchanged — pinned by
+  `report_rollup_test` + `rollup_path_matches_live_path` (green). KNOWN_ISSUES F-5 🟢.
+
 - **Perf — partial index for the hot task-leasing path (migration).** The ventilator leases work via
   `tasks_aggregate::fetch_tasks`: `SELECT * FROM tasks WHERE service_id = $1 AND status = 0 (TODO)
   LIMIT n FOR UPDATE` (~100/s at production scale). The `tasks` table had a partial index per
