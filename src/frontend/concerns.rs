@@ -10,8 +10,7 @@ use rocket_dyn_templates::Template;
 use std::collections::HashMap;
 use std::str;
 
-use crate::backend::Backend;
-use crate::backend::{progress_report, RerunOptions};
+use crate::backend::{mark_rerun, progress_report, save_historical_tasks, RerunOptions};
 use crate::frontend::cached::task_report;
 use crate::frontend::helpers::*;
 use crate::frontend::params::{ReportParams, RerunRequestParams, TemplateContext};
@@ -213,8 +212,10 @@ pub fn serve_report(
   }
 }
 
-/// Rerun a filtered subset of tasks for a <corpus,service> pair
+/// Rerun a filtered subset of tasks for a <corpus,service> pair, over the caller-supplied (pooled)
+/// `connection`.
 pub fn serve_rerun(
+  connection: &mut PgConnection,
   corpus_name: String,
   service_name: String,
   severity: Option<String>,
@@ -243,30 +244,32 @@ pub fn serve_rerun(
 
   // Run (and measure) the three rerun queries
   let report_start = time::get_time();
-  let mut backend = Backend::default();
   // Build corpus and service objects
-  let corpus = match Corpus::find_by_name(&corpus_name, &mut backend.connection) {
+  let corpus = match Corpus::find_by_name(&corpus_name, connection) {
     Err(_) => return Err(NotFound("Access Denied".to_string())), /* TODO: response.
                                                                    * error(Forbidden, */
     // "Access denied"),
     Ok(corpus) => corpus,
   };
 
-  let service = match Service::find_by_name(&service_name, &mut backend.connection) {
+  let service = match Service::find_by_name(&service_name, connection) {
     Err(_) => return Err(NotFound("Access Denied".to_string())), /* TODO: response.
                                                                    * error(Forbidden, */
     // "Access denied"),
     Ok(service) => service,
   };
-  let rerun_result = backend.mark_rerun(RerunOptions {
-    corpus: &corpus,
-    service: &service,
-    severity_opt: severity,
-    category_opt: category,
-    what_opt: what,
-    description_opt: Some(description),
-    owner_opt: Some(user.to_string()),
-  });
+  let rerun_result = mark_rerun(
+    connection,
+    RerunOptions {
+      corpus: &corpus,
+      service: &service,
+      severity_opt: severity,
+      category_opt: category,
+      what_opt: what,
+      description_opt: Some(description),
+      owner_opt: Some(user.to_string()),
+    },
+  );
   let report_end = time::get_time();
   let report_duration = (report_end - report_start).num_milliseconds();
   println!("-- User {user:?}: Mark for rerun took {report_duration:?}ms");
@@ -278,6 +281,7 @@ pub fn serve_rerun(
 
 /// Save the historical tasks of a corpus run, for reference, for a <corpus,service> pair
 pub fn serve_savetasks(
+  connection: &mut PgConnection,
   corpus_name: String,
   service_name: String,
   rr: Json<RerunRequestParams>,
@@ -297,30 +301,30 @@ pub fn serve_savetasks(
   };
   println!("-- User {user:?}: Saving tasks on {corpus_name}/{service_name}");
 
-  let mut backend = Backend::default();
   // Build corpus and service objects
-  let corpus = match Corpus::find_by_name(&corpus_name, &mut backend.connection) {
+  let corpus = match Corpus::find_by_name(&corpus_name, connection) {
     Err(e) => return Err(NotFound(format!("{e}"))),
     Ok(corpus) => corpus,
   };
 
-  let service = match Service::find_by_name(&service_name, &mut backend.connection) {
+  let service = match Service::find_by_name(&service_name, connection) {
     Err(_) => return Err(NotFound("Access Denied".to_string())),
     Ok(service) => service,
   };
-  match backend.save_historical_tasks(&corpus, &service) {
+  match save_historical_tasks(connection, &corpus, &service) {
     Err(e) => Err(NotFound(format!("{e}"))),
     Ok(count) => Ok(Accepted(format!("Saved {count} tasks"))),
   }
 }
 
-/// Provide a `NamedFile` for an entry
+/// Provide a `NamedFile` for an entry, looking the task up over the caller-supplied (pooled)
+/// `connection` (the borrow ends before the file open).
 pub async fn serve_entry(
+  connection: &mut PgConnection,
   service_name: String,
   entry_id: usize,
 ) -> Result<NamedFile, NotFound<String>> {
-  let mut backend = Backend::default();
-  match Task::find(entry_id as i64, &mut backend.connection) {
+  match Task::find(entry_id as i64, connection) {
     Ok(task) => {
       let entry = task.entry;
       let zip_path = match service_name.as_str() {
@@ -342,8 +346,10 @@ pub async fn serve_entry(
   }
 }
 
-/// Serves an entry as a `Template` instance to be preview via a client-side asset renderer
+/// Serves an entry as a `Template` instance to be preview via a client-side asset renderer, over
+/// the caller-supplied (pooled) `connection`.
 pub fn serve_entry_preview(
+  connection: &mut PgConnection,
   corpus_name: String,
   service_name: String,
   entry_name: String,
@@ -352,15 +358,14 @@ pub fn serve_entry_preview(
   let corpus_name = corpus_name.to_lowercase();
   let mut context = TemplateContext::default();
   let mut global = HashMap::new();
-  let mut backend = Backend::default();
 
-  let corpus_result = Corpus::find_by_name(&corpus_name, &mut backend.connection);
+  let corpus_result = Corpus::find_by_name(&corpus_name, connection);
   if let Ok(corpus) = corpus_result {
-    let service_result = Service::find_by_name(&service_name, &mut backend.connection);
+    let service_result = Service::find_by_name(&service_name, connection);
     if let Ok(service) = service_result {
       // Assemble the Download URL from where we will gather the page contents
       // First, we need the taskid
-      let task = match Task::find_by_name(&entry_name, &corpus, &service, &mut backend.connection) {
+      let task = match Task::find_by_name(&entry_name, &corpus, &service, connection) {
         Ok(t) => t,
         Err(e) => return Err(NotFound(e.to_string())),
       };

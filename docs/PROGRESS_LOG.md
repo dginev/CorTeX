@@ -351,4 +351,13 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   `panic!("Error connecting to {address}: {e}")`. Test (`jobs_test`): a body that `panic!`s ends `failed`
   with the panic surfaced, never `succeeded`/stuck. `clippy --all-targets -D warnings` clean. KNOWN_ISSUES
   D-3 note updated.
-  *Next:* pool the 4 `concerns` helpers; the API-docs pick (awaiting owner); or (on backup) the load test.
+- **Last `Backend::default()` retired from the request path (Arm 3 milestone):** the four legacy
+  `concerns` helpers — `serve_rerun`, `serve_savetasks` (writes), `serve_entry`, `serve_entry_preview`
+  (reads, all still UI-live: rerun modal, save-snapshot, entry download, preview) — each opened a fresh
+  per-request `Backend::default()` libpq connection. Refactored them to take the caller's `&mut
+  PgConnection`; the writes call the re-exported free fns `backend::{mark_rerun, save_historical_tasks}`
+  (so no Backend needed). The 7 bin routes (`preview_entry`/`entry_fetch`/`rerun_*`/`savetasks`) now check
+  out from the **pool** (`pooled(pool)` helper) and pass the connection through; `serve_entry`'s async file
+  open happens after the lookup borrow ends. **No `Backend::default()` remains anywhere on the frontend
+  request path** — every route is pooled. `build` (lib+bins) + `clippy --all-targets -D warnings` clean.
+  *Next:* the API-docs pick (awaiting owner); (on backup) the load test; or more dispatcher/perf hardening.

@@ -14,25 +14,42 @@ use rocket::fs::NamedFile;
 use rocket::futures::TryFutureExt;
 use rocket::response::status::{Accepted, NotFound};
 use rocket::serde::json::Json;
+use rocket::State;
 use rocket_dyn_templates::Template;
 
+use cortex::backend::{DbPool, PooledConn};
 use cortex::config::config;
 use cortex::frontend::concerns::{serve_entry, serve_entry_preview, serve_rerun, serve_savetasks};
 use cortex::frontend::cors::CORS;
 use cortex::frontend::params::RerunRequestParams;
+
+/// Checks out a pooled connection for the legacy `concerns`-backed routes, mapping pool exhaustion
+/// to a `404` (their shared error type).
+fn pooled(pool: &State<DbPool>) -> Result<PooledConn, NotFound<String>> {
+  pool
+    .get()
+    .map_err(|_| NotFound("database unavailable".to_string()))
+}
 
 #[get("/preview/<corpus_name>/<service_name>/<entry_name>")]
 fn preview_entry(
   corpus_name: String,
   service_name: String,
   entry_name: String,
+  pool: &State<DbPool>,
 ) -> Result<Template, NotFound<String>> {
-  serve_entry_preview(corpus_name, service_name, entry_name)
+  let mut conn = pooled(pool)?;
+  serve_entry_preview(&mut conn, corpus_name, service_name, entry_name)
 }
 
 #[post("/entry/<service_name>/<entry_id>")]
-async fn entry_fetch(service_name: String, entry_id: usize) -> Result<NamedFile, NotFound<String>> {
-  serve_entry(service_name, entry_id).await
+async fn entry_fetch(
+  service_name: String,
+  entry_id: usize,
+  pool: &State<DbPool>,
+) -> Result<NamedFile, NotFound<String>> {
+  let mut conn = pooled(pool)?;
+  serve_entry(&mut conn, service_name, entry_id).await
 }
 
 #[post(
@@ -44,9 +61,11 @@ fn rerun_corpus(
   corpus_name: String,
   service_name: String,
   rr: Json<RerunRequestParams>,
+  pool: &State<DbPool>,
 ) -> Result<Accepted<String>, NotFound<String>> {
   let corpus_name = corpus_name.to_lowercase();
-  serve_rerun(corpus_name, service_name, None, None, None, rr)
+  let mut conn = pooled(pool)?;
+  serve_rerun(&mut conn, corpus_name, service_name, None, None, None, rr)
 }
 
 #[post(
@@ -59,8 +78,18 @@ fn rerun_severity(
   service_name: String,
   severity: String,
   rr: Json<RerunRequestParams>,
+  pool: &State<DbPool>,
 ) -> Result<Accepted<String>, NotFound<String>> {
-  serve_rerun(corpus_name, service_name, Some(severity), None, None, rr)
+  let mut conn = pooled(pool)?;
+  serve_rerun(
+    &mut conn,
+    corpus_name,
+    service_name,
+    Some(severity),
+    None,
+    None,
+    rr,
+  )
 }
 
 #[post(
@@ -68,14 +97,18 @@ fn rerun_severity(
   format = "application/json",
   data = "<rr>"
 )]
+#[allow(clippy::too_many_arguments)]
 fn rerun_category(
   corpus_name: String,
   service_name: String,
   severity: String,
   category: String,
   rr: Json<RerunRequestParams>,
+  pool: &State<DbPool>,
 ) -> Result<Accepted<String>, NotFound<String>> {
+  let mut conn = pooled(pool)?;
   serve_rerun(
+    &mut conn,
     corpus_name,
     service_name,
     Some(severity),
@@ -90,6 +123,7 @@ fn rerun_category(
   format = "application/json",
   data = "<rr>"
 )]
+#[allow(clippy::too_many_arguments)]
 fn rerun_what(
   corpus_name: String,
   service_name: String,
@@ -97,8 +131,11 @@ fn rerun_what(
   category: String,
   what: String,
   rr: Json<RerunRequestParams>,
+  pool: &State<DbPool>,
 ) -> Result<Accepted<String>, NotFound<String>> {
+  let mut conn = pooled(pool)?;
   serve_rerun(
+    &mut conn,
     corpus_name,
     service_name,
     Some(severity),
@@ -117,9 +154,11 @@ fn savetasks(
   corpus_name: String,
   service_name: String,
   rr: Json<RerunRequestParams>,
+  pool: &State<DbPool>,
 ) -> Result<Accepted<String>, NotFound<String>> {
   let corpus_name = corpus_name.to_lowercase();
-  serve_savetasks(corpus_name, service_name, rr)
+  let mut conn = pooled(pool)?;
+  serve_savetasks(&mut conn, corpus_name, service_name, rr)
 }
 
 #[get("/favicon.ico")]
