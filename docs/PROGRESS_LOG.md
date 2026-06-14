@@ -474,3 +474,23 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   (13 `api_` twins ↔ 13 human report fns — 1:1 parity holds) **not** `Accept`-negotiation on one
   controller, so HTML/JSON paths can drift — converging them is open follow-up; (2) frontend boots
   cleanly with no Redis, no `cortex.toml` (defaults), `config.json` still present for auth.
+- **Two run-diff bugs found by test-driving the live data + a report-time format fix (owner-reported):**
+  exercising the run-management screens against the 5.87M-task dump surfaced two real bugs in
+  `HistoricalTask::report_for`, both now fixed + regression-tested (`runs_test::api_task_diff_over_real_snapshots`,
+  which seeds two real snapshots — the gap that let these survive):
+  - **F-2 (request-path panic):** the *unfiltered* task-diff (`/runs/<c>/<s>/tasks` with no transition
+    picked — the default the screen links to) `.expect()`ed the status filters → **panic → 500 that the
+    owner saw kill the worker thread**. F-1 had fixed the *route* parsing but the panic lived one layer
+    deeper in the model; F-1's "no panics remain" was wrong because its test seeded runs but no snapshots,
+    so `report_for` early-returned. Now runs a real paginated "every changed task between the two snapshots"
+    query.
+  - **F-3 (silent wrong data):** the *filtered* drill-down's outer query forgot `AND h.saved_at IN (...)`,
+    so it returned a task's *entire* snapshot history and paired rows across the wrong dates. Fixed.
+  - **Report-time format:** owner asked for `HH:MM` + tz *letter* code instead of `to_rfc2822()`'s
+    `22:50:43 -0400`. chrono's `%Z` only yields the numeric offset for `Local`, so new
+    `frontend::helpers::report_timestamp()` formats the date to the minute and appends the OS tz
+    abbreviation via libc `strftime %Z` (DST-correct; promoted `libc` to a normal dep), with a graceful
+    fallback to the offset. Now renders `Sat, 13 Jun 2026 22:59 EDT`. Verified on real data.
+  *Run-management UX note:* the screens are solid (shared-DTO twins) but **under-linked** — `/runs/<c>/<s>`
+  (the run-history table) is orphaned (report page links only `/history` chart + `/runs/.../diff`), and
+  corpus/landing don't link run history. Discoverability is the next run-management increment.

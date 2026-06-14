@@ -8,10 +8,12 @@
 //! Contract tests for the historical-runs API: list a `(corpus, service)`'s runs and the current
 //! (open) run, as the agent twin of the human history screen.
 
+use chrono::{NaiveDate, NaiveDateTime};
 use cortex::backend::{self, test_db_address};
 use cortex::frontend::server::mount_api_with;
+use cortex::helpers::TaskStatus;
 use cortex::models::{Corpus, NewCorpus, NewService, Service};
-use cortex::schema::{corpora, historical_runs, services, tasks};
+use cortex::schema::{corpora, historical_runs, historical_tasks, services, tasks};
 use diesel::prelude::*;
 use rocket::http::{ContentType, Status};
 use rocket::local::blocking::Client;
@@ -89,6 +91,7 @@ fn main() {
   // the racy libpq/Tokio/r2d2 teardown never runs (the bench's `process::exit` trick).
   let client = client();
   api_lists_runs_and_reports_current(&client);
+  api_task_diff_over_real_snapshots(&client);
   api_runs_is_404_for_unknown_corpus(&client);
   eprintln!("runs_test: all cases passed");
   // `_exit` (not `process::exit`): skip C atexit handlers — libpq/OpenSSL global cleanup races with
@@ -283,6 +286,133 @@ fn api_lists_runs_and_reports_current(client: &Client) {
     body.contains("first run"),
     "renders the seeded completed run in the breakdown table"
   );
+}
+
+/// Inserts a task and returns its id (mirrors the backend's import insert).
+fn add_task(conn: &mut PgConnection, entry: &str, service: i32, corpus: i32, status: i32) -> i64 {
+  diesel::insert_into(tasks::table)
+    .values((
+      tasks::entry.eq(entry),
+      tasks::service_id.eq(service),
+      tasks::corpus_id.eq(corpus),
+      tasks::status.eq(status),
+    ))
+    .returning(tasks::id)
+    .get_result(conn)
+    .expect("insert task")
+}
+
+/// Inserts a historical snapshot row at an *explicit* `saved_at` (the `NewHistoricalTask`
+/// insertable has no `saved_at`, defaulting to `now()`, so we set it directly to control the two
+/// snapshot dates).
+fn add_snapshot(conn: &mut PgConnection, task_id: i64, status: i32, saved_at: NaiveDateTime) {
+  diesel::insert_into(historical_tasks::table)
+    .values((
+      historical_tasks::task_id.eq(task_id),
+      historical_tasks::status.eq(status),
+      historical_tasks::saved_at.eq(saved_at),
+    ))
+    .execute(conn)
+    .expect("insert historical snapshot");
+}
+
+/// Regression for the run-diff drill-down over **real saved snapshots** — the path the existing
+/// cases never reach (they seed runs but no snapshots, so `report_for` early-returns). Two distinct
+/// snapshots are seeded so the diff query actually runs, guarding two fixed bugs:
+///   * F-2: the *unfiltered* task-diff `.expect()`ed the status filters and **panicked** (500 that
+///     killed the worker) whenever the screen was opened without picking a transition.
+///   * the *filtered* drill-down's outer query forgot to restrict to the two requested snapshots,
+///     so it returned a task's *entire* snapshot history and the paired rows spanned wrong dates.
+fn api_task_diff_over_real_snapshots(client: &Client) {
+  seed();
+  let mut backend = backend::testdb();
+  let corpus = Corpus::find_by_name(CORPUS_NAME, &mut backend.connection).expect("corpus");
+  let service = Service::find_by_name(SERVICE_NAME, &mut backend.connection).expect("service");
+
+  // Two snapshots on distinct dates: at d1 every task is an Error; at d2 the first two flip to
+  // Warning (a real change) while the last two stay Error (no change).
+  let d1 = NaiveDate::from_ymd_opt(2025, 1, 1)
+    .unwrap()
+    .and_hms_opt(0, 0, 0)
+    .unwrap();
+  let d2 = NaiveDate::from_ymd_opt(2025, 6, 1)
+    .unwrap()
+    .and_hms_opt(0, 0, 0)
+    .unwrap();
+  for i in 0..4 {
+    let entry = format!("/tmp/runs-api/doc{i}.zip");
+    let task_id = add_task(
+      &mut backend.connection,
+      &entry,
+      service.id,
+      corpus.id,
+      TaskStatus::Warning.raw(),
+    );
+    add_snapshot(
+      &mut backend.connection,
+      task_id,
+      TaskStatus::Error.raw(),
+      d1,
+    );
+    let later = if i < 2 {
+      TaskStatus::Warning.raw()
+    } else {
+      TaskStatus::Error.raw()
+    };
+    add_snapshot(&mut backend.connection, task_id, later, d2);
+  }
+
+  // --- Unfiltered: no transition selected. Was a 500 panic (F-2); now 200 listing exactly the two
+  // tasks that changed, each pairing the two seeded snapshots.
+  let response = client
+    .get(format!(
+      "/api/runs/{CORPUS_NAME}/{SERVICE_NAME}/tasks?page_size=50"
+    ))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Ok,
+    "unfiltered task-diff must not panic over real snapshots (regression: F-2)"
+  );
+  let rows: Value = response.into_json().expect("tasks json");
+  let rows = rows.as_array().expect("array");
+  assert_eq!(
+    rows.len(),
+    2,
+    "exactly the two status-changed tasks are listed"
+  );
+  for row in rows {
+    assert_eq!(row["previous_status"], "error");
+    assert_eq!(row["current_status"], "warning");
+    assert_eq!(row["previous_saved_at"], "2025-01-01");
+    assert_eq!(row["current_saved_at"], "2025-06-01");
+  }
+
+  // --- Filtered drill-down: only the two requested snapshots may appear per task (regression: the
+  // outer query previously returned a task's whole snapshot history).
+  let response = client
+    .get(format!(
+      "/api/runs/{CORPUS_NAME}/{SERVICE_NAME}/tasks?previous=2025-01-01%2000:00:00&current=2025-06-01%2000:00:00&previous_status=error&current_status=warning"
+    ))
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  let rows: Value = response.into_json().expect("tasks json");
+  let rows = rows.as_array().expect("array");
+  assert_eq!(
+    rows.len(),
+    2,
+    "filtered drill-down lists exactly the matching error->warning tasks"
+  );
+  for row in rows {
+    assert_eq!(
+      row["previous_saved_at"], "2025-01-01",
+      "only the requested previous snapshot is paired"
+    );
+    assert_eq!(
+      row["current_saved_at"], "2025-06-01",
+      "only the requested current snapshot is paired"
+    );
+  }
 }
 
 fn api_runs_is_404_for_unknown_corpus(client: &Client) {

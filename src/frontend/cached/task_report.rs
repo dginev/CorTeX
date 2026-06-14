@@ -74,7 +74,10 @@ pub fn task_report(
   global.insert("offset".to_string(), offset.to_string());
   global.insert("page_size".to_string(), page_size.to_string());
   global.insert("to_offset".to_string(), to_offset.to_string());
-  global.insert("report_time".to_string(), chrono::Local::now().to_rfc2822());
+  global.insert(
+    "report_time".to_string(),
+    crate::frontend::helpers::report_timestamp(),
+  );
 
   fetched_report
 }

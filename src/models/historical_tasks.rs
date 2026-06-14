@@ -203,8 +203,18 @@ impl HistoricalTask {
       .collect();
     let mut reported_tasks = Vec::new();
     if page_size > 0 {
-      // Optimized query to fetch historical tasks with matching status and saved_at
-      let matching_tasks_query = r###"
+      // A specific transition (both statuses given) uses a tight query that matches the two
+      // (snapshot, status) pairs directly. With a partial or empty status filter we instead list
+      // *every* task whose status changed between the two snapshots — the "an empty filter lists
+      // every change" contract of the run-tasks screen. Either way the work is paginated in SQL.
+      // The unfiltered path previously `.expect()`ed the statuses and **panicked on the request
+      // thread** (a 500 that killed the Rocket worker) whenever the tasks screen was opened without
+      // picking a transition — see docs/KNOWN_ISSUES.md (F-2).
+      let recent_historical_tasks: Vec<HistoricalTaskReport> = if let (Some(prev), Some(cur)) =
+        (previous_status, current_status)
+      {
+        // Optimized query to fetch historical tasks with matching status and saved_at.
+        let matching_tasks_query = r###"
         WITH matching_tasks AS (
           SELECT h.task_id
           FROM historical_tasks h
@@ -221,23 +231,52 @@ impl HistoricalTask {
         FROM historical_tasks h
         JOIN tasks t ON h.task_id = t.id
         WHERE h.task_id IN (SELECT task_id FROM matching_tasks)
+          AND h.saved_at IN ($3, $5)
         ORDER BY t.entry ASC, h.task_id ASC, h.saved_at ASC
         OFFSET $7
         LIMIT $8;
         "###;
-
-      let main_query = sql_query(matching_tasks_query)
-        .bind::<Integer, _>(corpus.id)
-        .bind::<Integer, _>(service.id)
-        .bind::<Timestamp, _>(dates[0])
-        .bind::<Integer, _>(current_status.expect("Current status is required").raw())
-        .bind::<Timestamp, _>(dates[1])
-        .bind::<Integer, _>(previous_status.expect("Previous status is required").raw())
-        .bind::<Integer, _>(2 * offset as i32)
-        .bind::<Integer, _>(2 * page_size as i32);
-      // let debug = debug_query::<Pg, _>(&main_query);
-      let recent_historical_tasks: Vec<HistoricalTaskReport> =
-        main_query.get_results::<HistoricalTaskReport>(connection)?;
+        sql_query(matching_tasks_query)
+          .bind::<Integer, _>(corpus.id)
+          .bind::<Integer, _>(service.id)
+          .bind::<Timestamp, _>(dates[0])
+          .bind::<Integer, _>(cur.raw())
+          .bind::<Timestamp, _>(dates[1])
+          .bind::<Integer, _>(prev.raw())
+          .bind::<Integer, _>(2 * offset as i32)
+          .bind::<Integer, _>(2 * page_size as i32)
+          .get_results::<HistoricalTaskReport>(connection)?
+      } else {
+        // No (or partial) transition selected: every task present in *both* snapshots whose status
+        // differs between them, paginated — two rows per task, ordered so each pair is adjacent.
+        let changed_tasks_query = r###"
+        WITH matching_tasks AS (
+          SELECT h.task_id
+          FROM historical_tasks h
+          JOIN tasks t ON h.task_id = t.id
+          WHERE t.corpus_id = $1 AND t.service_id = $2
+            AND h.saved_at IN ($3, $4)
+          GROUP BY h.task_id
+          HAVING COUNT(DISTINCT h.saved_at) = 2 AND COUNT(DISTINCT h.status) = 2
+        )
+        SELECT h.task_id, h.status, h.saved_at, t.entry
+        FROM historical_tasks h
+        JOIN tasks t ON h.task_id = t.id
+        WHERE h.saved_at IN ($3, $4)
+          AND h.task_id IN (SELECT task_id FROM matching_tasks)
+        ORDER BY t.entry ASC, h.task_id ASC, h.saved_at ASC
+        OFFSET $5
+        LIMIT $6;
+        "###;
+        sql_query(changed_tasks_query)
+          .bind::<Integer, _>(corpus.id)
+          .bind::<Integer, _>(service.id)
+          .bind::<Timestamp, _>(dates[0])
+          .bind::<Timestamp, _>(dates[1])
+          .bind::<Integer, _>(2 * offset as i32)
+          .bind::<Integer, _>(2 * page_size as i32)
+          .get_results::<HistoricalTaskReport>(connection)?
+      };
       // Iterate in pairs, as applicable
       let mut iter = recent_historical_tasks.into_iter();
       while let Some(t1) = iter.next() {

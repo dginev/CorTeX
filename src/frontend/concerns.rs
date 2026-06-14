@@ -103,7 +103,10 @@ pub fn serve_report(
         for (key, val) in report {
           global.insert(key.clone(), val.to_string());
         }
-        global.insert("report_time".to_string(), chrono::Local::now().to_rfc2822());
+        global.insert(
+          "report_time".to_string(),
+          crate::frontend::helpers::report_timestamp(),
+        );
         template = "report";
       } else if category.is_none() {
         // Severity-level report
@@ -399,7 +402,10 @@ pub fn serve_entry_preview(
         },
         None => global.insert("inputconverter".to_string(), "missing?".to_string()),
       };
-      global.insert("report_time".to_string(), chrono::Local::now().to_rfc2822());
+      global.insert(
+        "report_time".to_string(),
+        crate::frontend::helpers::report_timestamp(),
+      );
     }
     global.insert("severity".to_string(), entry_name.clone());
     global.insert("entry_name".to_string(), entry_name);

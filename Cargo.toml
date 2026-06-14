@@ -48,6 +48,9 @@ dotenvy = "0.15.7"
 figment = { version = "0.10", features = ["toml", "env"] }
 toml = "0.8"
 chrono = "0.4.45"
+# strftime `%Z` for the report-time zone abbreviation (chrono's %Z only yields the numeric offset
+# for Local); also `_exit(2)` in the integration-test harnesses (skip C atexit handlers, L-1).
+libc = "0.2"
 diesel = {version="2.2.10", features = ["postgres", "chrono", "r2d2", "uuid", "serde_json"]}
 diesel_migrations = "2.2"
 clap = { version = "4", features = ["derive"] }
@@ -59,9 +62,6 @@ lazy_static = "1.0.0"
 utoipa = "4"
 rocket_okapi = "0.9"
 schemars = "0.8"
-# `_exit(2)` for the custom test harnesses: terminate immediately without running C atexit handlers
-# (libpq/OpenSSL global cleanup) that race with the live Tokio/r2d2 threads and SIGSEGV (L-1).
-libc = "0.2"
 
 # Integration tests that build a Rocket Client over the libpq pool run under a custom harness
 # (their own `main` + `process::exit(0)`) to ELIMINATE the L-1 diesel/libpq/Tokio teardown SIGSEGV
