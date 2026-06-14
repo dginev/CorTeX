@@ -1417,3 +1417,19 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   with least risk) unless C-removal is itself a goal (then Path A, consistent with libzmq→zeromq).
   Updated `docs/ARCHIVE_RATIONALIZATION.md` (candidate-crate table, 3-way evaluation, decision lever,
   reframed recommendation + open questions). Implementation still awaits the owner's lever call.
+- **Archive rationalization — per-task hot path + infer detection (owner: ZIP-scan must be maximally
+  performant; delegate compression to crates; use infer not a hand-rolled sniffer):** the CRITICAL hot
+  path is `helpers.rs` opening every returned result `.zip` per-task (~100-200/s) to scan cortex.log —
+  not the import (one-off). Benchmarked it: the **`zip` crate's `by_name("cortex.log")` random access
+  = ~8µs/op vs libarchive sequential ~11µs (1.4x faster), FLAT across 4/32/128MB output** (ZIP size
+  headers let both skip the output without decompressing → constant-factor win, not scaling; ~0.2% of
+  a core either way, so not a bottleneck — but zip is faster + pure-Rust + maintained, and by_name is
+  the clean primitive; compress-tools/libarchive are sequential with no by_name). Swapped the spike's
+  hand-rolled magic-byte detector for the **`infer` crate** (owner preference; validated: gz/zip/tar
+  classify, a .gz-really-PDF rejected, a .gz-really-TeX → raw/text fallback). **These two requirements
+  shift the lean to Path A** (flate2+tar+zip+infer): the zip crate is needed for the hot path
+  regardless → flate2+tar complete one consistent pure-Rust stack (vs Path B mixing compress-tools+zip
+  and being sequential on the hot path); infer removes Path A's only drawback (hand-rolled detection);
+  drops the C dep. All compression delegated to maintained crates, all detection to infer — the
+  "delegate fully to crates" ask. Doc updated (per-task hot-path section, infer detection,
+  recommendation re-leaned to A, open questions). Implementation still awaits the owner's lever call.

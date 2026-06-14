@@ -43,29 +43,26 @@ fn mb_per_s(bytes: usize, iters: usize, secs: f64) -> f64 {
   (bytes * iters) as f64 / secs.max(1e-9) / 1_048_576.0
 }
 
-/// Content-based archive-format detection by **magic bytes** — replicating libarchive's
-/// `support_filter_all`/`support_format_all`, because arXiv filenames lie: a `.gz` may be plain
-/// TeX, or even a raw PDF. Returns the format, `raw/text` when no archive magic matches (the
-/// single-file fallback the importer already relies on), or a reject label for known non-source
-/// content. (The `infer` crate does exactly this off-the-shelf if we'd rather not hand-roll the
-/// table.)
-fn detect_format(b: &[u8]) -> &'static str {
-  if b.len() >= 2 && b[0] == 0x1f && b[1] == 0x8b {
-    "gzip"
-  } else if b.len() >= 4 && &b[0..4] == b"PK\x03\x04" {
-    "zip"
-  } else if b.len() >= 3 && &b[0..3] == b"BZh" {
-    "bzip2"
-  } else if b.len() >= 6 && &b[0..6] == b"\xfd7zXZ\x00" {
-    "xz"
-  } else if b.len() >= 4 && b[0..4] == [0x28, 0xb5, 0x2f, 0xfd] {
-    "zstd"
-  } else if b.len() >= 262 && &b[257..262] == b"ustar" {
-    "tar"
-  } else if b.len() >= 4 && &b[0..4] == b"%PDF" {
-    "pdf — REJECT (not a source archive)"
-  } else {
-    "raw/text — single-file fallback"
+fn env_usize(key: &str, default: usize) -> usize {
+  std::env::var(key)
+    .ok()
+    .and_then(|v| v.parse().ok())
+    .unwrap_or(default)
+}
+
+/// Content-based type detection **delegated to the `infer` crate** (owner preference over a
+/// hand-rolled magic-byte table — compression/detection is error-prone, so use a maintained crate).
+/// Returns the detected archive extension, a reject label for known non-source content (e.g. a
+/// `.gz` that is really a PDF), or the raw/text fallback (`infer` returns `None` for headerless
+/// TeX).
+fn detect_format(b: &[u8]) -> String {
+  match infer::get(b) {
+    Some(t) if matches!(t.extension(), "gz" | "tar" | "zip" | "bz2" | "xz" | "zst") => {
+      t.extension().to_string()
+    },
+    Some(t) if t.extension() == "pdf" => "pdf — REJECT (not a source archive)".into(),
+    Some(t) => format!("{} — REJECT (unexpected type)", t.extension()),
+    None => "raw/text — single-file fallback".into(),
   }
 }
 
@@ -174,6 +171,93 @@ fn main() {
   println!(
     "  zip build (zip crate, deflate): {:.0} MB/s",
     mb_per_s(data.len(), iters, start.elapsed().as_secs_f64())
+  );
+
+  // --- PER-TASK HOT PATH: open a result .zip and extract cortex.log (scanned for message lines) --
+  // The real per-task op (helpers.rs): every returned result .zip is opened to read cortex.log. A
+  // result holds a large converted output + a small log; the log is what we want. ZIP has a central
+  // directory, so the `zip` crate can seek straight to cortex.log; libarchive streams sequentially
+  // and must read past the large entry. cortex.log is placed LAST (the costly case for a scanner).
+  let html_bytes = env_usize("HTML_MB", 4) * 1024 * 1024;
+  let html = {
+    let mut h = Vec::with_capacity(html_bytes);
+    let mut s = 0x55u64;
+    while h.len() < html_bytes {
+      h.extend_from_slice(b"<p>converted output paragraph with some text</p>");
+      for _ in 0..16 {
+        s = s.wrapping_mul(6364136223846793005).wrapping_add(1);
+        h.push((s >> 33) as u8);
+      }
+    }
+    h
+  };
+  let log = "Info\tcortex\tlog line with a message and some detail text\n".repeat(160); // ~8 KB
+  let result_zip = dir.path().join("result.zip");
+  {
+    let mut zw = zip::ZipWriter::new(std::fs::File::create(&result_zip).unwrap());
+    let opts: zip::write::FileOptions<()> =
+      zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    zw.start_file("html/index.html", opts).unwrap();
+    zw.write_all(&html).unwrap();
+    zw.start_file("cortex.log", opts).unwrap(); // last entry
+    zw.write_all(log.as_bytes()).unwrap();
+    zw.finish().unwrap();
+  }
+  let scan_iters = 500;
+
+  // zip crate — random-access by_name (skips the 4 MB html via the central directory).
+  let start = Instant::now();
+  for _ in 0..scan_iters {
+    let mut za = zip::ZipArchive::new(std::fs::File::open(&result_zip).unwrap()).unwrap();
+    let mut f = za.by_name("cortex.log").unwrap();
+    let mut s = String::new();
+    f.read_to_string(&mut s).unwrap();
+    std::hint::black_box(s.lines().count());
+  }
+  let zip_secs = start.elapsed().as_secs_f64();
+
+  // libarchive — sequential scan to cortex.log (reads through the html entry).
+  let start = Instant::now();
+  for _ in 0..scan_iters {
+    let reader = Reader::new()
+      .unwrap()
+      .support_filter_all()
+      .support_format_all()
+      .open_filename(result_zip.to_str().unwrap(), BUFFER_SIZE)
+      .unwrap();
+    while let Ok(e) = reader.next_header() {
+      if e.pathname() == "cortex.log" {
+        let mut content = Vec::new();
+        while let Ok(chunk) = reader.read_data(BUFFER_SIZE) {
+          if chunk.is_empty() {
+            break;
+          }
+          content.extend_from_slice(&chunk);
+        }
+        std::hint::black_box(content.len());
+        break;
+      }
+    }
+  }
+  let la_secs = start.elapsed().as_secs_f64();
+
+  println!(
+    "  PER-TASK hot path — open result.zip + extract cortex.log (output {} MB, log last):",
+    html_bytes / 1_048_576
+  );
+  println!(
+    "    zip crate (by_name random access): {:.0} opens/s ({:.0} µs/op)",
+    scan_iters as f64 / zip_secs,
+    zip_secs / scan_iters as f64 * 1e6
+  );
+  println!(
+    "    libarchive (sequential scan):      {:.0} opens/s ({:.0} µs/op)",
+    scan_iters as f64 / la_secs,
+    la_secs / scan_iters as f64 * 1e6
+  );
+  println!(
+    "    → zip crate is {:.1}x libarchive on this op",
+    la_secs / zip_secs.max(1e-9)
   );
 
   // --- content-based format auto-detection (filenames lie; corrupt/wrong content happens) -------

@@ -98,67 +98,90 @@ on **one axis — keep the libarchive C engine or not:**
 | gzip **compress** — flate2 (default level) | 62 MB/s |
 | **zip build** — zip crate (deflate) | 63 MB/s |
 
-On realistic mixed data, pure-Rust gzip decompress is **within 10 % of libarchive** — and both are
-~1.3–1.5 GB/s, **far above the `/data` disk read** that actually bounds bulk import, so the codec is
+On realistic mixed data, pure-Rust gzip decompress is **within 10–15 % of libarchive** — and both are
+~1.2–1.5 GB/s, **far above the `/data` disk read** that actually bounds bulk import, so the codec is
 *not* the import bottleneck. (On hyper-compressible pure text the gap widens to ~0.56× — an artifact of
 miniz_oxide's inflate on highly-redundant input; irrelevant for real sources.) **If maximal codec
 throughput is ever wanted, flate2's `zlib-ng` backend reaches C-zlib speed** — a perf/purity knob, not
-a redesign. Compress at 62 MB/s is the default level 6; a lower level trades ratio for speed if import
-write-back ever needs it.
+a redesign.
+
+### The *critical* hot path: opening every result `.zip` for `cortex.log`
+
+(Owner: *"every returned ZIP is opened as we scan cortex.log for message lines — this needs to be
+maximally performant."*) This is the **per-task steady-state** op (`helpers.rs`), unlike the import (a
+one-off): ~100–200×/s, every result archive opened to read its (small) `cortex.log` out of a (large)
+converted output. ZIP carries a **central directory + per-entry sizes**, so the right primitive is
+**random access by name**, not a sequential scan:
+
+| Open result `.zip` + extract `cortex.log` (output 4 / 32 / 128 MB, log last) | per op |
+| --- | --- |
+| **`zip` crate — `by_name("cortex.log")`** (random access) | **~8 µs** |
+| libarchive — sequential `next_header` scan | ~11 µs |
+
+The `zip` crate is a **steady ~1.4×** faster, and *both* are **flat in the output size** (4 → 128 MB
+identical) — ZIP's size headers let either library skip the output without decompressing it, so this is
+a constant-factor win, not a scaling one. At ~8–11 µs/op and ≤200 tasks/s it is **~0.2 % of one core
+either way** — *not* a throughput bottleneck — but the `zip` crate is faster **and** pure-Rust **and**
+maintained, and `by_name` is the cleanest expression of "grab one file." **Note:** `compress-tools` /
+libarchive are *streaming* (no random-access `by_name`), so for *this* path the **`zip` crate is the
+right tool regardless of the import-side decision.**
 
 ## Content-based format auto-detection (filenames lie)
 
-*(This is **Path A**'s detection; **Path B** inherits the same auto-detection from libarchive for
-free.)* arXiv filenames are unreliable (a `.gz` may be plain TeX, or raw PDF) — so detection must be by
-**content (magic bytes)**. A ~10-line sniffer covers everything we touch, and crucially **rejects
-wrong/corrupt content** instead of feeding it to a decompressor:
+arXiv filenames are unreliable — a `.gz` may be plain TeX, or even a raw PDF (the importer already notes
+the "surprise") — so detection must be by **content**, not extension. **Per owner preference, delegate
+this to the `infer` crate** (don't hand-roll a magic-byte table — compression/detection is error-prone;
+use a maintained crate). `infer::get(&bytes)` returns the type from its magic, or `None` for headerless
+content (= the raw/text single-file fallback). Validated in the spike:
 
-| Magic (prefix / offset) | Format |
+| Input (bytes only) | `infer` result → action |
 | --- | --- |
-| `1f 8b` | gzip |
-| `50 4b 03 04` (`PK..`) | zip |
-| `ustar` at offset 257 | tar |
-| `42 5a 68` (`BZh`) | bzip2 |
-| `fd 37 7a 58 5a 00` | xz |
-| `28 b5 2f fd` | zstd |
-| `25 50 44 46` (`%PDF`) | **reject — not a source archive** |
-| *(no match)* | **raw/text — single-file fallback** (the arXiv "surprise") |
+| real `.gz` / `.zip` / `.tar` | `gz` / `zip` / `tar` → decode |
+| a `.gz` that is really a PDF | `pdf` → **reject** (not a source archive) |
+| a `.gz` that is really plain TeX | `None` → **raw/text** single-file fallback (the arXiv "surprise") |
 
-Validated in the spike — real gz/zip/tar classify correctly, a `.gz`-that-is-really-a-PDF is rejected,
-and a `.gz`-that-is-really-plain-TeX falls back to raw. (The **`infer`** crate provides the same
-off-the-shelf if we'd rather not hand-roll + maintain the table; for ~6 formats hand-rolling is
-arguably leaner.) This also closes part of **I-1** (importer fault-tolerance): detect-then-dispatch
-means a corrupt/mislabeled entry is logged + skipped, never a panic or garbage decode.
+This rejects wrong/corrupt content instead of feeding it to a decompressor — closing part of **I-1**
+(detect-then-dispatch ⇒ a mislabeled/corrupt entry is logged + skipped, never a panic). **Path B**
+(libarchive/`compress-tools`) gets equivalent detection built-in; **Path A** uses `infer`. Either way
+**no custom detection logic is maintained** — which is the owner's ask.
 
 ## Recommendation
 
-**Retire the personal `libarchive-sys` fork — both paths do that; pick the lever.** My default, given
-*this* ask's stated wants (better-maintained + generality + efficiency + auto-detection, all libarchive
-strengths) and the lowest migration risk:
+**Retire the personal `libarchive-sys` fork.** Both paths do that; two later requirements — *delegate
+detection to a crate* (`infer`) and *the per-task `cortex.log` scan must be maximally performant* — have
+shifted the lean to **Path A**:
 
-> **Default: Path B — `compress-tools` (read + built-in auto-detection + streaming) + `zip` (write).**
-> It replaces the fork with a popular, maintained crate, keeps libarchive's universality + full speed +
-> content detection for free, and only the `.zip` *output* moves to the pure-Rust `zip` crate. Smallest,
-> safest change.
+> **Lean: Path A — `flate2` (gz) + `tar` (tar) + `zip` (zip read/write, incl. `by_name` for the per-task
+> hot path) + `infer` (detection).** Because:
+> 1. The **per-task hot path already needs the `zip` crate** — `by_name("cortex.log")` is the
+>    performant random-access primitive (1.4× libarchive; `compress-tools`/libarchive are *sequential*,
+>    no `by_name`). Since the `zip` crate is in regardless, `flate2` + `tar` complete **one consistent
+>    pure-Rust stack**, vs. Path B's *mix* of `compress-tools` (import read) + `zip` (everything else).
+> 2. **`infer`** supplies detection as a maintained crate (your preference), so Path A no longer carries
+>    a hand-rolled sniffer — removing Path B's last real advantage (built-in detection).
+> 3. It **drops the libarchive C dependency** (consistent with libzmq → `zeromq`), at ≈ parity on the
+>    import decompress (which isn't the bottleneck anyway).
+>
+> All compression is delegated to maintained crates (`flate2`/`tar`/`zip`) and all detection to
+> `infer` — *no custom codec or detection logic*, exactly the "delegate fully to crates" ask.
 
-> **Choose Path A — `flate2` + `tar` + `zip` + a magic-byte sniffer — if dropping the libarchive C
-> dependency is itself a goal** (consistency with the libzmq → `zeromq` removal). It's ≈ parity on the
-> hot decompress path, covers our exact formats, and streams natively — at the cost of a hand-rolled
-> sniffer and rewriting the unpack logic across three crates.
+> **Path B (`compress-tools` + `zip` + `infer`) stays valid if keeping the proven libarchive engine is
+> preferred over removing the C dependency** — but it adds one more archive crate and is sequential on
+> the per-task path.
 
-The decisive question is therefore **just: do we want to be free of the libarchive C dependency?** If
-yes → A. If "a maintained crate is enough, keep the proven engine" → B. Either way the surface is **only
-`importer.rs` + `helpers.rs`**, behind `tests/importer_test.rs` + a new detection test, and **pairs with
-the I-1 importer hardening** (replace the unpack `.unwrap()`s with detect → stream → log-and-skip).
-Independent of the dispatcher transport work — can land before, after, or in parallel.
+Surface: only `importer.rs` + `helpers.rs`, behind `tests/importer_test.rs` + a new detection test, and
+it **pairs with the I-1 unpack hardening** (detect → stream → log-and-skip). Independent of the
+dispatcher transport work.
 
 ## Open questions
 
-1. **The lever — keep the libarchive C engine (Path B, `compress-tools` + `zip`) or go fully pure-Rust
-   (Path A, `flate2` + `tar` + `zip`)?** This is the one real decision; everything else follows from it.
-   My lean: **B** for least risk unless C-dependency removal is a stated goal (then **A**).
-2. *(Path A only)* **Backend `miniz_oxide` (zero C) vs `zlib-ng` (C, faster)?** Start pure-Rust — the
+1. **The lever — fully pure-Rust (Path A, leaned) or keep the libarchive C engine (Path B)?** The one
+   real decision. My lean is now **A** (consistent single pure-Rust stack, the `zip` crate is needed for
+   the hot path regardless, `infer` covers detection, drops the C dep) unless you'd rather keep
+   libarchive as the engine.
+2. *(Path A)* **gzip backend `miniz_oxide` (zero C) vs `zlib-ng` (C, faster)?** Start pure-Rust — the
    codec isn't the bottleneck (disk is); flip the flag only if a measured need appears.
-3. *(Path A only)* **Detection: hand-rolled magic-byte table (no dep, we own the policy) vs the `infer`
-   crate?** Lean hand-rolled. *(Path B gets detection from libarchive for free.)*
+3. **Detection — settled: the `infer` crate** (your preference; no hand-rolled table either path).
 4. **Combine with the I-1 importer hardening** in one pass (same files, same review)? Recommend yes.
+5. **The `helpers.rs` per-task `cortex.log` scan uses the `zip` crate's `by_name` regardless of the
+   lever** (fastest + random-access) — agreed?
