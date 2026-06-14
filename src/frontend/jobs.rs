@@ -123,11 +123,20 @@ pub fn jobs_page(
     .into_iter()
     .map(JobDto::from)
     .collect();
+  // Auto-refresh the (otherwise static) list while any job is in flight, so an admin who just
+  // kicked off a multi-minute refresh/reindex/import watches its progress live — no JS, no manual
+  // reload.
+  let has_active = jobs
+    .iter()
+    .any(|job| matches!(job.health.as_str(), "pending" | "running"));
   let global = serde_json::json!({
     "title": "Background jobs",
     "description": "Recent background jobs across the CorTeX framework",
   });
-  Ok(Template::render("jobs", context! { global, jobs, active }))
+  Ok(Template::render(
+    "jobs",
+    context! { global, jobs, active, has_active },
+  ))
 }
 
 /// The human progress page; it polls `GET /api/jobs/<uuid>` (vanilla fetch, no JS framework — D11).

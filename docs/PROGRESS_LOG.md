@@ -687,3 +687,12 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   job **succeeded** (rebuilt all 7 tables' indexes, health `ok`); `/health` button renders; `management_api_test`
   asserts the 401-without-token gate. CONCURRENTLY can't run in a transaction — the job body uses a fresh
   autocommit pooled connection. clippy/fmt clean.
+- **Live job-watching: auto-refresh the `/jobs` dashboard while jobs are in flight (async UX;
+  autonomous-night progress):** the individual job page already polls (vanilla fetch), but the `/jobs`
+  *list* was static — an admin who kicked off a multi-minute refresh/reindex/import had to reload manually
+  to watch progress. `jobs_page` now computes `has_active` (any `pending`/`running` job) and the template
+  conditionally emits `<meta http-equiv="refresh" content="5">` + an "Auto-refreshing…" notice, so the list
+  updates live while work runs and is fully static otherwise (no JS — the no-JS-frameworks constraint).
+  Debugging note: a seeded `running` job is marked `interrupted` by `interrupt_orphans` on *production*
+  startup, so the regression test seeds it under `mount_api_with` (which skips orphan-interruption) and
+  asserts the meta-refresh renders (`jobs_api_test`). clippy/fmt clean.

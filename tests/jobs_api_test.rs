@@ -143,12 +143,41 @@ fn jobs_list_carries_health_and_duration_and_supports_pending() {
   );
 }
 
+fn jobs_dashboard_auto_refreshes_while_a_job_is_active() {
+  use diesel::prelude::*;
+  // Seed a job stuck `running`. (Tests build via `mount_api_with`, which — unlike the production
+  // `mount_api` — does NOT interrupt orphans, so the running row persists for the assertion.)
+  let mut db = cortex::backend::testdb();
+  diesel::sql_query(
+    "INSERT INTO jobs (kind, actor, status, params) \
+     VALUES ('autorefresh_active_test', 'tester', 'running', '{}'::jsonb)",
+  )
+  .execute(&mut db.connection)
+  .expect("seed a running job");
+
+  let client = client();
+  let body = client
+    .get("/jobs")
+    .dispatch()
+    .into_string()
+    .expect("html body");
+  assert!(
+    body.contains("http-equiv=\"refresh\""),
+    "the dashboard auto-refreshes (meta-refresh) while a job is in flight"
+  );
+
+  diesel::sql_query("DELETE FROM jobs WHERE kind = 'autorefresh_active_test'")
+    .execute(&mut db.connection)
+    .ok();
+}
+
 // Custom harness (see KNOWN_ISSUES L-1): run the cases then `_exit(0)`.
 fn main() {
   api_job_polls_a_spawned_job();
   api_job_is_404_for_unknown_uuid();
   job_progress_page_renders_html();
   jobs_list_carries_health_and_duration_and_supports_pending();
+  jobs_dashboard_auto_refreshes_while_a_job_is_active();
   eprintln!("jobs_api_test: all cases passed");
   unsafe { libc::_exit(0) }
 }

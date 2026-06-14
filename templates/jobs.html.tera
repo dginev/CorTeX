@@ -1,6 +1,9 @@
-{% extends "layout" %} {% block content %}
+{% extends "layout" %}
+{% block head_extra %}{% if has_active %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock head_extra %}
+{% block content %}
 <div class="center">
   <h1>Background jobs</h1>
+  {% if has_active %}<p><em>Auto-refreshing every 5s while jobs are in flight…</em></p>{% endif %}
   <p>
     {% if active %}<a href="/jobs">All</a> &nbsp;·&nbsp; <strong>Pending only</strong>
     {% else %}<strong>All</strong> &nbsp;·&nbsp; <a href="/jobs?active=true">Pending only</a>{% endif %}
