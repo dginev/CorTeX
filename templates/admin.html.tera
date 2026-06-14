@@ -12,22 +12,22 @@
   </div>
 
   <div class="admin-status" style="display:flex; flex-wrap:wrap; gap:0.75rem; margin:1rem 0;">
-    <div style="flex:1; min-width:8rem; border:1px solid #ddd; border-radius:6px; padding:0.6rem 0.9rem; text-align:center;">
+    <div class="admin-card" style="flex:1; min-width:8rem; text-align:center;">
       <div style="font-size:1.6rem; font-weight:bold;">{{ corpus_count }}</div>
       <div class="muted"><a href="/">corpora</a></div>
     </div>
-    <div style="flex:1; min-width:8rem; border:1px solid #ddd; border-radius:6px; padding:0.6rem 0.9rem; text-align:center;">
-      <div style="font-size:1.6rem; font-weight:bold;{% if active_jobs > 0 %} color:#1a7e1a;{% endif %}">{{ active_jobs }}</div>
+    <div class="admin-card" style="flex:1; min-width:8rem; text-align:center;">
+      <div style="font-size:1.6rem; font-weight:bold;{% if active_jobs > 0 %} color:var(--ok);{% endif %}">{{ active_jobs }}</div>
       <div class="muted"><a href="/jobs">active jobs</a></div>
     </div>
-    <div style="flex:1; min-width:8rem; border:1px solid #ddd; border-radius:6px; padding:0.6rem 0.9rem; text-align:center;">
+    <div class="admin-card" style="flex:1; min-width:8rem; text-align:center;">
       <div style="font-size:1.6rem; font-weight:bold;">{{ active_sessions }}</div>
       <div class="muted"><a href="/admin/sessions">active sessions</a></div>
     </div>
-    <div style="flex:2; min-width:12rem; border:1px solid #ddd; border-radius:6px; padding:0.6rem 0.9rem;">
+    <div class="admin-card" style="flex:2; min-width:12rem;">
       <div class="muted">Last run &nbsp;<a href="/admin/runs">(all runs)</a></div>
       {% if last_run %}
-      <div><strong>{{ last_run.when }}</strong>{% if last_run.open %} <span style="color:#1a7e1a;">· open{% if last_run.in_progress > 0 %} · {{ last_run.in_progress }} in&nbsp;progress{% endif %}</span>{% endif %}
+      <div><strong>{{ last_run.when }}</strong>{% if last_run.open %} <span style="color:var(--ok);">· open{% if last_run.in_progress > 0 %} · {{ last_run.in_progress }} in&nbsp;progress{% endif %}</span>{% endif %}
         &nbsp;by {{ last_run.owner }}</div>
       <div class="muted" style="font-size:0.9em;">{{ last_run.total }} tasks — {{ last_run.description }}</div>
       {% else %}

@@ -6,6 +6,23 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **UI theming — adopted the "paper" (light) + "midnight" (dark) design tokens from `ar5iv-editor`.**
+  Added the two `data-theme` token sets (`:root[data-theme="paper"]` / `[data-theme="midnight"]` —
+  `--bg/--bg-elev/--bg-sunken/--ink*/--rule*/--accent*/--link*/--code-bg/--shadow*/--ok/--warn/--bad`
+  + font stacks) to `public/css/cortex.css`, copied from `~/git/ar5iv-editor/frontend/src/styles.css`,
+  and mapped the Bootstrap-3 surfaces onto them (body, links, both navbars, tables incl. striped/hover,
+  panels/wells, forms+focus ring, buttons incl. `.danger` and bare submit buttons, code, hr, muted
+  text, status helpers). Replaced the remaining hardcoded colors (quietlink `#000`, sticky `#corpus-report`
+  header `white`, `bottom-content #efefef`, the `error`/`fresh` row tints → `color-mix` of `--warn`/`--ok`).
+  Dropped Bootstrap's gradient "optional theme" so the flat tokens win. Theme switching: a no-FOUC
+  `<head>` script sets `data-theme` before first paint (saved choice → else OS `prefers-color-scheme`),
+  a nav **Theme** toggle (`public/js/theme.js`, framework-free) flips paper↔midnight and persists to
+  localStorage; `<html data-theme="paper">` is the no-JS default. Admin-dashboard stat cards moved off
+  per-element inline `#ddd`/`#1a7e1a` to a tokened `.admin-card` + `var(--ok)` so midnight reads right.
+  Render-checked (`admin_test` / `corpora_test` / `services_test` green — the layout change touches
+  every page). **Follow-up (owner idea):** a fresh *scholarly dashboard* tabular design for the report
+  pages, built on these tokens.
+
 - **Service-activation UX (Arm 6) — "Add a service", register-on-corpus (both directions), in-flight
   tracking, and an idempotent-NEUTRAL registration guard.** Owner test-drive of the admin dashboard
   for the upcoming `oxidized-tex-to-html` (latexml-oxide) service. Built:

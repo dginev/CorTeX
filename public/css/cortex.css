@@ -1,13 +1,251 @@
+/* === Design tokens: "paper" (light) + "midnight" (dark) =======================================
+   Adopted from ~/git/ar5iv-editor (frontend/src/styles.css). One token vocabulary the whole admin +
+   public UI styles against, so flipping `data-theme` on <html> re-themes everything. The no-FOUC
+   <head> script in `layout.html.tera` sets `data-theme` from localStorage or the OS
+   `prefers-color-scheme` before first paint; the nav toggle (`public/js/theme.js`) switches it. With
+   JS off, `<html data-theme="paper">` is the static default. */
+:root,
+:root[data-theme="paper"] {
+  --bg: #dcdbd2;
+  --bg-elev: #e6e5dc;
+  --bg-sunken: #cdccc3;
+  --ink: #1a1a1a;
+  --ink-soft: #4a4a4a;
+  --ink-muted: #6e6e68;
+  --rule: #b9b8af;
+  --rule-soft: #ceccc2;
+  --accent: #7a3e9d;
+  --accent-soft: #ece1f5;
+  --link: var(--accent);
+  --link-hover: #9a4ec0;
+  --code-bg: #cdccc3;
+  --shadow: 0 1px 2px rgba(40, 30, 20, 0.06);
+  --shadow-lg: 0 6px 24px rgba(40, 30, 20, 0.1);
+  --ok: #2f7d3f;
+  --warn: #c47e1a;
+  --bad: #b32424;
+  --serif: "Roboto Slab", "Iowan Old Style", Charter, Georgia, serif;
+  --sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+:root[data-theme="midnight"] {
+  --bg: #161618;
+  --bg-elev: #1d1d22;
+  --bg-sunken: #101013;
+  --ink: #e8e4dc;
+  --ink-soft: #b8b3a8;
+  --ink-muted: #807a70;
+  --rule: #2a2a30;
+  --rule-soft: #1f1f24;
+  --accent: #c79bff;
+  --accent-soft: #2a1f3a;
+  --link: var(--accent);
+  --link-hover: #d9b8ff;
+  --code-bg: #1f1f24;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 6px 24px rgba(0, 0, 0, 0.5);
+  --ok: #6dd28a;
+  --warn: #f5b042;
+  --bad: #f06363;
+}
+
+/* === Theme application: map the Bootstrap-3 surfaces onto the tokens ========================== */
+html,
+body {
+  background-color: var(--bg);
+  color: var(--ink);
+}
+a,
+a:link,
+a:visited {
+  color: var(--link);
+}
+a:hover,
+a:focus {
+  color: var(--link-hover);
+}
+
+/* Chrome: the header + fixed-bottom footer navbars. */
+.navbar-default {
+  background-color: var(--bg-sunken);
+  background-image: none;
+  border-color: var(--rule);
+  box-shadow: var(--shadow);
+}
+.navbar-default .navbar-nav > li > a,
+.navbar-default .navbar-brand,
+.navbar-default .navbar-brand a,
+.navbar-default .navbar-text {
+  color: var(--ink-soft);
+}
+.navbar-default .navbar-nav > li > a:hover,
+.navbar-default .navbar-nav > li > a:focus,
+.navbar-default .navbar-nav > .active > a {
+  color: var(--ink);
+  background-color: var(--bg-elev);
+}
+.navbar-default .navbar-toggle {
+  border-color: var(--rule);
+}
+.navbar-default .navbar-toggle .icon-bar {
+  background-color: var(--ink-soft);
+}
+
+/* Tables (reports, registries, job lists). */
+.table {
+  color: var(--ink);
+}
+.table > thead > tr > th {
+  border-bottom-color: var(--rule);
+}
+.table > tbody > tr > td,
+.table > tbody > tr > th,
+.table > thead > tr > th {
+  border-top-color: var(--rule-soft);
+}
+.table-striped > tbody > tr:nth-of-type(odd) {
+  background-color: var(--bg-elev);
+}
+.table-hover > tbody > tr:hover {
+  background-color: var(--accent-soft);
+}
+
+/* Panels / wells / cards. */
+.panel,
+.well {
+  background-color: var(--bg-elev);
+  border-color: var(--rule);
+  color: var(--ink);
+}
+
+/* Forms. */
+.form-control,
+input[type="text"],
+input[type="number"],
+input[type="password"],
+input[type="search"],
+input[type="email"],
+select,
+textarea {
+  background-color: var(--bg-elev);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+}
+.form-control:focus,
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+::placeholder {
+  color: var(--ink-muted);
+}
+
+/* Buttons: Bootstrap `.btn-*`, our `.danger`, and bare (class-less) submit buttons. */
+.btn-default,
+button:not([class]) {
+  background-color: var(--bg-elev);
+  background-image: none;
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 5px 12px;
+}
+.btn-default:hover,
+.btn-default:focus,
+button:not([class]):hover {
+  background-color: var(--bg-sunken);
+  color: var(--ink);
+}
+.btn-primary {
+  background-color: var(--accent);
+  background-image: none;
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover,
+.btn-primary:focus {
+  background-color: var(--link-hover);
+  border-color: var(--link-hover);
+  color: #fff;
+}
+.btn-link {
+  color: var(--link);
+}
+button.danger,
+.btn.danger,
+.danger {
+  background-color: transparent;
+  background-image: none;
+  color: var(--bad);
+  border: 1px solid var(--bad);
+  border-radius: 4px;
+  padding: 4px 10px;
+}
+button.danger:hover,
+.btn.danger:hover {
+  background-color: var(--bad);
+  color: #fff;
+}
+
+/* Code, rules, muted text, status helpers. */
+code,
+pre,
+kbd {
+  background-color: var(--code-bg);
+  color: var(--ink);
+  border-color: var(--rule);
+}
+hr {
+  border-top-color: var(--rule);
+}
+.muted,
+.text-muted {
+  color: var(--ink-muted);
+}
+.status-ok {
+  color: var(--ok);
+}
+.status-warn {
+  color: var(--warn);
+}
+.status-bad {
+  color: var(--bad);
+}
+
+/* Themed admin-dashboard stat cards (replacing per-element inline colors so midnight reads right). */
+.admin-card {
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+  background-color: var(--bg-elev);
+  box-shadow: var(--shadow);
+}
+
+/* The theme toggle in the top nav. */
+#theme-toggle {
+  background: transparent;
+  border: 0;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+#theme-toggle:hover {
+  color: var(--ink);
+}
+
 .quietlink:link {
-  color: #000000;
+  color: var(--ink);
   text-decoration: none;
 }
 .quietlink:visited {
-  color: #000000;
+  color: var(--ink);
   text-decoration: none;
 }
 .link-total {
-  color: #000000;
+  color: var(--ink);
   text-decoration: none;
   display: inline-block;
   pointer-events: none;
@@ -31,7 +269,7 @@ footer {
 
 tr.error,
 td.error {
-  background-color: #ffe9bf;
+  background-color: color-mix(in srgb, var(--warn) 22%, transparent);
 }
 
 .welcome-title {
@@ -94,7 +332,8 @@ td.error {
 #corpus-report th {
   position: sticky;
   top: 0;
-  background: white;
+  background: var(--bg-elev);
+  color: var(--ink);
 }
 
 .table-nonfluid {
@@ -200,11 +439,12 @@ div.bottom-content {
   left: 0;
   padding: 1rem;
   z-index: 1900;
-  background-color: #efefef;
+  background-color: var(--bg-elev);
+  color: var(--ink);
 }
 
 tr.fresh > td {
-  background-color: #5cb85c26;
+  background-color: color-mix(in srgb, var(--ok) 18%, transparent);
 }
 
 .switch {

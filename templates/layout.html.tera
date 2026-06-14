@@ -1,7 +1,19 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="paper">
 
 <head>
+    <script>
+      // No-FOUC theme bootstrap: set data-theme before first paint — the saved choice, else the OS
+      // `prefers-color-scheme`. The nav toggle (public/js/theme.js) flips it; with JS off, the static
+      // `data-theme="paper"` on <html> is the default.
+      (function () {
+        try {
+          var saved = localStorage.getItem('cortex-theme');
+          var theme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'midnight' : 'paper');
+          document.documentElement.setAttribute('data-theme', theme);
+        } catch (e) {}
+      })();
+    </script>
     <meta http-equiv="Content-Type" content="text/html" />
     <meta charset="utf-8" />
     <title> {% if global.title %} {{global.title}} | CorTeX Framework {% endif %}</title>
@@ -11,8 +23,6 @@
     <!-- Bootstrap, the modern mother of all design: -->
     <!-- Latest compiled and minified CSS -->
     <link rel='stylesheet' type='text/css' href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.1/css/bootstrap.min.css">
-    <!-- Optional theme -->
-    <link rel='stylesheet' type='text/css' href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.1/css/bootstrap-theme.min.css">
     <!-- Latest compiled and minified JavaScript -->
     <script src="//maxcdn.bootstrapcdn.com/bootstrap/3.3.1/js/bootstrap.min.js"></script>
     <!-- And some Awesome Font sauce: -->
@@ -88,6 +98,7 @@
                 <ul class="nav navbar-nav navbar-right cortex-admin-nav">
                     <li><a href="/" title="Corpora overview"><i class="fa fa-home"></i>&nbsp;Overview</a></li>
                     <li><a href="/admin" title="Admin dashboard (sign-in required): services, jobs, health, settings, API docs"><i class="fa fa-lock"></i>&nbsp;Admin</a></li>
+                    <li><a href="#" id="theme-toggle" role="button" title="Switch theme (paper / midnight)" aria-label="Switch theme"><i class="fa fa-adjust"></i>&nbsp;Theme</a></li>
                 </ul>
             </nav>
         </div>
@@ -139,6 +150,7 @@
         </nav>
     </footer>
     <script async src='//privacy.kwarc.info/policy.js'></script>
+    <script src='/public/js/theme.js'></script>
 </body>
 
 </html>
