@@ -176,25 +176,20 @@ To stand up your first corpus and service today, see the example drivers in `exa
 (`tex_to_html_import.rs`, `register_service.rs`) — these CLI workflows are being promoted to
 first-class screens + API in the productization sprint (plan Arms 5–6).
 
-## 8. Tuning for large datasets (optional, recommended at arXiv scale)
+## 8. Database tuning for large datasets
 
-As the `log_*` and `tasks` tables grow into the tens of millions of rows, aggressive autovacuum
-thresholds keep report performance from degrading
-([source](https://lob.com/blog/supercharge-your-postgresql-performance/)):
+**Per-table autovacuum is now automatic** — migration `2026-06-14-030000_autovacuum_tuning` applies
+aggressive, size-relative autovacuum/autoanalyze + PostgreSQL-13 insert-based autovacuum to the
+high-churn and append-heavy tables (`tasks`, the five `log_*`, `historical_tasks`), so report
+performance does not degrade as they grow into the tens/hundreds of millions of rows. No manual step.
 
-```sql
--- run as the cortex user against the cortex database
-ALTER TABLE log_infos    SET (autovacuum_enabled = true, autovacuum_vacuum_scale_factor = 0.0002,
-  autovacuum_analyze_scale_factor = 0.0005, autovacuum_analyze_threshold = 50, autovacuum_vacuum_threshold = 50);
-ALTER TABLE log_warnings SET (autovacuum_enabled = true, autovacuum_vacuum_scale_factor = 0.0002,
-  autovacuum_analyze_scale_factor = 0.0005, autovacuum_analyze_threshold = 50, autovacuum_vacuum_threshold = 50);
-ALTER TABLE log_errors   SET (autovacuum_enabled = true, autovacuum_vacuum_scale_factor = 0.0002,
-  autovacuum_analyze_scale_factor = 0.0005, autovacuum_analyze_threshold = 50, autovacuum_vacuum_threshold = 50);
-ALTER TABLE log_fatals   SET (autovacuum_enabled = true, autovacuum_vacuum_scale_factor = 0.0002,
-  autovacuum_analyze_scale_factor = 0.0005, autovacuum_analyze_threshold = 50, autovacuum_vacuum_threshold = 50);
-ALTER TABLE tasks        SET (autovacuum_enabled = true, autovacuum_vacuum_scale_factor = 0.0002,
-  autovacuum_analyze_scale_factor = 0.0005, autovacuum_analyze_threshold = 50, autovacuum_vacuum_threshold = 50);
-```
+**Server-level tuning** (`shared_buffers`, `work_mem`, `effective_cache_size`, …) is sized to the
+host's RAM/cores/storage — the PostgreSQL defaults are drastically undersized for a real CorTeX box.
+This is computed and applied for you (see the `cortex` CLI's DB-tuning step / `docs/DB_TUNING.md`):
+the values follow the standard pgtune algorithm for a mixed OLTP+reporting workload on SSD/NVMe.
+
+**Index maintenance:** indexes on the high-churn tables bloat over time; periodically rebuild them
+online with `REINDEX (CONCURRENTLY) …` (see `docs/DB_TUNING.md` for the maintenance routine).
 
 ## 9. Troubleshooting
 

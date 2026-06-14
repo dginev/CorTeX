@@ -420,3 +420,26 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   deterministic than the parallel harness.
   *Next:* chase the `corpora_test` residual (await its spawned jobs before exit) then drop the wrapper; the
   **live-DB-dump load test is now unblocked** (dump provided) — restore + verify migrations + load test.
+- **L-1 fully eliminated; `connection_at` retries transients (commit f7ad70a):** the last residual
+  (corpora_test) was a transient `connection_at` panic under connection pressure → SIGSEGV-on-unwind; the
+  retry fixes it (0/20). All 7 binaries SIGSEGV-free.
+- **Live-dump load-test prep (5.8 GB restored; migrations validated on real data):** restored
+  `cortex_20260614_023225.dump` into `cortex_load` (5.87M tasks). Migration fidelity = structurally clean
+  (only the autovacuum tuning + the pending widen differ). Applying our pending migrations on the real data:
+  `worker_metadata` has **0 duplicate rows** (185 rows) → the UNIQUE dedupe is a safe no-op; all 6 pending
+  migrations applied in **6:43 wall-clock** (dominated by the `tasks.entry` `varchar(200)→text` widen over
+  5.87M rows), peak RSS only ~100 MB. The `report_summary` matview creates `WITH NO DATA`, so its REFRESH
+  cost is runtime — measuring that build time on the real data is the remaining load-test step.
+- **DB maintenance — autovacuum migration + pgtune plan (owner: best-practice autovacuum/reindex; pgtune
+  this box; bake DB tuning into `cortex init`):** new migration `2026-06-14-030000_autovacuum_tuning` bakes
+  the proven per-table autovacuum (previously a manual INSTALL.md §8 step) into every install — applied
+  *consistently* (the live DB had missed `log_invalids` + `historical_tasks`) and extended with PG13
+  insert-based autovacuum for the append-only `log_*` (avoids wraparound stalls + keeps the visibility map
+  fresh). Applied to `cortex`/`cortex_tester` (7 tables tuned). **Server-level tuning + reindex routine** in
+  new `docs/DB_TUNING.md`: the pgtune algorithm + concrete `ALTER SYSTEM` values for *this* 246 GiB/128-core/
+  NVMe box (`shared_buffers 61GB`, `effective_cache_size 184GB`, `work_mem 64MB`, NVMe `random_page_cost
+  1.1`, etc. — vs the stock 128 MB / 4 MB / 512 MB), the online `REINDEX (CONCURRENTLY)` routine, and the
+  plan to wire a `cortex tune-db` step into init (compute → print → `--apply` superuser). INSTALL.md §8
+  rewritten (autovacuum now automatic; points at DB_TUNING.md).
+  *Next:* apply the pgtune values to this box (after the load-test migration run finishes — needs a restart);
+  implement the `cortex tune-db` step; REFRESH the matview on real data to measure the build time.
