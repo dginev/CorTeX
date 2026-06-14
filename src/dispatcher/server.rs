@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
@@ -13,9 +14,13 @@ use crate::models::Service;
 /// (panic → process abort → external restart) rather than exhaust memory — the dispatcher's
 /// intentional fail-fast design. Backpressure must engage *below* this (asserted in tests).
 pub const PROGRESS_QUEUE_HARD_LIMIT: usize = 10_000;
-/// Hard ceiling on the done (results-pending-persist) queue; same fail-fast rationale as
-/// [`PROGRESS_QUEUE_HARD_LIMIT`], relieved by the finalize thread draining it to the DB.
-pub const DONE_QUEUE_HARD_LIMIT: usize = 10_000;
+/// Capacity of the bounded done (results-pending-persist) channel between the producers (sink +
+/// ventilator reaper) and the finalize thread. A **full** channel *blocks* the producer — that *is*
+/// the backpressure (a slow DB makes the sink wait, which backs up the ZMQ PULL, which backs up the
+/// workers), replacing the old `DONE_QUEUE_HARD_LIMIT` panic-then-OOM backstop with a graceful,
+/// loss-free hand-off (a bounded channel blocks rather than drops). Phase 1 of the dispatcher
+/// rationalization (`docs/DISPATCHER_RATIONALIZATION.md`).
+pub const DONE_QUEUE_CAPACITY: usize = 10_000;
 
 /// Whether the in-flight set is saturated and the ventilator should apply backpressure (stop
 /// leasing new work and mock-reply). Saturation is inclusive: at the threshold we already hold
@@ -34,65 +39,61 @@ pub fn progress_queue_len<S: ::std::hash::BuildHasher>(
     .len()
 }
 
-/// Persists a shared vector of reports to the Task store
-pub fn mark_done_arc(
-  backend: &mut Backend,
-  reports_arc: &Arc<Mutex<Vec<TaskReport>>>,
-) -> Result<bool, String> {
-  // Important: hold the mutex lock for the entirety of the mark_done process,
-  // so that it gets poisoned if the DB runs away and the thread panics
-  // we want the entire dispatcher to panic if this thread panics.
-  let mut mutex_guard = reports_arc
-    .lock()
-    .expect("Failed to obtain Mutex lock in drain_shared_vec");
-
-  let reports: Vec<TaskReport> = (*mutex_guard).drain(..).collect();
-  if !reports.is_empty() {
-    let request_time = chrono::Utc::now();
-    let mut success = false;
-    if let Err(e) = backend.mark_done(&reports) {
-      println!("-- mark_done attempt failed: {e:?}");
-      // DB persist failed, retry
-      let mut retries = 0;
-      while retries < 3 {
-        thread::sleep(Duration::new(2, 0)); // wait 2 seconds before retrying, in case this is latency related
-        retries += 1;
-        match backend.mark_done(&reports) {
-          Ok(_) => {
-            success = true;
-            break;
-          },
-          Err(e) => println!("-- mark_done retry failed: {e:?}"),
-        };
-      }
-    } else {
-      success = true;
-    }
-    if !success {
-      return Err(String::from(
-        "Database ran away during mark_done persisting.",
-      ));
-    }
-    let responded_time = chrono::Utc::now();
-    let request_duration = (responded_time - request_time).num_milliseconds();
-    println!("finalize: reporting tasks to DB took {request_duration}ms.");
-    Ok(true)
-  } else {
-    Ok(false)
+/// Persists a **batch** of finished reports to the Task store, with bounded retry on a transient DB
+/// failure. The finalize thread drains the batch off the bounded done channel and hands it here in
+/// one `mark_done` call (amortizing the round-trip). On exhausted retries it returns `Err`, which
+/// the finalize thread propagates into a panic → the manager aborts the whole dispatcher — the
+/// intended fail-fast on a DB runaway (the channel design replaces the old mutex-poisoning that
+/// achieved the same propagation). A crash here loses nothing: the tasks remain `Queued` and
+/// recover on restart.
+pub fn mark_done_batch(backend: &mut Backend, reports: &[TaskReport]) -> Result<(), String> {
+  if reports.is_empty() {
+    return Ok(());
   }
+  let request_time = chrono::Utc::now();
+  let mut success = false;
+  if let Err(e) = backend.mark_done(reports) {
+    println!("-- mark_done attempt failed: {e:?}");
+    // DB persist failed, retry
+    let mut retries = 0;
+    while retries < 3 {
+      thread::sleep(Duration::new(2, 0)); // wait 2 seconds before retrying, in case this is latency related
+      retries += 1;
+      match backend.mark_done(reports) {
+        Ok(_) => {
+          success = true;
+          break;
+        },
+        Err(e) => println!("-- mark_done retry failed: {e:?}"),
+      };
+    }
+  } else {
+    success = true;
+  }
+  if !success {
+    return Err(String::from(
+      "Database ran away during mark_done persisting.",
+    ));
+  }
+  let request_duration = (chrono::Utc::now() - request_time).num_milliseconds();
+  println!(
+    "finalize: reporting {} tasks to DB took {request_duration}ms.",
+    reports.len()
+  );
+  Ok(())
 }
-/// Adds a task report to a shared report queue
-pub fn push_done_queue(reports_arc: &Arc<Mutex<Vec<TaskReport>>>, report: TaskReport) {
-  let mut reports = reports_arc
-    .lock()
-    .expect("Failed to obtain Mutex lock in push_done_queue");
-  if reports.len() > DONE_QUEUE_HARD_LIMIT {
-    panic!(
-      "Done queue is too large: {:?} tasks. Stop the sink!",
-      reports.len()
+
+/// Hands a finished report off to the finalize thread over the bounded done channel. A full channel
+/// **blocks** the producer (backpressure — see [`DONE_QUEUE_CAPACITY`]). An `Err` means the
+/// finalize receiver is gone (the thread died) — the report can't be persisted, but its task stays
+/// `Queued` and is recovered on restart, and the manager's supervision aborts the dispatcher, so we
+/// only log.
+pub fn send_done(done_tx: &SyncSender<TaskReport>, report: TaskReport) {
+  if done_tx.send(report).is_err() {
+    eprintln!(
+      "-- done channel closed (finalize thread gone); the manager will abort for a restart"
     );
   }
-  reports.push(report)
 }
 
 /// Check for, remove and return any expired tasks from the progress queue
@@ -196,7 +197,7 @@ pub fn classify_expired(expired: TaskProgress) -> ExpiredOutcome {
 pub fn reap_expired_into(
   queues: &mut HashMap<i32, Vec<TaskProgress>>,
   progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>,
-  done_queue_arc: &Arc<Mutex<Vec<TaskReport>>>,
+  done_tx: &SyncSender<TaskReport>,
 ) {
   for expired in timeout_progress_tasks(progress_queue_arc) {
     match classify_expired(expired) {
@@ -204,7 +205,7 @@ pub fn reap_expired_into(
         .entry(task_progress.task.service_id)
         .or_default()
         .push(task_progress),
-      ExpiredOutcome::Fatal(report) => push_done_queue(done_queue_arc, report),
+      ExpiredOutcome::Fatal(report) => send_done(done_tx, report),
     }
   }
 }
@@ -321,9 +322,9 @@ mod tests {
     push_progress_task(&progress, expired_progress(1, 7, 0)); // retriable, service 7
     push_progress_task(&progress, expired_progress(2, 9, MAX_DISPATCH_RETRIES + 1)); // fatal, svc 9
     let mut queues: HashMap<i32, Vec<TaskProgress>> = HashMap::new();
-    let done = Arc::new(Mutex::new(Vec::new()));
+    let (done_tx, done_rx) = std::sync::mpsc::sync_channel::<TaskReport>(10);
 
-    reap_expired_into(&mut queues, &progress, &done);
+    reap_expired_into(&mut queues, &progress, &done_tx);
 
     // The retriable task is requeued to ITS OWN service (7), not some requester's queue, retry++.
     assert_eq!(queues.get(&7).map(Vec::len), Some(1));
@@ -332,9 +333,10 @@ mod tests {
       !queues.contains_key(&9),
       "the exhausted task is not requeued"
     );
-    // The exhausted task is reported Fatal on the done queue.
-    assert_eq!(done.lock().unwrap().len(), 1);
-    assert_eq!(done.lock().unwrap()[0].task.id, 2);
+    // The exhausted task is reported Fatal on the done channel.
+    let reports: Vec<TaskReport> = done_rx.try_iter().collect();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].task.id, 2);
     // The in-flight set is fully drained.
     assert_eq!(progress_queue_len(&progress), 0);
   }

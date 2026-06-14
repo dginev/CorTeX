@@ -5,6 +5,7 @@ use std::io;
 use std::io::Write;
 use std::ops::Deref;
 use std::path::Path;
+use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -38,7 +39,7 @@ impl Sink {
     &self,
     services_arc: &Arc<Mutex<HashMap<String, Option<Service>>>>,
     progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>,
-    done_queue_arc: &Arc<Mutex<Vec<TaskReport>>>,
+    done_tx: &SyncSender<TaskReport>,
     job_limit: Option<usize>,
   ) -> Result<(), Box<dyn Error>> {
     // Ok, let's bind to a port and start broadcasting
@@ -91,7 +92,7 @@ impl Sink {
                   status: TaskStatus::NoProblem,
                   messages: Vec::new(),
                 };
-                server::push_done_queue(done_queue_arc, done_report);
+                server::send_done(done_tx, done_report);
               } else {
                 // Receive the rest of the input in the correct file
                 match Path::new(&task.entry.clone()).parent() {
@@ -138,7 +139,7 @@ impl Sink {
                         }
                         // Then mark the task done. This can be in a new thread later on
                         let done_report = helpers::generate_report(task, recv_path);
-                        server::push_done_queue(done_queue_arc, done_report);
+                        server::send_done(done_tx, done_report);
                       },
                     }
                   },

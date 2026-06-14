@@ -1501,3 +1501,18 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   failed/interrupted job is counted ≥1). Unblocked, frontend-only — no dispatcher/archive overlap.
   Investigated the per-task `cortex.log` scan (`helpers::generate_report`, called by `sink.rs`) — it is
   on the **held dispatcher hot path** AND part of the "say-the-word" archive swap, so left untouched.
+- **Dispatcher rationalization PHASE 1 LANDED (owner: "go on dispatcher phase 1"):** replaced the done
+  queue's `Arc<Mutex<Vec<TaskReport>>>` + `DONE_QUEUE_HARD_LIMIT` panic-backstop with a **bounded
+  `std::sync::mpsc::sync_channel`** (capacity `DONE_QUEUE_CAPACITY`, no new dep — consistent with the
+  D-1 metadata writer). Producers: the sink (2 sites) + the ventilator's reaper (`reap_expired_into`)
+  now `send` cloned senders; the finalize thread owns the single receiver and is **event-driven**
+  (`recv_timeout(1s)` + `try_recv` batch-drain) instead of a 1s poll → lower latency, same batching.
+  A full channel **blocks** the producers (backpressure that backs up PULL→workers) rather than
+  OOM-then-panic; nothing dropped. Preserved invariants: fail-fast on DB runaway (`mark_done_batch` →
+  `Err` → finalize panics → manager aborts, replacing the mutex-poisoning), `job_limit` semantics
+  (counts drains), the manager's supervision, and clean shutdown (channel `Disconnected` when all
+  producers drop). Touched `server.rs` (DONE_QUEUE_CAPACITY + `mark_done_batch` + `send_done`, removed
+  `mark_done_arc`/`push_done_queue`/`DONE_QUEUE_HARD_LIMIT`), `finalize.rs`, `sink.rs`, `ventilator.rs`,
+  `manager.rs`. **Green:** `echo_roundtrip` passes (full round-trip); `bench_pipeline` runs clean at
+  ~8125 tasks/s (1 worker, unsaturated, no hang/panic). Design doc phase 1 marked ✅. Phases 2–4 +
+  transport swap remain.

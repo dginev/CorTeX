@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::Read;
+use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -47,7 +48,7 @@ impl Ventilator {
     &self,
     services_arc: &Arc<Mutex<HashMap<String, Option<Service>>>>,
     progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>,
-    done_queue_arc: &Arc<Mutex<Vec<TaskReport>>>,
+    done_tx: &SyncSender<TaskReport>,
     job_limit: Option<usize>,
   ) -> Result<usize, Box<dyn Error>> {
     // We have a Ventilator-exclusive "queues" stack of tasks to be dispatched, keyed by service id
@@ -107,7 +108,7 @@ impl Ventilator {
       // while saturated (backpressure) — closes the D-6 reaping-coupling residual.
       if request_time.timestamp() - last_reap_sec >= REAP_INTERVAL_SECS {
         last_reap_sec = request_time.timestamp();
-        server::reap_expired_into(&mut queues, progress_queue_arc, done_queue_arc);
+        server::reap_expired_into(&mut queues, progress_queue_arc, done_tx);
       }
       let mut dispatched_task_opt: Option<TaskProgress> = None;
       // Requests for unknown service names will be silently ignored.

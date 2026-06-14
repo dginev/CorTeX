@@ -6,6 +6,7 @@
 // except according to those terms.
 
 use std::collections::HashMap;
+use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread::{self, sleep};
@@ -58,11 +59,18 @@ impl TaskManager {
     // We'll use some local memoization shared between source and sink:
     let services: HashMap<String, Option<Service>> = HashMap::new();
     let progress_queue: HashMap<i64, TaskProgress> = HashMap::new();
-    let done_queue: Vec<TaskReport> = Vec::new();
 
     let services_arc = Arc::new(Mutex::new(services));
     let progress_queue_arc = Arc::new(Mutex::new(progress_queue));
-    let done_queue_arc = Arc::new(Mutex::new(done_queue));
+
+    // Done queue (phase 1): a **bounded** channel instead of `Arc<Mutex<Vec<TaskReport>>>` + a
+    // panic backstop. The sink + ventilator-reaper `send` finished reports (cloning the
+    // sender); the finalize thread owns the single receiver. A full channel blocks the
+    // producers (backpressure), never drops. `done_tx` is kept alive in this scope so the
+    // channel stays open across ventilator restarts — it disconnects (a clean finalize
+    // shutdown) only when this method returns.
+    let (done_tx, done_rx) =
+      sync_channel::<TaskReport>(crate::dispatcher::server::DONE_QUEUE_CAPACITY);
 
     // Single background worker-metadata writer fed by a non-blocking channel: O(1) threads instead
     // of a detached thread per ZMQ event (KNOWN_ISSUES D-1), writing over a pooled connection
@@ -80,15 +88,15 @@ impl TaskManager {
     let source_max_in_flight = self.max_in_flight;
     let source_backend_address = self.backend_address.clone();
 
-    // Next prepare the finalize thread which will persist finished jobs to the DB
+    // Next prepare the finalize thread which will persist finished jobs to the DB. It owns the
+    // single receiver end of the bounded done channel (moved in here).
     let finalize_backend_address = self.backend_address.clone();
-    let finalize_done_queue_arc = done_queue_arc.clone();
     let finalize_thread = thread::spawn(move || {
       Finalize {
         backend_address: finalize_backend_address,
         job_limit,
       }
-      .start(&finalize_done_queue_arc)
+      .start(done_rx)
       .unwrap_or_else(|e| panic!("Failed in finalize thread: {e:?}"));
     });
 
@@ -101,7 +109,7 @@ impl TaskManager {
     let sink_services_arc = services_arc.clone();
     let sink_progress_queue_arc = progress_queue_arc.clone();
 
-    let sink_done_queue_arc = done_queue_arc.clone();
+    let sink_done_tx = done_tx.clone();
     let sink_metadata = metadata.clone();
     let sink_thread = thread::spawn(move || {
       Sink {
@@ -114,7 +122,7 @@ impl TaskManager {
       .start(
         &sink_services_arc,
         &sink_progress_queue_arc,
-        &sink_done_queue_arc,
+        &sink_done_tx,
         job_limit,
       )
       .unwrap_or_else(|e| panic!("Failed in sink thread: {e:?}"));
@@ -126,7 +134,7 @@ impl TaskManager {
     loop {
       let vent_services_arc = services_arc.clone();
       let vent_progress_queue_arc = progress_queue_arc.clone();
-      let vent_done_queue_arc = done_queue_arc.clone();
+      let vent_done_tx = done_tx.clone();
       let vent_backend_address = source_backend_address.clone();
       let vent_metadata = metadata.clone();
       let vent_thread = thread::spawn(move || {
@@ -142,7 +150,7 @@ impl TaskManager {
           .start(
             &vent_services_arc,
             &vent_progress_queue_arc,
-            &vent_done_queue_arc,
+            &vent_done_tx,
             job_limit,
           )
           .unwrap_or_else(|e| panic!("Failed in ventilator thread: {e:?}"));

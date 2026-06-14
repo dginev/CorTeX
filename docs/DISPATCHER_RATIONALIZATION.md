@@ -11,10 +11,16 @@ design and fearless concurrency."*
 - **Phase 0 (de-risking spikes): COMPLETE** — five throwaway spikes in `examples/zmq_*` (dev-deps
   only; the production hot path is untouched) settle feature coverage, throughput, ZMTP interop,
   resilience, and a five-stressor torture test. All green.
-- **Hot-path implementation: not started**, pending the owner's nod on the phased plan below. The
-  "hold for review" that protected the hot path was really protecting the *transport question* — now
-  settled. The robustness invariants the refactor must preserve are catalogued below so review is
-  about *throughput mechanics*, not *whether work can be lost*.
+- **Hot-path implementation: PHASE 1 LANDED** (2026-06-14, owner: "go on dispatcher phase 1"). The
+  done queue is now a **bounded channel** (`std::sync::mpsc::sync_channel`, capacity
+  `DONE_QUEUE_CAPACITY`) instead of `Arc<Mutex<Vec<TaskReport>>>` + the `DONE_QUEUE_HARD_LIMIT` panic:
+  the sink + ventilator-reaper `send` (cloned senders), the finalize thread owns the receiver and is
+  now **event-driven** (`recv_timeout(1s)` + `try_recv` batch-drain) rather than a 1s poll. A full
+  channel **blocks** the producers (backpressure) instead of OOM-then-panic; nothing is dropped. The
+  fail-fast on a DB runaway is preserved (`mark_done_batch` → `Err` → finalize panics → manager
+  aborts), as is the `job_limit` semantics (counts drains). **Green:** `echo_roundtrip` passes;
+  `bench_pipeline` runs clean at ~8 k tasks/s (1 worker, unsaturated, no hang/panic). Phases 2–4 (DB
+  batch tuning, sink fan-out + async I/O, lock-free maps) and the transport swap remain.
 - **Residual gate before flipping production traffic:** a **real multi-host network soak** — the one
   property a loopback harness cannot prove. Not a blocker for starting the build.
 
@@ -236,8 +242,12 @@ Each phase **must preserve every invariant in the robustness table** and is inde
 Phases 1–4 are transport-independent; the transport swap (phase 5) is a separable layer the spikes
 de-risk.
 
-1. **Done queue → bounded channel.** Replace `Arc<Mutex<Vec<TaskReport>>>` + `DONE_QUEUE_HARD_LIMIT`
-   with a bounded `mpsc`. Finalize loops on `recv`; sink `send`s. *Smallest, highest-clarity step.*
+1. **Done queue → bounded channel. ✅ DONE (2026-06-14).** Replaced `Arc<Mutex<Vec<TaskReport>>>` +
+   `DONE_QUEUE_HARD_LIMIT` with a bounded `sync_channel` (`DONE_QUEUE_CAPACITY`). Sink + ventilator-
+   reaper `send` (cloned senders); finalize owns the receiver, event-driven via `recv_timeout(1s)` +
+   `try_recv` batch-drain. Backpressure = a full channel blocks (no drop, no panic). Green on
+   `echo_roundtrip` + `bench_pipeline` (~8 k tasks/s, 1 worker). `server.rs`/`finalize.rs`/`sink.rs`/
+   `ventilator.rs`/`manager.rs`.
 2. **DB finalize batching.** Drain up to N (or a time-window) per flush → one multi-row write + one
    rollup refresh. Knob `finalize_batch`. *Time-bound flush too, so idle periods still persist
    promptly.* Keep `Queued`-until-flush + `on_conflict` (crash-safe + idempotent).
