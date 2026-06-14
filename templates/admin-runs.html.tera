@@ -60,7 +60,7 @@
         <td class="right">{{ run.warning }}</td>
         <td class="right">{{ run.error }}</td>
         <td class="right">{{ run.fatal }}</td>
-        <td class="left">{% if run.completed %}completed{% else %}<strong>open</strong>{% endif %}</td>
+        <td class="left">{% if run.completed %}completed{% else %}<strong>open</strong>{% if run.in_progress > 0 %} &middot; {{ run.in_progress }} in&nbsp;progress{% endif %}{% endif %}</td>
         <td class="left">
           {% set c = run.corpus | urlencode %}{% set s = run.service | urlencode %}
           <a href="/runs/{{ c }}/{{ s }}">runs</a> &middot;

@@ -113,6 +113,21 @@ fn admin_requires_sign_in_then_grants_access() {
     "the dashboard shows at-a-glance status (jobs / sessions / last run)"
   );
 
+  // The historical-runs management screen renders for a signed-in admin (covers admin-runs.html).
+  let response = client.get("/admin/runs").dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Ok,
+    "signed-in /admin/runs renders the run-management screen"
+  );
+  assert!(
+    response
+      .into_string()
+      .expect("html")
+      .contains("Historical runs"),
+    "the historical-runs management screen renders"
+  );
+
   // Sign out ends the session; /admin redirects to sign-in again.
   let response = client.post("/admin/logout").dispatch();
   assert_eq!(response.headers().get_one("Location"), Some("/admin/login"));

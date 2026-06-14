@@ -110,13 +110,15 @@ fn current_run_reports_live_tallies(client: &Client) {
   let mut backend = backend::testdb();
   let corpus = Corpus::find_by_name(CORPUS_NAME, &mut backend.connection).expect("corpus");
   let service = Service::find_by_name(SERVICE_NAME, &mut backend.connection).expect("service");
-  // 3 NoProblem, 1 Warning, 1 Error, 1 Invalid — `total` excludes the invalid (3+1+1 = 5).
+  // 3 NoProblem, 1 Warning, 1 Error, 1 Invalid, 2 still-TODO — `total` excludes the invalid but
+  // *includes* the unfinished TODO (3+1+1+2 = 7); `in_progress` is the TODO+Queued remainder (2).
   let mut n = 0;
   for (status, count) in [
     (TaskStatus::NoProblem, 3),
     (TaskStatus::Warning, 1),
     (TaskStatus::Error, 1),
     (TaskStatus::Invalid, 1),
+    (TaskStatus::TODO, 2),
   ] {
     for _ in 0..count {
       backend
@@ -151,8 +153,25 @@ fn current_run_reports_live_tallies(client: &Client) {
     "live invalid overlaid on the open run"
   );
   assert_eq!(
-    current["total"], 5,
-    "total counts the non-invalid live tasks (3 + 1 + 1)"
+    current["in_progress"], 2,
+    "the open run reports its LIVE remaining (TODO + Queued) work"
+  );
+  assert_eq!(
+    current["total"], 7,
+    "total counts the non-invalid live tasks incl. unfinished TODO (3 + 1 + 1 + 2)"
+  );
+
+  // The human run-history screen renders the same live state (symmetry contract): the open run
+  // shows as ongoing with its live remaining-work count, not a frozen row of zeros.
+  let body = client
+    .get(format!("/runs/{CORPUS_NAME}/{SERVICE_NAME}"))
+    .dispatch()
+    .into_string()
+    .expect("runs page html");
+  assert!(body.contains("ongoing"), "the open run renders as ongoing");
+  assert!(
+    body.contains("in&nbsp;progress"),
+    "the open run surfaces its live in-progress count on the human screen"
   );
 }
 

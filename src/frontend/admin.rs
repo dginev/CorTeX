@@ -58,6 +58,7 @@ pub fn admin_page(
           "owner": run.owner,
           "description": run.description,
           "total": run.total,
+          "in_progress": run.in_progress,
           "open": run.end_time.is_none(),
         })
       });

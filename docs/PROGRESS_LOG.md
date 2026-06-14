@@ -1640,3 +1640,13 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   new `runs_test` contract case (`current_run_reports_live_tallies`: 3 NoProblem / 1 Warning / 1 Error
   / 1 Invalid seeded → the open run reports `no_problem=3 … total=5`, would fail on the old zeros).
   clippy + runs_test green.
+- **Admin UX: surface open runs' live remaining-work + add human-screen render coverage.** Building on
+  the live-tally overlay, the run-management surfaces now show an open run's `in_progress` (the live
+  TODO+Queued remainder = how much work is left) inline where the run is marked open/ongoing — the
+  `/admin/runs` overview (Status cell), the per-service `/runs/<c>/<s>` table (Ended cell), and the
+  dashboard's "last run" card. Shown only when `in_progress > 0` (no near-zero clutter on cleanly
+  completed runs). Added `in_progress` to the dashboard `last_run` JSON. **Closed a test-coverage gap:**
+  the human run screens previously had no render coverage (only their JSON twins were tested) — added
+  signed-in `GET /admin/runs` render assertion (admin_test) + `GET /runs/<c>/<s>` HTML render assertion
+  (runs_test, seeding 2 TODO tasks so the open run reports `in_progress=2`, `total=7`, and the page
+  renders "ongoing · 2 in progress"). clippy + admin_test + runs_test green.

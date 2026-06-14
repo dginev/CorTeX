@@ -27,7 +27,7 @@
     <div style="flex:2; min-width:12rem; border:1px solid #ddd; border-radius:6px; padding:0.6rem 0.9rem;">
       <div class="muted">Last run &nbsp;<a href="/admin/runs">(all runs)</a></div>
       {% if last_run %}
-      <div><strong>{{ last_run.when }}</strong>{% if last_run.open %} <span style="color:#1a7e1a;">· open</span>{% endif %}
+      <div><strong>{{ last_run.when }}</strong>{% if last_run.open %} <span style="color:#1a7e1a;">· open{% if last_run.in_progress > 0 %} · {{ last_run.in_progress }} in&nbsp;progress{% endif %}</span>{% endif %}
         &nbsp;by {{ last_run.owner }}</div>
       <div class="muted" style="font-size:0.9em;">{{ last_run.total }} tasks — {{ last_run.description }}</div>
       {% else %}
