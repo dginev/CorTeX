@@ -228,3 +228,16 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   *Next:* seed the **live DB backup** for migration verification + real-world load testing (owner request,
   2026-06-13 — see KNOWN_ISSUES / a new load-test plan); then continue pooling, the D-6 reaper, or
   service-management UX.
+- **Migration-verification tooling built + validated (unblocks the load-test prep; install fidelity):**
+  the owner's request to "verify where we may be missing migrations" needs a schema-fidelity check between
+  the live backup and what our `migrations/` produce. Built **`scripts/verify_migrations.sh`**: it rebuilds
+  a reference DB by running every migration on an empty DB, then diffs `--schema-only` dumps of the source
+  vs the reference as a locale-stable (`LC_ALL=C`) sorted-set comparison (robust to pg_dump's object-
+  ordering between DBs). It reports two sections — schema the source has that our migrations *don't*
+  reproduce (author a migration), and schema our migrations produce that the source *lacks* (source is
+  behind) — and exits 1 on any drift. **Validated both directions:** against the up-to-date `cortex` DB it
+  reports `OK` (so our 18 migrations reproduce the live-equivalent schema exactly — no drift today), and
+  against a synthetic drifted DB (an extra column) it correctly flags it. Ready to run on a restored
+  `cortex_load` the moment the backup lands. Doc (`docs/LOAD_TESTING.md` Phase 2) points at it.
+  *Next:* (when the backup arrives) restore + run the verifier + load test; meanwhile continue pooling the
+  remaining `Backend::default()` routes, the D-6 reaper, or service-management UX.

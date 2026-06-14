@@ -42,9 +42,13 @@ unique-constraint / varchar-widen work) and may carry **manual drift** the migra
      duplicate rows.
    - `tasks.entry` widen to `varchar(4096)` on a large table (catalog-only — confirm no rewrite).
    - the `report_summary` matview build time over millions of `log_*` rows.
-3. **Fidelity check:** `pg_dump --schema-only cortex_load` vs `pg_dump --schema-only` of a
-   freshly-`cortex init`'d empty DB. A non-empty diff = schema the live DB has but our migrations
-   don't reproduce → author the missing migration(s). This is the productization-blocking output.
+3. **Fidelity check — automated:** run **`scripts/verify_migrations.sh
+   postgres://…/cortex_load`**. It rebuilds a reference DB by running `migrations/` on an empty DB,
+   then diffs the two `--schema-only` dumps (locale-stable, sorted-set comparison robust to
+   pg_dump's object-ordering). Output sections: *"In SOURCE but NOT reproduced by migrations/"* =
+   schema the live DB has that we must author a migration for (the productization-blocking finding);
+   *"… MISSING from SOURCE"* = the live DB is simply behind. Exit 0 = clean, 1 = drift. **Validated
+   against the live-equivalent `cortex` DB (reports OK) and a synthetic drift (correctly flagged).**
 
 ## Phase 3 — Load testing (real volume)
 
@@ -71,7 +75,8 @@ are captured. (No effect on `cortex`/`cortex_tester`.)
 1. **Backup file**: path on the box + format (`pg_dump -Fc`, plain SQL, or `pg_dumpall`) + rough
    size (drives restore time + disk headroom).
 2. **Target DB name** — OK to use `cortex_load`, or prefer another?
-3. **When**: run now, or stage the tooling (a `scripts/restore_and_verify.sh` + the schema-diff)
-   now and execute when you drop the backup in place?
+3. **When**: the schema-diff tooling is **built and validated** (`scripts/verify_migrations.sh`); it
+   runs the moment a restored `cortex_load` exists. Remaining staging: a thin `restore_and_verify.sh`
+   wrapper (restore + invoke the verifier) once the backup format is known.
 4. **Load-test shape**: dispatch-throughput, frontend-read-latency, or both? Echo workers (safe,
    measures the framework) or real `latexml` workers (measures conversion too)?
