@@ -18,6 +18,7 @@
     <li><a href="/jobs"><i class="fa fa-tasks"></i>&nbsp; Background jobs</a> — imports, reruns, reindex/analyze, with health</li>
     <li><a href="/health"><i class="fa fa-heartbeat"></i>&nbsp; System health</a> — DB, migrations, pool, dispatcher, storage + maintenance</li>
     <li><a href="/settings"><i class="fa fa-sliders"></i>&nbsp; Settings</a> — dispatcher &amp; framework configuration</li>
+    <li><a href="/admin/audit"><i class="fa fa-history"></i>&nbsp; Audit log</a> — who did what, when (every admin action, attributed)</li>
     <li><a href="/api/docs"><i class="fa fa-code"></i>&nbsp; Agent API docs</a> — the generated OpenAPI / RapiDoc reference</li>
   </ul>
 

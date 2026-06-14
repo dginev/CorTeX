@@ -12,12 +12,22 @@
 //! spirit of the symmetry contract.
 
 use rocket::fairing::{Fairing, Info, Kind};
-use rocket::http::Method;
-use rocket::{Request, Response};
+use rocket::http::{Method, Status};
+use rocket::response::Redirect;
+use rocket::serde::json::Json;
+use rocket::{Request, Response, Route, State};
+use rocket_dyn_templates::{context, Template};
+use serde::Serialize;
 
 use crate::backend::DbPool;
-use crate::frontend::actor::resolve_actor;
-use crate::models::NewAuditEntry;
+use crate::frontend::actor::{resolve_actor, Actor, AdminSession};
+use crate::models::{AuditEntry, NewAuditEntry};
+
+/// The default and maximum number of audit rows a read returns (the read is most-recent-first, so
+/// the cap bounds the response without hiding recent activity).
+const DEFAULT_AUDIT_LIMIT: i64 = 100;
+/// The hard cap on a single audit read, so a hostile `limit` can't ask for the whole table.
+const MAX_AUDIT_LIMIT: i64 = 500;
 
 /// Records every **mutating** request (`POST`/`PUT`/`PATCH`/`DELETE`) to the `audit_log`: the
 /// resolved [`crate::frontend::actor`] (empty if unauthenticated — itself a useful signal), the
@@ -72,3 +82,98 @@ impl Fairing for AuditFairing {
     });
   }
 }
+
+/// A recorded admin action as exposed over the API/UI — the read view of the `audit_log`. The
+/// timestamp is a formatted string (the model's `at` is a chrono `NaiveDateTime`, not serialized
+/// directly — see `models::audit`).
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct AuditDto {
+  /// Auto-incremented id (monotonic; usable as a cursor).
+  pub id: i64,
+  /// The identity that acted (empty if the action was unauthenticated).
+  pub actor: String,
+  /// The action verb (the matched route name, e.g. `delete_corpus`).
+  pub action: String,
+  /// The resource acted on (the request path).
+  pub target: String,
+  /// The outcome (an HTTP status code).
+  pub outcome: String,
+  /// Optional short context.
+  pub details: String,
+  /// When it happened, formatted `YYYY-MM-DD HH:MM:SS` (server clock).
+  pub at: String,
+}
+
+impl From<AuditEntry> for AuditDto {
+  fn from(entry: AuditEntry) -> AuditDto {
+    AuditDto {
+      id: entry.id,
+      actor: entry.actor,
+      action: entry.action,
+      target: entry.target,
+      outcome: entry.outcome,
+      details: entry.details,
+      at: entry.at.format("%Y-%m-%d %H:%M:%S").to_string(),
+    }
+  }
+}
+
+/// Loads the audit log (most-recent first, optional `actor` filter, `limit` clamped to a sane
+/// bound) as DTOs — the shared core of the agent endpoint and the human screen (symmetry contract).
+fn load_audit(
+  pool: &DbPool,
+  actor: Option<&str>,
+  limit: Option<i64>,
+) -> Result<Vec<AuditDto>, Status> {
+  let limit = limit
+    .unwrap_or(DEFAULT_AUDIT_LIMIT)
+    .clamp(1, MAX_AUDIT_LIMIT);
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let entries =
+    AuditEntry::list(&mut connection, actor, limit).map_err(|_| Status::InternalServerError)?;
+  Ok(entries.into_iter().map(AuditDto::from).collect())
+}
+
+/// The audit log (agent twin of the `/admin/audit` screen): recent admin actions, most-recent
+/// first, optionally filtered to one `actor`, capped at `limit` (default 100, max 500).
+/// **Token-gated** — reading who-did-what is sensitive, so it takes an [`Actor`] like the writes it
+/// records. `503` if the pool is exhausted.
+#[rocket_okapi::openapi(tag = "Management")]
+#[get("/api/audit?<limit>&<actor>")]
+pub fn api_audit(
+  limit: Option<i64>,
+  actor: Option<String>,
+  _caller: Actor,
+  pool: &State<DbPool>,
+) -> Result<Json<Vec<AuditDto>>, Status> {
+  Ok(Json(load_audit(pool, actor.as_deref(), limit)?))
+}
+
+/// The audit-log screen (`GET /admin/audit`): the human view of recent admin actions, **signed-in
+/// admins only** (an unauthenticated browser is redirected to the sign-in page). Optional `?actor=`
+/// and `?limit=` mirror the agent endpoint.
+// `Redirect` is a chunky responder, so the `Err` variant trips `result_large_err` — irrelevant for
+// a one-shot page handler (mirrors `admin::admin_page`).
+#[allow(clippy::result_large_err)]
+#[get("/admin/audit?<limit>&<actor>")]
+pub fn audit_page(
+  limit: Option<i64>,
+  actor: Option<String>,
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+) -> Result<Template, Redirect> {
+  let session = session.ok_or_else(|| Redirect::to("/admin/login"))?;
+  // Best-effort, like the dashboard: a pool/db hiccup renders an empty table, never an error page.
+  let rows = load_audit(pool, actor.as_deref(), limit).unwrap_or_default();
+  let global = serde_json::json!({
+    "title": "Audit log",
+    "description": "Recent CorTeX admin actions and who took them",
+  });
+  Ok(Template::render(
+    "audit",
+    context! { global, owner: session.owner, rows, actor_filter: actor },
+  ))
+}
+
+/// The human audit screen (the agent `api_audit` is mounted via `frontend::apidoc`).
+pub fn routes() -> Vec<Route> { routes![audit_page] }

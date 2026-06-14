@@ -25,6 +25,7 @@ use rocket_okapi::settings::{OpenApiSettings, UrlObject};
 // `okapi_add_operation_for_*` companion (emitted in the handler's own module) — both must be in
 // scope for the `openapi_get_routes_spec!` call below. (Explicit rather than glob, so each module's
 // same-named `routes` fn doesn't collide.)
+use crate::frontend::audit::{api_audit, okapi_add_operation_for_api_audit_};
 use crate::frontend::corpora::{
   activate_service, api_corpora, api_corpus, deactivate_service, delete_corpus, extend_corpus,
   import_corpus, okapi_add_operation_for_activate_service_, okapi_add_operation_for_api_corpora_,
@@ -105,6 +106,7 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
     reindex,
     analyze,
     put_config,
+    api_audit,
   ];
   let spec_json = serde_json::to_string_pretty(&spec).unwrap_or_default();
   rocket

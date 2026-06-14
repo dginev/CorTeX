@@ -61,6 +61,7 @@ pub fn mount_api_with(
     .mount("/", jobs::routes())
     .mount("/", services::routes())
     .mount("/", crate::frontend::admin::routes())
+    .mount("/", crate::frontend::audit::routes())
     .register("/", crate::frontend::catchers::catchers())
     .attach(Template::fairing())
     // Accounting (AAA): record every mutating admin request to the `audit_log` (drift-proof —

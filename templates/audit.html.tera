@@ -1,0 +1,44 @@
+{% extends "layout" %} {% block content %}
+<div class="col-md-1"></div>
+<div class="col-md-10">
+  <div class="center">
+    <h1>Audit log</h1>
+    <p>Signed in as <strong>{{ owner }}</strong> &nbsp;·&nbsp; <a href="/admin">back to dashboard</a></p>
+    <p>Recent admin actions and who took them. An empty actor is an unauthenticated attempt.</p>
+  </div>
+
+  <form method="get" action="/admin/audit" class="center" style="margin-bottom:1rem;">
+    <label>Filter by actor
+      <input type="text" name="actor" value="{{ actor_filter | default(value='') }}" placeholder="(all actors)">
+    </label>
+    <button type="submit">Filter</button>
+    {% if actor_filter %}<a href="/admin/audit" style="margin-left:0.5rem;">clear</a>{% endif %}
+  </form>
+
+  <table id="audit-log" class="table">
+    <thead>
+      <tr>
+        <th class="left">When</th>
+        <th class="left">Actor</th>
+        <th class="left">Action</th>
+        <th class="left">Target</th>
+        <th class="right">Outcome</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td class="left"><span title="#{{ row.id }}">{{ row.at }}</span></td>
+        <td class="left">{% if row.actor %}<a href="/admin/audit?actor={{ row.actor }}">{{ row.actor }}</a>{% else %}<em>—</em>{% endif %}</td>
+        <td class="left">{{ row.action }}</td>
+        <td class="left"><code>{{ row.target }}</code></td>
+        <td class="right">{% if row.outcome is starting_with("2") %}{{ row.outcome }}{% else %}<strong>{{ row.outcome }}</strong>{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="center"><em>No admin actions recorded yet.</em></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="col-md-1"></div>
+{% endblock content %}

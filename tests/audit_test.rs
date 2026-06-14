@@ -98,9 +98,60 @@ fn audit_records_authenticated_mutation() {
   );
 }
 
-// Custom harness (see KNOWN_ISSUES L-1): run the case then `_exit(0)`.
+/// The read view (symmetry contract): the agent `GET /api/audit` (token-gated) and the human
+/// `GET /admin/audit` screen (signed-in only) both expose the rows the fairing recorded above.
+fn audit_read_view() {
+  let client = client();
+
+  // Agent API: token-gated. Without a token → 401.
+  let response = client.get("/api/audit").dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Unauthorized,
+    "reading the audit log requires a token"
+  );
+
+  // With a token → 200 + a JSON array; filtered to username1 it includes the analyze action above.
+  let response = client
+    .get("/api/audit?actor=username1")
+    .header(Header::new("X-Cortex-Token", "token1"))
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok, "token reads the audit log");
+  let body = response.into_string().expect("json body");
+  assert!(
+    body.contains("analyze"),
+    "the audit read surfaces the recorded analyze action, got: {body}"
+  );
+
+  // Human screen: an unauthenticated browser is redirected to the sign-in page.
+  let response = client.get("/admin/audit").dispatch();
+  assert!(
+    (300..400).contains(&response.status().code),
+    "unauthenticated /admin/audit redirects, got {}",
+    response.status()
+  );
+  assert_eq!(response.headers().get_one("Location"), Some("/admin/login"));
+
+  // Signed in (tracked client carries the cookie), the screen renders.
+  client
+    .post("/admin/login")
+    .header(rocket::http::ContentType::Form)
+    .body("token=token1")
+    .dispatch();
+  let response = client.get("/admin/audit").dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Ok,
+    "signed-in /admin/audit renders"
+  );
+  let body = response.into_string().expect("html body");
+  assert!(body.contains("Audit log"), "the audit screen renders");
+}
+
+// Custom harness (see KNOWN_ISSUES L-1): run the cases then `_exit(0)`.
 fn main() {
   audit_records_authenticated_mutation();
+  audit_read_view();
   eprintln!("audit_test: all cases passed");
   unsafe { libc::_exit(0) }
 }
