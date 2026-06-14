@@ -458,4 +458,19 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   output + exact inputs + build-dependency caveats as the source of truth (was my hand-derived approximation;
   corrected `maintenance_work_mem` 8 GB cap is Linux not the Windows-only 2 GB, and `effective_io_concurrency`
   1000 for NVMe not 200). *Next:* decide `cortex tune-db` scope (port the le0pard model + capability-detect,
-  vs print-and-link) — see the open question to the owner.
+  vs print-and-link) — see the open question to the owner. **Decided: guide + link** (don't reimplement
+  the upstream heuristic); baked the exact `cortex init` NOTE text + build-capability hint into DB_TUNING.md,
+  corrected INSTALL.md §8 (operator-guided, not auto-applied).
+- **Browser test-drive readiness verified end-to-end (owner is "curious about test-driving in the
+  browser"):** the compile-time-DB constraint is **gone** — `backend::default_db_address()` now reads
+  `config().database.url` (figment, Arm 1 landed), so the frontend points at any populated DB via
+  `DATABASE_URL`/`CORTEX_DATABASE__URL` with **no rebuild**. Booted the frontend against the restored
+  `cortex_load` dump: landing/`corpus`/`services`/`jobs` all render; **reports over real data are fast**
+  via the `report_summary` matview — `arxmliv` (2.82M `tex_to_html` tasks, 61M `log_warnings`) renders the
+  Warning severity report in **140 ms**, Error in 134 ms, service report 79 ms. Data is rich: 9 corpora,
+  `tex_to_html` results across all severities (1.6M warn / 730k err / 92k fatal / 38k invalid), 273M+
+  log rows, **123 historical runs**, matview populated (322,887 rows). Wrote `docs/TEST_DRIVE.md` (one
+  command + screen map + `/api` parity). **Findings:** (1) symmetry is via *parallel* `/api/*` routes
+  (13 `api_` twins ↔ 13 human report fns — 1:1 parity holds) **not** `Accept`-negotiation on one
+  controller, so HTML/JSON paths can drift — converging them is open follow-up; (2) frontend boots
+  cleanly with no Redis, no `cortex.toml` (defaults), `config.json` still present for auth.

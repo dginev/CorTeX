@@ -28,8 +28,12 @@ read it before non-trivial work. Active work branch: **`productize-2026`**.
 - **`Backend::default()` opens a NEW PgConnection** — every Rocket handler does this per request;
   `WorkerMetadata` spawns a new thread+connection per ZMQ transaction. (Pooling is Arm 3; don't add
   more unpooled connections.)
-- **`DATABASE_URL` is baked at COMPILE TIME** via `dotenv!` (`src/backend.rs` `DEFAULT_DB_ADDRESS`).
-  Changing the DB needs a recompile until Arm 1 lands. The `.env` file is read at build time.
+- **DB URL is now RUNTIME config** (Arm 1 landed): `backend::default_db_address()` reads
+  `config().database.url` from figment (`src/config.rs`) — precedence: defaults → `cortex.toml` →
+  `CORTEX_`-prefixed env (`CORTEX_DATABASE__URL`) → legacy `DATABASE_URL`/`.env` (loaded at runtime via
+  `dotenvy`, highest precedence). **No recompile to switch databases** — e.g. point the frontend at a
+  populated DB with `DATABASE_URL=… cargo run --bin frontend` (see `docs/TEST_DRIVE.md`). The old
+  compile-time `dotenv!`/`DEFAULT_DB_ADDRESS` baking is gone.
 - **Redis has been removed** (Arm 14 #6.2). Frontend reports are now served from the
   `report_summary` materialized-view rollup (`src/backend/rollup.rs`, `reports::task_report`),
   refreshed on the run-completion path (finalize drain + at-least-daily, plus `mark_new_run`); the
