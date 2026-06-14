@@ -1026,3 +1026,24 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   config field I'd added was *shown* on the Settings page but not *editable* — added it to `SettingsForm` +
   the persist patch + the form (`settings_test` now asserts it round-trips to `cortex.toml`). clippy/fmt
   clean.
+- **AAA — Accounting pillar landed; passkeys decided as the next AuthN arm (autonomous-day
+  progress):** the owner asked for 2026-best-practice AAA but with **no external dependency / no
+  per-deployment app registration** — which rules out GitHub OAuth and generic OIDC. Conclusion
+  (`docs/AAA_DESIGN.md` §5–6): keep the existing **token→owner** identity (per-admin tokens give
+  per-person identity) + **uniform authz** (no RBAC) and build the one genuinely-missing pillar, an
+  **auth-agnostic `audit_log`**. Shipped (commits `1db5697` + `3ca0a86`, pushed): migration
+  `…070000_create_audit_log`; `models::audit` (`AuditEntry`/`NewAuditEntry`); a **single
+  `frontend::audit::AuditFairing`** that records *every* mutating request to the log — **drift-proof**
+  (one fairing, not a call per handler, so no write route can forget and new endpoints are audited for
+  free): route name → action, path → target, status → outcome, actor via the new
+  `actor::resolve_actor` (header/query/cookie); best-effort + `spawn_blocking` off the response path so
+  it never fails or stalls the action it observes. Read view per the symmetry contract: Actor-gated
+  `GET /api/audit` (documented in the OpenAPI spec) + the signed-in `/admin/audit` screen, sharing
+  `load_audit`; `tests/audit_test.rs` covers an attributed authenticated write, an unauthenticated
+  attempt recorded with an empty actor + 401, and both read surfaces. Honest gap recorded: a token in a
+  not-signed-in human **form body** is invisible to the fairing → recorded with an empty actor (signed-in
+  humans and all `/api` callers are attributed). **Next AuthN arm (owner-sequenced after the audit_log):
+  passkeys / WebAuthn via the `webauthn-rs` crate** — the "local, no external app, as convenient as
+  OAuth" answer the owner was after; the admin token becomes the bootstrap/break-glass + agent credential
+  and passkeys become the day-to-day human sign-in. The audit_log is auth-agnostic, so it is the correct
+  accounting base under that future model. clippy/fmt clean.
