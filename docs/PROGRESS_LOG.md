@@ -1463,3 +1463,18 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   code (corpora/services/reports/runs/retention/metrics routes, the cortex subcommands). Documents the
   recently-shipped capabilities (R-6 service delete, W-4 job reaper heartbeat-age, sessions/audit/
   passkeys). Pure docs — no code change.
+- **Perf: missing `jobs(created_at)` index added (read-path performance audit; unblocked,
+  non-overlapping):** audited the hot read-path filter/order columns against the existing indexes.
+  Most tables are well-covered (audit_log has `at desc` + `actor`; historical_runs has the composite I
+  added; sessions/webauthn/tasks/logs/worker_metadata/report_summary all indexed). The one real gap:
+  **`jobs` had only `status` + `kind` indexes, but `jobs::list_recent` ALWAYS runs `ORDER BY created_at
+  DESC LIMIT N`** — and it backs the `/jobs` dashboard, `GET /api/jobs`, the fleet-wide pending-check,
+  the report-refresh + reindex debounces, and (since W-4) every stale-job reap. As the jobs table grows
+  one row per import/activation/refresh/reindex, that degraded to Seq Scan + in-memory Sort. Added
+  migration `2026-06-14-130000_jobs_created_at_index` (`CREATE INDEX jobs_created_at_idx ON jobs
+  (created_at DESC)`). Verified: `EXPLAIN` now shows `Index Scan using jobs_created_at_idx` (no
+  scan+sort), and the full diesel up→down→up cycle is reversible (down drops it cleanly). schema.rs
+  unchanged (index-only). The frontend request paths were also re-audited for the prime-directive
+  "no unwrap/expect/panic on request paths" — the 18 frontend unwraps are all safe (constant regex,
+  guarded option-unwraps inside is_some() branches, or doc comments describing already-fixed legacy
+  panics); no request-path panic risk remains.
