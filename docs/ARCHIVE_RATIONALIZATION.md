@@ -24,7 +24,30 @@ The dispatcher sink does **not** use libarchive — it writes the worker's resul
 (dozens of formats) is unused; its one feature we *do* lean on is **content-based auto-detection**
 (`support_filter_all` + `support_format_all`).
 
-## The pure-Rust stack
+## Candidate crates (docs.rs `libarchive`, by downloads)
+
+Surveyed per the owner's pointer. The **2018 crates are dead** (`libarchive` 0.1.1, `libarchive-sys`
+0.0.2, `libarchive3-sys` 0.1.2 — all Jun 2018; our fork descends from these). The **live** options:
+
+| Crate | Kind | Read | Write | Auto-detect | Streaming | C dep | Freshness |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **`compress-tools` 0.16.1** | high-level libarchive wrapper | ✅ | ❌ (extract/list only) | ✅ built-in | ✅ `ArchiveIterator` | libarchive ≥3.2 | Apr 2026, widely used |
+| **`libarchive2` (+ `-sys`) 0.2** | safe libarchive bindings (v3.8.1) | ✅ | ✅ | via libarchive | ✅ | libarchive | days old, 1 maintainer |
+| `akv` / `libarchive_src` 0.1 | safe bindings, bundles libarchive src | ✅ | ? | via libarchive | ? | bundled libarchive | new (May 2026) |
+| `simple-archive` 0.4, `archive-reader` 0.4 | slim libarchive read wrappers | ✅ | ❌ | ✅ | ✅ | libarchive | 2026, niche |
+| **`flate2` + `tar` + `zip`** | pure-Rust per-format | ✅ | ✅ | hand-rolled sniff | ✅ `Read`/`Write` | **none** (miniz_oxide) | first-party, active |
+
+This yields **two real paths** (both retire the personal fork — the owner's core complaint):
+
+- **Path A — pure-Rust** (`flate2` + `tar` + `zip` + a magic-byte sniffer): drops the C dependency
+  entirely (consistent with the libzmq → `zeromq` move).
+- **Path B — a *maintained* libarchive wrapper** (`compress-tools` for read/detect + `zip` for write):
+  keeps libarchive's universality, full speed, and **built-in** content auto-detection, with the
+  smallest migration — but keeps the libarchive C build dep. (`compress-tools` is read-only, so the
+  importer's `.zip` *output* still uses the pure-Rust `zip` crate; `libarchive2` could do both sides in
+  one binding but is days-old and single-maintainer — riskier than `compress-tools` + `zip`.)
+
+## Path A — the pure-Rust stack
 
 | Format | Crate | Notes |
 | --- | --- | --- |
@@ -40,19 +63,28 @@ requires.
 
 ## Evaluation
 
-| Axis | libarchive-sys (today) | flate2 + tar + zip |
-| --- | --- | --- |
-| **Maintenance** | a **personal fork** of a C binding — owner-maintained, bus-factor 1 | first-party / widely-used Rust crates, active |
-| **C dependency** | yes (`libarchive` + the fork's FFI) | **none** by default (miniz_oxide pure-Rust); opt-in `zlib-ng` if wanted |
-| **Formats we need** | all (via universality) | all four — explicitly |
-| **Streaming / bounded memory** | yes (`read_data` loop) | yes (`Read`/`Write`) — and integrates with the chunked-streaming design |
-| **Async** | no | `async-compression` (tokio) available |
-| **Auto-detection** | built-in (`support_*_all`) | magic-byte sniff (below) — small, explicit, controllable |
-| **Efficiency (gzip decompress, hot op)** | 1467 MB/s | **1314 MB/s (0.90×)** — near parity (see below) |
+| Axis | libarchive-sys fork (today) | **A:** flate2 + tar + zip | **B:** compress-tools + zip |
+| --- | --- | --- | --- |
+| **Maintenance** | personal fork, bus-factor 1 | first-party Rust crates, active | `compress-tools` widely used + active; `zip` active |
+| **C dependency** | yes | **none** (miniz_oxide; opt-in `zlib-ng`) | yes (libarchive ≥3.2 — read side) |
+| **Formats** | all (universality) | the four we need — explicitly | all (universality) for read; `zip` writes |
+| **Streaming / bounded memory** | yes | yes (`Read`/`Write`) | yes (`ArchiveIterator`) |
+| **Auto-detection** | built-in | magic-byte sniff (below) — ~10 lines | **built-in** (libarchive) |
+| **Write archives** | yes | `zip` crate (pure Rust) | `zip` crate (compress-tools is read-only) |
+| **Efficiency (gzip decompress)** | 1467 MB/s | 1314 MB/s (0.90×) | full libarchive (≈ 1467 MB/s) |
+| **Migration effort** | — | rewrite unpack with 3 crates + sniffer | swap reads to a high-level API; keep `zip` write |
+| **Retires the personal fork** | — | ✅ | ✅ |
 
-**Key point:** the owner's two concerns — *better maintained* and *escape the C dependency* (the same
-motivation as the libzmq → `zeromq` move) — both point at the pure-Rust stack, which also covers our
-exact formats and streams natively.
+**The decision lever:** *both* paths retire the personal fork (the owner's core complaint). They differ
+on **one axis — keep the libarchive C engine or not:**
+
+- **Path B (`compress-tools` + `zip`)** is the most *directly responsive* to this ask's stated wants —
+  *better-maintained* (✓ via a popular crate), *flexible generality* (✓ libarchive), *high efficiency*
+  (✓ full C speed), *built-in auto-detection* (✓) — at the **least migration risk** (a high-level
+  read/extract API with detection already inside). Cost: keeps the libarchive C build dep.
+- **Path A (pure-Rust)** additionally **drops the C dependency** (consistent with the libzmq →
+  `zeromq` move) and covers our exact formats at ≈ parity speed — at the cost of a hand-rolled sniffer
+  and rewriting the unpack logic across three crates.
 
 ## Efficiency (empirical, `examples/archive_bench.rs`)
 
@@ -76,10 +108,10 @@ write-back ever needs it.
 
 ## Content-based format auto-detection (filenames lie)
 
-arXiv filenames are unreliable (a `.gz` may be plain TeX, or raw PDF) — so detection must be by
-**content (magic bytes)**, replicating libarchive's `support_filter_all`/`support_format_all`. A
-~10-line sniffer covers everything we touch, and crucially **rejects wrong/corrupt content** instead of
-feeding it to a decompressor:
+*(This is **Path A**'s detection; **Path B** inherits the same auto-detection from libarchive for
+free.)* arXiv filenames are unreliable (a `.gz` may be plain TeX, or raw PDF) — so detection must be by
+**content (magic bytes)**. A ~10-line sniffer covers everything we touch, and crucially **rejects
+wrong/corrupt content** instead of feeding it to a decompressor:
 
 | Magic (prefix / offset) | Format |
 | --- | --- |
@@ -100,23 +132,33 @@ means a corrupt/mislabeled entry is logged + skipped, never a panic or garbage d
 
 ## Recommendation
 
-**Adopt `flate2` + `tar` + `zip` (+ a magic-byte sniffer), retiring `libarchive-sys`.** It is better
-maintained, removes a C dependency (complementing the libzmq → `zeromq` move), covers our exact
-formats, streams natively (serving the memory-discipline design), auto-detects by content (handling
-mislabeled/corrupt input), and is within 10 % of libarchive on the hot decompress path (with a
-`zlib-ng` escape hatch for C-speed). The migration surface is **just `importer.rs` + `helpers.rs`** and
-can be done behind the existing importer tests (`tests/importer_test.rs`) plus a new detection test.
+**Retire the personal `libarchive-sys` fork — both paths do that; pick the lever.** My default, given
+*this* ask's stated wants (better-maintained + generality + efficiency + auto-detection, all libarchive
+strengths) and the lowest migration risk:
 
-**Sequencing:** independent of the dispatcher transport work — can land before, after, or in parallel.
-It pairs naturally with hardening the importer unpack path (I-1: replace the `.unwrap()`s on the
-libarchive calls with detect → stream → log-and-skip-on-error), since both touch the same code.
+> **Default: Path B — `compress-tools` (read + built-in auto-detection + streaming) + `zip` (write).**
+> It replaces the fork with a popular, maintained crate, keeps libarchive's universality + full speed +
+> content detection for free, and only the `.zip` *output* moves to the pure-Rust `zip` crate. Smallest,
+> safest change.
+
+> **Choose Path A — `flate2` + `tar` + `zip` + a magic-byte sniffer — if dropping the libarchive C
+> dependency is itself a goal** (consistency with the libzmq → `zeromq` removal). It's ≈ parity on the
+> hot decompress path, covers our exact formats, and streams natively — at the cost of a hand-rolled
+> sniffer and rewriting the unpack logic across three crates.
+
+The decisive question is therefore **just: do we want to be free of the libarchive C dependency?** If
+yes → A. If "a maintained crate is enough, keep the proven engine" → B. Either way the surface is **only
+`importer.rs` + `helpers.rs`**, behind `tests/importer_test.rs` + a new detection test, and **pairs with
+the I-1 importer hardening** (replace the unpack `.unwrap()`s with detect → stream → log-and-skip).
+Independent of the dispatcher transport work — can land before, after, or in parallel.
 
 ## Open questions
 
-1. **Backend: pure-Rust `miniz_oxide` (zero C, ~0.90× libarchive) or `zlib-ng` (C, ~parity-or-faster)?**
-   Recommend starting pure-Rust (the codec isn't the bottleneck — disk is) and switching the feature
-   flag only if a measured import-throughput need appears.
-2. **Detection: hand-rolled magic-byte table (≈6 formats, no dep) or the `infer` crate?** Recommend
-   hand-rolled — smaller, explicit, and we control the reject/fallback policy.
-3. **Combine with the I-1 importer hardening** (unpack `.unwrap()`s → detect/stream/skip) in one pass?
-   Recommend yes — same files, same review.
+1. **The lever — keep the libarchive C engine (Path B, `compress-tools` + `zip`) or go fully pure-Rust
+   (Path A, `flate2` + `tar` + `zip`)?** This is the one real decision; everything else follows from it.
+   My lean: **B** for least risk unless C-dependency removal is a stated goal (then **A**).
+2. *(Path A only)* **Backend `miniz_oxide` (zero C) vs `zlib-ng` (C, faster)?** Start pure-Rust — the
+   codec isn't the bottleneck (disk is); flip the flag only if a measured need appears.
+3. *(Path A only)* **Detection: hand-rolled magic-byte table (no dep, we own the policy) vs the `infer`
+   crate?** Lean hand-rolled. *(Path B gets detection from libarchive for free.)*
+4. **Combine with the I-1 importer hardening** in one pass (same files, same review)? Recommend yes.

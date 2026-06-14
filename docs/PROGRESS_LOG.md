@@ -1403,3 +1403,17 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   crate is an off-the-shelf alternative. Detect-then-dispatch also closes part of I-1 (corrupt entry =
   log+skip, not panic). Migration surface = importer.rs + helpers.rs, behind importer_test; pairs with
   the I-1 unpack hardening. Spikes are example/dev-deps only.
+- **Archive rationalization — expanded with the docs.rs libarchive-crate survey (owner pointer):**
+  surveyed the live libarchive-binding crates. The 2018 crates are dead (our fork descends from them);
+  the live ones are **`compress-tools` 0.16.1** (popular, maintained high-level libarchive wrapper —
+  read + built-in content auto-detection + streaming `ArchiveIterator`, but **read-only**, keeps the C
+  dep) and **`libarchive2` 0.2** (fresh read+write bindings, days-old/single-maintainer). This reframes
+  the decision into **two paths, both of which retire the personal fork** (the owner's core complaint):
+  **Path A** = pure-Rust flate2+tar+zip+sniffer (drops the C dep, hand-rolled detection, ≈parity
+  speed); **Path B** = `compress-tools` (read+detect) + `zip` (write) — keeps libarchive's generality +
+  full speed + built-in auto-detection at the least migration risk, but keeps the C dep. **The single
+  decision lever: do we want to be free of the libarchive C dependency?** Default lean = **Path B**
+  (most directly responsive to this ask's wants — maintained + generality + efficiency + auto-detect —
+  with least risk) unless C-removal is itself a goal (then Path A, consistent with libzmq→zeromq).
+  Updated `docs/ARCHIVE_RATIONALIZATION.md` (candidate-crate table, 3-way evaluation, decision lever,
+  reframed recommendation + open questions). Implementation still awaits the owner's lever call.
