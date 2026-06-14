@@ -6,6 +6,19 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **I-1 (unpack glob) — hardened the complex-import glob compilation against metacharacter paths.**
+  The complex-corpus `unpack` path had three `glob(pattern).unwrap()` sites
+  (`unpack_arxiv_top`/`unpack_extend_arxiv_top`/`unpack_arxiv_months`) that **panicked** when a
+  `corpus.path` contained glob metacharacters (`[`, `{`, …) — an operator-triggerable crash on the
+  Admin-UX complex-import action. The two single-pattern sites now propagate the `PatternError` as a
+  clean import failure (`?`); the multi-pattern site skips + logs an invalid pattern and continues
+  with the valid ones (`filter_map` + `flatten`). Regression:
+  `importer_test::import_does_not_panic_on_glob_metacharacter_path` (a `[`-containing complex corpus
+  path returns `Err`, not a panic); `can_import_complex`/`can_import_simple` confirm the happy path is
+  unchanged. This is the clearly-safe, pre-streaming subset of the I-1 `unpack` residual; the
+  libarchive **streaming** unwraps remain (KNOWN_ISSUES I-1, deferred — a mid-stream skip can leave a
+  partial output). fmt + clippy clean; `importer_test` 4/4.
+
 - **W-1 — scoped + located the concrete CorTeX-side gap (the unbounded sink result write).** W-1 was
   a broad S1 ("no per-task timeout / resource cap"). Reading the sink let me separate what's actually
   covered from the real residual: ① a worker that **hangs/dies** is *covered* — the reaper time-boxes

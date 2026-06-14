@@ -77,7 +77,9 @@ impl Importer {
     let path_str = self.corpus.path.clone();
     println!("-- Starting top-level unpack at {path_str}");
     let tars_path = path_str.to_string() + "/*.tar";
-    for entry in glob(&tars_path).unwrap() {
+    // A corpus path containing glob metacharacters (`[`, `{`, …) makes `glob` return a
+    // `PatternError`; propagate it as a clean import failure rather than `.unwrap()`-panicking.
+    for entry in glob(&tars_path)? {
       match entry {
         Ok(path) => {
           // let base_name = path.file_stem().unwrap().to_str().unwrap();
@@ -133,7 +135,9 @@ impl Importer {
     }
     println!("-- Starting top-level unpack-extend at {path_str}");
     let tars_path = path_str.to_string() + "/*.tar";
-    for entry in glob(&tars_path).unwrap() {
+    // A corpus path containing glob metacharacters (`[`, `{`, …) makes `glob` return a
+    // `PatternError`; propagate it as a clean import failure rather than `.unwrap()`-panicking.
+    for entry in glob(&tars_path)? {
       match entry {
         Ok(path) => {
           // Let's open the tar file and unpack it:
@@ -194,7 +198,19 @@ impl Importer {
         .map(|ap| format!("{path_str}/{ap}/*.gz"))
         .collect()
     };
-    let globs_iter = gzs_paths.iter().flat_map(|path| glob(path).unwrap());
+    // Skip (with a log) any glob pattern that fails to compile — e.g. a corpus path with glob
+    // metacharacters — rather than `.unwrap()`-panicking the whole unpack; the valid patterns still
+    // contribute their entries.
+    let globs_iter = gzs_paths
+      .iter()
+      .filter_map(|path| match glob(path) {
+        Ok(paths) => Some(paths),
+        Err(e) => {
+          eprintln!("-- import: skipping invalid glob pattern {path:?}: {e}");
+          None
+        },
+      })
+      .flatten();
 
     for entry in globs_iter {
       match entry {

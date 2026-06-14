@@ -132,6 +132,41 @@ fn import_skips_unreadable_paths_instead_of_aborting() {
 }
 
 #[test]
+fn import_does_not_panic_on_glob_metacharacter_path() {
+  // A corpus path containing glob metacharacters (here an unterminated `[` character class) makes
+  // the complex-import `glob(path/*.tar)` pattern fail to compile. It must fail *gracefully* (an
+  // Err out of `process`), not `.unwrap()`-panic the import (the I-1 unpack-path hardening).
+  let mut test_backend = backend::testdb();
+  let name = "glob metachar import test";
+  let _ = delete(corpora::table)
+    .filter(corpora::name.eq(name))
+    .execute(&mut test_backend.connection);
+  let new_corpus = NewCorpus {
+    name: name.to_string(),
+    path: "/tmp/cortex_glob_[unclosed/".to_string(),
+    complex: true,
+    description: String::new(),
+  };
+  test_backend.add(&new_corpus).expect("add corpus");
+  let corpus = Corpus::find_by_name(name, &mut test_backend.connection).expect("corpus");
+  let mut importer = Importer {
+    corpus,
+    backend: backend::testdb(),
+    ..Importer::default()
+  };
+
+  let result = importer.process();
+  assert!(
+    result.is_err(),
+    "a glob-metacharacter corpus path fails gracefully (Err), not via panic"
+  );
+
+  let _ = delete(corpora::table)
+    .filter(corpora::name.eq(name))
+    .execute(&mut test_backend.connection);
+}
+
+#[test]
 fn can_import_complex() {
   let mut test_backend = backend::testdb();
   let name = "complex import test";
