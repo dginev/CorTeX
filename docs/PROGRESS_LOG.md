@@ -1047,3 +1047,15 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   OAuth" answer the owner was after; the admin token becomes the bootstrap/break-glass + agent credential
   and passkeys become the day-to-day human sign-in. The audit_log is auth-agnostic, so it is the correct
   accounting base under that future model. clippy/fmt clean.
+- **Admin UI Stage 2 — the management screens are now signed-in-admins-only (autonomous-day
+  progress):** Stage 1 built the `/admin` dashboard + the `AdminSession` cookie; Stage 2 gates the
+  individual admin screens the owner listed (Registered services, Background jobs, System health,
+  Settings) behind that session. Added a small reusable responder `actor::AdminReject` (a redirect
+  **or** a status) + `require_admin(session)` helper: a gated page returns `Result<Template,
+  AdminReject>`, so an unauthenticated browser is **redirected to `/admin/login`** while the screen's
+  genuine `404`/`503` cases still flow through (existing `Status` errors convert via `?`). Gated:
+  `/services`, `/workers/<service>`, `/jobs`, `/jobs/<uuid>`, `/health`, `/settings`. **Deliberately
+  left open:** the `/healthz` JSON liveness probe (for monitoring), the public read views (overview/
+  corpus/report/runs — the `corpora.latexml.rs` surface), and the token-based `/api/*` agent twins
+  (machines get a clean `401`, never an HTML redirect). Updated the four affected tests to sign in
+  first (each now also asserts the unauthenticated redirect, documenting the gate). clippy/fmt clean.

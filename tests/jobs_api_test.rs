@@ -24,6 +24,16 @@ fn client() -> Client {
   .expect("a valid rocket instance")
 }
 
+/// Signs the tracked client in as an admin (the `/jobs` screens require the `AdminSession` cookie;
+/// the `/api/jobs` twins stay token-based and are unaffected).
+fn sign_in(client: &Client) {
+  client
+    .post("/admin/login")
+    .header(ContentType::Form)
+    .body("token=token1")
+    .dispatch();
+}
+
 fn api_job_polls_a_spawned_job() {
   let pool = build_pool(test_db_address(), 4);
   let uuid = jobs::spawn_job(
@@ -70,6 +80,16 @@ fn api_job_is_404_for_unknown_uuid() {
 
 fn job_progress_page_renders_html() {
   let client = client();
+  // Admin-only: unauthenticated → redirect to sign-in; after signing in it renders.
+  let response = client
+    .get("/jobs/00000000-0000-0000-0000-000000000000")
+    .dispatch();
+  assert_eq!(
+    response.headers().get_one("Location"),
+    Some("/admin/login"),
+    "the job progress page requires sign-in"
+  );
+  sign_in(&client);
   let response = client
     .get("/jobs/00000000-0000-0000-0000-000000000000")
     .dispatch();
@@ -103,6 +123,7 @@ fn jobs_list_carries_health_and_duration_and_supports_pending() {
   }
 
   let client = client();
+  sign_in(&client); // the /jobs HTML dashboard below is admin-only
 
   // The fleet-wide list carries the observability metadata (health + duration) for every job.
   let response = client.get("/api/jobs?limit=100").dispatch();
@@ -170,6 +191,7 @@ fn jobs_dashboard_auto_refreshes_while_a_job_is_active() {
   .expect("seed a running job");
 
   let client = client();
+  sign_in(&client); // the /jobs dashboard is admin-only
   let body = client
     .get("/jobs")
     .dispatch()

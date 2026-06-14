@@ -29,7 +29,7 @@ use serde::Serialize;
 
 use crate::backend::DbPool;
 use crate::config::{config, AssetsConfig, CortexConfig, DispatcherConfig};
-use crate::frontend::actor::{owner_for_token, Actor};
+use crate::frontend::actor::{owner_for_token, require_admin, Actor, AdminReject, AdminSession};
 
 /// Managed state: the path where the write path persists the configuration file.
 pub struct ConfigFile(pub PathBuf);
@@ -362,24 +362,34 @@ fn health_report(pool: &DbPool) -> HealthDto {
 pub fn healthz(pool: &State<DbPool>) -> Json<HealthDto> { Json(health_report(pool)) }
 
 /// The human health screen: the HTML twin of `GET /healthz`, sharing [`HealthDto`] — database
-/// reachability, migration currency, and live connection-pool utilization at a glance.
+/// reachability, migration currency, and live connection-pool utilization at a glance. **Signed-in
+/// admins only** (unauthenticated → sign-in page); the `/healthz` JSON twin stays open for liveness
+/// probes.
+#[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
 #[get("/health")]
-pub fn health_page(pool: &State<DbPool>) -> Template {
+pub fn health_page(
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+) -> Result<Template, AdminReject> {
+  require_admin(session)?;
   let health = health_report(pool);
   let global = serde_json::json!({
     "title": format!("System health — {}", health.status),
     "description": "CorTeX system health: database, schema migrations, connection pool.",
   });
-  Template::render("health", context! { global, health })
+  Ok(Template::render("health", context! { global, health }))
 }
 
-/// The Settings page: the human (HTML) twin of `GET /api/config`.
+/// The Settings page: the human (HTML) twin of `GET /api/config`. **Signed-in admins only**
+/// (unauthenticated → sign-in page); the agent twin keeps the token guard.
+#[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
 #[get("/settings")]
-pub fn settings() -> Template {
-  Template::render(
+pub fn settings(session: Option<AdminSession>) -> Result<Template, AdminReject> {
+  require_admin(session)?;
+  Ok(Template::render(
     "settings",
     context! { config: ConfigDto::from_config(config()) },
-  )
+  ))
 }
 
 /// Agent write path: deep-merge a partial config patch, persist it, and return the masked result.

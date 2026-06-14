@@ -16,6 +16,7 @@
 
 use rocket::http::Status;
 use rocket::request::{FromRequest, Outcome, Request};
+use rocket::response::{Redirect, Responder};
 
 use crate::config::config;
 
@@ -132,4 +133,36 @@ impl<'r> FromRequest<'r> for AdminSession {
       None => Outcome::Error((Status::Unauthorized, ())),
     }
   }
+}
+
+/// The rejection of an admin-gated **human screen**: either a redirect to the sign-in page (the
+/// browser isn't signed in) or a genuine error status (e.g. `404` unknown resource, `503` pool
+/// exhausted). This lets a gated page keep its real error cases while sending an unauthenticated
+/// browser to sign in — rather than showing it a bare `401`. The **agent APIs are unaffected**:
+/// they keep the token-based [`Actor`] guard, so a machine still gets a clean `401`, not an HTML
+/// redirect.
+// The Redirect variant is intentionally larger than the Status variant — this enum exists precisely
+// to carry *either*, and it is only ever a short-lived error value, never stored en masse.
+#[allow(clippy::large_enum_variant)]
+#[derive(Responder)]
+pub enum AdminReject {
+  /// Not signed in → the sign-in page (`303`).
+  Redirect(Redirect),
+  /// A genuine error reached *after* authorization (unknown resource, pool exhausted, …).
+  Status(Status),
+}
+
+impl From<Status> for AdminReject {
+  fn from(status: Status) -> Self { AdminReject::Status(status) }
+}
+
+/// Requires a signed-in admin for a **human screen**, else a redirect to the sign-in page. The
+/// first line of every admin-gated page handler (which returns `Result<Template, AdminReject>`): a
+/// handler's existing `Status` errors convert through `?` (see [`AdminReject`]'s `From<Status>`),
+/// so it keeps its real `404`/`503` while unauthenticated browsers are bounced to `/admin/login`.
+// The `Err` (AdminReject) carries a Redirect; large by clippy's heuristic but it is a transient
+// one-shot value on the request path, not a hot return — same rationale as the page handlers.
+#[allow(clippy::result_large_err)]
+pub fn require_admin(session: Option<AdminSession>) -> Result<AdminSession, AdminReject> {
+  session.ok_or_else(|| AdminReject::Redirect(Redirect::to("/admin/login")))
 }

@@ -29,8 +29,29 @@ fn client(config_file: PathBuf) -> Client {
   Client::tracked(rocket).expect("a valid rocket instance")
 }
 
+/// Signs the tracked client in as an admin (the `/settings` screen requires the `AdminSession`
+/// cookie; the `/api/config` + `POST /settings` write paths keep their own token guards).
+fn sign_in(client: &Client) {
+  client
+    .post("/admin/login")
+    .header(ContentType::Form)
+    .body("token=token1")
+    .dispatch();
+}
+
 fn settings_page_renders_masked_html() {
   let client = client(temp_config_path("read"));
+  // Admin-only: unauthenticated → redirect to sign-in.
+  assert_eq!(
+    client
+      .get("/settings")
+      .dispatch()
+      .headers()
+      .get_one("Location"),
+    Some("/admin/login"),
+    "the settings screen requires sign-in"
+  );
+  sign_in(&client);
   let response = client.get("/settings").dispatch();
   assert_eq!(response.status(), Status::Ok);
   assert_eq!(response.content_type(), Some(ContentType::HTML));

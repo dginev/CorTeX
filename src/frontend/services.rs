@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::backend::DbPool;
 use crate::concerns::CortexInsertable;
-use crate::frontend::actor::{owner_for_token, Actor};
+use crate::frontend::actor::{owner_for_token, require_admin, Actor, AdminReject, AdminSession};
 use crate::frontend::helpers::decorate_uri_encodings;
 use crate::frontend::params::TemplateContext;
 use crate::models::{NewService, Service, WorkerMetadata};
@@ -242,9 +242,16 @@ pub fn register_service_human(
 }
 
 /// The service-registry screen (HTML twin of [`api_services`]): the table of registered services,
-/// each linking to its worker-fleet view. `503` if the pool is exhausted.
+/// each linking to its worker-fleet view. **Signed-in admins only** (an unauthenticated browser is
+/// redirected to the sign-in page; the agent twin keeps the token guard). `503` if the pool is
+/// exhausted.
+#[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
 #[get("/services")]
-pub fn services_page(pool: &State<DbPool>) -> Result<Template, Status> {
+pub fn services_page(
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+) -> Result<Template, AdminReject> {
+  require_admin(session)?;
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let services: Vec<HashMap<String, String>> = Service::all(&mut connection)
     .unwrap_or_default()
@@ -281,10 +288,16 @@ pub fn api_service_workers(
 }
 
 /// The worker-fleet screen (HTML twin): the dispatcher's registered workers for a service and their
-/// activity. `404` if the service is unknown. Relocated from `bin/frontend.rs` onto the pooled
-/// library surface.
+/// activity. **Signed-in admins only** (unauthenticated → sign-in page). `404` if the service is
+/// unknown. Relocated from `bin/frontend.rs` onto the pooled library surface.
+#[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
 #[get("/workers/<service>")]
-pub fn worker_report_page(service: &str, pool: &State<DbPool>) -> Result<Template, Status> {
+pub fn worker_report_page(
+  service: &str,
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+) -> Result<Template, AdminReject> {
+  require_admin(session)?;
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let service_record = resolve(service, &mut connection)?;
   let workers: Vec<HashMap<String, String>> = service_record

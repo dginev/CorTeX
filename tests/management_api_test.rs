@@ -25,6 +25,16 @@ fn client() -> Client {
   .expect("a valid rocket instance")
 }
 
+/// Signs the tracked client in as an admin (the `/health` + `/settings` screens require the
+/// `AdminSession` cookie; the `/healthz` + `/api/config` twins keep their own guards).
+fn sign_in(client: &Client) {
+  client
+    .post("/admin/login")
+    .header(ContentType::Form)
+    .body("token=token1")
+    .dispatch();
+}
+
 fn get_api_config_returns_masked_contract() {
   let client = client();
   let response = client.get("/api/config").header(Accept::JSON).dispatch();
@@ -109,7 +119,18 @@ fn healthz_reports_ok_when_db_reachable() {
     "storage unreadable list is reported"
   );
 
-  // The human twin renders the same report as an HTML screen (shared HealthDto).
+  // The human twin renders the same report as an HTML screen (shared HealthDto). Unlike the open
+  // `/healthz` liveness probe above, the `/health` screen is admin-only: unauthenticated → sign-in.
+  assert_eq!(
+    client
+      .get("/health")
+      .dispatch()
+      .headers()
+      .get_one("Location"),
+    Some("/admin/login"),
+    "the health screen requires sign-in (the /healthz probe stays open)"
+  );
+  sign_in(&client);
   let response = client.get("/health").dispatch();
   assert_eq!(response.status(), Status::Ok);
   assert_eq!(response.content_type(), Some(ContentType::HTML));

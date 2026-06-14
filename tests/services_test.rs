@@ -66,10 +66,32 @@ fn seed() -> i32 {
   service.id
 }
 
+/// Signs the tracked client in as an admin (gated screens require the `AdminSession` cookie).
+fn sign_in(client: &Client) {
+  client
+    .post("/admin/login")
+    .header(ContentType::Form)
+    .body("token=token1")
+    .dispatch();
+}
+
 #[test]
 fn worker_fleet_api_and_screen() {
   let service_id = seed();
   let client = client();
+
+  // The /services + /workers screens are admin-only: an unauthenticated browser is bounced to
+  // sign-in. After signing in (tracked client carries the cookie) they render.
+  assert_eq!(
+    client
+      .get("/services")
+      .dispatch()
+      .headers()
+      .get_one("Location"),
+    Some("/admin/login"),
+    "the services screen requires sign-in"
+  );
+  sign_in(&client);
 
   // --- Agent API: the worker with its tallies + computed in-flight backlog --------------------
   let response = client

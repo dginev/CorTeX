@@ -18,6 +18,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::backend::DbPool;
+use crate::frontend::actor::{require_admin, AdminReject, AdminSession};
 use crate::jobs::{self, Job};
 
 /// A job as exposed over the API/UI (uuid handle, no internal serial id).
@@ -136,12 +137,15 @@ pub fn api_jobs(
 
 /// The human jobs dashboard (HTML twin of [`api_jobs`]): recent background jobs with their health,
 /// duration and progress — the at-a-glance observability screen. `?active=true` shows only pending.
+#[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
 #[get("/jobs?<active>&<limit>")]
 pub fn jobs_page(
   active: Option<bool>,
   limit: Option<i64>,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
-) -> Result<Template, Status> {
+) -> Result<Template, AdminReject> {
+  require_admin(session)?;
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let limit = limit.unwrap_or(50).clamp(1, 200);
   let active = active.unwrap_or(false);
@@ -167,8 +171,14 @@ pub fn jobs_page(
 }
 
 /// The human progress page; it polls `GET /api/jobs/<uuid>` (vanilla fetch, no JS framework — D11).
+/// **Signed-in admins only** (unauthenticated → sign-in page); the polled JSON twin is the agent
+/// surface.
+#[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
 #[get("/jobs/<uuid>")]
-pub fn job_page(uuid: &str) -> Template { Template::render("job", context! { uuid }) }
+pub fn job_page(uuid: &str, session: Option<AdminSession>) -> Result<Template, AdminReject> {
+  require_admin(session)?;
+  Ok(Template::render("job", context! { uuid }))
+}
 
 /// The route set for the jobs capability.
 // NB: `api_jobs` + `api_job` are mounted via `frontend::apidoc` (rocket_okapi).
