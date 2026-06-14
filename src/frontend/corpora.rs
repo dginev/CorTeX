@@ -686,6 +686,9 @@ pub fn overview_page(pool: &State<DbPool>) -> Result<Template, Status> {
     "description".to_string(),
     "An analysis framework for corpora of TeX/LaTeX documents - overview page".to_string(),
   );
+  // The landing page carries the full hero wordmark, so the shared nav suppresses its brand logo
+  // here (it shows on every *other* page).
+  global.insert("is_landing".to_string(), "true".to_string());
   let mut context = TemplateContext {
     global,
     corpora: Some(corpora),

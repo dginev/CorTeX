@@ -6,6 +6,18 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **UI — nav brand cleanup + logo theme-switch alignment fix.** Dropped the redundant "Framework"
+  text and the duplicated hidden-xs/hidden-sm brand markup; the nav now shows **just the wordmark
+  logo**, and only on **non-landing** pages (the landing page carries the hero, so `overview_page`
+  sets `global.is_landing` and the shared nav suppresses its brand there). Vertically centered via a
+  flex `.navbar-brand` (height 50px). **Fixed the theme-switch "jump":** the source PNG's two stacked
+  variants weren't content-aligned (the paper wordmark sat ~57px lower than the midnight one, so the
+  top/bottom crop shifted ~4–5px on toggle). Regenerated `public/img/logo.png` so both variants
+  occupy an identical content rectangle (measured each half's bbox, recropped + recentered both into
+  the same 1120×320 frame at the same offset) — both halves now share bbox `(208,96,1326,414)`, so the
+  crop is geometrically identical across themes. Verified live (landing has hero + no nav brand;
+  corpus page has the nav brand + no "Framework").
+
 - **UI — homepage redesign (productized masthead + corpus-card grid).** The overview was noisy
   (oversized serif-purple links, chunky chevrons, and a white-box `<img>` logo on the dark theme).
   Rebuilt `overview.html.tera` as a disciplined `.overview` container: a centered **hero** (the

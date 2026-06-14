@@ -681,6 +681,14 @@ h3 {
    active variant per theme via `background-size: 100% 200%` + position, and blend each variant's
    solid background into the navbar (white melts on the light chrome via `multiply`, black melts on
    the dark chrome via `screen`) so the wordmark sits seamlessly with no logo box. */
+/* Vertically center the brand logo within the 50px Bootstrap navbar. */
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  height: 50px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
 .brand-logo {
   display: inline-block;
   width: 120px;

@@ -49,17 +49,11 @@
                     <span class="icon-bar"></span>
                     <span class="icon-bar"></span>
                 </button>
+                {% if not global.is_landing %}
                 <span class="navbar-brand">
-                    <span class="hidden-xs">
-                        <a href="/" class="quietlink">
-                            <span class="brand-logo" role="img" aria-label="CorTeX"></span> Framework</a>
-                    </span>
-                    <span class="hidden-sm hidden-md hidden-lg">
-                        <a href="/" class="quietlink">
-                            <span class="brand-logo" role="img" aria-label="CorTeX"></span>
-                        </a>
-                    </span>
+                    <a href="/" class="quietlink" aria-label="CorTeX home"><span class="brand-logo" role="img" aria-label="CorTeX"></span></a>
                 </span>
+                {% endif %}
             </div>
             <nav class="collapse navbar-collapse bs-navbar-collapse" role="navigation">
                 {% if global.corpus_name %}
