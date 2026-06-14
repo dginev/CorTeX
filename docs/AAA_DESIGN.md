@@ -119,3 +119,52 @@ actor) **reuses what already exists**:
 
 **So the build is the Accounting pillar (`audit_log`) on top of the existing token→owner identity —
 no new auth dependency, nothing external.** That is what the following increments implement.
+
+## 6. What shipped, and the next AuthN arm (2026-06-14)
+
+### Accounting — **landed**
+The `audit_log` accounting pillar is built and tested:
+- **`audit_log` table** (`migrations/2026-06-14-070000_create_audit_log/`) — `(actor, action, target,
+  outcome, details, at)`, indexed by `at desc` and `actor`. Reversible.
+- **`models::{AuditEntry, NewAuditEntry}`** (`src/models/audit.rs`) — the read model + a builder
+  insert (`record`), documented best-effort (a failed audit write must never fail the action).
+- **`frontend::audit::AuditFairing`** — **one** Rocket response fairing records *every* mutating
+  request (POST/PUT/PATCH/DELETE) automatically: actor (resolved via the new
+  `actor::resolve_actor` — header/query/cookie), the matched **route name** as the action (Rocket
+  sets it to the handler fn, e.g. `delete_corpus`), the **path** as target, the **status** as
+  outcome. Centralizing in a fairing (not a call per handler) makes it **drift-proof** — no write
+  route can forget to log, and new endpoints are audited for free. Best-effort + off the response
+  path (`spawn_blocking`), so it never fails or stalls the action it observes.
+- **`tests/audit_test.rs`** — an authenticated mutation leaves an attributed row; an unauthenticated
+  one is *also* recorded with an empty actor + `401` (a denied write is observable, not silent).
+
+Still TODO for accounting: the **admin-UI view + agent API** to read the log (`/admin/audit` +
+`GET /api/audit`, one shared controller per the symmetry contract). Known gap (honest): a token in a
+POST **form body** by a *not-signed-in* human is invisible to the fairing → recorded with an empty
+actor; signed-in humans (cookie) and all `/api` callers are attributed. Acceptable for v1.
+
+### Authentication — **next arm: passkeys (WebAuthn/FIDO2) via `webauthn-rs`**
+The owner asked for *"a modern local best practice for authentication without external reliance — as
+convenient as OAuth but local"*. The answer is **passkeys**: WebAuthn with the CorTeX server itself
+as the relying party — federated-login convenience (Touch ID / Windows Hello / security key), **no
+IdP, no app registration, nothing external in the auth path**, and the server stores only **public
+keys** (no secret to leak/hash/rotate — strictly more robust than today's plaintext tokens).
+- **Crate:** [`webauthn-rs`](https://github.com/kanidm/webauthn-rs) — the mature, production Rust
+  implementation (powers Kanidm), framework-agnostic core.
+- **How it layers on what exists** (nothing thrown away): the existing **admin token becomes the
+  bootstrap / break-glass / enrollment credential _and_ the agent credential** (agents can't do
+  biometrics → keep `X-Cortex-Token`); **passkeys become the convenient day-to-day human sign-in**.
+  The `audit_log` above is **auth-agnostic** (actor is just a string) → it's the correct accounting
+  base under either model, so building it first was not wasted.
+- **What the arm costs (honest):** HTTPS + a stable relying-party domain (RP ID; `localhost` for
+  dev); a small **vanilla** `navigator.credentials` JS snippet on the sign-in page (not a framework
+  — consistent with the "light JS only" rule); real server-side **sessions** (a session id in a
+  signed/encrypted Rocket *private* cookie → a configured `secret_key`, replacing today's
+  carries-the-token cookie); new `users` + `credentials` tables; first-admin enrollment + lost-device
+  recovery (the admin token is the break-glass).
+- **Runner-up** (documented, not chosen): local password accounts via the `argon2` crate — fully
+  self-contained but *not* "as convenient as OAuth". Magic-links/OIDC are out (reintroduce external
+  reliance).
+
+**Sequencing (owner, 2026-06-14): finish the `audit_log` accounting pillar first (incl. the view),
+then start the passkeys arm.**

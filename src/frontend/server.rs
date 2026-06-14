@@ -62,7 +62,10 @@ pub fn mount_api_with(
     .mount("/", services::routes())
     .mount("/", crate::frontend::admin::routes())
     .register("/", crate::frontend::catchers::catchers())
-    .attach(Template::fairing());
+    .attach(Template::fairing())
+    // Accounting (AAA): record every mutating admin request to the `audit_log` (drift-proof —
+    // covers every write route, present and future). See `frontend::audit`.
+    .attach(crate::frontend::audit::AuditFairing);
   // Mount the generated OpenAPI spec (`/api/openapi.json`), the `#[openapi]`-documented agent
   // routes, and the RapiDoc browser page (`/api/docs`) — built by rocket_okapi from the routes
   // themselves.

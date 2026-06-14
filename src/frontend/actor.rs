@@ -32,6 +32,28 @@ pub fn owner_for_token(token: &str) -> Option<String> {
   config().auth.rerun_tokens.get(token).cloned()
 }
 
+/// Resolves the acting identity from a request the way the guards do, for the audit fairing
+/// (`frontend::audit`): the `X-Cortex-Token` header, then a `?token=` query parameter, then the
+/// [`ADMIN_COOKIE`] browser session. Returns the token's owner, or `None` if no carrier yields a
+/// known token. A token in a POST **form body** (the un-signed-in human forms) is deliberately not
+/// visible here — those actions are recorded with an empty actor unless the submitter is signed in.
+pub fn resolve_actor(request: &Request<'_>) -> Option<String> {
+  let header = request
+    .headers()
+    .get_one("X-Cortex-Token")
+    .map(str::to_string);
+  let query = request.query_value::<String>("token").and_then(Result::ok);
+  let cookie = request
+    .cookies()
+    .get(ADMIN_COOKIE)
+    .map(|cookie| cookie.value().to_string());
+  header
+    .or(query)
+    .or(cookie)
+    .as_deref()
+    .and_then(owner_for_token)
+}
+
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for Actor {
   type Error = ();

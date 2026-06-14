@@ -2,6 +2,7 @@
 pub mod actor;
 pub mod admin;
 pub mod apidoc;
+pub mod audit;
 pub mod catchers;
 pub mod concerns;
 pub mod corpora;

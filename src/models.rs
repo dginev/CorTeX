@@ -27,3 +27,6 @@ pub use historical_runs::*;
 
 mod historical_tasks;
 pub use historical_tasks::*;
+
+mod audit;
+pub use audit::*;
