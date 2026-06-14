@@ -1709,3 +1709,10 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   (every accepted result is a byte-exact echo of its source — the owner's data-integrity ask). Recorded
   the straggler as **KNOWN_ISSUES D-12** (S3, low production relevance for a single ventilator + ~200
   workers + continuous backlog; mechanism to be confirmed). Torture test now 3/3 reliable.
+- **Adopted pericortex 0.2.5 (configurable worker throttle) — OPEN_QUESTIONS #14 resolved.** The
+  worker's empty-queue nap is now `CORTEX_WORKER_THROTTLE_SECS` (default 60, unchanged) instead of a
+  hardcoded 60 s (pericortex `357b29f`); cortex adopts it via `cargo update -p pericortex` (Cargo.lock
+  pin → `357b29f`). echo_roundtrip green against it. This unblocks (a) a fast `BENCH_CHAOS` reaper-
+  recovery gate and (b) the **D-12 root-cause**: set the throttle to ~1 s, re-add the ventilator
+  malformed-flood to the torture test, and confirm whether the 60 s worker nap was the straggler cause
+  (next session — paused for a PC/UPS restart).

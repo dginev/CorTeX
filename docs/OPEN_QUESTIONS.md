@@ -111,11 +111,11 @@ wasn't blocked; each can be revised/refactored on return. Newest first.
     the disk ceiling — I'd sequence 4 after 3 rather than now (doing it now is near-zero measurable gain).
     *Direction:* approve `dashmap`, and confirm 4-after-3 sequencing. (`src/dispatcher/server.rs`.)
 
-14. **`pericortex` worker empty-queue throttle is a hardcoded 60 s (`worker.rs:216`).** On a mock/empty
-    reply the worker `sleep(60s)` before polling again. In production (continuous work) this is fine, but
-    it (a) makes tail-recovery of a reaped task slow once the queue has otherwise emptied — recovery is
-    bounded by `max(lease+reap, 60s)`, not the fast dispatcher reap timing — and (b) makes the new
-    `BENCH_CHAOS` gate take ~60 s. You said `pericortex` is editable (`/home/deyan/git/cortex-peripherals`).
-    *Direction:* make the throttle a config knob (e.g. `CORTEX_WORKER_THROTTLE_SECS`, default 60) — a
-    small, non-breaking, cross-repo change (commit + version bump + Cargo.toml dep update). Deferred this
-    turn to keep scope inside the `cortex` repo. (`cortex-peripherals/src/worker.rs:216`.)
+14. **`pericortex` worker empty-queue throttle — RESOLVED (2026-06-14).** On a mock/empty reply the
+    worker used to `sleep(60s)` (hardcoded), which (a) made tail-recovery of a reaped task slow once the
+    queue emptied (bounded by `max(lease+reap, 60s)`, not the fast dispatcher reap), (b) made the
+    `BENCH_CHAOS` gate take ~60 s, and (c) is the prime suspect behind the D-12 straggler. **Fixed:** the
+    throttle is now read from `CORTEX_WORKER_THROTTLE_SECS` (default 60 — behaviour unchanged), shipped in
+    **pericortex 0.2.5** (`357b29f`) and adopted by cortex via `cargo update -p pericortex`. Non-breaking.
+    *Next:* use a short throttle to **confirm the D-12 mechanism** and, if it holds, re-add a deterministic
+    ventilator malformed-flood gate (+ a fast `BENCH_CHAOS`). (`cortex-peripherals/src/worker.rs`.)
