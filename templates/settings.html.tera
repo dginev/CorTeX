@@ -57,8 +57,10 @@
 
   <fieldset>
     <legend>Auth <span class="muted">(read-only)</span></legend>
-    <p class="muted">Captcha secret set: {{ config.auth.captcha_secret_set }} &middot;
-      Rerun tokens: {{ config.auth.rerun_token_count }}</p>
+    <p class="muted">Admin/rerun tokens: {{ config.auth.rerun_token_count }}
+      <span title="set with: cortex set-admin-token">(set via the CLI)</span></p>
+    <p class="muted">Passkey sign-in (WebAuthn): {{ config.webauthn.enabled }}
+      &middot; relying party: {{ config.webauthn.rp_id }} ({{ config.webauthn.rp_origin }})</p>
   </fieldset>
 </body>
 </html>

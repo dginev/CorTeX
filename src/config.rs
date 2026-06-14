@@ -97,10 +97,37 @@ impl Default for DispatcherConfig {
 /// Frontend authentication / secrets (formerly the hand-edited `config.json`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AuthConfig {
-  /// A captcha secret registered with the captcha provider (currently unused by the codebase).
-  pub captcha_secret: String,
-  /// Password-like tokens mapped to a human-readable owner, gating rerun / save-snapshot actions.
+  /// Password-like tokens mapped to a human-readable owner. The bootstrap / break-glass + agent
+  /// credential that gates every write action and the `/admin` sign-in, alongside passkeys (see
+  /// [`WebauthnConfig`] and `docs/AAA_DESIGN.md`). Set via `cortex set-admin-token`.
   pub rerun_tokens: HashMap<String, String>,
+}
+
+/// Passkey (**WebAuthn**) sign-in settings for the human admin UI (`docs/WEBAUTHN_DESIGN.md`). The
+/// relying party is the CorTeX server itself — no external IdP, no per-deploy app registration. The
+/// admin token (see [`AuthConfig`]) remains the bootstrap / break-glass path; passkeys are the
+/// convenient day-to-day human sign-in once enrolled.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct WebauthnConfig {
+  /// Whether passkey sign-in is offered. Off until a deployment configures `rp_id`/`rp_origin` and
+  /// an admin enrolls a passkey (the token path keeps working regardless).
+  pub enabled: bool,
+  /// The relying-party id: the registrable domain passkeys are scoped to (host only, no scheme or
+  /// port), e.g. `localhost` for development or `corpora.latexml.rs` for the preview deployment.
+  pub rp_id: String,
+  /// The full origin the app is served from (scheme + host + optional port), e.g.
+  /// `http://localhost:8000` or `https://corpora.latexml.rs`. WebAuthn requires a secure context
+  /// (https) in production; `localhost` is exempt for development.
+  pub rp_origin: String,
+}
+impl Default for WebauthnConfig {
+  fn default() -> Self {
+    WebauthnConfig {
+      enabled: false,
+      rp_id: "localhost".to_string(),
+      rp_origin: "http://localhost:8000".to_string(),
+    }
+  }
 }
 
 /// On-disk asset locations, so the binary is not bound to its working directory.
@@ -131,6 +158,8 @@ pub struct CortexConfig {
   pub auth: AuthConfig,
   /// On-disk asset locations.
   pub assets: AssetsConfig,
+  /// Passkey (WebAuthn) sign-in settings.
+  pub webauthn: WebauthnConfig,
 }
 
 impl CortexConfig {
@@ -158,16 +187,15 @@ impl CortexConfig {
     if let Ok(url) = std::env::var("TEST_DATABASE_URL") {
       config.database.test_url = url;
     }
-    // Back-compat: the legacy frontend `config.json` (captcha_secret + rerun_tokens), if present in
-    // the working directory, remains authoritative for the auth section so running deployments keep
-    // working. The new home for these values is the `[auth]` section of `cortex.toml` /
-    // `CORTEX_AUTH__*`.
+    // Back-compat: the legacy frontend `config.json` (rerun_tokens), if present in the working
+    // directory, remains authoritative for the auth section so running deployments keep working.
+    // The new home for these values is the `[auth]` section of `cortex.toml` / `CORTEX_AUTH__*`
+    // (written by `cortex set-admin-token`). The prototype's `captcha_secret` is gone — bot
+    // protection is a deployment concern (an Anubis reverse proxy), not framework code
+    // (docs/DEPLOYMENT.md).
     if let Ok(text) = std::fs::read_to_string("config.json") {
       match serde_json::from_str::<LegacyFrontendConfig>(&text) {
-        Ok(legacy) => {
-          config.auth.captcha_secret = legacy.captcha_secret;
-          config.auth.rerun_tokens = legacy.rerun_tokens;
-        },
+        Ok(legacy) => config.auth.rerun_tokens = legacy.rerun_tokens,
         Err(e) => eprintln!("-- ignoring malformed config.json: {e}"),
       }
     }
@@ -176,25 +204,28 @@ impl CortexConfig {
 }
 
 /// Legacy on-disk shape of the prototype `config.json`, read only for backwards compatibility.
+/// Extra fields (e.g. the removed `captcha_secret`) are ignored.
 #[derive(Deserialize)]
 struct LegacyFrontendConfig {
-  captcha_secret: String,
   rerun_tokens: HashMap<String, String>,
 }
 
-/// Serializes the non-secret configuration sections (everything except `auth`) to TOML. Shared by
-/// `cortex init`'s config scaffold and the Settings write path so the on-disk shape is identical.
+/// Serializes the non-secret configuration sections (everything except the `auth` secrets) to TOML.
+/// Shared by `cortex init`'s config scaffold and the Settings write path so the on-disk shape is
+/// identical.
 pub fn to_persisted_toml(config: &CortexConfig) -> Result<String, toml::ser::Error> {
   #[derive(Serialize)]
   struct Persisted<'a> {
     database: &'a DatabaseConfig,
     dispatcher: &'a DispatcherConfig,
     assets: &'a AssetsConfig,
+    webauthn: &'a WebauthnConfig,
   }
   toml::to_string_pretty(&Persisted {
     database: &config.database,
     dispatcher: &config.dispatcher,
     assets: &config.assets,
+    webauthn: &config.webauthn,
   })
 }
 

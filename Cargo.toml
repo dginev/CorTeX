@@ -63,6 +63,7 @@ lazy_static = "1.0.0"
 # supports Rocket 0.5.1.)
 rocket_okapi = { version = "0.9", features = ["rapidoc"] }
 schemars = "0.8"
+webauthn-rs = "0.5"
 
 # Integration tests that build a Rocket Client over the libpq pool run under a custom harness
 # (their own `main` + `process::exit(0)`) to ELIMINATE the L-1 diesel/libpq/Tokio teardown SIGSEGV

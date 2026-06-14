@@ -30,3 +30,6 @@ pub use historical_tasks::*;
 
 mod audit;
 pub use audit::*;
+
+mod webauthn;
+pub use webauthn::*;

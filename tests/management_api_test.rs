@@ -56,16 +56,19 @@ fn get_api_config_returns_masked_contract() {
   assert!(body["assets"]["template_dir"].is_string());
   assert!(body["assets"]["public_dir"].is_string());
   assert!(body["auth"]["rerun_token_count"].is_number());
-  assert!(body["auth"]["captcha_secret_set"].is_boolean());
+  // The removed captcha secret is gone from the contract (bot protection is a deployment concern).
+  assert!(
+    body["auth"].get("captcha_secret_set").is_none(),
+    "the removed captcha config is no longer exposed"
+  );
+  // Passkey (WebAuthn) settings are surfaced (non-secret): enabled flag + relying party.
+  assert!(body["webauthn"]["enabled"].is_boolean());
+  assert!(body["webauthn"]["rp_id"].is_string());
 
   // Security contract: secrets are never exposed.
   assert!(
     body["auth"]["rerun_tokens"].is_null(),
     "raw rerun_tokens must not be exposed"
-  );
-  assert!(
-    body["auth"]["captcha_secret"].is_null(),
-    "captcha_secret must not be exposed"
   );
   let db_url = body["database"]["url"].as_str().expect("db url string");
   assert!(

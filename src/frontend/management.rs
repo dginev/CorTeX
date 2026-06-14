@@ -44,9 +44,7 @@ pub struct DatabaseDto {
 /// Masked view of the auth settings — secrets are summarized, never exposed.
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct AuthDto {
-  /// Whether a captcha secret is configured.
-  pub captcha_secret_set: bool,
-  /// How many rerun tokens are configured.
+  /// How many rerun/admin tokens are configured.
   pub rerun_token_count: usize,
 }
 
@@ -61,6 +59,8 @@ pub struct ConfigDto {
   pub assets: AssetsConfig,
   /// Auth settings (secrets masked).
   pub auth: AuthDto,
+  /// Passkey (WebAuthn) sign-in settings (non-secret: enabled flag + relying-party id/origin).
+  pub webauthn: crate::config::WebauthnConfig,
 }
 
 impl ConfigDto {
@@ -73,9 +73,9 @@ impl ConfigDto {
       dispatcher: cfg.dispatcher.clone(),
       assets: cfg.assets.clone(),
       auth: AuthDto {
-        captcha_secret_set: !cfg.auth.captcha_secret.is_empty(),
         rerun_token_count: cfg.auth.rerun_tokens.len(),
       },
+      webauthn: cfg.webauthn.clone(),
     }
   }
 }
