@@ -1106,3 +1106,17 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   full biometric round-trip needs a real/virtual authenticator (manual). Also (owner request): removed
   the redundant "Admin dashboard — sign in to manage…" link from the homepage (it's in the top nav);
   added a "Your passkeys" link to the /admin dashboard. clippy -D warnings + all auth tests green.
+- **WebAuthn arm — passkey SIGN-IN ceremony (autonomous-day progress): passkey login is now
+  end-to-end.** `POST /admin/passkeys/auth/begin?owner=` seeds a `start_passkey_authentication`
+  challenge from that owner's enrolled passkeys (`404` if none — username-enumeration caveat accepted
+  for a small admin set behind Anubis); `…/auth/finish` runs `finish_passkey_authentication`, and on a
+  verified assertion advances the matching credential's signature counter (`Passkey::update_credential`
+  → `update_after_use`/`touch`, best-effort), then **opens `Session::open(owner, "passkey")` and sets
+  the admin cookie** — so passkey login flows through the *same* unified session model as token login.
+  Added a "Sign in with a passkey" affordance to `/admin/login` (rendered only when enabled; the page
+  handler now threads `passkeys_enabled`) + `signInWithPasskey` in `public/js/webauthn.js`
+  (`navigator.credentials.get()` + assertion serialization → `/admin`). `tests/webauthn_test.rs` adds
+  the sign-in boundaries (no-passkeys `404`, no-ceremony `400`, login page renders the affordance). The
+  biometric round-trip needs a real/virtual authenticator (manual). Passkeys arm: foundation →
+  sessions → enrollment → **sign-in** all landed; remaining is the deferred confirmation-dialog
+  refactor. clippy -D warnings + all auth tests green.

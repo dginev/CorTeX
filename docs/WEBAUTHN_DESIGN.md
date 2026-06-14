@@ -120,10 +120,18 @@ in front of the deployment — a **one-time deployment measure for the `corpora.
   (base64url ↔ ArrayBuffer + `navigator.credentials.create()`). Linked from `/admin`.
   `tests/webauthn_test.rs` asserts the boundaries (gating + `begin` returns a challenge when enabled);
   the biometric round-trip needs a real/virtual authenticator (manual).
-- ⏭️ **Next**: the **sign-in** ceremony — `POST /admin/passkeys/auth/{begin,finish}` (owner-first),
-  a "Sign in with a passkey" affordance on `/admin/login`, the auth JS, and on success
-  `Session::open(owner, "passkey")` + set the admin cookie + `update_after_use`/`touch` the credential.
-- ⏭️ **Then** (separately tracked): the deferred confirmation-dialog refactor (session cookie instead
-  of token entry; anonymous write attempts → `/admin/login`).
+- ✅ **Sign-in**: `POST /admin/passkeys/auth/{begin,finish}` (owner-first: `?owner=` seeds the
+  challenge from that owner's passkeys; `404` if none). On a verified assertion, finish advances the
+  matching credential's signature counter (clone detection), opens `Session::open(owner, "passkey")`,
+  and sets the admin cookie — passkey login now flows through the **same** session model as token
+  login. A "Sign in with a passkey" affordance on `/admin/login` (shown only when enabled) +
+  `signInWithPasskey` in `public/js/webauthn.js`. `tests/webauthn_test.rs` covers the boundaries
+  (no-passkeys `404`, no-ceremony `400`, the login page renders the affordance). **Passkey sign-in is
+  now end-to-end** server-side; the biometric round-trip needs a real/virtual authenticator (manual).
+  Username-enumeration caveat: `auth/begin` reveals whether an owner has passkeys — acceptable for a
+  small admin set behind Anubis; documented.
+- ⏭️ **Next** (separately tracked, [`AAA_DESIGN.md`](AAA_DESIGN.md)): the deferred confirmation-dialog
+  refactor — the human write/confirm forms (rerun, savetasks, the `*_human` twins) move from
+  token-entry to the session cookie, and anonymous write attempts redirect to `/admin/login`.
 - ⏭️ **Then** (separately tracked, [`AAA_DESIGN.md`](AAA_DESIGN.md)): switch the human write/confirm
   dialogs from token-entry to the session cookie + redirect anonymous write attempts to `/admin/login`.

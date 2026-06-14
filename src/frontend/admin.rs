@@ -48,17 +48,20 @@ pub fn admin_page(
   ))
 }
 
-/// The sign-in page (`GET /admin/login`): a form to enter a rerun token. `?bad=true` flags a failed
-/// previous attempt.
+/// The sign-in page (`GET /admin/login`): a form to enter an admin token, plus a "sign in with a
+/// passkey" affordance when passkeys are enabled. `?bad=true` flags a failed previous attempt.
 #[get("/admin/login?<bad>")]
-pub fn admin_login_page(bad: Option<bool>) -> Template {
+pub fn admin_login_page(
+  bad: Option<bool>,
+  webauthn: &State<Option<crate::frontend::webauthn::WebauthnState>>,
+) -> Template {
   let global = serde_json::json!({
     "title": "Admin sign-in",
     "description": "Sign in to the CorTeX admin dashboard",
   });
   Template::render(
     "admin-login",
-    context! { global, bad: bad.unwrap_or(false) },
+    context! { global, bad: bad.unwrap_or(false), passkeys_enabled: webauthn.inner().is_some() },
   )
 }
 

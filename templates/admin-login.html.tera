@@ -11,8 +11,19 @@
       <p><input type="password" name="token" placeholder="admin token" required autofocus></p>
       <button type="submit">Sign in</button>
     </form>
+
+    {% if passkeys_enabled %}
+    <div style="margin-top:1.5rem; border-top:1px solid #ddd; padding-top:1rem;">
+      <p>or sign in with a passkey:</p>
+      <p><input type="text" id="passkey-owner" placeholder="your name" autocomplete="username webauthn"></p>
+      <button type="button" id="signin-passkey"><i class="fa fa-key"></i>&nbsp; Sign in with a passkey</button>
+      <p id="passkey-error" style="color:#a00; margin-top:0.5rem;"></p>
+    </div>
+    {% endif %}
+
     <p style="margin-top:1.5rem;"><a href="/">&larr; back to the public overview</a></p>
   </div>
 </div>
 <div class="col-md-4"></div>
+{% if passkeys_enabled %}<script src="/public/js/webauthn.js"></script>{% endif %}
 {% endblock content %}

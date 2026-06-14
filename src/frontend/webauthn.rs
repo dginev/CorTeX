@@ -33,8 +33,8 @@ use webauthn_rs::prelude::*;
 
 use crate::backend::DbPool;
 use crate::config::WebauthnConfig;
-use crate::frontend::actor::{require_admin, AdminReject, AdminSession};
-use crate::models::{WebauthnCredential, WebauthnUser};
+use crate::frontend::actor::{require_admin, AdminReject, AdminSession, ADMIN_COOKIE};
+use crate::models::{Session, WebauthnCredential, WebauthnUser};
 
 /// The cookie carrying the in-flight ceremony id between a `…/begin` and its `…/finish` (scoped to
 /// the passkey paths, HttpOnly, SameSite=Strict — it is never a credential, just a lookup key).
@@ -90,6 +90,14 @@ pub fn build_state(config: &WebauthnConfig) -> Option<WebauthnState> {
 pub enum Ceremony {
   /// A passkey **enrollment** in progress (the owner is known from the signed-in session).
   Register(PasskeyRegistration),
+  /// A passkey **sign-in** in progress; carries the claimed `owner` (verified by the assertion at
+  /// finish) so a successful authentication opens a session for the right identity.
+  Authenticate {
+    /// The owner the sign-in is for (its enrolled passkeys seed the challenge).
+    owner: String,
+    /// The in-progress authentication state, paired to the issued challenge.
+    state: PasskeyAuthentication,
+  },
 }
 
 /// A short-lived, process-local store of in-flight ceremonies. Ceremonies live seconds, so an
@@ -229,6 +237,108 @@ pub fn register_finish(
   Ok(Status::Created)
 }
 
+/// **Sign in, step 1** (`POST /admin/passkeys/auth/begin?owner=`): begins a passkey authentication
+/// for the named owner, seeded by that owner's enrolled passkeys. Returns the WebAuthn
+/// `RequestChallengeResponse` for `navigator.credentials.get()` and stashes the ceremony state.
+/// `404` if the owner has no enrolled passkeys (admin identities are not treated as secret — the
+/// public deployment sits behind an Anubis proxy and the admin set is small), `503` if disabled.
+#[post("/admin/passkeys/auth/begin?<owner>")]
+pub fn auth_begin(
+  owner: String,
+  webauthn: &State<Option<WebauthnState>>,
+  store: &State<CeremonyStore>,
+  cookies: &CookieJar<'_>,
+  pool: &State<DbPool>,
+) -> Result<Json<RequestChallengeResponse>, Status> {
+  let webauthn = relying_party(webauthn)?;
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let passkeys: Vec<Passkey> = WebauthnCredential::for_owner(&mut connection, &owner)
+    .unwrap_or_default()
+    .iter()
+    .filter_map(|row| serde_json::from_value::<Passkey>(row.credential.clone()).ok())
+    .collect();
+  if passkeys.is_empty() {
+    return Err(Status::NotFound);
+  }
+  let (challenge, state) = webauthn
+    .start_passkey_authentication(&passkeys)
+    .map_err(|error| {
+      eprintln!("-- webauthn: start_passkey_authentication failed: {error}");
+      Status::InternalServerError
+    })?;
+  let ceremony_id = store.put(Ceremony::Authenticate { owner, state });
+  cookies.add(
+    Cookie::build((CEREMONY_COOKIE, ceremony_id))
+      .http_only(true)
+      .same_site(SameSite::Strict)
+      .path("/admin/passkeys")
+      .build(),
+  );
+  Ok(Json(challenge))
+}
+
+/// **Sign in, step 2** (`POST /admin/passkeys/auth/finish`): completes the assertion. On success
+/// **opens a `passkey` session** (the unified session model), sets the [`ADMIN_COOKIE`], advances
+/// the matching credential's signature counter (clone detection), and returns `200` — the browser
+/// then navigates to `/admin`. `400` on a missing/expired ceremony, `401` if the assertion doesn't
+/// verify.
+#[post("/admin/passkeys/auth/finish", data = "<credential>")]
+pub fn auth_finish(
+  credential: Json<PublicKeyCredential>,
+  webauthn: &State<Option<WebauthnState>>,
+  store: &State<CeremonyStore>,
+  cookies: &CookieJar<'_>,
+  pool: &State<DbPool>,
+) -> Result<Status, Status> {
+  let webauthn = relying_party(webauthn)?;
+  let ceremony_id = cookies
+    .get(CEREMONY_COOKIE)
+    .map(|cookie| cookie.value().to_string())
+    .ok_or(Status::BadRequest)?;
+  cookies.remove(
+    Cookie::build(CEREMONY_COOKIE)
+      .path("/admin/passkeys")
+      .build(),
+  );
+  let (owner, state) = match store.take(&ceremony_id) {
+    Some(Ceremony::Authenticate { owner, state }) => (owner, state),
+    _ => return Err(Status::BadRequest),
+  };
+  let result = webauthn
+    .finish_passkey_authentication(&credential, &state)
+    .map_err(|_| Status::Unauthorized)?;
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  // Advance the matching credential's signature counter (best-effort: failure to persist the
+  // counter must not fail an otherwise-valid sign-in).
+  if let Ok(rows) = WebauthnCredential::for_owner(&mut connection, &owner) {
+    for row in rows {
+      if let Ok(mut passkey) = serde_json::from_value::<Passkey>(row.credential.clone()) {
+        match passkey.update_credential(&result) {
+          Some(true) => {
+            if let Ok(value) = serde_json::to_value(&passkey) {
+              let _ = WebauthnCredential::update_after_use(&mut connection, row.id, &value);
+            }
+          },
+          Some(false) => {
+            let _ = WebauthnCredential::touch(&mut connection, row.id);
+          },
+          None => {},
+        }
+      }
+    }
+  }
+  let session_id =
+    Session::open(&mut connection, &owner, "passkey").map_err(|_| Status::InternalServerError)?;
+  cookies.add(
+    Cookie::build((ADMIN_COOKIE, session_id))
+      .http_only(true)
+      .same_site(SameSite::Lax)
+      .path("/")
+      .build(),
+  );
+  Ok(Status::Ok)
+}
+
 /// A passkey as shown on the management page.
 #[derive(Debug, Serialize)]
 pub struct PasskeyDto {
@@ -300,6 +410,8 @@ pub fn routes() -> Vec<Route> {
     register_begin,
     register_finish,
     passkey_delete,
+    auth_begin,
+    auth_finish,
   ]
 }
 

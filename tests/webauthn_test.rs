@@ -92,9 +92,46 @@ fn enrollment_ceremony_boundaries() {
   );
 }
 
-// Custom harness (see KNOWN_ISSUES L-1): run the case then `_exit(0)`.
+fn signin_ceremony_boundaries() {
+  let client = client();
+
+  // Passkey sign-in begins for a named owner. With no enrolled passkeys it 404s (the testable
+  // boundary — a successful assertion needs a real authenticator). It is a public endpoint.
+  let response = client
+    .post("/admin/passkeys/auth/begin?owner=username1")
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::NotFound,
+    "auth begin 404s when the owner has no enrolled passkeys"
+  );
+
+  // finish without a ceremony cookie is a 400 (a valid-shaped but contextless assertion).
+  let response = client
+    .post("/admin/passkeys/auth/finish")
+    .header(ContentType::JSON)
+    .body(r#"{"id":"x","rawId":"eA","type":"public-key","response":{"authenticatorData":"eA","clientDataJSON":"eA","signature":"eA"}}"#)
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::BadRequest,
+    "auth finish without an in-flight ceremony is a 400"
+  );
+
+  // The sign-in page offers the passkey affordance when passkeys are enabled.
+  let response = client.get("/admin/login").dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  let body = response.into_string().expect("html body");
+  assert!(
+    body.contains("Sign in with a passkey") && body.contains("signin-passkey"),
+    "the login page offers passkey sign-in when enabled"
+  );
+}
+
+// Custom harness (see KNOWN_ISSUES L-1): run the cases then `_exit(0)`.
 fn main() {
   enrollment_ceremony_boundaries();
+  signin_ceremony_boundaries();
   eprintln!("webauthn_test: all cases passed");
   unsafe { libc::_exit(0) }
 }
