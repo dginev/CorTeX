@@ -522,3 +522,18 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   (🔴):** the **rerun request blocks ~2 min** on this refresh synchronously (`serve_rerun` → `mark_new_run`
   → inline refresh on a Rocket worker) — CONCURRENTLY doesn't shorten *that* request; the fix is to route
   the post-rerun refresh through `jobs::spawn_job` (off the request path, observable) — next increment.
+- **Forced report refresh (async, observable) + configurable automatic freshness (owner: agents/admins
+  want to force a report update; multi-minute → async calls + UI):** clarified model — the matview is
+  **global** (one refresh updates the data behind *every* report page; no per-page refresh), so freshness
+  = an automatic regular rebuild + an on-demand forced rebuild, both non-blocking (`CONCURRENTLY`).
+  Built: (1) `jobs::spawn_report_refresh(pool, actor)` — **debounced** (returns an in-flight refresh
+  job's uuid rather than piling on), runs the rebuild off the request path. (2) **Agent API**
+  `POST /api/reports/refresh` (Actor/token-gated) → `202` + `{job, poll, actor}`; poll `/api/jobs/<uuid>`
+  for health. (3) **Human UI**: a "Refresh reports now" button on `/jobs` → `POST /reports/refresh`
+  (form token) → 303 redirect to `/jobs` to watch the job (async, no JS). (4) **Tier-1 automatic
+  guarantee made configurable**: `dispatcher.report_refresh_interval_seconds` (default tightened 24h→**1h**,
+  cheap now that refresh is non-blocking); `finalize.rs` reads it. Verified end-to-end on the live dump
+  (202 + job handle, debounce returns same uuid, 401 without token, human 303→/jobs, job shows `running`
+  in `/api/jobs`). Regression: `reports_api_test` asserts 401 + 202-with-job-handle + actor attribution.
+  New `docs/REPORT_FRESHNESS.md` documents the two-tier model. R-5 (rerun inline-refresh) updated: the
+  helper now exists, so the fix is just wiring it — deferred to keep this tick additive.

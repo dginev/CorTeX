@@ -9,8 +9,16 @@ use std::time::{Duration, Instant};
 
 /// Upper bound on how stale the `report_summary` rollup may get while a run is in flight. A single
 /// conversion run can take weeks, so an event-only refresh (on drain) is not enough — we also
-/// recompute the rollup at least this often during continuous processing.
-const REPORT_REFRESH_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+/// recompute the rollup at least this often during continuous processing. Runtime-configurable via
+/// `config().dispatcher.report_refresh_interval_seconds` (the automatic freshness guarantee;
+/// default 1h, cheap now that the refresh is non-blocking — `CONCURRENTLY`).
+fn report_refresh_interval() -> Duration {
+  Duration::from_secs(
+    crate::config::config()
+      .dispatcher
+      .report_refresh_interval_seconds,
+  )
+}
 
 /// Specifies the binding and operation parameters for a thread that saves finalized tasks to the DB
 pub struct Finalize {
@@ -39,7 +47,7 @@ impl Finalize {
           println!("-- finalize thread persisted {jobs_count} jobs.");
         }
         // Long runs never drain, so bound report staleness with a periodic refresh.
-        if last_report_refresh.elapsed() >= REPORT_REFRESH_INTERVAL {
+        if last_report_refresh.elapsed() >= report_refresh_interval() {
           refresh_reports(&mut backend);
           reports_dirty = false;
           last_report_refresh = Instant::now();

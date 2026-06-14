@@ -73,6 +73,13 @@ pub struct DispatcherConfig {
   /// leave recovery headroom. In steady state the in-flight set is ~the worker count (~200), so
   /// the default leaves a wide margin.
   pub max_in_flight: usize,
+  /// How often (seconds) the finalize thread refreshes the `report_summary` rollup *regardless of
+  /// drain*, bounding report staleness while a long run is in flight (a conversion run can take
+  /// weeks, so drain-only refresh is not enough). This is the automatic freshness guarantee; with
+  /// `REFRESH ... CONCURRENTLY` the rebuild no longer blocks readers, so it is cheap to run often.
+  /// The cost is one rebuild's DB load per interval (a few minutes at production scale). Default
+  /// 1h.
+  pub report_refresh_interval_seconds: u64,
 }
 impl Default for DispatcherConfig {
   fn default() -> Self {
@@ -82,6 +89,7 @@ impl Default for DispatcherConfig {
       queue_size: 800,
       message_size: 100_000,
       max_in_flight: 5000,
+      report_refresh_interval_seconds: 3600,
     }
   }
 }

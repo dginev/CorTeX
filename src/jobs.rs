@@ -129,6 +129,35 @@ where
   Ok(job_uuid)
 }
 
+/// The job `kind` for a `report_summary` rollup refresh.
+pub const REFRESH_REPORTS_KIND: &str = "refresh_reports";
+
+/// Spawns a background job that rebuilds the `report_summary` rollup — a multi-minute
+/// `REFRESH ... CONCURRENTLY` at production scale (see `docs/REPORT_FRESHNESS.md`) — **off** the
+/// request path, so the caller (a force-refresh endpoint, or the rerun path) returns immediately.
+///
+/// **Debounced:** a single global refresh already updates the data behind *every* report page, so
+/// if one is already queued or running its uuid is returned instead of spawning another (concurrent
+/// rebuilds would only serialize on the matview lock anyway). Poll `GET /api/jobs/<uuid>` for
+/// status/health.
+pub fn spawn_report_refresh(pool: DbPool, actor: &str) -> Result<Uuid, String> {
+  // Debounce against an already-active refresh before inserting a new job row.
+  {
+    let mut connection = pool.get().map_err(|e| e.to_string())?;
+    if let Some(existing) = list_recent(&mut connection, true, 200)
+      .into_iter()
+      .find(|job| job.kind == REFRESH_REPORTS_KIND)
+    {
+      return Ok(existing.uuid);
+    }
+  }
+  spawn_job(pool, REFRESH_REPORTS_KIND, actor, Value::Null, |progress| {
+    let mut connection = progress.pool.get().map_err(|e| e.to_string())?;
+    crate::backend::refresh_report_summary(&mut connection).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "status": "refreshed" }))
+  })
+}
+
 /// Best-effort extraction of a human-readable message from a caught panic payload.
 fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
   if let Some(s) = panic.downcast_ref::<&str>() {

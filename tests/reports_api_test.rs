@@ -221,6 +221,38 @@ fn category_and_what_reports_match_seed() {
   // Unknown corpus -> 404 (the relocated serve_report now returns a Status, not a panic).
   let response = client.get("/corpus/no-such-xyz/no_svc/warning").dispatch();
   assert_eq!(response.status(), Status::NotFound, "unknown corpus -> 404");
+
+  // --- Forced report refresh: token-gated, returns an async background job handle (the
+  // multi-minute rollup rebuild must not block the request).
+  // ------------------------------------------------
+  let response = client.post("/api/reports/refresh").dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Unauthorized,
+    "force-refresh without a token is 401"
+  );
+  let response = client.post("/api/reports/refresh?token=token1").dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Accepted,
+    "force-refresh with a valid token is 202 (async job)"
+  );
+  let ack: Value = response.into_json().expect("refresh ack json");
+  assert!(
+    ack["job"].as_str().is_some_and(|j| !j.is_empty()),
+    "force-refresh returns a background job handle to poll"
+  );
+  assert_eq!(
+    ack["actor"], "username1",
+    "the refresh job is attributed to the token's owner"
+  );
+  assert!(
+    ack["poll"]
+      .as_str()
+      .is_some_and(|p| p.starts_with("/api/jobs/")),
+    "the ack carries a poll URL for the job's status/health"
+  );
+
   // Exit before the racy libpq/OpenSSL atexit teardown of the still-live Client (KNOWN_ISSUES L-1).
   unsafe { libc::_exit(0) }
 }

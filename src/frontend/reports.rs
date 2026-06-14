@@ -26,6 +26,7 @@ use crate::backend::{
 use crate::frontend::actor::Actor;
 use crate::frontend::concerns::serve_report;
 use crate::frontend::params::ReportParams;
+use crate::jobs;
 use crate::models::{Corpus, Service};
 
 /// One report row: a category (in the category report) or a `what` class (in the drill-down), with
@@ -250,6 +251,68 @@ pub fn rerun_report(
   ))
 }
 
+/// Acknowledgement for a forced report-rollup refresh: the background [`crate::jobs`] handle to
+/// poll.
+#[derive(Serialize)]
+pub struct RefreshAckDto {
+  /// The spawned (or already-running, if debounced) refresh job's external uuid.
+  pub job: String,
+  /// Where to poll the job's status / health / duration.
+  pub poll: String,
+  /// The token-resolved actor recorded as the job's initiator.
+  pub actor: String,
+}
+
+/// Forces a rebuild of the `report_summary` rollup that backs **every** report page, as a
+/// background job — the rebuild is multi-minute at production scale, so it must not block the
+/// request (see `docs/REPORT_FRESHNESS.md`). Returns the job handle immediately (`202 Accepted`);
+/// poll `GET /api/jobs/<job>` for status/health. **Debounced:** a refresh already in flight is
+/// reused rather than piled on. **Token-gated** via the [`Actor`] guard (`X-Cortex-Token` /
+/// `?token=`); `401` without a valid token.
+#[post("/api/reports/refresh")]
+pub fn refresh_reports(
+  actor: Actor,
+  pool: &State<DbPool>,
+) -> Result<(Status, Json<RefreshAckDto>), Status> {
+  let job_uuid = jobs::spawn_report_refresh(pool.inner().clone(), &actor.owner)
+    .map_err(|_| Status::InternalServerError)?;
+  Ok((
+    Status::Accepted,
+    Json(RefreshAckDto {
+      job: job_uuid.to_string(),
+      poll: format!("/api/jobs/{job_uuid}"),
+      actor: actor.owner,
+    }),
+  ))
+}
+
+/// The token field of the human "refresh reports" form on the jobs dashboard.
+#[derive(rocket::FromForm)]
+pub struct RefreshForm {
+  /// A rerun token (the same admin tokens that gate writes); resolved to the job's actor.
+  pub token: String,
+}
+
+/// The human twin of [`refresh_reports`]: the jobs-dashboard "Refresh reports now" button. Resolves
+/// the submitted token to an actor (the `Actor` guard reads header/query, not a form field, so we
+/// resolve it here), spawns the same debounced refresh job, and redirects to `/jobs` where the
+/// admin watches it run — the async UI pattern (no blocking, no JS). `401` on an unknown token.
+#[post("/reports/refresh", data = "<form>")]
+pub fn refresh_reports_human(
+  form: rocket::form::Form<RefreshForm>,
+  pool: &State<DbPool>,
+) -> Result<rocket::response::Redirect, Status> {
+  let owner = crate::config::config()
+    .auth
+    .rerun_tokens
+    .get(&form.token)
+    .cloned()
+    .ok_or(Status::Unauthorized)?;
+  jobs::spawn_report_refresh(pool.inner().clone(), &owner)
+    .map_err(|_| Status::InternalServerError)?;
+  Ok(rocket::response::Redirect::to("/jobs"))
+}
+
 // --- The human report screens (HTML twins of the typed report API above) -----------------------
 //
 // These render the corpus/service report hierarchy (top → severity → category → `what` → task
@@ -418,6 +481,8 @@ pub fn routes() -> Vec<Route> {
     api_category_report,
     api_what_report,
     rerun_report,
+    refresh_reports,
+    refresh_reports_human,
     top_service_report,
     severity_service_report,
     severity_service_report_all,
