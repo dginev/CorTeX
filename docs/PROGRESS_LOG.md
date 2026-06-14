@@ -1650,3 +1650,14 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   signed-in `GET /admin/runs` render assertion (admin_test) + `GET /runs/<c>/<s>` HTML render assertion
   (runs_test, seeding 2 TODO tasks so the open run reports `in_progress=2`, `total=7`, and the page
   renders "ongoing · 2 in progress"). clippy + admin_test + runs_test green.
+- **Admin UX (installation end): `cortex doctor` now tells you HOW to fix a red check.** The install
+  diagnostic listed `[FAIL]` per check but only guided the token case; a stuck operator got no
+  next-step for a down DB / pending migrations / missing services. Added `DoctorReport::remediations()`
+  (library, unit-tested) returning actionable, fix-this-first-ordered hints: a down DB surfaces **only**
+  the DB fix (the consequent migration/service FAILs are unknowable until it's back, so we don't chase
+  them); pending migrations → `cortex init`; services-missing-despite-current-migrations → the
+  out-of-band-deletion edge case; no token → `cortex set-admin-token`. The CLI prints them under "Next
+  steps:", and the `--json` twin now includes a `remediations` array (symmetry — the agent gets the same
+  guidance). Removed the now-redundant inline token nudge from `cortex init`. Unit-tested across all
+  states (`bootstrap_test::doctor_remediations_guide_each_failure`); demonstrated end-to-end against a
+  broken DB URL. clippy + bootstrap_test green.

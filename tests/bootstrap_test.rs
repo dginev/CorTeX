@@ -31,6 +31,90 @@ fn doctor_is_healthy_against_a_migrated_db() {
 }
 
 #[test]
+fn doctor_remediations_guide_each_failure() {
+  use cortex::bootstrap::DoctorReport;
+
+  // A healthy + configured box has no next steps.
+  let healthy = DoctorReport {
+    database_reachable: true,
+    migrations_current: true,
+    services_seeded: true,
+    admin_token_configured: true,
+    ok: true,
+  };
+  assert!(
+    healthy.remediations().is_empty(),
+    "a healthy, configured box has nothing to fix"
+  );
+
+  // A down database surfaces ONLY the database fix — the cascade of downstream `false`s it produces
+  // is unknowable until it is back, so we don't chase them.
+  let db_down = DoctorReport {
+    database_reachable: false,
+    migrations_current: false,
+    services_seeded: false,
+    admin_token_configured: false,
+    ok: false,
+  };
+  let hints = db_down.remediations();
+  assert_eq!(hints.len(), 1, "a down DB surfaces only the DB fix");
+  assert!(
+    hints[0].contains("database") && hints[0].contains("DATABASE_URL"),
+    "the DB hint names the database URL to check"
+  );
+
+  // Pending migrations point at `cortex init`; the consequent missing services are folded into that
+  // (no separate, redundant services hint while migrations are pending).
+  let pending = DoctorReport {
+    database_reachable: true,
+    migrations_current: false,
+    services_seeded: false,
+    admin_token_configured: true,
+    ok: false,
+  };
+  let hints = pending.remediations();
+  assert!(
+    hints.iter().any(|h| h.contains("cortex init")),
+    "pending migrations point at cortex init"
+  );
+  assert!(
+    !hints.iter().any(|h| h.contains("likely deleted")),
+    "the services hint is suppressed while migrations are pending (init restores them)"
+  );
+
+  // Services missing *despite* current migrations is the out-of-band-deletion edge case.
+  let deleted = DoctorReport {
+    database_reachable: true,
+    migrations_current: true,
+    services_seeded: false,
+    admin_token_configured: true,
+    ok: false,
+  };
+  assert!(
+    deleted
+      .remediations()
+      .iter()
+      .any(|h| h.contains("likely deleted")),
+    "missing services under current migrations flags an out-of-band deletion"
+  );
+
+  // An otherwise-healthy box with no token gets exactly the set-admin-token next step.
+  let no_token = DoctorReport {
+    database_reachable: true,
+    migrations_current: true,
+    services_seeded: true,
+    admin_token_configured: false,
+    ok: true,
+  };
+  let hints = no_token.remediations();
+  assert_eq!(hints.len(), 1, "only the token step remains");
+  assert!(
+    hints[0].contains("set-admin-token"),
+    "the token hint names the set-admin-token command"
+  );
+}
+
+#[test]
 fn init_is_idempotent_and_scaffolds_config() {
   let mut config_path = std::env::temp_dir();
   config_path.push("cortex_bootstrap_test.toml");

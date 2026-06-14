@@ -39,6 +39,50 @@ pub struct DoctorReport {
   pub ok: bool,
 }
 
+impl DoctorReport {
+  /// Actionable next-step hints for any failing or unconfigured check, in fix-this-first order, so
+  /// a stuck operator is told *how* to fix a red check, not merely that it is red. Empty when the
+  /// box is healthy and configured. Shared by the `cortex doctor` text output and its JSON twin
+  /// (the agent gets the same guidance).
+  #[must_use]
+  pub fn remediations(&self) -> Vec<String> {
+    let mut hints = Vec::new();
+    if !self.database_reachable {
+      // Until the database is back, the migration / service checks are unknowable — fix this first
+      // and re-run, rather than chasing the cascade of `false`s it produces.
+      hints.push(
+        "database unreachable — check the database URL (`cortex.toml` [database].url, or \
+         DATABASE_URL) and that PostgreSQL is running"
+          .to_string(),
+      );
+      return hints;
+    }
+    if !self.migrations_current {
+      hints
+        .push("schema out of date — run `cortex init` to apply the pending migrations".to_string());
+    }
+    // The built-in services are seeded by a migration, so a missing pair *while migrations are
+    // current* means they were removed out of band; otherwise `cortex init` (above) restores them,
+    // and a separate hint here would be redundant noise.
+    if !self.services_seeded && self.migrations_current {
+      hints.push(
+        "the built-in `init`/`import` services are missing despite current migrations — they were \
+         likely deleted; re-create them (originally seeded by migration \
+         2017-10-01-204801_services)"
+          .to_string(),
+      );
+    }
+    if !self.admin_token_configured {
+      hints.push(
+        "no admin token configured — run `cortex set-admin-token --generate --owner <you>` to \
+         enable sign-in and write actions"
+          .to_string(),
+      );
+    }
+    hints
+  }
+}
+
 /// The outcome of `cortex init`.
 #[derive(Debug, Serialize)]
 pub struct InitOutcome {

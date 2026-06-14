@@ -111,14 +111,9 @@ fn run_init() {
       }
       println!();
       let report = bootstrap::doctor(default_db_address());
+      // `print_doctor_text` already lists actionable next steps (incl. creating an admin token)
+      // from `report.remediations()`, so we don't duplicate the token nudge here.
       print_doctor_text(&report);
-      // Only nudge to create a token when there isn't one yet (doctor already flags the state).
-      if !report.admin_token_configured {
-        println!(
-          "\nNext step — create an admin token so you can sign in and make write actions:\n  \
-           cortex set-admin-token --generate --owner <your-name>"
-        );
-      }
       println!(
         "\nNext step — tune PostgreSQL for this host:\n{}",
         bootstrap::db_tuning_guidance()
@@ -137,9 +132,18 @@ fn run_init() {
 fn run_doctor(json: bool) {
   let report = bootstrap::doctor(default_db_address());
   if json {
+    // Augment the serialized report with the same remediation hints the text output prints, so the
+    // agent twin is told *how* to fix a red check, not just that it is red (symmetry).
+    let mut value = serde_json::to_value(&report).unwrap_or_default();
+    if let Some(object) = value.as_object_mut() {
+      object.insert(
+        "remediations".to_string(),
+        serde_json::json!(report.remediations()),
+      );
+    }
     println!(
       "{}",
-      serde_json::to_string_pretty(&report).unwrap_or_default()
+      serde_json::to_string_pretty(&value).unwrap_or_default()
     );
   } else {
     print_doctor_text(&report);
@@ -156,7 +160,7 @@ fn print_doctor_text(report: &DoctorReport) {
   println!("  [{}] migrations current", mark(report.migrations_current));
   println!("  [{}] services seeded", mark(report.services_seeded));
   // Informational (does not affect `=> healthy`): no token just means nobody can sign in yet.
-  print!(
+  println!(
     "  [{}] admin token configured",
     if report.admin_token_configured {
       "ok"
@@ -164,10 +168,13 @@ fn print_doctor_text(report: &DoctorReport) {
       "--"
     }
   );
-  if report.admin_token_configured {
-    println!();
-  } else {
-    println!("  (set one to sign in: cortex set-admin-token --generate --owner <you>)");
-  }
   println!("  => {}", if report.ok { "healthy" } else { "DEGRADED" });
+  // Guide the operator from each red / unconfigured check to its fix.
+  let remediations = report.remediations();
+  if !remediations.is_empty() {
+    println!("\nNext steps:");
+    for hint in &remediations {
+      println!("  → {hint}");
+    }
+  }
 }
