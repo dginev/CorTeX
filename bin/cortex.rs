@@ -113,6 +113,10 @@ fn run_init() {
       let report = bootstrap::doctor(default_db_address());
       print_doctor_text(&report);
       println!(
+        "\nNext step — create an admin token so you can sign in and make write actions:\n  \
+         cortex set-admin-token --generate --owner <your-name>"
+      );
+      println!(
         "\nNext step — tune PostgreSQL for this host:\n{}",
         bootstrap::db_tuning_guidance()
       );
