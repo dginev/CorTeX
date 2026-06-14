@@ -871,13 +871,21 @@ h3 {
 .report-table td.left a:focus {
   color: var(--link);
 }
-.report-table td.no-problem,
-.report-table td.warning,
-.report-table td.error,
-.report-table td.fatal,
-.report-table td.todo,
-.report-table td.queued {
-  background-color: transparent !important;
+/* Neutralize Bootstrap's contextual cell tints (and the legacy ones) at REST — matched at the same
+   `.table > tbody > tr > td.x` specificity so no `!important` is needed (an `!important` here would
+   also suppress the row-hover highlight on these very cells, which it did). */
+.report-table > tbody > tr > td.no-problem,
+.report-table > tbody > tr > td.warning,
+.report-table > tbody > tr > td.error,
+.report-table > tbody > tr > td.fatal,
+.report-table > tbody > tr > td.todo,
+.report-table > tbody > tr > td.queued {
+  background-color: transparent;
+}
+/* Row hover must cover EVERY column, including the neutralized count cell — higher specificity than
+   both Bootstrap's contextual rule and the neutralizer above. */
+.report-table.table > tbody > tr:hover > td {
+  background-color: var(--accent-soft);
 }
 .report-links {
   margin-top: 1.5rem;
