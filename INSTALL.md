@@ -91,30 +91,41 @@ Step 4.)
 
 ## 4. Configuration
 
-CorTeX reads two files from the repository root:
+CorTeX is configured at **runtime** via `cortex.toml` (figment), with environment overrides. The
+database URL is resolved in this order (later wins): built-in defaults → `cortex.toml [database]` →
+`CORTEX_DATABASE__URL` → the legacy `DATABASE_URL` (also read from a local `.env`). **No recompile is
+needed to change databases** — e.g. point the frontend at a populated DB with
+`DATABASE_URL=… cargo run --bin frontend`.
 
-**`.env`** — database connection strings. The repo ships a working default:
+The simplest setup is `cortex init`, which scaffolds a `cortex.toml` (operational sections) and runs
+migrations (Step 5). The repo also ships a working `.env` default:
 
 ```
 DATABASE_URL=postgres://cortex:cortex@localhost/cortex
 TEST_DATABASE_URL=postgres://cortex_tester:cortex_tester@localhost/cortex_tester
 ```
 
-> ⚠️ **Current limitation:** `DATABASE_URL` is read at **compile time**, so if you change `.env`
-> you must rebuild (`cargo build`) for it to take effect. Making this fully runtime-configurable is
-> Arm 1 of the productization plan.
-
-**`config.json`** — frontend secrets and rerun tokens. Create it from the template:
+**Admin / API tokens** — every write action (rerun, import, service activation, maintenance, the
+`/admin` sign-in) is gated by a token that maps to an **owner** (the identity recorded in the audit
+log). Set one with the CLI — no hand-editing:
 
 ```bash
-cp config.default.json config.json
+cortex set-admin-token --generate --owner alice   # prints a fresh random token (shown once)
+cortex set-admin-token my-chosen-token --owner bob # or set a specific value
 ```
 
-Then edit `config.json`: set a real `captcha_secret` and replace the `rerun_tokens` map with your
-own `{ "secret-token": "username" }` entries (these gate the rerun/save-snapshot actions).
+This merges `[auth].rerun_tokens` into `cortex.toml`, preserving the other sections and any existing
+tokens (give each admin their own token for per-person attribution). Re-running with an existing
+token updates its owner.
 
-> Both `.env` and `config.json` (and `templates/`, `public/`, `Rocket.toml`) are resolved relative
-> to the **current working directory** — run the binaries from the repository root.
+> **Legacy `config.json`:** the prototype kept `captcha_secret` + `rerun_tokens` in a
+> `config.json`. If that file is present in the working directory it remains **authoritative for the
+> `[auth]` section** (back-compat), so it will *shadow* `cortex.toml`'s tokens — `set-admin-token`
+> warns when it detects this. Migrate by moving the tokens into `cortex.toml` and removing
+> `config.json`.
+
+> `.env`, `cortex.toml`, `config.json`, `templates/`, `public/`, and `Rocket.toml` are resolved
+> relative to the **current working directory** — run the binaries from the repository root.
 
 ## 5. Database schema (migrations)
 

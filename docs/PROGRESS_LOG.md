@@ -1059,3 +1059,18 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   corpus/report/runs — the `corpora.latexml.rs` surface), and the token-based `/api/*` agent twins
   (machines get a clean `401`, never an HTML redirect). Updated the four affected tests to sign in
   first (each now also asserts the unauthenticated redirect, documenting the gate). clippy/fmt clean.
+- **`cortex set-admin-token` CLI — token setup without hand-editing (autonomous-day progress, Admin
+  UX from installation):** the owner had floated `cortex init --set-admin-token …` and "how do we
+  deal with generating tokens?". Added `cortex set-admin-token [<token>|--generate] [--owner <name>]`
+  (`bin/cortex.rs` → testable `bootstrap::set_admin_token` + `bootstrap::generate_token`). It **merges**
+  the token into `cortex.toml`'s `[auth].rerun_tokens` at the raw-TOML level (because `to_persisted_toml`
+  intentionally never writes secrets), preserving every other section and any existing tokens; a fresh
+  file is first scaffolded from the defaults so the result is always complete and valid. `--generate`
+  prints a 32-char URL-safe random token once; `--owner` (default `admin`) is the identity the audit
+  log records — so per-admin tokens give per-person attribution, the AAA accounting story end-to-end.
+  Re-setting an existing token updates its owner. Detects + **warns** when a legacy `config.json` in the
+  CWD shadows `cortex.toml`'s `[auth]` (the loader still treats it as authoritative for back-compat).
+  `tests/bootstrap_test.rs` covers scaffold/merge/update + token randomness/shape; smoke-tested via the
+  built binary. Modernized INSTALL.md §4 (removed the stale "DATABASE_URL is compile-time" warning —
+  it's runtime since Arm 1 — and replaced the hand-edit-config.json token step with the CLI). AAA_DESIGN
+  §3 stopgap marked LANDED. clippy/fmt clean.

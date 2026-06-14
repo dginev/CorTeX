@@ -77,10 +77,13 @@ action attributed to whichever; one `audit_log`.**
 the whole build (an OAuth app + callback flow vs a `users` table + password hashing vs validating a
 3rd-party JWT). Everything else (uniform authz, identity attribution, the `audit_log`) is settled.
 
-### Stopgap (independent, optional)
-A quick `cortex set-admin-token [--generate|<token>]` that writes a token to `cortex.toml [auth]`
-(optionally a printed random one) so installs aren't hand-editing — useful for the **agent token**
-regardless of the human-AuthN choice; plaintext until agent-key hashing lands.
+### Stopgap (independent, optional) — **LANDED**
+`cortex set-admin-token [<token>|--generate] [--owner <name>]` (`bin/cortex.rs` →
+`bootstrap::set_admin_token`/`generate_token`) writes a token into `cortex.toml [auth].rerun_tokens`,
+**merging** (preserves other sections + tokens), so installs aren't hand-editing — useful for the
+**agent token** and for per-admin tokens (the identity the audit log records) regardless of the
+human-AuthN choice; plaintext until agent-key hashing lands. Warns when a legacy `config.json`
+shadows `[auth]`. Tested in `tests/bootstrap_test.rs`; documented in INSTALL.md §4.
 
 ## 4. Recommendation
 

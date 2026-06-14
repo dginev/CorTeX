@@ -14,6 +14,8 @@ use std::path::Path;
 
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
+use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
 use serde::Serialize;
 
 use crate::config::{to_persisted_toml, CortexConfig};
@@ -83,6 +85,86 @@ pub fn init(database_url: &str, config_path: &Path) -> Result<InitOutcome, Strin
   Ok(InitOutcome {
     migrations_applied,
     config_created,
+  })
+}
+
+/// The outcome of `cortex set-admin-token`.
+#[derive(Debug, Serialize)]
+pub struct SetTokenOutcome {
+  /// The owner the token now maps to.
+  pub owner: String,
+  /// `true` if the token already existed (its owner was updated) rather than added.
+  pub replaced: bool,
+  /// How many tokens are configured after the write.
+  pub token_count: usize,
+  /// `true` if a legacy `config.json` in the working directory shadows `cortex.toml`'s `[auth]`
+  /// (so the written token will not take effect until that file is reconciled or removed).
+  pub shadowed_by_legacy_json: bool,
+}
+
+/// Generates a fresh random admin/API token: 32 URL-safe alphanumeric characters (~190 bits). Used
+/// by `cortex set-admin-token --generate`. The token is a plaintext bearer credential (the
+/// lightweight scheme — see `docs/AAA_DESIGN.md`); hashing-at-rest is a documented later step.
+pub fn generate_token() -> String {
+  thread_rng()
+    .sample_iter(&Alphanumeric)
+    .take(32)
+    .map(char::from)
+    .collect()
+}
+
+/// Sets (or updates) an admin/API token in the `[auth].rerun_tokens` table of `config_path`,
+/// **merging** into the existing file so other sections and other tokens are preserved — no
+/// hand-editing of `cortex.toml`. The library logic behind `cortex set-admin-token`.
+///
+/// If the file is missing it is first scaffolded from the defaults (a complete config, like `cortex
+/// init`) so the result is always valid. Because `to_persisted_toml` never writes secrets, this
+/// merges at the raw-TOML level rather than re-serializing a `CortexConfig`. Mapping the token to a
+/// per-person `owner` is what gives the audit log its actor (`docs/AAA_DESIGN.md`).
+pub fn set_admin_token(
+  config_path: &Path,
+  token: &str,
+  owner: &str,
+) -> Result<SetTokenOutcome, String> {
+  if token.is_empty() {
+    return Err("refusing to set an empty token".to_string());
+  }
+  // Start from the existing file, or a fresh complete scaffold when none exists yet.
+  let existing = match std::fs::read_to_string(config_path) {
+    Ok(text) => text,
+    Err(_) => to_persisted_toml(&CortexConfig::default())
+      .map_err(|e| format!("cannot scaffold config: {e}"))?,
+  };
+  let mut document: toml::Table = existing
+    .parse()
+    .map_err(|e| format!("cannot parse {}: {e}", config_path.display()))?;
+  // Navigate/create [auth].rerun_tokens, then insert. `entry` preserves any sibling keys.
+  let auth = document
+    .entry("auth")
+    .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+  let auth_table = auth
+    .as_table_mut()
+    .ok_or_else(|| "the [auth] section is not a table".to_string())?;
+  let tokens = auth_table
+    .entry("rerun_tokens")
+    .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+  let tokens_table = tokens
+    .as_table_mut()
+    .ok_or_else(|| "auth.rerun_tokens is not a table".to_string())?;
+  let replaced = tokens_table
+    .insert(token.to_string(), toml::Value::String(owner.to_string()))
+    .is_some();
+  let token_count = tokens_table.len();
+  let serialized =
+    toml::to_string_pretty(&document).map_err(|e| format!("cannot serialize config: {e}"))?;
+  std::fs::write(config_path, serialized)
+    .map_err(|e| format!("cannot write {}: {e}", config_path.display()))?;
+  Ok(SetTokenOutcome {
+    owner: owner.to_string(),
+    replaced,
+    token_count,
+    // The loader treats a working-directory config.json as authoritative for [auth] (back-compat).
+    shadowed_by_legacy_json: Path::new("config.json").exists(),
   })
 }
 

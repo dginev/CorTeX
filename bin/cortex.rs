@@ -33,6 +33,17 @@ enum Command {
   },
   /// Print PostgreSQL server-tuning guidance for this host (pgtune inputs; see docs/DB_TUNING.md).
   TuneDb,
+  /// Set or generate an admin/API token in cortex.toml's [auth] section (no hand-editing).
+  SetAdminToken {
+    /// The token value to set. Omit and pass --generate to create a random one.
+    token: Option<String>,
+    /// Generate a random token instead of supplying one (printed once).
+    #[arg(long)]
+    generate: bool,
+    /// The owner this token is attributed to in the audit log (gives the actor an identity).
+    #[arg(long, default_value = "admin")]
+    owner: String,
+  },
 }
 
 fn main() {
@@ -40,6 +51,47 @@ fn main() {
     Command::Init => run_init(),
     Command::Doctor { json } => run_doctor(json),
     Command::TuneDb => println!("{}", bootstrap::db_tuning_guidance()),
+    Command::SetAdminToken {
+      token,
+      generate,
+      owner,
+    } => run_set_admin_token(token, generate, owner),
+  }
+}
+
+fn run_set_admin_token(token: Option<String>, generate: bool, owner: String) {
+  let token = match (generate, token) {
+    (true, _) => bootstrap::generate_token(),
+    (false, Some(token)) if !token.is_empty() => token,
+    (false, _) => {
+      eprintln!("error: provide a <TOKEN> argument, or pass --generate to create one");
+      std::process::exit(2);
+    },
+  };
+  match bootstrap::set_admin_token(&config_file_path(), &token, &owner) {
+    Ok(outcome) => {
+      println!(
+        "{} admin token for owner '{}' in {} ({} token(s) configured).",
+        if outcome.replaced { "Updated" } else { "Added" },
+        owner,
+        config_file_path().display(),
+        outcome.token_count,
+      );
+      if generate {
+        println!("\n  token: {token}\n  (store it now — it is shown only once)");
+      }
+      if outcome.shadowed_by_legacy_json {
+        eprintln!(
+          "\nWARNING: a legacy config.json in this directory overrides [auth] in cortex.toml, so \
+           this token will NOT take effect until you move its rerun_tokens into cortex.toml (or \
+           remove config.json)."
+        );
+      }
+    },
+    Err(error) => {
+      eprintln!("cortex set-admin-token failed: {error}");
+      std::process::exit(1);
+    },
   }
 }
 
