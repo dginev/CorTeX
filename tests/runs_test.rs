@@ -81,11 +81,24 @@ fn seed() {
     .expect("second run");
 }
 
-// Both assertions live in one test so the shared seed isn't raced by parallel test threads.
-#[test]
-fn api_lists_runs_and_reports_current() {
-  seed();
+// Custom harness (`harness = false` in Cargo.toml): run the cases, then `process::exit(0)` to skip
+// the racy diesel/libpq/Tokio teardown that SIGSEGVs *after* assertions pass (KNOWN_ISSUES L-1).
+// A panic in any case still aborts the process non-zero, so real failures fail CI.
+fn main() {
+  // Own the Client in `main` and `process::exit(0)` while it is still alive — never dropping it, so
+  // the racy libpq/Tokio/r2d2 teardown never runs (the bench's `process::exit` trick).
   let client = client();
+  api_lists_runs_and_reports_current(&client);
+  api_runs_is_404_for_unknown_corpus(&client);
+  eprintln!("runs_test: all cases passed");
+  // `_exit` (not `process::exit`): skip C atexit handlers — libpq/OpenSSL global cleanup races with
+  // the still-live Tokio/r2d2 threads and SIGSEGVs (L-1). The OS reclaims everything cleanly.
+  unsafe { libc::_exit(0) }
+}
+
+// Both assertions live in one case so the shared seed isn't raced by parallel threads.
+fn api_lists_runs_and_reports_current(client: &Client) {
+  seed();
 
   // --- List: two runs, exactly one still open -------------------------------------------------
   let response = client
@@ -272,9 +285,7 @@ fn api_lists_runs_and_reports_current() {
   );
 }
 
-#[test]
-fn api_runs_is_404_for_unknown_corpus() {
-  let client = client();
+fn api_runs_is_404_for_unknown_corpus(client: &Client) {
   // The agent API and its human twin both 404 on an unknown corpus/service.
   let response = client
     .get("/api/runs/no-such-corpus-xyz/no_such_service")

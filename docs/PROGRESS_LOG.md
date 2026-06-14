@@ -397,3 +397,15 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   `echo_roundtrip` (full dispatcher) green. Only the `time` 0.3/0.2 transitive crates remain (0.3 already
   bumped to the patched 0.3.47).
   *Next:* the API-docs pick (awaiting owner); (on backup) the load test.
+- **L-1 SIGSEGV — root cause found + being ELIMINATED (owner: "eliminate, not tolerate"):** empirically
+  pinned the flaky at-exit SIGSEGV in Client-over-pool test binaries to the C **`atexit` handlers**
+  (libpq/OpenSSL global cleanup) racing the still-live Tokio/r2d2 threads at process exit. Evidence:
+  leaking the Client → 8/8 crash; `std::process::exit(0)` (runs atexit) → ~6/10; **`libc::_exit(0)`**
+  (skips atexit) → **0/12**. Fix: a **custom harness** (`harness = false`) whose `main` owns the `Client`,
+  runs the cases, and `unsafe { libc::_exit(0) }`s *while it's alive* — a panic still aborts non-zero so
+  real failures fail CI. `runs_test` converted + validated (0/12); `libc` added as a dev-dep. Rolling out to
+  the other 5 Client binaries (corpora/jobs_api/management/settings = custom harness; reports_api/services =
+  single-test `_exit`), after which `scripts/ci_test.sh`'s SIGSEGV tolerance is removed. KNOWN_ISSUES L-1 →
+  🟡 with the diagnosis.
+  *Next:* finish the SIGSEGV rollout + drop the wrapper tolerance; audit production thread/subprocess
+  lifecycle (owner: long-lived frontend must not accumulate zombies → OOM); API-docs pick; load test.

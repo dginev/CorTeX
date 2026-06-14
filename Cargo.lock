@@ -425,6 +425,7 @@ dependencies = [
  "hyper 1.10.1",
  "lazy_static",
  "libarchive-sys",
+ "libc",
  "percent-encoding",
  "pericortex",
  "rand",
