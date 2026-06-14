@@ -1674,3 +1674,20 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   unit cases for the logic + management_api_test now asserts the JSON remediation (dispatcher-down hint)
   and the HTML "Recommended actions" render. clippy --all-targets + tests green. Completes the
   install-time (doctor) ↔ runtime (/health) diagnostic-remediation symmetry.
+- **Dispatcher D-4 RESOLVED: ventilator request-framing hardening + data-integrity torture gate.** Closed
+  the last open dispatcher robustness bug — the rare "3 adjacent empty messages" that *permanently shuffled*
+  ROUTER state. Root cause: the ventilator read the second frame unconditionally, so a truncated
+  `[identity]`-only / empty / over-long request made it read the *next* request's identity as this one's
+  service (desyncing every later request), and bailed the whole ventilator on the both-empty case (a
+  restart band-aid). Fix (`ventilator.rs`): strict multipart discipline mirroring the sink envelope
+  hardening — a request is exactly `[identity, service]`, so require the service frame via `RCVMORE`
+  before reading it (never read across a message boundary), drain unexpected trailing frames, and **skip**
+  a malformed request instead of restarting. Validated: `dispatcher_bench` 4/8/16 workers (no normal-path
+  regression: 9807/9834/8946 tasks/s, 0 loss) + extended `dispatcher_torture_test` with a concurrent
+  **ventilator-request flood** (empty / 3-empty / over-long) alongside the existing sink-reply flood —
+  asserting (per the owner's data-integrity ask) not just that every real task finalizes but that **every
+  accepted result is a byte-exact echo of its source** (no malformed message ever accepted/written).
+  KNOWN_ISSUES D-4 🟢. **Discovered + recorded D-11** (🟡 S3): per-event `eprintln!` on each skipped
+  malformed message is a throughput-DoS vector under a sustained flood (correctness holds — tasks
+  finalize, nothing accepted malformed — but real throughput degrades); fix direction is rate-limited /
+  counter-based logging. clippy + torture + echo_roundtrip green.

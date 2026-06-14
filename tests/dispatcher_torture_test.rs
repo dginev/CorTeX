@@ -6,10 +6,14 @@
 // except according to those terms.
 
 //! Dispatcher robustness torture tests against the *real* `TaskManager` + `EchoWorker`:
-//!   1. A **barrage of bad/empty/malformed replies** to the sink (no frames, id-only, truncated
-//!      envelope, bogus task ids) injected concurrently with real work — asserts the sink survives
-//!      and does not desync (every real task still finalizes). This is the regression guard for the
-//!      `RCVMORE`-checked envelope hardening.
+//!   1. A **two-sided malformed-framing barrage**, injected concurrently with real work: a) a raw
+//!      `PUSH` floods the **sink** with bad/empty/truncated replies + bogus task ids (the
+//!      `[identity, service, taskid, …]` envelope hardening), and b) a raw `DEALER` floods the
+//!      **ventilator** with empty / "3 adjacent empty messages" / over-long requests (the
+//!      `[identity, service]` request-framing hardening — KNOWN_ISSUES D-4). It asserts both that
+//!      every real task still **finalizes** (no desync / no strand) and — the **data-integrity**
+//!      guard — that every *accepted* result is a **byte-exact echo of its source** (no malformed
+//!      message was ever accepted/written for a real task).
 //!   2. The **hard result-size cap** (`dispatcher.max_result_bytes`): a result under the cap is
 //!      accepted + written; a result over the cap is rejected (task `Invalid`, no oversized file
 //!      left on disk). Fast by default (1 MiB cap, KB–MB payloads); set `CORTEX_TORTURE_BIG=1` to
@@ -211,7 +215,10 @@ fn main() {
     push
       .connect(&format!("tcp://127.0.0.1:{RESULT_PORT}"))
       .unwrap();
-    for n in 0..200_000u64 {
+    // A heavy but bounded barrage. (Each skipped reply logs one line, so a *perpetual* 200k+ flood
+    // self-throttles the sink via synchronous stderr — a real throughput-DoS note, KNOWN_ISSUES
+    // D-11 — without changing correctness; 20k exhaustively exercises the envelope framing.)
+    for n in 0..20_000u64 {
       // Cycle the malformed shapes.
       let frames: Vec<&[u8]> = match n % 5 {
         0 => vec![b""],                                               // single empty frame
@@ -234,7 +241,49 @@ fn main() {
     }
   });
 
-  // Drain: every barrage task must finalize despite the flood (proves no desync / crash).
+  // --- Test 1b: barrage of malformed *requests* to the VENTILATOR (source port), concurrently. A
+  // worker request is `[identity, service]`; these truncated / empty / "3 adjacent empty messages"
+  // / over-long shapes would desync the ventilator's multipart framing without the RCVMORE
+  // hardening (KNOWN_ISSUES D-4) — mis-serving a *real* worker's next request and stranding its
+  // task. Crucially NONE carry a valid service name, so the flood never leases (and strands) a
+  // real task — it only stresses framing; the empty/3-empty are skipped, the unknown-service ones
+  // get a mock reply, and the trailing junk frames are drained.
+  thread::spawn(move || {
+    let ctx = zmq::Context::new();
+    let dealer = ctx.socket(zmq::DEALER).unwrap();
+    dealer.set_identity(b"garbage-requester").ok();
+    dealer
+      .connect(&format!("tcp://127.0.0.1:{SOURCE_PORT}"))
+      .unwrap();
+    // A moderate, throttled flood: even a single bad frame would trigger the D-4 "permanent
+    // shuffle" if the framing were vulnerable, so a few thousand of each malformed shape
+    // exhaustively exercises the hardening. (A perpetual 200k flood on this *shared* ROUTER
+    // socket would instead starve the real worker — a throughput-DoS concern, not a framing
+    // one.) Shapes, per `n % 4`:   0: `[id, ""]`               — empty service frame
+    // → skipped   1: `[id, "", "", ""]`       — the "3 adjacent empty messages" (D-4)  →
+    // skipped, extras drained   2: `[id, "no_such…"]`       — unknown service
+    // → mock reply   3: `[id, "no_such…", junk…]`— unknown service + trailing junk frames →
+    // extras drained, mock
+    for n in 0..5_000u64 {
+      let sent = match n % 4 {
+        0 => dealer.send("", 0).is_ok(),
+        1 => dealer.send_multipart([b"".as_ref(), b"", b""], 0).is_ok(),
+        2 => dealer.send("no_such_service_xyz", 0).is_ok(),
+        _ => dealer
+          .send_multipart([b"no_such_service_xyz".as_ref(), b"junk", b"junk2"], 0)
+          .is_ok(),
+      };
+      if !sent {
+        break;
+      }
+      if n % 100 == 0 {
+        thread::sleep(Duration::from_millis(1));
+      }
+    }
+  });
+
+  // Drain: every barrage task must finalize despite BOTH floods (proves no desync / crash on either
+  // the sink's reply framing or the ventilator's request framing).
   let deadline = Duration::from_secs(if big { 600 } else { 60 });
   let start = Instant::now();
   let all_terminal = |conn: &mut diesel::PgConnection, entries: &[String]| {
@@ -248,11 +297,50 @@ fn main() {
     }
     thread::sleep(Duration::from_millis(200));
   }
+  if !barrage_ok {
+    let mut todo = 0;
+    let mut queued = 0;
+    let mut terminal = 0;
+    for e in &barrage_entries {
+      match status_of(&mut backend.connection, e, service.id) {
+        0 => todo += 1,
+        s if s > 0 => queued += 1,
+        _ => terminal += 1,
+      }
+    }
+    eprintln!("[diag] barrage at deadline: terminal={terminal} todo={todo} queued={queued}");
+  }
   assert!(
     barrage_ok,
-    "BARRAGE: not all {barrage_tasks} real tasks finalized under the malformed-reply flood (sink desync/crash?)"
+    "BARRAGE: not all {barrage_tasks} real tasks finalized under the malformed flood (sink/ventilator desync/crash?)"
   );
-  println!("✓ barrage: all {barrage_tasks} real tasks finalized despite the malformed-reply flood");
+  println!(
+    "✓ barrage: all {barrage_tasks} real tasks finalized despite the malformed sink-reply + ventilator-request floods"
+  );
+
+  // --- Test 1c: DATA INTEGRITY of accepted results
+  // ------------------------------------------------ Finalizing is necessary but not sufficient:
+  // a framing desync on either flood could splice a garbage reply's bytes into a real task's
+  // result. The EchoWorker echoes the source verbatim (`convert` = `File::open`), so each
+  // *accepted* result must be a **byte-for-byte copy of its source** and must parse to
+  // `NoProblem`. A single mismatch means a malformed message was accepted.
+  for entry in &barrage_entries {
+    let status = status_of(&mut backend.connection, entry, service.id);
+    assert_eq!(
+      status,
+      TaskStatus::NoProblem.raw(),
+      "INTEGRITY: real task finalized to {status}, not NoProblem — a malformed reply corrupted an accepted result? ({entry})"
+    );
+    let source_bytes = fs::read(entry).expect("read source zip");
+    let result_bytes = fs::read(result_path(entry)).expect("read result zip");
+    assert_eq!(
+      result_bytes, source_bytes,
+      "INTEGRITY: accepted result for {entry} is not a byte-exact echo of its source — corruption from the framing flood"
+    );
+  }
+  println!(
+    "✓ integrity: all {barrage_tasks} accepted results are byte-exact echoes of their source (no malformed message accepted)"
+  );
 
   // --- Test 2: the hard size cap
   // ------------------------------------------------------------------ Wait for both cap tasks to

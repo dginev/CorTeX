@@ -82,22 +82,41 @@ impl Ventilator {
     loop {
       let mut identity = zmq::Message::new();
       let mut msg = zmq::Message::new();
-      // There appears to be a very rare failure mode in 08.2025 sandbox conversion testing,
-      // where 3 adjacent empty messages are received by the ventilator, causing a permanetly
-      // shuffled state.
-      while identity.is_empty() {
-        ventilator.recv(&mut identity, 0)?;
+      // A worker request is exactly `[identity, service_name]` on the ROUTER: the DEALER worker
+      // sends a single service-name frame and ROUTER prepends its identity. Read with strict
+      // multipart-framing discipline so a malformed / empty / over-long request cannot desync the
+      // message boundary and *permanently shuffle* every later request — the rare "3 adjacent empty
+      // messages" failure seen in 08.2025 sandbox testing (KNOWN_ISSUES D-4). The previous code
+      // read a second frame unconditionally, so a truncated `[identity]`-only message made it
+      // read the *next* request's identity as this request's service (the shuffle), and
+      // bailed the whole ventilator on the both-empty case (a restart band-aid). Instead:
+      // require the service frame via `RCVMORE` before reading it (never read across a
+      // message boundary), drain any unexpected trailing frames to stay aligned, and *skip* a
+      // malformed request rather than restarting. This mirrors the sink's `[identity,
+      // service, taskid, …]` envelope hardening.
+      ventilator.recv(&mut identity, 0)?;
+      if !ventilator.get_rcvmore().unwrap_or(false) {
+        // `[identity]` with no service frame — truncated. Skipping consumes nothing further, so the
+        // next request's frames are left intact (no desync).
+        eprintln!("-- ventilator: truncated request (no service frame) — skipped");
+        continue;
       }
       ventilator.recv(&mut msg, 0)?;
+      // A well-formed request ends at the service frame; drain anything beyond it (an over-long /
+      // malformed request) so it can't bleed into the next request — frame-alignment is exactly
+      // what D-4 lost.
+      while ventilator.get_rcvmore().unwrap_or(false) {
+        let mut extra = zmq::Message::new();
+        if ventilator.recv(&mut extra, 0).is_err() {
+          break;
+        }
+      }
       let identity_str = identity.as_str().unwrap_or_default().to_string();
       let service_name = msg.as_str().unwrap_or_default().to_string();
-      if identity_str.is_empty() && service_name.is_empty() {
-        // careful to only skip if both empty, to avoid evenness issues. But a restart would be
-        // healthier really.
-        eprintln!(
-          "-- FAILURE: empty request {service_name:?} requested by worker {identity_str:?}. Skip."
-        );
-        return Ok(source_job_count);
+      if service_name.is_empty() {
+        // Empty service request (e.g. the "3 adjacent empty messages") — skip without desyncing.
+        eprintln!("-- ventilator: empty service request from worker {identity_str:?} — skipped");
+        continue;
       }
 
       let request_time = chrono::Utc::now();
