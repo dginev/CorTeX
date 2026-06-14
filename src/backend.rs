@@ -228,9 +228,11 @@ impl Backend {
     services_aggregate::extend_service(&mut self.connection, service, corpus_path)
   }
 
-  /// Deletes a service by name
-  pub fn delete_service_by_name(&mut self, name: &str) -> Result<usize, Error> {
-    services_aggregate::delete_service_by_name(&mut self.connection, name)
+  /// Permanently destroys a service by name — its definition plus all of its tasks + `log_*` rows
+  /// across every corpus, in one transaction (orphan-free + crash-consistent; closes R-6). Refuses
+  /// the magic `init`/`import` services. See [`services_aggregate::destroy_service_by_name`].
+  pub fn destroy_service_by_name(&mut self, name: &str) -> Result<usize, Error> {
+    services_aggregate::destroy_service_by_name(&mut self.connection, name)
   }
 
   /// Returns a vector of currently available corpora in the Task store

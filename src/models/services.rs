@@ -155,4 +155,50 @@ impl Service {
       .execute(t_connection)
     })
   }
+
+  /// Permanently deletes this service **and all of its work across every corpus** — the `log_*`
+  /// messages and tasks of every `(*, service)` pair, then the `services` row itself — consuming
+  /// the object and returning the number of rows the final `services` delete removed. One
+  /// transaction, so a crash can't leave the service half-deleted (crash-consistency,
+  /// `docs/DESIGN_PRINCIPLES.md`). The `log_*` tables have no FK to `tasks`, so their rows are
+  /// deleted explicitly **before** the tasks or they orphan — the hazard closed in
+  /// [`super::Corpus::destroy`] and the reason this is one primitive rather than a bare
+  /// `DELETE FROM services` (which is exactly the latent `delete_service_by_name` orphan bug, R-6).
+  /// `historical_runs` tallies survive (no FK to tasks), while per-task `historical_tasks`
+  /// snapshots cascade away with the tasks — the same semantics as
+  /// [`Self::deactivate_from_corpus`] and corpus deletion.
+  ///
+  /// **Caller's contract:** the magic `init` (1) and `import` (2) services are infrastructure and
+  /// must never be destroyed; this method does not itself guard them (mirroring
+  /// [`super::Corpus::destroy`], which guards nothing). [`crate::backend`]'s
+  /// `destroy_service_by_name` enforces the guard, and the frontend rejects them with `403` before
+  /// ever reaching here.
+  pub fn destroy(self, connection: &mut PgConnection) -> Result<usize, Error> {
+    use crate::schema::tasks;
+    use crate::schema::{log_errors, log_fatals, log_infos, log_invalids, log_warnings};
+    let service_id_val = self.id;
+    connection.transaction(|t_connection| {
+      // The task ids of this service across all corpora, rebuilt per delete (the subquery is
+      // consumed by `eq_any`).
+      let service_task_ids = || {
+        tasks::table
+          .filter(tasks::service_id.eq(service_id_val))
+          .select(tasks::id)
+      };
+      delete(log_infos::table.filter(log_infos::task_id.eq_any(service_task_ids())))
+        .execute(t_connection)?;
+      delete(log_warnings::table.filter(log_warnings::task_id.eq_any(service_task_ids())))
+        .execute(t_connection)?;
+      delete(log_errors::table.filter(log_errors::task_id.eq_any(service_task_ids())))
+        .execute(t_connection)?;
+      delete(log_fatals::table.filter(log_fatals::task_id.eq_any(service_task_ids())))
+        .execute(t_connection)?;
+      delete(log_invalids::table.filter(log_invalids::task_id.eq_any(service_task_ids())))
+        .execute(t_connection)?;
+      // all tasks for this service (cascades to historical_tasks via its FK)
+      delete(tasks::table.filter(tasks::service_id.eq(service_id_val))).execute(t_connection)?;
+      // the service registration itself
+      delete(services::table.filter(services::id.eq(service_id_val))).execute(t_connection)
+    })
+  }
 }

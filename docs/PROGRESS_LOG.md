@@ -1319,3 +1319,18 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   (the ventilator's worker-timeout reaper depends on them) — gate the cutover on a real-network soak +
   heartbeat validation. Full results + a feature/perf/robustness/interop matrix written into
   `docs/DISPATCHER_RATIONALIZATION.md`. Still example-only; production dispatcher hot path untouched.
+- **R-6 closed — transactional, orphan-free service deletion + complete service-management Admin UX
+  (🟡→🟢):** the latent `delete_service_by_name` (deleted only the `services` row → orphaned every
+  task + `log_*` row of that service across all corpora; the no-FK hazard) is **replaced** by
+  `Service::destroy` — one transaction `log_*` → tasks → `services` row, mirroring `Corpus::destroy`
+  (historical_tasks cascades via its FK; historical_runs tallies survive). Backend wrapper renamed to
+  `destroy_service_by_name` with a **magic-service guard** (init/import, id ≤ 2 → descriptive Error;
+  defense-in-depth behind the route's 403). Completed the Admin UX gap (you could register services
+  but not delete them): **`DELETE /api/services/<s>?confirm=<s>`** (agent twin, token/Actor-gated,
+  openapi-documented) + a per-service **Delete** form on the registry screen (cookie/AdminSession-
+  gated, JS confirm dialog echoing the name; magic services render "protected"). New
+  `services_test` assertions prove the cascade leaves **zero** orphaned tasks/logs and that 401
+  (no token) / 400 (bad confirm) / 403 (infrastructure service, exercised against the live id≤2 row)
+  all hold — test green (exit 0). Serves both directive thrusts: backend robustness (no orphans,
+  crash-consistent) + a thorough Admin UX (complete service lifecycle: register → activate → retire →
+  delete). KNOWN_ISSUES R-6 → 🟢.

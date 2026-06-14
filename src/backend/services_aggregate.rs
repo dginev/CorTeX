@@ -2,7 +2,6 @@ use super::mark;
 use crate::concerns::CortexInsertable;
 use crate::helpers::TaskStatus;
 use crate::models::{Corpus, NewTask, Service};
-use crate::schema::services;
 use diesel::result::Error;
 use diesel::*;
 
@@ -107,11 +106,28 @@ pub(crate) fn extend_service(
   })
 }
 
-pub(crate) fn delete_service_by_name(
+/// Permanently destroys a service by name — its definition **plus all tasks + `log_*` rows across
+/// every corpus**, in one transaction (orphan-free + crash-consistent; this *replaces* the latent
+/// `delete_service_by_name`, which deleted only the `services` row and orphaned every dependent
+/// `tasks`/`log_*` row — R-6). Refuses the magic `init` (1) and `import` (2) services, which are
+/// infrastructure (deleting `import` would wipe a corpus's document registry): returns
+/// [`Error::QueryBuilderError`] with a descriptive message rather than touching them. `Err` if the
+/// service is unknown.
+pub(crate) fn destroy_service_by_name(
   connection: &mut PgConnection,
   name: &str,
 ) -> Result<usize, Error> {
-  delete(services::table)
-    .filter(services::name.eq(name))
-    .execute(connection)
+  let service = Service::find_by_name(name, connection)?;
+  // Defense-in-depth: the frontend already rejects these with 403, but the data layer must never
+  // let a careless caller wipe init/import. (Magic ids: 1=init, 2=import, >2=real services.)
+  if service.id <= 2 {
+    return Err(Error::QueryBuilderError(
+      format!(
+        "refusing to destroy the infrastructure service {:?} (id {})",
+        name, service.id
+      )
+      .into(),
+    ));
+  }
+  service.destroy(connection)
 }

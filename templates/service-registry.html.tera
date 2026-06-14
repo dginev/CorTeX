@@ -21,6 +21,7 @@
             <th class="center">Complex</th>
             <th class="left">Description</th>
             <th class="left">Workers</th>
+            <th class="left">Manage</th>
           </tr>
         </thead>
         <tbody>
@@ -33,6 +34,17 @@
             <td class="center">{{service.complex}}</td>
             <td class="left">{{service.description}}</td>
             <td class="left"><a href="/workers/{{service.name_uri}}">fleet</a></td>
+            <td class="left">
+              {% if service.name == "init" or service.name == "import" %}
+              <span class="muted" title="Infrastructure service — cannot be deleted">protected</span>
+              {% else %}
+              <form method="post" action="/services/{{service.name_uri}}/delete" style="display:inline"
+                onsubmit="return confirm('Permanently delete service &quot;{{service.name}}&quot; and ALL of its tasks + log messages across every corpus? This cannot be undone.');">
+                <input type="hidden" name="confirm" value="{{service.name}}">
+                <button type="submit" class="danger">Delete</button>
+              </form>
+              {% endif %}
+            </td>
           </tr>
           {% endfor %}
         </tbody>

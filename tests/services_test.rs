@@ -10,7 +10,7 @@
 use cortex::backend::{self, test_db_address};
 use cortex::frontend::server::mount_api_with;
 use cortex::models::{NewService, Service};
-use cortex::schema::{services, worker_metadata};
+use cortex::schema::{log_infos, services, tasks, worker_metadata};
 use diesel::prelude::*;
 use rocket::http::{ContentType, Status};
 use rocket::local::blocking::Client;
@@ -270,6 +270,125 @@ fn worker_fleet_api_and_screen() {
     skewed["seconds_since_last_active"], 0,
     "a future timestamp clamps to 0"
   );
+
+  // --- Delete a service: cascades its tasks + log messages (orphan-free, R-6); confirmation +
+  //     token enforced; the magic init/import services are protected -----------------------------
+  const DEL_SVC: &str = "deletable_svc_xyz";
+  let (del_service_id, del_task_id) = {
+    let mut db = backend::testdb();
+    diesel::delete(services::table.filter(services::name.eq(DEL_SVC)))
+      .execute(&mut db.connection)
+      .ok();
+    db.add(&NewService {
+      name: DEL_SVC.to_string(),
+      version: 0.1,
+      inputformat: "tex".to_string(),
+      outputformat: "html".to_string(),
+      inputconverter: None,
+      complex: true,
+      description: "to be deleted".to_string(),
+    })
+    .expect("add deletable service");
+    let svc = Service::find_by_name(DEL_SVC, &mut db.connection).expect("deletable svc");
+    // A task for this service + a log message — the orphan hazard the cascade must clean up (the
+    // log_* tables have no FK to tasks, so a bare `DELETE FROM services` would strand both).
+    diesel::sql_query(format!(
+      "INSERT INTO tasks (entry, service_id, corpus_id, status) \
+       VALUES ('/tmp/del_entry', {}, 1, -1)",
+      svc.id
+    ))
+    .execute(&mut db.connection)
+    .expect("seed task");
+    let task_id: i64 = tasks::table
+      .filter(tasks::service_id.eq(svc.id))
+      .select(tasks::id)
+      .first(&mut db.connection)
+      .expect("task id");
+    diesel::sql_query(format!(
+      "INSERT INTO log_infos (task_id, category, what, details) \
+       VALUES ({task_id}, 'cat', 'what', 'details')"
+    ))
+    .execute(&mut db.connection)
+    .expect("seed log");
+    (svc.id, task_id)
+  };
+
+  // Anonymous (no token) is rejected by the Actor guard.
+  let denied = client
+    .delete(format!("/api/services/{DEL_SVC}?confirm={DEL_SVC}"))
+    .dispatch();
+  assert_eq!(
+    denied.status(),
+    Status::Unauthorized,
+    "delete without a token is 401"
+  );
+  // A mismatched confirmation is rejected even with a valid token.
+  let bad_confirm = client
+    .delete(format!(
+      "/api/services/{DEL_SVC}?confirm=wrong&token=token1"
+    ))
+    .dispatch();
+  assert_eq!(
+    bad_confirm.status(),
+    Status::BadRequest,
+    "a mismatched confirm is 400"
+  );
+  // The magic init/import services (id <= 2) are infrastructure — never deletable (403).
+  {
+    let mut db = backend::testdb();
+    let magic: Option<String> = services::table
+      .filter(services::id.le(2))
+      .select(services::name)
+      .first(&mut db.connection)
+      .optional()
+      .expect("query for a magic service");
+    if let Some(name) = magic {
+      let protected = client
+        .delete(format!("/api/services/{name}?confirm={name}&token=token1"))
+        .dispatch();
+      assert_eq!(
+        protected.status(),
+        Status::Forbidden,
+        "an infrastructure service (id<=2) cannot be deleted"
+      );
+    }
+  }
+  // A correct, token-gated, confirmed delete returns 204 and cascades everything.
+  let deleted = client
+    .delete(format!(
+      "/api/services/{DEL_SVC}?confirm={DEL_SVC}&token=token1"
+    ))
+    .dispatch();
+  assert_eq!(
+    deleted.status(),
+    Status::NoContent,
+    "a confirmed, token-gated delete is 204"
+  );
+  {
+    let mut db = backend::testdb();
+    assert!(
+      Service::find_by_name(DEL_SVC, &mut db.connection).is_err(),
+      "the service registration is gone"
+    );
+    let orphan_tasks: i64 = tasks::table
+      .filter(tasks::service_id.eq(del_service_id))
+      .count()
+      .get_result(&mut db.connection)
+      .expect("count tasks");
+    assert_eq!(
+      orphan_tasks, 0,
+      "no orphaned tasks remain after destroy (R-6)"
+    );
+    let orphan_logs: i64 = log_infos::table
+      .filter(log_infos::task_id.eq(del_task_id))
+      .count()
+      .get_result(&mut db.connection)
+      .expect("count logs");
+    assert_eq!(
+      orphan_logs, 0,
+      "no orphaned log_* rows remain after destroy (R-6)"
+    );
+  }
 
   // cleanup
   let mut db = backend::testdb();

@@ -30,6 +30,11 @@ use crate::frontend::helpers::decorate_uri_encodings;
 use crate::frontend::params::TemplateContext;
 use crate::models::{NewService, Service, WorkerMetadata};
 
+/// Magic service-id ceiling: ids `1=init` and `2=import` are infrastructure and must never be
+/// destroyed (deleting `import` would wipe a corpus's document registry). Mirrors the same guard in
+/// [`crate::frontend::corpora`].
+const IMPORT_SERVICE_ID: i32 = 2;
+
 /// A registered service as exposed over the API/UI — the service-registry view. `name` is the
 /// stable external handle used by every service route.
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -333,9 +338,87 @@ pub fn worker_report_page(
   Ok(Template::render("workers", context))
 }
 
+/// Permanently deletes a service **and all of its tasks + log messages across every corpus** — the
+/// destructive twin of [`register_service`], closing the R-6 orphan hazard at the data layer
+/// ([`Service::destroy`]). **Token-gated** via the [`Actor`] guard (an unauthenticated wipe must
+/// not be possible — `401` without a valid token) and double-guarded: the caller must echo the
+/// service name via `?confirm=<service>`. The magic `init`/`import` services are infrastructure and
+/// can never be deleted (`403`). Returns `204` on success, `400` if the confirmation doesn't match,
+/// `403` for a protected service, `404` if unknown.
+#[rocket_okapi::openapi(tag = "Services")]
+#[delete("/api/services/<service>?<confirm>")]
+pub fn delete_service(
+  service: &str,
+  confirm: Option<&str>,
+  _actor: Actor,
+  pool: &State<DbPool>,
+) -> Status {
+  if confirm != Some(service) {
+    return Status::BadRequest;
+  }
+  let mut connection = match pool.get() {
+    Ok(connection) => connection,
+    Err(_) => return Status::ServiceUnavailable,
+  };
+  let service_record = match Service::find_by_name(service, &mut connection) {
+    Ok(service) => service,
+    Err(_) => return Status::NotFound,
+  };
+  // The magic init (1) / import (2) services are infrastructure — never destroyable.
+  if service_record.id <= IMPORT_SERVICE_ID {
+    return Status::Forbidden;
+  }
+  match service_record.destroy(&mut connection) {
+    Ok(_) => Status::NoContent,
+    Err(_) => Status::InternalServerError,
+  }
+}
+
+/// Fields of the human "Delete service" form: the service name echoed as confirmation.
+#[derive(FromForm)]
+pub struct DeleteServiceForm {
+  /// Must equal the service name to confirm the destructive action.
+  pub confirm: String,
+}
+
+/// The human twin of [`delete_service`]: the registry screen's per-service "Delete" form. **Gated
+/// by the signed-in [`AdminSession`] cookie** (anonymous → sign-in) *and* confirmation-gated
+/// (echoes the service name), then redirects back to `/services`. `400` if the confirmation doesn't
+/// match, `403` for a protected service, `404` if unknown.
+#[post("/services/<service>/delete", data = "<form>")]
+pub fn delete_service_human(
+  service: &str,
+  form: Form<DeleteServiceForm>,
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+) -> Result<Redirect, Status> {
+  if session.is_none() {
+    return Ok(Redirect::to("/admin/login"));
+  }
+  if form.confirm != service {
+    return Err(Status::BadRequest);
+  }
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let service_record =
+    Service::find_by_name(service, &mut connection).map_err(|_| Status::NotFound)?;
+  // Guard the magic init/import services (see [`delete_service`]).
+  if service_record.id <= IMPORT_SERVICE_ID {
+    return Err(Status::Forbidden);
+  }
+  service_record
+    .destroy(&mut connection)
+    .map_err(|_| Status::InternalServerError)?;
+  Ok(Redirect::to("/services"))
+}
+
 /// The route set for the services capability (registry + worker-fleet, screens + agent API).
 pub fn routes() -> Vec<Route> {
-  // NB: `api_services` + `api_service_workers` + `register_service` are mounted via
-  // `frontend::apidoc` (rocket_okapi).
-  routes![register_service_human, services_page, worker_report_page]
+  // NB: `api_services` + `api_service_workers` + `register_service` + `delete_service` are mounted
+  // via `frontend::apidoc` (rocket_okapi).
+  routes![
+    register_service_human,
+    services_page,
+    worker_report_page,
+    delete_service_human
+  ]
 }
