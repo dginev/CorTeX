@@ -6,6 +6,17 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **Docs — corrected the stale agent-API surface in `TEST_DRIVE.md` (agent-first parity).** The
+  "Agent-API parity" section was stale and undersold the system: it listed "13 handlers" — all
+  *read* twins — and omitted every write/maintenance endpoint, misrepresenting an agent-first
+  framework as read-only-over-API. Rewrote it from the actual route table (24 endpoints): anchored on
+  the live `GET /api` discovery index as the **canonical, never-drifting** list (so it can't go stale
+  again), then grouped curl examples into **Read** (no secrets) and **Write & manage** (token-gated)
+  covering the full admin lifecycle — import → register/activate → monitor → rerun → reindex/analyze
+  → delete — with the `X-Cortex-Token` gating and the `202 + job handle` polling pattern. Endpoint
+  paths + JSON bodies verified against `ImportRequest`/`ServiceRegisterRequest` and the route
+  definitions. Completes the agent-first half of "thorough and complete Admin UX." (Docs only.)
+
 - **I-1 — importer walk hardened against hostile data (corpus-import Admin UX path).** `walk_import`
   (reached from the Admin UX corpus-import action via `corpora.rs` → `process()`, and the `init`
   worker) aborted the *whole* import on the first filesystem hiccup — `fs::metadata(..)?` /
