@@ -6,6 +6,21 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **D-9 — dispatcher now supervises the sink/finalize threads (fixes a silent production stall).**
+  Reading the manager + sink to diagnose D-7 surfaced a sharper robustness bug: the manager
+  restart-loops only the **ventilator**; the **sink** and **finalize** threads are spawned once, and
+  in perpetual mode (`job_limit = None`, production) the supervision loop never reaches their joins —
+  so a sink/finalize death (a DB-runaway panic, or the sink's `return Err` on an unknown service)
+  left the dispatcher running with a **dead result pipeline**, silently stalled (results unprocessed
+  → in-flight saturates → ventilator mock-replies forever → nothing aborts). Contradicts the
+  fail-fast design ("process abort → external restart"). Fix: the supervision loop now polls
+  `sink_thread.is_finished()` / `finalize_thread.is_finished()` each iteration (perpetual mode only —
+  `job_limit` mode `break`s first, so a cleanly-finished thread isn't mistaken for a death) and
+  aborts with `ETERM`, so the supervisor restarts the whole dispatcher; `clear_limbo_tasks` returns
+  leased tasks to `TODO` on restart (no work lost). Happy path verified by `echo_roundtrip` (full
+  dispatcher); build + clippy clean. KNOWN_ISSUES D-9 🟢. (The sink's *individual* panic triggers +
+  the blocking-write throughput bottleneck remain the D-7-area work.)
+
 - **D-5 — precisely root-caused the `job_limit` shutdown hang (diagnosis, not a patch).** Read the
   three dispatcher threads and found the desync is a **units mismatch**, not just "mock-replies": the
   **ventilator** counts `job_limit` in *requests* (incl. every mock-reply — unknown-service,

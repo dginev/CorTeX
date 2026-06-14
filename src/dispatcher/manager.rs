@@ -150,8 +150,26 @@ impl TaskManager {
       if vent_thread.join().is_err() {
         eprintln!("-- Ventilator thread died unexpectedly!");
         return Err(zmq::Error::ETERM);
-      } else if job_limit.is_some() {
+      }
+      if job_limit.is_some() {
         break;
+      }
+      // Perpetual mode (`job_limit = None`, i.e. production): the sink and finalize threads are
+      // spawned **once** (only the ventilator is restart-looped), and this loop never reaches their
+      // joins below — so a sink/finalize that died (e.g. a panic on a DB runaway, or an unexpected
+      // result) would otherwise leave the pipeline **silently stalled**: results pile up
+      // unprocessed, the in-flight set saturates, the ventilator mock-replies forever, and nothing
+      // aborts. Surface it as the intended fail-fast — abort so the external supervisor restarts
+      // the whole dispatcher (CLAUDE.md "process abort → external restart"), rather than
+      // stall unnoticed. (In `job_limit` mode we already `break`ed above, so a *cleanly
+      // finished* sink/finalize is never mistaken for a death here.)
+      if sink_thread.is_finished() {
+        eprintln!("-- Sink thread died unexpectedly! Aborting for a supervised restart.");
+        return Err(zmq::Error::ETERM);
+      }
+      if finalize_thread.is_finished() {
+        eprintln!("-- Finalize (DB) thread died unexpectedly! Aborting for a supervised restart.");
+        return Err(zmq::Error::ETERM);
       }
       sleep(Duration::from_secs(1));
     }
