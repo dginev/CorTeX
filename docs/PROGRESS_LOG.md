@@ -1074,3 +1074,18 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   built binary. Modernized INSTALL.md §4 (removed the stale "DATABASE_URL is compile-time" warning —
   it's runtime since Arm 1 — and replaced the hand-edit-config.json token step with the CLI). AAA_DESIGN
   §3 stopgap marked LANDED. clippy/fmt clean.
+- **WebAuthn arm — server-side sessions + AdminSession refactor (autonomous-day progress):** the
+  load-bearing piece for passkeys. Migration `…110000_create_sessions` + `models::session`:
+  `sessions(id PK=random 48-char opaque, owner, method, created_at, expires_at)`; `Session::{open,
+  resolve_owner, revoke, revoke_all_for, active, prune_expired}` with a 7-day **absolute** expiry (no
+  per-request sliding write → an authenticated request is one indexed lookup, zero writes). Refactored
+  `AdminSession` from *cookie-carries-the-token* → *cookie-carries-an-opaque-session-id*:
+  `from_request` resolves the id against the `sessions` table (pool via `request.guard::<&State<
+  DbPool>>()`); `/admin/login` now `Session::open(owner, "token")` and sets the cookie to the id;
+  `/admin/logout` `Session::revoke`s it (real server-side revocation, not just clearing the cookie).
+  This **unifies** the two human sign-in paths — token today, `"passkey"` next — both open a session.
+  The audit fairing's actor resolution was split into a sync `actor_carriers` (header/query/cookie
+  extraction, no DB) + `resolve_carriers` (token via config, cookie via the sessions table) run
+  **inside** the existing `spawn_blocking`, so the new DB session lookup stays off the async reactor.
+  `tests/admin_test.rs` additionally asserts the cookie value is NOT the raw token; the live test DB
+  shows the session rows created end-to-end. All auth/gated tests + clippy -D warnings green.

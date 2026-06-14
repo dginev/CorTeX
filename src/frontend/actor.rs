@@ -14,11 +14,15 @@
 //! the observability mandate) and so writes are denied by default (an empty token map rejects
 //! everyone, rather than letting anyone wipe results).
 
+use diesel::pg::PgConnection;
 use rocket::http::Status;
 use rocket::request::{FromRequest, Outcome, Request};
 use rocket::response::{Redirect, Responder};
+use rocket::State;
 
+use crate::backend::DbPool;
 use crate::config::config;
+use crate::models::Session;
 
 /// The authenticated initiator of a mutating request, resolved from a rerun token.
 pub struct Actor {
@@ -33,26 +37,45 @@ pub fn owner_for_token(token: &str) -> Option<String> {
   config().auth.rerun_tokens.get(token).cloned()
 }
 
-/// Resolves the acting identity from a request the way the guards do, for the audit fairing
-/// (`frontend::audit`): the `X-Cortex-Token` header, then a `?token=` query parameter, then the
-/// [`ADMIN_COOKIE`] browser session. Returns the token's owner, or `None` if no carrier yields a
-/// known token. A token in a POST **form body** (the un-signed-in human forms) is deliberately not
-/// visible here — those actions are recorded with an empty actor unless the submitter is signed in.
-pub fn resolve_actor(request: &Request<'_>) -> Option<String> {
-  let header = request
-    .headers()
-    .get_one("X-Cortex-Token")
-    .map(str::to_string);
-  let query = request.query_value::<String>("token").and_then(Result::ok);
-  let cookie = request
-    .cookies()
-    .get(ADMIN_COOKIE)
-    .map(|cookie| cookie.value().to_string());
-  header
-    .or(query)
-    .or(cookie)
+/// The raw credential carriers on a request, extracted **without any lookup** (cheap, sync): the
+/// bearer token (the `X-Cortex-Token` header or `?token=` query) and the [`ADMIN_COOKIE`] session
+/// cookie. The audit fairing extracts these synchronously so it can resolve them to an owner *off*
+/// the response path (the cookie now needs a DB session lookup — see [`resolve_carriers`]). A token
+/// in a POST **form body** (the un-signed-in human forms) is deliberately not visible here.
+pub struct ActorCarriers {
+  /// A bearer token from the `X-Cortex-Token` header or `?token=` query, if present.
+  pub token: Option<String>,
+  /// The [`ADMIN_COOKIE`] session-id cookie value, if present.
+  pub session_cookie: Option<String>,
+}
+
+/// Extracts the [`ActorCarriers`] from a request (no lookups).
+pub fn actor_carriers(request: &Request<'_>) -> ActorCarriers {
+  ActorCarriers {
+    token: request
+      .headers()
+      .get_one("X-Cortex-Token")
+      .map(str::to_string)
+      .or_else(|| request.query_value::<String>("token").and_then(Result::ok)),
+    session_cookie: request
+      .cookies()
+      .get(ADMIN_COOKIE)
+      .map(|cookie| cookie.value().to_string()),
+  }
+}
+
+/// Resolves [`ActorCarriers`] to an owner: the bearer token against the configured admin tokens,
+/// the session cookie against the `sessions` table (hence the `connection`). The token wins if both
+/// are present (an explicit API credential is the more specific intent). `None` if neither
+/// resolves.
+pub fn resolve_carriers(connection: &mut PgConnection, carriers: &ActorCarriers) -> Option<String> {
+  if let Some(owner) = carriers.token.as_deref().and_then(owner_for_token) {
+    return Some(owner);
+  }
+  carriers
+    .session_cookie
     .as_deref()
-    .and_then(owner_for_token)
+    .and_then(|id| Session::resolve_owner(connection, id))
 }
 
 #[rocket::async_trait]
@@ -108,14 +131,15 @@ impl<'r> rocket_okapi::request::OpenApiFromRequest<'r> for Actor {
 /// The cookie carrying a signed-in admin's session token (set by the `/admin/login` page).
 pub const ADMIN_COOKIE: &str = "cortex_admin";
 
-/// A signed-in admin's **browser** session — the [`Actor`]'s counterpart for the human admin UI,
-/// using the same lightweight scheme. A rerun token from `auth.rerun_tokens` is stored in the
-/// [`ADMIN_COOKIE`] cookie at sign-in and **re-validated against the live token map on every
-/// request**: the cookie is only a carrier, so revoking a token immediately ends the session and a
-/// forged cookie is rejected. Gated admin screens take an `AdminSession`; an unauthenticated
-/// browser is sent to the sign-in page (handled per-route via `Option<AdminSession>`).
+/// A signed-in admin's **browser** session — the [`Actor`]'s counterpart for the human admin UI.
+/// The [`ADMIN_COOKIE`] cookie carries a random opaque **session id** (not a credential); this
+/// guard resolves it against the server-side `sessions` table on every request, so sign-out (which
+/// deletes the row) immediately ends the session and a forged cookie is a useless random id.
+/// Established by the admin token *or* a passkey at sign-in. Gated admin screens take an
+/// `AdminSession`; an unauthenticated browser is sent to the sign-in page (handled per-route via
+/// `Option<AdminSession>`).
 pub struct AdminSession {
-  /// The owner the session's token maps to (recorded as the actor of admin actions).
+  /// The owner the session belongs to (recorded as the actor of admin actions).
   pub owner: String,
 }
 
@@ -124,10 +148,21 @@ impl<'r> FromRequest<'r> for AdminSession {
   type Error = ();
 
   async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-    let owner = request
+    let Some(session_id) = request
       .cookies()
       .get(ADMIN_COOKIE)
-      .and_then(|cookie| config().auth.rerun_tokens.get(cookie.value()).cloned());
+      .map(|c| c.value().to_string())
+    else {
+      return Outcome::Error((Status::Unauthorized, ()));
+    };
+    // Resolve the session id against the `sessions` table (the pool is managed state).
+    let owner = match request.guard::<&State<DbPool>>().await {
+      Outcome::Success(pool) => pool
+        .get()
+        .ok()
+        .and_then(|mut connection| Session::resolve_owner(&mut connection, &session_id)),
+      _ => None,
+    };
     match owner {
       Some(owner) => Outcome::Success(AdminSession { owner }),
       None => Outcome::Error((Status::Unauthorized, ())),

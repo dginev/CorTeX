@@ -18,7 +18,7 @@ use rocket_dyn_templates::{context, Template};
 
 use crate::backend::DbPool;
 use crate::frontend::actor::{owner_for_token, AdminSession, ADMIN_COOKIE};
-use crate::models::Corpus;
+use crate::models::{Corpus, Session};
 
 /// The admin dashboard (`GET /admin`): the consolidated home for admin actions. **Signed-in admins
 /// only** — an unauthenticated browser is redirected to the sign-in page (`Err(Redirect)`).
@@ -70,14 +70,23 @@ pub struct LoginForm {
 }
 
 /// Processes sign-in (`POST /admin/login`): validates the token against `auth.rerun_tokens`; on
-/// success sets the [`ADMIN_COOKIE`] session cookie (HttpOnly, SameSite=Lax) and redirects to
-/// `/admin`, else back to the sign-in page flagged as a bad attempt.
+/// success **opens a server-side session** and sets the [`ADMIN_COOKIE`] cookie to its random
+/// opaque id (HttpOnly, SameSite=Lax) — the cookie no longer carries the token — then redirects to
+/// `/admin`. A bad token (or a DB hiccup opening the session) returns to the sign-in page flagged.
 #[post("/admin/login", data = "<form>")]
-pub fn admin_login(form: Form<LoginForm>, cookies: &CookieJar<'_>) -> Redirect {
-  match owner_for_token(&form.token) {
-    Some(_owner) => {
+pub fn admin_login(
+  form: Form<LoginForm>,
+  cookies: &CookieJar<'_>,
+  pool: &State<DbPool>,
+) -> Redirect {
+  let session_id = owner_for_token(&form.token).and_then(|owner| {
+    let mut connection = pool.get().ok()?;
+    Session::open(&mut connection, &owner, "token").ok()
+  });
+  match session_id {
+    Some(session_id) => {
       cookies.add(
-        Cookie::build((ADMIN_COOKIE, form.token.clone()))
+        Cookie::build((ADMIN_COOKIE, session_id))
           .http_only(true)
           .same_site(SameSite::Lax)
           .path("/")
@@ -89,9 +98,18 @@ pub fn admin_login(form: Form<LoginForm>, cookies: &CookieJar<'_>) -> Redirect {
   }
 }
 
-/// Signs out (`POST /admin/logout`): removes the session cookie and returns to the sign-in page.
+/// Signs out (`POST /admin/logout`): **revokes** the server-side session (so the id is dead even if
+/// the cookie lingers), clears the cookie, and returns to the sign-in page.
 #[post("/admin/logout")]
-pub fn admin_logout(cookies: &CookieJar<'_>) -> Redirect {
+pub fn admin_logout(cookies: &CookieJar<'_>, pool: &State<DbPool>) -> Redirect {
+  if let Some(session_id) = cookies
+    .get(ADMIN_COOKIE)
+    .map(|cookie| cookie.value().to_string())
+  {
+    if let Ok(mut connection) = pool.get() {
+      let _ = Session::revoke(&mut connection, &session_id);
+    }
+  }
   cookies.remove(Cookie::build(ADMIN_COOKIE).path("/").build());
   Redirect::to("/admin/login")
 }

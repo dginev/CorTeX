@@ -20,7 +20,7 @@ use rocket_dyn_templates::{context, Template};
 use serde::Serialize;
 
 use crate::backend::DbPool;
-use crate::frontend::actor::{resolve_actor, Actor, AdminSession};
+use crate::frontend::actor::{actor_carriers, resolve_carriers, Actor, AdminSession};
 use crate::models::{AuditEntry, NewAuditEntry};
 
 /// The default and maximum number of audit rows a read returns (the read is most-recent-first, so
@@ -66,19 +66,23 @@ impl Fairing for AuditFairing {
       .and_then(|route| route.name.as_deref().map(str::to_string))
       .unwrap_or_else(|| request.method().as_str().to_string());
     let target = request.uri().path().to_string();
-    let actor = resolve_actor(request).unwrap_or_default();
+    // Extract the credential carriers synchronously (cheap), then resolve the actor *inside* the
+    // blocking task — the session-cookie lookup is a DB query that must not run on the async
+    // reactor.
+    let carriers = actor_carriers(request);
     let outcome = response.status().code.to_string();
     let pool = pool.clone();
-    rocket::tokio::task::spawn_blocking(move || {
-      let entry = NewAuditEntry::new(actor, action, target).outcome(outcome);
-      match pool.get() {
-        Ok(mut connection) => {
-          if let Err(error) = entry.record(&mut connection) {
-            eprintln!("-- audit: failed to record {entry:?}: {error}");
-          }
-        },
-        Err(error) => eprintln!("-- audit: pool exhausted, dropped {entry:?}: {error}"),
-      }
+    rocket::tokio::task::spawn_blocking(move || match pool.get() {
+      Ok(mut connection) => {
+        let actor = resolve_carriers(&mut connection, &carriers).unwrap_or_default();
+        let entry = NewAuditEntry::new(actor, action, target).outcome(outcome);
+        if let Err(error) = entry.record(&mut connection) {
+          eprintln!("-- audit: failed to record {entry:?}: {error}");
+        }
+      },
+      Err(error) => {
+        eprintln!("-- audit: pool exhausted, dropped audit row ({action} {target}): {error}")
+      },
     });
   }
 }

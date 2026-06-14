@@ -46,24 +46,27 @@ deploy), `rp_origin` (full https origin). `frontend::webauthn::build_state` buil
 instance or returns `None` (logged) when disabled/invalid. Surfaced read-only on the Settings page +
 `/api/config`.
 
-## Sessions (the load-bearing decision — **next increment**)
+## Sessions (the load-bearing piece — **landed**)
 
-Today `AdminSession` is a cookie that **carries the plaintext token**, re-validated each request. A
-passkey user has **no token**, so passkeys force a real session model. Decision (recommended,
-inviting correction):
+Previously `AdminSession` was a cookie that **carried the plaintext token**, re-validated each
+request. A passkey user has **no token**, so passkeys forced a real session model. Landed
+(migration `2026-06-14-110000_create_sessions` + `models::session`):
 
-> **Server-side session store.** A `sessions` table `(id PK = random opaque token, owner,
-> created_at, expires_at)`; the cookie carries only the random session id (unguessable bearer,
-> looked up server-side — no `secret_key` needed). `AdminSession` resolves cookie → session row →
-> owner (+ expiry). **Both** sign-in paths create a session row: token sign-in *and* passkey
-> sign-in. Sign-out deletes the row (real revocation); the admin can list/revoke active sessions
-> (accounting). `actor::resolve_actor` (used by the audit fairing) updates to cookie → session →
-> owner.
+> **Server-side session store.** `sessions (id PK = random opaque id, owner, method, created_at,
+> expires_at)`; the cookie carries only the random 48-char session id (unguessable bearer, looked up
+> server-side — no `secret_key` dependency). `AdminSession::from_request` resolves cookie → session
+> row → owner (absolute 7-day expiry; `Session::resolve_owner`). **Both** sign-in paths open a row:
+> `Session::open(owner, "token")` today, `"passkey"` next. `/admin/logout` calls `Session::revoke`
+> (real revocation — the id is dead even if the cookie lingers). `Session::{revoke_all_for, active,
+> prune_expired}` support sign-out-everywhere + an "active sessions" view + housekeeping (pruned on
+> sign-in). The audit fairing's actor resolution was split into a sync `actor_carriers` (no lookup,
+> on the reactor) + `resolve_carriers` (token via config, cookie via the `sessions` table, run inside
+> the existing `spawn_blocking` so the DB lookup stays off the reactor).
 
-Rationale over Rocket *private* cookies (signed+encrypted owner+expiry): no `secret_key` config
-dependency, server-side revocation, session listing — better fit for the robustness + accounting
-mandate. This refactor is backward-compatible with the existing `/admin/login` flow from the test's
-point of view (sign in → cookie → gated screens work).
+Chosen over Rocket *private* cookies (signed+encrypted owner+expiry): no `secret_key` config
+dependency, real server-side revocation, and a session list for accounting — a better fit for the
+robustness + accounting mandate. Backward-compatible with `/admin/login` (token sign-in → session →
+gated screens). `tests/admin_test.rs` additionally asserts the cookie value is **not** the raw token.
 
 ## Ceremonies (next increments)
 
@@ -107,7 +110,11 @@ in front of the deployment — a **one-time deployment measure for the `corpora.
 - ✅ **Foundation**: `webauthn-rs` dep; `[webauthn]` config; `webauthn_users` + `webauthn_credentials`
   migration + models; `frontend::webauthn::build_state` (relying-party instance) + unit tests; captcha
   removed.
-- ⏭️ **Next**: the `sessions` table + `AdminSession` session-id refactor (token *and* passkey both
-  create sessions); then the enroll + sign-in ceremonies + vanilla JS + "Your passkeys" management.
+- ✅ **Sessions**: `sessions` table + `models::session`; `AdminSession` now resolves a server-side
+  session id (token sign-in opens a session, sign-out revokes it); audit-fairing actor resolution
+  split for off-reactor cookie lookup. (See "Sessions" above.)
+- ⏭️ **Next**: the enroll + sign-in ceremonies (`start/finish_passkey_*`) + the in-memory ceremony
+  store + vanilla `navigator.credentials` JS + the "Your passkeys" management view; passkey sign-in
+  opens a `Session::open(owner, "passkey")`.
 - ⏭️ **Then** (separately tracked, [`AAA_DESIGN.md`](AAA_DESIGN.md)): switch the human write/confirm
   dialogs from token-entry to the session cookie + redirect anonymous write attempts to `/admin/login`.

@@ -33,3 +33,6 @@ pub use audit::*;
 
 mod webauthn;
 pub use webauthn::*;
+
+mod session;
+pub use session::*;

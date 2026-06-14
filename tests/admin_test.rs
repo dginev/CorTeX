@@ -70,6 +70,18 @@ fn admin_requires_sign_in_then_grants_access() {
     .dispatch();
   assert_eq!(response.headers().get_one("Location"), Some("/admin"));
 
+  // Security: the session cookie carries an opaque server-side session id, NOT the raw token.
+  let cookie_value = client
+    .cookies()
+    .get("cortex_admin")
+    .map(|cookie| cookie.value().to_string());
+  assert!(cookie_value.is_some(), "a session cookie is set on sign-in");
+  assert_ne!(
+    cookie_value.as_deref(),
+    Some("token1"),
+    "the cookie is a session id, never the credential itself"
+  );
+
   // Now /admin is accessible (the tracked client carries the session cookie).
   let response = client.get("/admin").dispatch();
   assert_eq!(response.status(), Status::Ok, "signed-in /admin renders");
