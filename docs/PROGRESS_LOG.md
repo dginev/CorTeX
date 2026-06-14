@@ -1449,3 +1449,17 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   hung-thread/connection leak remains a Rust limitation, mitigated by the pool bound + restart). Note
   for owner: this is the conservative subset of the deferred auto-interrupt watchdog (job-row honesty,
   not thread force-kill); the 2h threshold is a constant, configurable later.
+- **MANUAL.md — complete operator manual (Admin UX thrust; the directive's "from installation all the
+  way to managing historical runs"):** replaced the `### TODO` stub (which pointed at a deprecated
+  external doc — flagged in PRODUCTIZING_PLAN Arm 13) with a full, **code-verified** admin operations
+  guide. Walks the lifecycle: the three binaries (cortex CLI / frontend / dispatcher) → installation
+  (init, set-admin-token, doctor) → config precedence → access (passkeys + admin token + sessions +
+  `?next=` + Anubis perimeter) → admin dashboard → corpus & service lifecycle (register/activate/
+  extend/deactivate/delete, each with its verified API twin) → running conversions (dispatcher +
+  external pericortex workers + rerun) → background jobs (health/heartbeat/pending-check) → monitoring
+  (health/metrics/workers) → reports → **managing historical runs** (runs list/filter, run-to-run
+  diff, per-task diff, history chart, retention/prune) → maintenance (refresh/reindex/analyze) → agent
+  API examples → troubleshooting. Every route + command + doc cross-link verified against the actual
+  code (corpora/services/reports/runs/retention/metrics routes, the cortex subcommands). Documents the
+  recently-shipped capabilities (R-6 service delete, W-4 job reaper heartbeat-age, sessions/audit/
+  passkeys). Pure docs — no code change.
