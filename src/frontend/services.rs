@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 
+use diesel::prelude::*;
 use rocket::form::Form;
 use rocket::http::Status;
 use rocket::response::Redirect;
@@ -23,12 +24,13 @@ use rocket::{Route, State};
 use rocket_dyn_templates::Template;
 use serde::{Deserialize, Serialize};
 
-use crate::backend::DbPool;
+use crate::backend::{DatabaseUrl, DbPool};
 use crate::concerns::CortexInsertable;
 use crate::frontend::actor::{require_admin_to, Actor, AdminReject, AdminSession, ReturnTo};
+use crate::frontend::corpora::start_activate;
 use crate::frontend::helpers::decorate_uri_encodings;
 use crate::frontend::params::TemplateContext;
-use crate::models::{NewService, Service, WorkerMetadata};
+use crate::models::{Corpus, NewService, Service, WorkerMetadata};
 
 /// Magic service-id ceiling: ids `1=init` and `2=import` are infrastructure and must never be
 /// destroyed (deleting `import` would wipe a corpus's document registry). Mirrors the same guard in
@@ -248,6 +250,192 @@ pub fn register_service_human(
   Ok(Redirect::to("/services"))
 }
 
+/// The corpus ids a service is already activated on (i.e. has at least one task for) — so the
+/// "register on a corpus" screen can **exclude** them from the picker. Re-activating an existing
+/// `(service, corpus)` pair is *destructive* (`register_service` wipes & re-creates that pair's
+/// tasks + logs), so the UI only ever offers genuinely-new corpora.
+fn corpora_activated_on(service_id: i32, connection: &mut diesel::PgConnection) -> Vec<i32> {
+  use crate::schema::tasks;
+  tasks::table
+    .filter(tasks::service_id.eq(service_id))
+    .select(tasks::corpus_id)
+    .distinct()
+    .load(connection)
+    .unwrap_or_default()
+}
+
+/// Fields of the "Add a service" form: the new-service definition plus the names of the corpora
+/// (zero or more checkboxes) to activate it on.
+#[derive(FromForm)]
+pub struct AddServiceForm {
+  /// Service name (external handle).
+  pub name: String,
+  /// Service version.
+  pub version: f32,
+  /// Expected input format.
+  pub inputformat: String,
+  /// Produced output format.
+  pub outputformat: String,
+  /// Prerequisite input-conversion service, if any.
+  pub inputconverter: Option<String>,
+  /// Whether the service is complex.
+  pub complex: bool,
+  /// Optional description.
+  pub description: Option<String>,
+  /// The corpora to activate the new service on (the checked checkboxes; empty = define only).
+  pub corpora: Vec<String>,
+}
+
+/// The "Add a service" screen: the full new-service form plus a checkbox list of every registered
+/// corpus to activate the freshly-defined service on (zero or more). **Signed-in admins only** (an
+/// unauthenticated browser is redirected to the sign-in page). The agent equivalent composes the
+/// two documented primitives — `POST /api/services` (define) then `POST
+/// /api/corpora/<c>/services/<s>` (activate) per corpus.
+#[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
+#[get("/services/new")]
+pub fn add_service_page(
+  session: Option<AdminSession>,
+  return_to: ReturnTo,
+  pool: &State<DbPool>,
+) -> Result<Template, AdminReject> {
+  require_admin_to(session, &return_to)?;
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let corpora: Vec<HashMap<String, String>> = Corpus::all(&mut connection)
+    .unwrap_or_default()
+    .iter()
+    .map(Corpus::to_hash)
+    .collect();
+  let mut global = HashMap::new();
+  global.insert("title".to_string(), "Add a service".to_string());
+  global.insert(
+    "description".to_string(),
+    "Define a new processing service and optionally activate it on existing corpora".to_string(),
+  );
+  let mut context = TemplateContext {
+    global,
+    corpora: Some(corpora),
+    ..TemplateContext::default()
+  };
+  decorate_uri_encodings(&mut context);
+  Ok(Template::render("add-service", context))
+}
+
+/// Defines a new service and activates it on each checked corpus — one **background** activation
+/// job per corpus (each creates a TODO task per imported document, so a large corpus can run for a
+/// while; the operator tracks them on `/jobs`). **Gated by the signed-in [`AdminSession`] cookie**
+/// (anonymous → sign-in). Redirects to `/jobs` when any corpus was selected (so the in-flight
+/// registrations are immediately visible), else back to `/services`. `409` if the name already
+/// exists.
+#[post("/services/create", data = "<form>")]
+pub fn create_service_human(
+  form: Form<AddServiceForm>,
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+  database_url: &State<DatabaseUrl>,
+) -> Result<Redirect, Status> {
+  let Some(session) = session else {
+    return Ok(Redirect::to("/admin/login"));
+  };
+  let form = form.into_inner();
+  insert_service(
+    pool,
+    NewService {
+      name: form.name.clone(),
+      version: form.version,
+      inputformat: form.inputformat,
+      outputformat: form.outputformat,
+      inputconverter: form.inputconverter,
+      complex: form.complex,
+      description: form.description.unwrap_or_default(),
+    },
+  )?;
+  // Activate on each selected corpus (a blank value defensively skipped). Each spawns its own
+  // background `service_activate` job, attributed to the signed-in admin.
+  let mut activated_any = false;
+  for corpus in form.corpora.iter().filter(|name| !name.is_empty()) {
+    start_activate(pool, &database_url.0, &session.owner, corpus, &form.name)?;
+    activated_any = true;
+  }
+  Ok(Redirect::to(if activated_any {
+    "/jobs"
+  } else {
+    "/services"
+  }))
+}
+
+/// Fields of the per-service "Register on a corpus" form: the single corpus (a `<select>` choice
+/// over existing corpora) to activate this already-defined service on.
+#[derive(FromForm)]
+pub struct ActivateOnCorpusForm {
+  /// The corpus to activate this service on.
+  pub corpus: String,
+}
+
+/// The "register an existing service on a corpus" screen: a `<select>` over the corpora this
+/// service is **not yet** activated on (already-activated corpora are excluded — re-activating is
+/// destructive). **Signed-in admins only** (anonymous → sign-in). `404` if the service is unknown.
+#[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
+#[get("/services/<service>/activate")]
+pub fn activate_on_corpus_page(
+  service: &str,
+  session: Option<AdminSession>,
+  return_to: ReturnTo,
+  pool: &State<DbPool>,
+) -> Result<Template, AdminReject> {
+  require_admin_to(session, &return_to)?;
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let service_record = resolve(service, &mut connection)?;
+  let activated_ids = corpora_activated_on(service_record.id, &mut connection);
+  let all_corpora = Corpus::all(&mut connection).unwrap_or_default();
+  let available: Vec<HashMap<String, String>> = all_corpora
+    .iter()
+    .filter(|corpus| !activated_ids.contains(&corpus.id))
+    .map(Corpus::to_hash)
+    .collect();
+  let already: Vec<String> = all_corpora
+    .iter()
+    .filter(|corpus| activated_ids.contains(&corpus.id))
+    .map(|corpus| corpus.name.clone())
+    .collect();
+  let mut global = HashMap::new();
+  global.insert(
+    "title".to_string(),
+    format!("Register service {service} on a corpus"),
+  );
+  global.insert(
+    "description".to_string(),
+    format!("Register the service {service} on an additional corpus"),
+  );
+  global.insert("service_name".to_string(), service.to_string());
+  global.insert("already_activated".to_string(), already.join(", "));
+  let mut context = TemplateContext {
+    global,
+    corpora: Some(available),
+    ..TemplateContext::default()
+  };
+  decorate_uri_encodings(&mut context);
+  Ok(Template::render("service-activate", context))
+}
+
+/// Activates an existing `service` on the chosen `corpus` — a **background** `service_activate` job
+/// (the operator tracks it on `/jobs`). **Gated by the signed-in [`AdminSession`] cookie**
+/// (anonymous → sign-in). Redirects to `/jobs`. `404` on an unknown service/corpus. (The agent twin
+/// is `POST /api/corpora/<c>/services/<s>`.)
+#[post("/services/<service>/activate", data = "<form>")]
+pub fn activate_on_corpus_human(
+  service: &str,
+  form: Form<ActivateOnCorpusForm>,
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+  database_url: &State<DatabaseUrl>,
+) -> Result<Redirect, Status> {
+  let Some(session) = session else {
+    return Ok(Redirect::to("/admin/login"));
+  };
+  start_activate(pool, &database_url.0, &session.owner, &form.corpus, service)?;
+  Ok(Redirect::to("/jobs"))
+}
+
 /// The service-registry screen (HTML twin of [`api_services`]): the table of registered services,
 /// each linking to its worker-fleet view. **Signed-in admins only** (an unauthenticated browser is
 /// redirected to the sign-in page; the agent twin keeps the token guard). `503` if the pool is
@@ -417,6 +605,10 @@ pub fn routes() -> Vec<Route> {
   // via `frontend::apidoc` (rocket_okapi).
   routes![
     register_service_human,
+    add_service_page,
+    create_service_human,
+    activate_on_corpus_page,
+    activate_on_corpus_human,
     services_page,
     worker_report_page,
     delete_service_human

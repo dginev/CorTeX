@@ -9,8 +9,8 @@
 
 use cortex::backend::{self, test_db_address};
 use cortex::frontend::server::mount_api_with;
-use cortex::models::{NewService, Service};
-use cortex::schema::{log_infos, services, tasks, worker_metadata};
+use cortex::models::{Corpus, NewCorpus, NewService, Service};
+use cortex::schema::{corpora, log_infos, services, tasks, worker_metadata};
 use diesel::prelude::*;
 use rocket::http::{ContentType, Status};
 use rocket::local::blocking::Client;
@@ -399,12 +399,280 @@ fn worker_fleet_api_and_screen() {
     .ok();
 }
 
+/// Seeds an import-service task (so `register_service` has a document to activate over) directly.
+fn seed_task(connection: &mut PgConnection, entry: &str, service_id: i32, corpus_id: i32) {
+  diesel::sql_query(format!(
+    "INSERT INTO tasks (entry, service_id, corpus_id, status) VALUES ('{entry}', {service_id}, {corpus_id}, -1)"
+  ))
+  .execute(connection)
+  .expect("seed task");
+}
+
+/// The service-activation UX: the "Add a service" screen (define + activate on 0+ corpora via
+/// checkboxes), the service-side "register on a corpus" `<select>`, the corpus-side mirror
+/// `<select>` of not-yet-registered services, and the idempotent-neutral duplicate-registration
+/// guard (409).
+fn service_activation_flows() {
+  const CORPUS: &str = "addsvc-corpus";
+  const CONF_CORPUS: &str = "addsvc-conflict-corpus";
+  const ADD_SVC: &str = "addsvc-oxidized-svc";
+  const EXT_SVC: &str = "addsvc-extend-svc";
+  const ACT_SVC: &str = "addsvc-activated-svc";
+  const NEW_SVC: &str = "addsvc-new-svc";
+  const CONF_SVC: &str = "addsvc-conflict-svc";
+
+  let import_id = {
+    let mut db = backend::testdb();
+    // Clean slate for every name this case touches.
+    for name in [ADD_SVC, EXT_SVC, ACT_SVC, NEW_SVC, CONF_SVC] {
+      if let Ok(service) = Service::find_by_name(name, &mut db.connection) {
+        diesel::delete(tasks::table.filter(tasks::service_id.eq(service.id)))
+          .execute(&mut db.connection)
+          .ok();
+        diesel::delete(services::table.filter(services::id.eq(service.id)))
+          .execute(&mut db.connection)
+          .ok();
+      }
+    }
+    for corpus_name in [CORPUS, CONF_CORPUS] {
+      if let Ok(corpus) = Corpus::find_by_name(corpus_name, &mut db.connection) {
+        diesel::delete(tasks::table.filter(tasks::corpus_id.eq(corpus.id)))
+          .execute(&mut db.connection)
+          .ok();
+        diesel::delete(corpora::table.filter(corpora::id.eq(corpus.id)))
+          .execute(&mut db.connection)
+          .ok();
+      }
+    }
+    // The magic `import` service must exist (register_service reads its entries).
+    let import =
+      Service::find_by_name("import", &mut db.connection).expect("import service seeded");
+    // A corpus with two imported documents to register services over.
+    db.add(&NewCorpus {
+      name: CORPUS.to_string(),
+      path: "/tmp/addsvc-corpus".to_string(),
+      complex: true,
+      description: String::new(),
+    })
+    .expect("add corpus");
+    let corpus = Corpus::find_by_name(CORPUS, &mut db.connection).expect("corpus");
+    for entry in ["/tmp/addsvc-corpus/1.zip", "/tmp/addsvc-corpus/2.zip"] {
+      seed_task(&mut db.connection, entry, import.id, corpus.id);
+    }
+    // Pre-defined services for the extend / mirror / conflict cases.
+    for name in [EXT_SVC, ACT_SVC, NEW_SVC, CONF_SVC] {
+      db.add(&NewService {
+        name: name.to_string(),
+        version: 0.1,
+        inputformat: "tex".to_string(),
+        outputformat: "html".to_string(),
+        inputconverter: None,
+        complex: true,
+        description: "activation-flow test".to_string(),
+      })
+      .expect("add service");
+    }
+    // ACT_SVC is already activated on CORPUS (a task exists) → must NOT be offered by the corpus
+    // picker. NEW_SVC has no task on CORPUS → must be offered.
+    let act = Service::find_by_name(ACT_SVC, &mut db.connection).expect("act svc");
+    seed_task(
+      &mut db.connection,
+      "/tmp/addsvc-corpus/1.zip",
+      act.id,
+      corpus.id,
+    );
+    // A conflict corpus where CONF_SVC is already registered → re-registration must be 409.
+    db.add(&NewCorpus {
+      name: CONF_CORPUS.to_string(),
+      path: "/tmp/addsvc-conflict-corpus".to_string(),
+      complex: true,
+      description: String::new(),
+    })
+    .expect("add conflict corpus");
+    let conf_corpus =
+      Corpus::find_by_name(CONF_CORPUS, &mut db.connection).expect("conflict corpus");
+    let conf_svc = Service::find_by_name(CONF_SVC, &mut db.connection).expect("conf svc");
+    seed_task(
+      &mut db.connection,
+      "/tmp/conf/1.zip",
+      conf_svc.id,
+      conf_corpus.id,
+    );
+    import.id
+  };
+  let _ = import_id;
+
+  let client = client();
+
+  // --- "Add a service" screen is admin-only -----------------------------------------------------
+  let unauth = client.get("/services/new").dispatch();
+  assert!(
+    unauth
+      .headers()
+      .get_one("Location")
+      .unwrap_or("")
+      .starts_with("/admin/login?next="),
+    "the add-service screen requires sign-in"
+  );
+  sign_in(&client);
+
+  // --- "Add a service": the form lists corpora as checkboxes ------------------------------------
+  let page = client.get("/services/new").dispatch();
+  assert_eq!(page.status(), Status::Ok);
+  let body = page.into_string().expect("html");
+  assert!(
+    body.contains("Add a service"),
+    "renders the add-service screen"
+  );
+  assert!(
+    body.contains(&format!("value=\"{CORPUS}\"")),
+    "offers the corpus as a checkbox option"
+  );
+
+  // Define ADD_SVC and activate it on CORPUS in one step → 303 to the jobs tracker.
+  let created = client
+    .post("/services/create")
+    .header(ContentType::Form)
+    .body(format!(
+      "name={ADD_SVC}&version=0.2&inputformat=tex&outputformat=html&complex=true&description=oxidized&corpora={CORPUS}"
+    ))
+    .dispatch();
+  assert_eq!(
+    created.status(),
+    Status::SeeOther,
+    "add-service redirects (303)"
+  );
+  assert_eq!(
+    created.headers().get_one("Location"),
+    Some("/jobs"),
+    "redirects to the jobs tracker when a corpus was selected"
+  );
+  {
+    let mut db = backend::testdb();
+    assert!(
+      Service::find_by_name(ADD_SVC, &mut db.connection).is_ok(),
+      "the new service is defined"
+    );
+  }
+  // The activation spawned a tracked, attributed background job.
+  let jobs: Value = client
+    .get("/api/jobs")
+    .dispatch()
+    .into_json()
+    .expect("jobs json");
+  assert!(
+    jobs
+      .as_array()
+      .expect("array")
+      .iter()
+      .any(|job| job["kind"] == "service_activate" && job["actor"] == "username1"),
+    "the add-service activation spawned a tracked service_activate job"
+  );
+
+  // --- Service-side "register on a corpus": a <select> over not-yet-activated corpora ------------
+  let page = client
+    .get(format!("/services/{EXT_SVC}/activate"))
+    .dispatch();
+  assert_eq!(page.status(), Status::Ok);
+  let body = page.into_string().expect("html");
+  assert!(
+    body.contains("<select"),
+    "the register-on-corpus screen uses a <select> of corpora"
+  );
+  assert!(
+    body.contains(&format!("value=\"{CORPUS}\"")),
+    "the <select> offers a corpus the service is not yet on"
+  );
+  let activated = client
+    .post(format!("/services/{EXT_SVC}/activate"))
+    .header(ContentType::Form)
+    .body(format!("corpus={CORPUS}"))
+    .dispatch();
+  assert_eq!(activated.status(), Status::SeeOther);
+  assert_eq!(activated.headers().get_one("Location"), Some("/jobs"));
+
+  // --- Corpus-side mirror: the corpus page offers a <select> of not-yet-registered services
+  // -------
+  let page = client.get(format!("/corpus/{CORPUS}")).dispatch();
+  assert_eq!(page.status(), Status::Ok);
+  let body = page.into_string().expect("html");
+  assert!(
+    body.contains("<select name=\"service\""),
+    "the corpus page offers a service <select>"
+  );
+  assert!(
+    body.contains(&format!("<option value=\"{NEW_SVC}\"")),
+    "a not-yet-registered service is offered in the <select>"
+  );
+  assert!(
+    !body.contains(&format!("<option value=\"{ACT_SVC}\"")),
+    "an already-registered service is NOT offered in the <select> (re-registration is rejected, not destructive)"
+  );
+
+  // --- Idempotent-neutral guard: re-registering an already-registered pair is 409, no action -----
+  let (conf_corpus_id, conf_svc_id) = {
+    let mut db = backend::testdb();
+    (
+      Corpus::find_by_name(CONF_CORPUS, &mut db.connection)
+        .unwrap()
+        .id,
+      Service::find_by_name(CONF_SVC, &mut db.connection)
+        .unwrap()
+        .id,
+    )
+  };
+  let dup = client
+    .post(format!(
+      "/api/corpora/{CONF_CORPUS}/services/{CONF_SVC}?token=token1"
+    ))
+    .dispatch();
+  assert_eq!(
+    dup.status(),
+    Status::Conflict,
+    "re-registering an already-registered pair is 409"
+  );
+  {
+    let mut db = backend::testdb();
+    let count: i64 = tasks::table
+      .filter(tasks::corpus_id.eq(conf_corpus_id))
+      .filter(tasks::service_id.eq(conf_svc_id))
+      .count()
+      .get_result(&mut db.connection)
+      .expect("count conf tasks");
+    assert_eq!(count, 1, "the rejected re-registration took no action");
+  }
+
+  // cleanup
+  let mut db = backend::testdb();
+  for name in [ADD_SVC, EXT_SVC, ACT_SVC, NEW_SVC, CONF_SVC] {
+    if let Ok(service) = Service::find_by_name(name, &mut db.connection) {
+      diesel::delete(tasks::table.filter(tasks::service_id.eq(service.id)))
+        .execute(&mut db.connection)
+        .ok();
+      diesel::delete(services::table.filter(services::id.eq(service.id)))
+        .execute(&mut db.connection)
+        .ok();
+    }
+  }
+  for corpus_name in [CORPUS, CONF_CORPUS] {
+    if let Ok(corpus) = Corpus::find_by_name(corpus_name, &mut db.connection) {
+      diesel::delete(tasks::table.filter(tasks::corpus_id.eq(corpus.id)))
+        .execute(&mut db.connection)
+        .ok();
+      diesel::delete(corpora::table.filter(corpora::id.eq(corpus.id)))
+        .execute(&mut db.connection)
+        .ok();
+    }
+  }
+}
+
 // Custom harness (`harness = false`): own `main`, so we end with `libc::_exit(0)` while the Client
 // is still alive — skipping the racy libpq/OpenSSL `atexit` teardown that SIGSEGVs a
 // default-harness exit (KNOWN_ISSUES L-1). A panic still aborts non-zero, so a real assertion
 // failure still fails CI.
 fn main() {
   worker_fleet_api_and_screen();
+  service_activation_flows();
   eprintln!("services_test: all cases passed");
   unsafe { libc::_exit(0) }
 }

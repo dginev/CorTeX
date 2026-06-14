@@ -51,17 +51,17 @@
 
   <hr>
   <h3>Corpus actions</h3>
-  {% if all_services %}
+  {% if all_services and all_services | length > 0 %}
   <form method="post" action="/corpus/{{global.corpus_name_uri}}/activate"
     style="display:inline-block; margin:0 1.5rem; vertical-align:top;">
-    <p>Activate a registered service on this corpus:</p>
+    <p>Register a service on this corpus:</p>
     <p>
       <select name="service" required>
         {% for service in all_services %}
         <option value="{{ service.name }}">{{ service.name }}</option>
         {% endfor %}
       </select>
-      <button type="submit">Activate</button>
+      <button type="submit">Register</button>
     </p>
   </form>
   {% endif %}

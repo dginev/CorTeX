@@ -385,8 +385,10 @@ fn run_extend(database_url: &str, corpus: Corpus, progress: &JobProgress) -> Res
 /// Activates a registered `service` on a `corpus`: creates a TODO task per imported document so the
 /// workers begin converting it. **Token-gated** via the [`Actor`] guard (the run is attributed to
 /// the authenticated actor); the work runs as a background job — poll `GET /api/jobs/<uuid>` for
-/// the pending/done status. `401` without a valid token, `404` on an unknown corpus/service, `202`
-/// with the job handle on success.
+/// the pending/done status. `401` without a valid token, `404` on an unknown corpus/service, `409`
+/// if the service is **already registered** on the corpus (registration is idempotent-neutral — no
+/// re-activation wipes existing results; use *extend*/*rerun* instead), `202` with the job handle
+/// on success.
 #[rocket_okapi::openapi(tag = "Corpora")]
 #[post("/api/corpora/<corpus>/services/<service>")]
 pub fn activate_service(
@@ -403,9 +405,10 @@ pub fn activate_service(
 }
 
 /// Resolves the `(corpus, service)`, spawns the activation job (attributed to `actor`), and returns
-/// the job uuid. `404` on an unknown corpus/service. Shared by the agent endpoint and the human
-/// form.
-fn start_activate(
+/// the job uuid. `404` on an unknown corpus/service. Shared by the agent endpoint, the corpus
+/// screen's human form, and the "Add a service" screen (which activates a freshly-defined service
+/// on each checked corpus — see [`crate::frontend::services`]).
+pub(crate) fn start_activate(
   pool: &DbPool,
   database_url: &str,
   actor: &str,
@@ -417,6 +420,14 @@ fn start_activate(
     Corpus::find_by_name(corpus, &mut connection).map_err(|_| Status::NotFound)?;
   let service_record =
     Service::find_by_name(service, &mut connection).map_err(|_| Status::NotFound)?;
+  // Idempotent-neutral: refuse to re-register an already-registered (service, corpus) pair. The
+  // activation is destructive (`register_service` wipes & re-creates the pair's tasks + their
+  // `log_*` rows), so a re-register would throw away completed results. Reject with `409` and spawn
+  // **no** job — no action taken. (To add newly-imported documents use *extend*; to re-process use
+  // *rerun*.) The backend `register_service` enforces the same invariant as defense-in-depth.
+  if count_service_tasks(&mut connection, corpus_record.id, service_record.id) > 0 {
+    return Err(Status::Conflict);
+  }
   drop(connection);
   let database_url = database_url.to_string();
   let owner = actor.to_string();
@@ -475,19 +486,29 @@ fn run_activate(
 ) -> Result<Value, String> {
   let (corpus_id, service_id) = (corpus.id, service.id);
   let corpus_path = corpus.path.clone();
+  let corpus_name = corpus.name.clone();
+  let service_name = service.name.clone();
   let mut backend = from_address(database_url);
-  progress.step(0, None, "activating service");
+  progress.step(
+    0,
+    None,
+    &format!("registering {service_name} on {corpus_name}"),
+  );
   backend
     .register_service(
       &service,
       &corpus_path,
       owner,
-      format!("Activated service {} via API", service.name),
+      format!("Activated service {service_name} on {corpus_name}"),
     )
     .map_err(|error| error.to_string())?;
   let activated = count_service_tasks(&mut backend.connection, corpus_id, service_id);
-  progress.step(activated, Some(activated), "activation complete");
-  Ok(serde_json::json!({ "tasks": activated }))
+  progress.step(
+    activated,
+    Some(activated),
+    &format!("registered {service_name} on {corpus_name} ({activated} tasks)"),
+  );
+  Ok(serde_json::json!({ "tasks": activated, "corpus": corpus_name, "service": service_name }))
 }
 
 /// Deletes a corpus and all of its tasks and log messages. **Token-gated** via the [`Actor`] guard
@@ -717,11 +738,19 @@ pub fn corpus_page(name: &str, pool: &State<DbPool>) -> Result<Template, Status>
     }
     services.push(hash);
   }
-  // All real (non-init/import) services, for the "activate a service" picker.
+  // The "register a service on this corpus" picker (the corpus-side mirror of the service screen's
+  // "register on a corpus" <select>): all real (non-init/import) services **not yet activated on
+  // this corpus**. Already-activated services are excluded — re-registering is rejected
+  // (idempotent-neutral, 409) and must not be offered.
   let all_services = Service::all(&mut connection)
     .unwrap_or_default()
     .iter()
-    .filter(|service| service.id > IMPORT_SERVICE_ID)
+    .filter(|service| {
+      service.id > IMPORT_SERVICE_ID
+        && !service_records
+          .iter()
+          .any(|activated| activated.id == service.id)
+    })
     .map(Service::to_hash)
     .collect::<Vec<_>>();
   let mut context = TemplateContext {

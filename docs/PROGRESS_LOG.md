@@ -6,6 +6,43 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **Service-activation UX (Arm 6) — "Add a service", register-on-corpus (both directions), in-flight
+  tracking, and an idempotent-NEUTRAL registration guard.** Owner test-drive of the admin dashboard
+  for the upcoming `oxidized-tex-to-html` (latexml-oxide) service. Built:
+  - **"Add a service"** screen (`GET /services/new` + `POST /services/create`, admin-gated): the full
+    new-service definition (all DB fields) plus a **checkbox** list of every corpus to activate it on
+    (zero or more). Defines the service, then spawns one background `service_activate` job per checked
+    corpus; redirects to `/jobs` when any were selected, else `/services`. Linked from the admin
+    dashboard ("Add a service") and the registry screen (the old inline define-only `<details>` form
+    is replaced by a "+ Add a service" link).
+  - **Register an existing service on a corpus** — *service side*: `GET /services/<svc>/activate` +
+    `POST` — a **`<select>`** over the corpora the service is **not yet** on (already-activated ones
+    excluded). Linked per-row from the registry ("register on corpus").
+  - **Corpus-side mirror**: the corpus page's existing service `<select>` now lists only services
+    **not yet** registered on that corpus (was: all real services), the inverse picker.
+  - **In-flight tracking**: every activation runs as a background job on `/jobs` (auto-refreshes
+    while active). The `service_activate` job's progress message now names the corpus+service
+    (`registering <svc> on <corpus>`), and the jobs list grew a **Message** column so each in-flight
+    registration is identifiable. A long activation stays visible on `/jobs` while it runs; **noted
+    residual** — `register_service`'s task-creation loop emits no *intermediate* heartbeat, so a
+    multi-hour activation could trip the 2 h W-4 staleness reaper (self-correcting: `finish()`
+    overwrites the transient `interrupted`); a per-batch heartbeat is the follow-up (OPEN_QUESTIONS
+    #9 / W-4).
+  - **Idempotent-NEUTRAL guard (robustness)**: `register_service` was idempotent-**destructive** — it
+    wiped & re-created a `(service, corpus)` pair's tasks + `log_*` rows on every call, so a stray
+    re-registration silently discarded completed results. Now re-registering an already-registered
+    pair is **refused with no action**: a synchronous pre-check in `start_activate` returns **409**
+    (no job spawned) for every HTTP path, and `backend::register_service` enforces the same invariant
+    as defense-in-depth (CLI + race window). The pickers exclude already-registered targets so the UI
+    never offers a 409. `corpora_test`'s old "re-activation is destructive" case was rewritten to
+    assert the new neutral contract (prior tasks + logs survive a rejected re-register). Tests:
+    `services_test::service_activation_flows` (add-service checkboxes, both register-on-corpus
+    directions, the 409 guard, the corpus-side mirror exclusion) — all green; fmt + clippy clean;
+    `corpora_test` / `jobs_api_test` / `admin_test` / lib green. *(Agent-API note: the screens
+    compose two already-documented primitives — `POST /api/services` (define) + `POST
+    /api/corpora/<c>/services/<s>` (activate, now 409 on duplicate); no new combined endpoint — see
+    OPEN_QUESTIONS.)*
+
 - **L-1 (CI trustworthiness) — converted the last two test stragglers to the uniform `_exit` harness.**
   `reports_api_test` and `services_test` were the only `Client`-building integration binaries still on
   the **default** libtest harness, using a single `#[test]` that called `libc::_exit(0)` at its end. That

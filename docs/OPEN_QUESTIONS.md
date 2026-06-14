@@ -25,6 +25,16 @@ wasn't blocked; each can be revised/refactored on return. Newest first.
 
 ## Open design questions — need a direction
 
+15. **"Add a service" screen composes two agent primitives rather than a new combined endpoint.** The
+    new admin **Add-a-service** flow (`POST /services/create`) defines a service *and* activates it on
+    the checked corpora in one human action. I did **not** add a combined `corpora: [...]` body to
+    `POST /api/services` (it would break the stable `201 + ServiceDto` shape its test/spec assert);
+    instead an agent reproduces the screen by calling the two existing documented primitives —
+    `POST /api/services` (define) then `POST /api/corpora/<c>/services/<s>` (activate, now 409 on a
+    duplicate). This is the same parallel-routes-vs-one-controller tension as #5. *Direction:* accept
+    the composition (the agent surface is complete, just not 1:1 with this convenience screen), or add
+    a combined `POST /api/services` activation body? (`src/frontend/services.rs`.)
+
 5. **Symmetry mechanism: parallel `/api/*` routes vs. one content-negotiated controller.** Today every
    human screen has a 1:1 `/api/*` twin (good parity), but they're *separate handlers* — `GET /corpus/…`
    with `Accept: application/json` returns HTML, not JSON. CLAUDE.md's contract prefers **one controller**

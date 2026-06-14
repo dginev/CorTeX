@@ -1,0 +1,36 @@
+{% extends "layout" %} {% block content %}
+<div class="col-md-2"></div>
+<div class="col-md-8">
+  <h1>Add a service</h1>
+  <p><a href="/services">&larr; back to the service registry</a></p>
+  <form method="post" action="/services/create">
+    <h3>Service definition</h3>
+    <p><label>Name <input type="text" name="name" required placeholder="e.g. oxidized-tex-to-html"></label>
+      &nbsp; <label>Version <input type="number" step="0.01" name="version" value="0.1" required></label></p>
+    <p><label>Input format <input type="text" name="inputformat" value="tex" required></label>
+      &nbsp; <label>Output format <input type="text" name="outputformat" value="html" required></label></p>
+    <p><label>Input converter (optional) <input type="text" name="inputconverter" placeholder="e.g. import"></label></p>
+    <p><label>Description <input type="text" name="description" size="60"></label></p>
+    <p><label><input type="checkbox" name="complex" value="true" checked> Complex (needs more than a document's main text)</label></p>
+
+    <hr>
+    <h3>Activate on corpora <span class="muted">(optional — zero or more)</span></h3>
+    {% if corpora and corpora | length > 0 %}
+    <p class="muted">Each checked corpus is registered as a background job (one TODO task per document — a
+      large corpus can run for a while); track them on <a href="/jobs">Background jobs</a>.</p>
+    <ul style="list-style:none; padding-left:0; line-height:1.8;">
+      {% for corpus in corpora %}
+      <li><label><input type="checkbox" name="corpora" value="{{corpus.name}}"> {{corpus.name}}{% if corpus.description %}
+          <span class="muted">— {{corpus.description}}</span>{% endif %}</label></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">No corpora are registered yet — the service will be defined only. You can register it on a
+      corpus later from the service registry.</p>
+    {% endif %}
+
+    <p><button type="submit">Add service</button></p>
+  </form>
+</div>
+<div class="col-md-2"></div>
+{% endblock content %}

@@ -38,6 +38,8 @@
               {% if service.name == "init" or service.name == "import" %}
               <span class="muted" title="Infrastructure service — cannot be deleted">protected</span>
               {% else %}
+              <a href="/services/{{service.name_uri}}/activate">register on corpus</a>
+              &nbsp;&middot;&nbsp;
               <form method="post" action="/services/{{service.name_uri}}/delete" style="display:inline"
                 onsubmit="return confirm('Permanently delete service &quot;{{service.name}}&quot; and ALL of its tasks + log messages across every corpus? This cannot be undone.');">
                 <input type="hidden" name="confirm" value="{{service.name}}">
@@ -55,18 +57,7 @@
   {% endif %}
 
   <hr>
-  <details class="register-service">
-    <summary><strong>+ Register a service</strong></summary>
-    <form method="post" action="/services/register">
-      <p><label>Name <input type="text" name="name" required></label>
-        &nbsp; <label>Version <input type="number" step="0.01" name="version" value="0.1" required></label></p>
-      <p><label>Input format <input type="text" name="inputformat" value="tex" required></label>
-        &nbsp; <label>Output format <input type="text" name="outputformat" value="html" required></label></p>
-      <p><label>Input converter (optional) <input type="text" name="inputconverter" placeholder="e.g. import"></label></p>
-      <p><label>Description <input type="text" name="description" size="48"></label></p>
-      <p><label><input type="checkbox" name="complex" value="true" checked> Complex (needs more than main text)</label></p>
-      <button type="submit">Register service</button>
-    </form>
-  </details>
+  <p><a href="/services/new"><strong>+ Add a service</strong></a> &mdash; define a new service and register it on
+    corpora in one step</p>
 </div>
 {% endblock content %}

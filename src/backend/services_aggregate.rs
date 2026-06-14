@@ -19,6 +19,30 @@ pub(crate) fn register_service(
   let service_id_val = service.id;
   let corpus_id_val = corpus.id;
 
+  // Idempotent-NEUTRAL guard (defense-in-depth; the HTTP layer also pre-checks and returns 409
+  // without spawning a job). Activation below is destructive — it wipes & re-creates this pair's
+  // tasks *and their `log_*` rows* — so registering a service on a corpus where it is **already
+  // registered** would silently discard completed results. Refuse with no action. A caller that
+  // wants to pick up newly-imported documents uses `extend_service`; one that wants to re-process
+  // uses rerun. (Magic-service note: `import` itself is registered per-corpus and re-importing is a
+  // different path; this guard is for `>2` real services.)
+  let already_registered: i64 = tasks
+    .filter(service_id.eq(service_id_val))
+    .filter(corpus_id.eq(corpus_id_val))
+    .count()
+    .get_result(connection)?;
+  if already_registered > 0 {
+    return Err(Error::QueryBuilderError(
+      format!(
+        "service {:?} is already registered on corpus {:?} ({already_registered} tasks) — \
+         registration is idempotent-neutral; use `extend` to add new documents or `rerun` to \
+         re-process",
+        service.name, corpus.name
+      )
+      .into(),
+    ));
+  }
+
   // The imported documents to (re)activate the service over (the magic `import` service's entries).
   let import_service = Service::find_by_name("import", connection)?;
   let entries: Vec<String> = tasks
