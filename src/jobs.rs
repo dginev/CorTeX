@@ -111,12 +111,33 @@ where
       pool: worker_pool.clone(),
       job_id,
     };
-    match body(&progress) {
-      Ok(result) => finish(&worker_pool, job_id, "succeeded", "", Some(result)),
-      Err(message) => finish(&worker_pool, job_id, "failed", &message, None),
+    // Catch a panicking body so a job is never stranded `running` forever (e.g. an importer panic,
+    // or `from_address`/`connection_at` panicking when the DB is briefly unreachable). A panic
+    // becomes a terminal `failed` with a message — the job reaches a real health state.
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| body(&progress))) {
+      Ok(Ok(result)) => finish(&worker_pool, job_id, "succeeded", "", Some(result)),
+      Ok(Err(message)) => finish(&worker_pool, job_id, "failed", &message, None),
+      Err(panic) => finish(
+        &worker_pool,
+        job_id,
+        "failed",
+        &format!("job panicked: {}", panic_message(&*panic)),
+        None,
+      ),
     }
   });
   Ok(job_uuid)
+}
+
+/// Best-effort extraction of a human-readable message from a caught panic payload.
+fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
+  if let Some(s) = panic.downcast_ref::<&str>() {
+    (*s).to_string()
+  } else if let Some(s) = panic.downcast_ref::<String>() {
+    s.clone()
+  } else {
+    "unknown panic".to_string()
+  }
 }
 
 fn set_running(pool: &DbPool, job_id: i64) {

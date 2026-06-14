@@ -341,4 +341,14 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   `git checkout -- src/schema.rs` after `diesel migration run` (diesel.toml's `print_schema` rewrites it; a
   differing CI `diesel_cli` could otherwise trip `fmt --check`). KNOWN_ISSUES L-1 + the CI header note
   updated.
+- **Background jobs are now panic-safe (robustness; complements the observability uplift):** a panicking job
+  body (an importer panic, or `from_address`/`connection_at` panicking when the DB briefly blips) killed the
+  worker thread *before* `finish()` ran, stranding the job `running` **forever** — a zombie the new
+  pending/health view would show as perpetually live. `jobs::spawn_job` now wraps the body in
+  `catch_unwind` (`AssertUnwindSafe`): a panic becomes a terminal **`failed`** with a `job panicked: …`
+  message (extracted from the payload), so every job reaches a real health state. Also fixed the D-3
+  `connection_at` message **bug** (the literal `"Error connecting to {address}"` never interpolated) → now
+  `panic!("Error connecting to {address}: {e}")`. Test (`jobs_test`): a body that `panic!`s ends `failed`
+  with the panic surfaced, never `succeeded`/stuck. `clippy --all-targets -D warnings` clean. KNOWN_ISSUES
+  D-3 note updated.
   *Next:* pool the 4 `concerns` helpers; the API-docs pick (awaiting owner); or (on backup) the load test.

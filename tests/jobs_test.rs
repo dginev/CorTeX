@@ -48,3 +48,44 @@ fn spawn_job_runs_to_succeeded_with_progress() {
     std::thread::sleep(Duration::from_millis(20));
   }
 }
+
+#[test]
+fn spawn_job_marks_a_panicking_body_failed_not_stuck() {
+  // A panicking job body (e.g. a DB connection that panics on establish) must not strand the job
+  // `running` forever — the worker catches the panic and records a terminal `failed` state.
+  let pool = build_pool(test_db_address(), 4);
+  let uuid = jobs::spawn_job(
+    pool.clone(),
+    "panic_job",
+    "tester",
+    serde_json::json!({}),
+    |_| {
+      panic!("boom in the job body");
+    },
+  )
+  .expect("the job should be spawned");
+
+  let mut connection = pool.get().expect("a connection");
+  let deadline = Instant::now() + Duration::from_secs(5);
+  loop {
+    let job = jobs::find_job(&mut connection, uuid).expect("the job row exists");
+    match job.status.as_str() {
+      "failed" => {
+        assert!(
+          job.message.contains("panicked") && job.message.contains("boom"),
+          "the failure message surfaces the panic: {}",
+          job.message
+        );
+        break;
+      },
+      "succeeded" => panic!("a panicking body must not succeed"),
+      _ => {}, // queued / running — keep waiting
+    }
+    assert!(
+      Instant::now() < deadline,
+      "panicking job never reached a terminal state (status {})",
+      job.status
+    );
+    std::thread::sleep(Duration::from_millis(20));
+  }
+}

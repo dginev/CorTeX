@@ -55,7 +55,7 @@ impl Default for Backend {
 
 /// Constructs a new Task store representation from a Postgres DB address
 pub fn connection_at(address: &str) -> PgConnection {
-  PgConnection::establish(address).expect("Error connecting to {address}")
+  PgConnection::establish(address).unwrap_or_else(|e| panic!("Error connecting to {address}: {e}"))
 }
 
 /// A pool of PostgreSQL connections (Diesel + r2d2).
