@@ -173,6 +173,71 @@ correctness blocker. Either way, **transport-independent phases 1–4 (channel h
 sink fan-out + async I/O, lock-free maps) deliver most of the win and should proceed first**; the
 transport swap is a separable, reversible layer that the spikes de-risk.
 
+### Full-topology + ZMTP interop validation (2026-06-14, owner: "does zmq.rs support all features we need")
+
+The PUSH/PULL spike above only covered the result path. Two further spikes answer the owner's three
+direct questions — *does zmq.rs cover our features, at the performance + robustness we need* — against
+CorTeX's **full** topology and a **mixed, arXiv-like (heavy-tailed)** payload.
+
+**Feature coverage — YES, complete for our usage.** CorTeX's wire needs, confirmed from `src/`:
+`ROUTER` (ventilator `ventilator.rs:72`), `DEALER` (worker source `worker.rs:117`), `PUSH` (worker
+sink `worker.rs:124`), `PULL` (dispatcher sink `sink.rs:46`), TCP transport, multi-frame messages.
+The `zeromq` 0.6 **source** implements `router`, `dealer`, `push`, `pull` (plus req/rep/pub/sub/
+xpub/xsub) — **all four of our socket types** — over TCP (+ IPC), with inherently multi-frame
+`ZmqMessage`. What it omits (README: *"does not implement all of ZeroMQ's feature set"*) is **outside
+our usage**: PAIR sockets, `inproc` transport, and CURVE security (our ZMQ is internal; the web tier is
+guarded by Anubis + the network perimeter, not ZMTP CURVE).
+
+**`examples/zmq_arxiv_workload.rs`** — pure-Rust `zeromq` on *every* side: a ROUTER ventilator leases
+heavy-tailed sources (≈80 % small 64–192 KB, ≈17 % medium 1–3 MB, ≈3 % large 5–10 MB) to N concurrent
+DEALER workers, who PUSH results to a PULL sink. Every frame is stamped `[seq|idx|worker-nonce]` so a
+worker detects interleaving, reordering, **and misrouting** (a reply meant for another worker — the
+ROUTER's core job).
+
+**`examples/zmq_interop.rs`** — THE decisive test: **our side on pure-Rust `zeromq` (ROUTER + PULL),
+workers on libzmq `zmq` (DEALER + PUSH, in threads, with explicit ZMQ identities — the pericortex
+configuration).** A migrated production runs exactly this split, so the two implementations must speak
+ZMTP to each other.
+
+| Run (release, loopback) | Result | Throughput | Integrity |
+| --- | --- | --- | --- |
+| same-impl, 200 workers, 20 000 tasks | 20000/20000 | **4298 tasks/s** · 2870 MB/s | ✓ clean |
+| same-impl, 200 workers, 256 KB frames | 8000/8000 | 847 tasks/s · 2315 MB/s | ✓ clean |
+| **interop** (zeromq ↔ libzmq), 200 workers, 20 000 tasks | 20000/20000 | **3033 tasks/s** · 2026 MB/s | ✓ clean |
+| **interop**, 200 workers, 256 KB frames | 8000/8000 | 794 tasks/s · 2173 MB/s | ✓ clean |
+
+**Performance — YES, with 30–40× headroom.** Production target is ~100 tasks/s (`deployment-sizing`).
+The full topology sustains **4298 tasks/s** (same-impl) / **3033 tasks/s** (interop) at the real
+200-worker fleet size — and even fat-paper 256 KB-frame loads stay ~800 tasks/s. Loopback MB/s is
+multi-GB/s, far above the real network + `/data` disk that actually bound production.
+
+**Robustness — YES in these faithful models.** Zero interleaving / reordering / **misrouting** /
+frame-loss across ~56 000 tasks total (28 k same-impl + 28 k interop), 200 concurrent workers,
+heavy-tailed payloads up to ~10–40 MB, exercising **ROUTER routing-by-identity** under concurrent
+variable-size requests — the riskiest path and the one the owner's interleaving bug would live on. It
+did **not** manifest on `zeromq`.
+
+**Interop — YES, the migration is incremental + wire-compatible.** A pure-Rust `zeromq` dispatcher and
+**unchanged libzmq `pericortex` workers** interoperate cleanly over ZMTP at fleet scale. So we can move
+**the dispatcher first** and leave the workers; full removal of the **C libzmq dependency** then only
+requires later migrating `src/worker.rs` + `pericortex` — and the interop proof is exactly what makes
+that staged + reversible.
+
+**Honest caveats (gate the production cutover on these):**
+- **Maturity:** zmq.rs's README is thin — *"Basic ZMTP implementation is working and tested against the
+  reference implementation."* That is far less battle-proven than libzmq's decades. → stage + soak.
+- **Loopback ≠ a real multi-host network** (TCP segmentation, congestion, NIC, reconnects). The spikes
+  prove correctness-in-principle + ZMTP interop, **not** a production soak.
+- **Not yet stressed:** ZMTP **heartbeats / worker-disconnect detection / reconnect** — the ventilator's
+  worker-timeout reaper depends on noticing dead workers; validate this before cutover.
+
+**Bottom line:** the validation **clears pure-Rust `zeromq` for CorTeX's needs** — feature-complete for
+our topology, 30–40× perf headroom, clean under a faithful arXiv-like load, and **wire-compatible with
+the existing libzmq workers**. The remaining risk is maturity/soak, not features or correctness.
+Recommend adopting `zeromq` for the dispatcher behind the staged plan below (transport-independent
+phases 1–4 first; transport swap as a separable layer), gating the cutover on a real-network soak +
+heartbeat/reconnect validation, then optionally migrating the workers to finish removing libzmq.
+
 ## Incremental migration plan (each phase = one reviewable PR, green on echo_roundtrip + bench)
 
 The **transport-independent** phases (1–4) deliver lock-free + fan-out + batching and ship first; the

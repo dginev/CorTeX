@@ -1297,3 +1297,25 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   decision matrix in `docs/DISPATCHER_RATIONALIZATION.md` (phase-0 marked DONE; open questions narrowed
   to the owner's transport call + dashmap/config knobs). Dev-deps `zeromq`/`tokio`/`bytes` are
   **example-only** (production dispatcher hot path **untouched** — still held for owner review).
+- **Dispatcher transport — full-topology + ZMTP interop validation (owner: "does zmq.rs support all
+  features we need, at our perf/robustness, with an arXiv-like mixed workload?"):** answered with
+  source inspection + two new spikes. **Feature coverage = complete:** CorTeX's wire needs (confirmed
+  from src/) are ROUTER (ventilator), DEALER (worker source), PUSH (worker sink), PULL (dispatcher
+  sink), TCP, multi-frame — and `zeromq` 0.6's source implements all four socket types + TCP/IPC +
+  inherently-multipart `ZmqMessage`; what it omits (PAIR, inproc, CURVE) we don't use.
+  `examples/zmq_arxiv_workload.rs` = pure-Rust `zeromq` on every side, ROUTER↔N DEALER workers +
+  PUSH→PULL sink, heavy-tailed arXiv-like payloads (≈80% small / 17% medium / 3% large), per-frame
+  `[seq|idx|nonce]` stamping → detects interleaving, reordering, AND **misrouting** (ROUTER's core
+  job). `examples/zmq_interop.rs` = **THE decisive test** — OUR side on pure-Rust `zeromq`
+  (ROUTER+PULL), WORKERS on libzmq `zmq` (DEALER+PUSH, threads, explicit identities = the pericortex
+  config) → proves ZMTP wire-compat of a dispatcher-only migration. **Release results (200-worker
+  fleet):** same-impl **4298 tasks/s** / 20000-of-20000 ✓clean; **interop 3033 tasks/s** /
+  20000-of-20000 ✓clean; fat 256KB-frame loads ~800 tasks/s ✓clean. **~30–40× over the ~100 tasks/s
+  production target**; zero interleaving/reordering/misrouting/loss across ~56k tasks total. **Interop
+  YES** → can migrate the dispatcher first and leave libzmq workers untouched; full C-libzmq removal
+  then only needs later migrating worker.rs + pericortex (interop makes it staged + reversible).
+  **Honest caveats recorded:** zmq.rs maturity is thin ("basic ZMTP, tested vs the reference impl");
+  loopback ≠ a real multi-host network; ZMTP heartbeats/disconnect-detect/reconnect not yet stressed
+  (the ventilator's worker-timeout reaper depends on them) — gate the cutover on a real-network soak +
+  heartbeat validation. Full results + a feature/perf/robustness/interop matrix written into
+  `docs/DISPATCHER_RATIONALIZATION.md`. Still example-only; production dispatcher hot path untouched.

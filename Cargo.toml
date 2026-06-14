@@ -141,6 +141,18 @@ path = "examples/zmq_payload_zeromq.rs"
 name = "zmq_payload_libzmq"
 path = "examples/zmq_payload_libzmq.rs"
 
+# Full-topology validation: ROUTER ventilator ↔ DEALER workers + PUSH→PULL sink under a mixed,
+# arXiv-like heavy-tailed payload — exercises every socket type CorTeX uses, with interleaving/
+# reordering/misrouting detection. `zmq_interop` runs OUR side on pure-Rust `zeromq` and the workers
+# on libzmq `zmq` to prove ZMTP wire-compatibility of a migrated (dispatcher-only) deployment.
+[[example]]
+name = "zmq_arxiv_workload"
+path = "examples/zmq_arxiv_workload.rs"
+
+[[example]]
+name = "zmq_interop"
+path = "examples/zmq_interop.rs"
+
 [dev-dependencies]
 # Phase-0 dispatcher spike only (NOT a production dependency — the dispatcher hot path is untouched,
 # held for owner review). `zeromq` = pure-Rust async ZMQ under empirical evaluation vs. libzmq.
