@@ -20,10 +20,8 @@ wasn't blocked; each can be revised/refactored on return. Newest first.
    `wal_compression=lz4`, `jit=off` (`docs/DB_TUNING.md`). *Confirm* these suit the box; revert via
    `ALTER SYSTEM RESET ...` + restart if not.
 
-4. **R-5 deferred (rerun still refreshes inline, ~2 min request block).** The async helper
-   (`jobs::spawn_report_refresh`) now exists; wiring it into `rerun_report`/`serve_rerun` (and removing
-   the inline `mark_new_run` refresh) is the planned next increment — deferred to keep the force-refresh
-   tick additive/low-risk. (`docs/KNOWN_ISSUES.md` R-5)
+4. **R-5 resolved** — the rerun refresh is now async (off the request path); rerun returns in <1 s.
+   `mark_new_run` is bookkeeping-only. No open decision; left here as a pointer. (`docs/KNOWN_ISSUES.md` R-5)
 
 ## Open design questions — need a direction
 

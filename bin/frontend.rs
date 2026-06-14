@@ -65,7 +65,16 @@ fn rerun_corpus(
 ) -> Result<Accepted<String>, NotFound<String>> {
   let corpus_name = corpus_name.to_lowercase();
   let mut conn = pooled(pool)?;
-  serve_rerun(&mut conn, corpus_name, service_name, None, None, None, rr)
+  serve_rerun(
+    &mut conn,
+    pool.inner(),
+    corpus_name,
+    service_name,
+    None,
+    None,
+    None,
+    rr,
+  )
 }
 
 #[post(
@@ -83,6 +92,7 @@ fn rerun_severity(
   let mut conn = pooled(pool)?;
   serve_rerun(
     &mut conn,
+    pool.inner(),
     corpus_name,
     service_name,
     Some(severity),
@@ -109,6 +119,7 @@ fn rerun_category(
   let mut conn = pooled(pool)?;
   serve_rerun(
     &mut conn,
+    pool.inner(),
     corpus_name,
     service_name,
     Some(severity),
@@ -136,6 +147,7 @@ fn rerun_what(
   let mut conn = pooled(pool)?;
   serve_rerun(
     &mut conn,
+    pool.inner(),
     corpus_name,
     service_name,
     Some(severity),

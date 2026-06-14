@@ -10,7 +10,7 @@ use rocket_dyn_templates::Template;
 use std::collections::HashMap;
 use std::str;
 
-use crate::backend::{mark_rerun, progress_report, save_historical_tasks, RerunOptions};
+use crate::backend::{mark_rerun, progress_report, save_historical_tasks, DbPool, RerunOptions};
 use crate::frontend::cached::task_report;
 use crate::frontend::helpers::*;
 use crate::frontend::params::{ReportParams, RerunRequestParams, TemplateContext};
@@ -217,8 +217,10 @@ pub fn serve_report(
 
 /// Rerun a filtered subset of tasks for a <corpus,service> pair, over the caller-supplied (pooled)
 /// `connection`.
+#[allow(clippy::too_many_arguments)]
 pub fn serve_rerun(
   connection: &mut PgConnection,
+  pool: &DbPool,
   corpus_name: String,
   service_name: String,
   severity: Option<String>,
@@ -278,7 +280,12 @@ pub fn serve_rerun(
   println!("-- User {user:?}: Mark for rerun took {report_duration:?}ms");
   match rerun_result {
     Err(_) => Err(NotFound("Access Denied".to_string())), // TODO: better error message?
-    Ok(_) => Ok(Accepted(String::default())),
+    Ok(_) => {
+      // Reflect the rerun in reports without blocking this request: refresh the rollup off the
+      // request path (debounced, observable via `/api/jobs`). Best-effort — the rerun committed.
+      let _ = crate::jobs::spawn_report_refresh(pool.clone(), user);
+      Ok(Accepted(String::default()))
+    },
   }
 }
 

@@ -215,6 +215,7 @@ pub fn rerun_report(
   description: Option<&str>,
   actor: Actor,
   database_url: &State<DatabaseUrl>,
+  pool: &State<DbPool>,
 ) -> Result<(Status, Json<RerunAckDto>), Status> {
   if let Some(severity) = severity {
     if !is_rollup_severity(severity) {
@@ -240,6 +241,10 @@ pub fn rerun_report(
       owner_opt: Some(actor.owner.clone()),
     })
     .map_err(|_| Status::InternalServerError)?;
+  // Reflect the rerun in reports without blocking this request: spawn the rollup refresh off the
+  // request path (debounced, observable via `/api/jobs`). Best-effort — the rerun already
+  // committed.
+  let _ = jobs::spawn_report_refresh(pool.inner().clone(), &actor.owner);
   Ok((
     Status::Accepted,
     Json(RerunAckDto {

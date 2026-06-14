@@ -537,3 +537,11 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   in `/api/jobs`). Regression: `reports_api_test` asserts 401 + 202-with-job-handle + actor attribution.
   New `docs/REPORT_FRESHNESS.md` documents the two-tier model. R-5 (rerun inline-refresh) updated: the
   helper now exists, so the fix is just wiring it — deferred to keep this tick additive.
+- **R-5 resolved: rerun no longer blocks ~2 min on the rollup refresh (autonomous-night progress):** removed
+  the inline `refresh_report_summary` from `mark_new_run` (now bookkeeping-only) and wired both rerun entry
+  points to spawn the refresh **off the request path** via `jobs::spawn_report_refresh` —
+  `reports::rerun_report` (added `pool`) and `concerns::serve_rerun` (threaded `pool` through the 4
+  `bin/frontend.rs` handlers). **Verified on the live dump:** a narrow rerun returns in **0.84 s** (was
+  ~2 min) and leaves a `refresh_reports` job running (attributed to the actor). Importer/service-activation
+  intentionally don't spawn a refresh (their new tasks are TODO, not yet in the matview). Tests green
+  (reports_api/runs/corpora); clippy/fmt clean. Closes the async-refresh story end to end.

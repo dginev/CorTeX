@@ -223,12 +223,13 @@ pub(crate) fn mark_new_run(
     owner,
   };
   hrun.create(connection)?;
-  // Step 3. Refresh the report rollup so the run boundary is reflected in reports. Best-effort: a
-  // refresh failure must not fail the run bookkeeping (the dispatcher also refreshes on drain and
-  // daily). See `src/backend/rollup.rs`.
-  if let Err(e) = super::rollup::refresh_report_summary(connection) {
-    eprintln!("[mark_new_run] report_summary refresh failed (non-fatal): {e:?}");
-  }
+  // NB: this used to synchronously `REFRESH MATERIALIZED VIEW report_summary` here so the run
+  // boundary showed up in reports immediately — but that is a ~2 min rebuild at production scale,
+  // and `mark_new_run` runs on the rerun *request* thread, so it blocked the HTTP response for
+  // minutes (KNOWN_ISSUES R-5). The refresh is now spawned **off the request path** by the rerun
+  // entry points (`reports::rerun_report`, `concerns::serve_rerun`) via
+  // `jobs::spawn_report_refresh`, and the dispatcher refreshes on drain + the regular interval.
+  // Bookkeeping no longer triggers a refresh.
   Ok(())
 }
 
