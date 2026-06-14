@@ -1,0 +1,7 @@
+{% extends "layout" %} {% block content %}
+<div class="center">
+  <h1>{{ status }}</h1>
+  <p class="lead">{{ message }}</p>
+  <p><a href="/">&larr; Back to the corpora overview</a></p>
+</div>
+{% endblock content %}

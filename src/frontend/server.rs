@@ -60,5 +60,6 @@ pub fn mount_api_with(
     .mount("/", runs::routes())
     .mount("/", jobs::routes())
     .mount("/", services::routes())
+    .register("/", crate::frontend::catchers::catchers())
     .attach(Template::fairing())
 }

@@ -545,3 +545,13 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   ~2 min) and leaves a `refresh_reports` job running (attributed to the actor). Importer/service-activation
   intentionally don't spawn a refresh (their new tasks are TODO, not yet in the matview). Tests green
   (reports_api/runs/corpora); clippy/fmt clean. Closes the async-refresh story end to end.
+- **Consistent, content-negotiated error responses (Arm 4; autonomous-night progress):** the frontend had
+  **no error catchers** (Rocket logged "No 404/500 catcher registered" and served its default page). Added
+  `src/frontend/catchers.rs`: a `NegotiatedError` responder + catchers for 400/401/404/500/503, registered
+  in `server::mount_api_with`. **Content-negotiated** — a request under `/api` or with
+  `Accept: application/json` gets a JSON `{error, status}`; a human gets the themed `templates/error.html`
+  page (the error-path half of the symmetry contract). This also means a future caught panic renders a
+  clean negotiated 500 instead of Rocket's default (complements the F-2 fix). Verified on the live dump
+  (HTML 404 page for `/corpus/...`, JSON for `/api/...` and `Accept: json`, JSON 401 for an untokened
+  `/api/reports/refresh`). Regression in `reports_api_test` (api 404 → JSON `{error,status}`, human 404 →
+  HTML). clippy/fmt clean.

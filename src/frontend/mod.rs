@@ -1,6 +1,7 @@
 //! CorTeX Frontend capabilities - reports, cache, captchas and more
 pub mod actor;
 pub mod cached;
+pub mod catchers;
 pub mod concerns;
 pub mod corpora;
 pub mod cors;

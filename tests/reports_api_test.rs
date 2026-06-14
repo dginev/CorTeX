@@ -253,6 +253,30 @@ fn category_and_what_reports_match_seed() {
     "the ack carries a poll URL for the job's status/health"
   );
 
+  // --- Error catchers are content-negotiated: agents (an /api path or Accept: json) get a JSON
+  // `{error, status}`; humans get the themed HTML error page (the error-path symmetry contract).
+  // ---
+  let response = client
+    .get("/api/reports/no-such-corpus-xyz/no_svc/warning")
+    .dispatch();
+  assert_eq!(response.status(), Status::NotFound);
+  assert_eq!(
+    response.content_type(),
+    Some(ContentType::JSON),
+    "an /api error renders as JSON, not Rocket's default HTML page"
+  );
+  let err: Value = response.into_json().expect("json error body");
+  assert_eq!(err["status"], 404);
+  assert!(err["error"].is_string(), "the JSON error carries a message");
+
+  let response = client.get("/corpus/no-such-xyz/no_svc/warning").dispatch();
+  assert_eq!(response.status(), Status::NotFound);
+  assert_eq!(
+    response.content_type(),
+    Some(ContentType::HTML),
+    "a human error renders as the themed HTML page"
+  );
+
   // Exit before the racy libpq/OpenSSL atexit teardown of the still-live Client (KNOWN_ISSUES L-1).
   unsafe { libc::_exit(0) }
 }
