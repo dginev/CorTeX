@@ -125,6 +125,41 @@ pub struct HistoricalTaskReport {
 }
 
 impl HistoricalTask {
+  /// Retention stats for the per-task snapshot store: total rows and the oldest `saved_at`. This is
+  /// the unbounded-growth table (one row per task per save-snapshot), so the admin "manage
+  /// historical data" screen surfaces these to decide a retention cutoff.
+  pub fn retention_stats(
+    connection: &mut PgConnection,
+  ) -> Result<(i64, Option<NaiveDateTime>), Error> {
+    use crate::schema::historical_tasks::dsl;
+    let total: i64 = dsl::historical_tasks.count().get_result(connection)?;
+    let oldest: Option<NaiveDateTime> = dsl::historical_tasks
+      .select(diesel::dsl::min(dsl::saved_at))
+      .first(connection)?;
+    Ok((total, oldest))
+  }
+
+  /// How many snapshot rows are strictly older than `cutoff` — the **dry-run count** shown before a
+  /// prune, so the admin sees exactly what a prune would remove.
+  pub fn count_before(connection: &mut PgConnection, cutoff: NaiveDateTime) -> Result<i64, Error> {
+    use crate::schema::historical_tasks::dsl;
+    dsl::historical_tasks
+      .filter(dsl::saved_at.lt(cutoff))
+      .count()
+      .get_result(connection)
+  }
+
+  /// Deletes snapshot rows strictly older than `cutoff` (retention prune), returning the number
+  /// removed. The run *summaries* (`historical_runs`) are untouched — only the bulky per-task
+  /// snapshots are pruned, so the run history/charts survive while old per-task diffs age out.
+  pub fn prune_before(
+    connection: &mut PgConnection,
+    cutoff: NaiveDateTime,
+  ) -> Result<usize, Error> {
+    use crate::schema::historical_tasks::dsl;
+    diesel::delete(dsl::historical_tasks.filter(dsl::saved_at.lt(cutoff))).execute(connection)
+  }
+
   /// Obtain all historical records for a given task id
   pub fn find_by(needle_id: i64, connection: &mut PgConnection) -> Result<Vec<Self>, Error> {
     use crate::schema::historical_tasks::dsl::{saved_at, task_id};

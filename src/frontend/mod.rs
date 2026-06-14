@@ -14,6 +14,7 @@ pub mod metrics;
 pub mod params;
 pub mod render;
 pub mod reports;
+pub mod retention;
 pub mod runs;
 pub mod server;
 pub mod services;

@@ -1228,3 +1228,19 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   double-mention when re-running init on a configured box). `tests/bootstrap_test` asserts the field.
   clippy -D warnings + fmt green. Closes the install→sign-in gap at the CLI level (the operator learns
   auth isn't set up before hitting the web UI).
+- **Managing historical runs — data-retention prune (autonomous-day progress; the endpoint of the
+  owner's stated journey + the one real unbounded-growth lever):** `historical_tasks` (one status
+  snapshot per task per save-snapshot) is the only unbounded table; nothing could prune it. Built a
+  retention tool using the **same safety pattern as `delete_corpus`** (the existing destructive admin
+  action): gated + audited + admin-chosen scope + a **dry-run count preview** before any delete, and
+  it touches ONLY `historical_tasks` (the run summaries `historical_runs` + their history charts are
+  never pruned). `models::historical_tasks`: `retention_stats` (total + oldest), `count_before(cutoff)`
+  (the dry-run count), `prune_before(cutoff)` (delete older-than). `frontend::retention`:
+  `GET /admin/retention?before=YYYY-MM-DD` (stats + a dry-run "N snapshots older than X" preview → a
+  confirmed Delete form with a JS confirm dialog), `POST /admin/retention/prune` (gated+audited; logs
+  who pruned what; redirects with the count), and the agent twin `GET /api/historical/stats` (token-
+  gated, OpenAPI). Linked from /admin. `tests/retention_test` seeds a real year-2000 snapshot (valid
+  task FK) and exercises gating + token-gated stats + the screen + the preview + a prune that removes
+  the old snapshot while recent ones survive. clippy -D warnings + fmt + the sweep green. (Reconsidered
+  the earlier "needs sign-off" framing: deleting old snapshots is the same category as the
+  already-shipped delete-corpus, with the same confirm+audit+dry-run safeguards.)

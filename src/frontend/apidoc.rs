@@ -47,6 +47,9 @@ use crate::frontend::reports::{
   okapi_add_operation_for_api_what_report_, okapi_add_operation_for_refresh_reports_,
   okapi_add_operation_for_rerun_report_, refresh_reports, rerun_report,
 };
+use crate::frontend::retention::{
+  api_historical_stats, okapi_add_operation_for_api_historical_stats_,
+};
 use crate::frontend::runs::{
   api_all_runs, api_run_current, api_run_diff, api_run_task_diffs, api_runs,
   okapi_add_operation_for_api_all_runs_, okapi_add_operation_for_api_run_current_,
@@ -111,6 +114,7 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
     put_config,
     api_audit,
     api_sessions,
+    api_historical_stats,
   ];
   let spec_json = serde_json::to_string_pretty(&spec).unwrap_or_default();
   rocket

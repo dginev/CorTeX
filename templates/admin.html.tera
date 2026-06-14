@@ -42,6 +42,7 @@
     <li><a href="/services"><i class="fa fa-cogs"></i>&nbsp; Registered services</a> — the service registry &amp; worker fleets</li>
     <li><a href="/jobs"><i class="fa fa-tasks"></i>&nbsp; Background jobs</a> — imports, reruns, reindex/analyze, with health</li>
     <li><a href="/admin/runs"><i class="fa fa-history"></i>&nbsp; Historical runs</a> — recent conversion runs across every corpus &amp; service</li>
+    <li><a href="/admin/retention"><i class="fa fa-trash-o"></i>&nbsp; Data retention</a> — prune old per-task snapshots (the unbounded-growth table)</li>
     <li><a href="/health"><i class="fa fa-heartbeat"></i>&nbsp; System health</a> — DB, migrations, pool, dispatcher, storage + maintenance</li>
     <li><a href="/settings"><i class="fa fa-sliders"></i>&nbsp; Settings</a> — dispatcher &amp; framework configuration</li>
     <li><a href="/admin/audit"><i class="fa fa-history"></i>&nbsp; Audit log</a> — who did what, when (every admin action, attributed)</li>
