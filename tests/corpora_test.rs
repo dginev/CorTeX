@@ -229,6 +229,47 @@ fn register_service_creates_tasks_and_attributes_the_run() {
     .expect("a run was recorded");
   assert_eq!(owner, "activator-bob", "run attributed to the actor");
 
+  // --- Re-activation must not orphan the prior tasks' logs (log_* have no FK to tasks) ----------
+  let a_target_task: Task = tasks::table
+    .filter(tasks::corpus_id.eq(corpus.id))
+    .filter(tasks::service_id.eq(target.id))
+    .first(&mut db.connection)
+    .expect("a target task from the first activation");
+  db.add(&NewLogWarning {
+    task_id: a_target_task.id,
+    category: "c".to_string(),
+    what: "w".to_string(),
+    details: "d".to_string(),
+  })
+  .expect("seed a log on the activated task");
+  db.register_service(
+    &target,
+    corpus_path,
+    "activator-bob".to_string(),
+    "re-activation".to_string(),
+  )
+  .expect("re-activate");
+  let orphaned_logs: i64 = log_warnings::table
+    .filter(log_warnings::task_id.eq(a_target_task.id))
+    .count()
+    .get_result(&mut db.connection)
+    .unwrap();
+  assert_eq!(
+    orphaned_logs, 0,
+    "re-activation deletes the prior tasks' logs (no orphans)"
+  );
+  let target_todo_after: i64 = tasks::table
+    .filter(tasks::corpus_id.eq(corpus.id))
+    .filter(tasks::service_id.eq(target.id))
+    .filter(tasks::status.eq(TaskStatus::TODO.raw()))
+    .count()
+    .get_result(&mut db.connection)
+    .unwrap();
+  assert_eq!(
+    target_todo_after, 2,
+    "re-activation recreates a TODO task per imported document"
+  );
+
   cleanup(&mut db, corpus_name, target_svc);
 }
 

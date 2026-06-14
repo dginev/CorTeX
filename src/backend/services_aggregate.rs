@@ -14,30 +14,52 @@ pub(crate) fn register_service(
   description: String,
 ) -> Result<(), Error> {
   use crate::schema::tasks::dsl::*;
+  use crate::schema::{log_errors, log_fatals, log_infos, log_invalids, log_warnings};
   let corpus = Corpus::find_by_path(corpus_path, connection)?;
   let todo_raw = TaskStatus::TODO.raw();
+  let service_id_val = service.id;
+  let corpus_id_val = corpus.id;
 
-  // First, delete existing tasks for this <service, corpus> pair.
-  delete(tasks)
-    .filter(service_id.eq(service.id))
-    .filter(corpus_id.eq(corpus.id))
-    .execute(connection)?;
-
-  // TODO: when we want to get completeness, also:
-  // - also erase log entries
-  // - update dependencies
+  // The imported documents to (re)activate the service over (the magic `import` service's entries).
   let import_service = Service::find_by_name("import", connection)?;
   let entries: Vec<String> = tasks
     .filter(service_id.eq(import_service.id))
     .filter(corpus_id.eq(corpus.id))
     .select(entry)
     .load(connection)?;
+
+  // (Re)activation atomically clears this <service, corpus> pair's prior tasks **and their `log_*`
+  // rows**, then re-creates a TODO task per imported entry. The `log_*` tables have no FK to
+  // `tasks` (the only FK is `historical_tasks → tasks ON DELETE CASCADE`), so deleting the tasks
+  // alone would orphan their log rows on every re-activation — the same hazard closed in
+  // `Corpus::destroy`. One transaction so a crash can't leave the service with its tasks deleted
+  // but none re-created.
   connection.transaction::<(), Error, _>(|t_connection| {
+    let prior_task_ids = || {
+      tasks
+        .filter(service_id.eq(service_id_val))
+        .filter(corpus_id.eq(corpus_id_val))
+        .select(id)
+    };
+    delete(log_infos::table.filter(log_infos::task_id.eq_any(prior_task_ids())))
+      .execute(t_connection)?;
+    delete(log_warnings::table.filter(log_warnings::task_id.eq_any(prior_task_ids())))
+      .execute(t_connection)?;
+    delete(log_errors::table.filter(log_errors::task_id.eq_any(prior_task_ids())))
+      .execute(t_connection)?;
+    delete(log_fatals::table.filter(log_fatals::task_id.eq_any(prior_task_ids())))
+      .execute(t_connection)?;
+    delete(log_invalids::table.filter(log_invalids::task_id.eq_any(prior_task_ids())))
+      .execute(t_connection)?;
+    delete(tasks)
+      .filter(service_id.eq(service_id_val))
+      .filter(corpus_id.eq(corpus_id_val))
+      .execute(t_connection)?;
     for imported_entry in entries {
       let new_task = NewTask {
         entry: imported_entry,
-        service_id: service.id,
-        corpus_id: corpus.id,
+        service_id: service_id_val,
+        corpus_id: corpus_id_val,
         status: todo_raw,
       };
       new_task.create(t_connection)?;

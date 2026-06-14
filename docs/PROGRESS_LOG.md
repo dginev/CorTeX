@@ -6,6 +6,20 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **Service (re)activation — made `register_service` orphan-free + crash-consistent.** The
+  activate-service action (`POST /api/corpora/<c>/services/<s>` → `backend::register_service`) deletes
+  the `<service, corpus>` pair's prior tasks before re-creating them — but it deleted **only the
+  tasks, not their `log_*` rows** (the code's own "TODO: also erase log entries"), so every
+  **re-activation orphaned the prior tasks' logs** (the same no-FK hazard closed in `Corpus::destroy`);
+  and the delete ran *outside* the re-insert transaction, so a crash between them could leave the
+  service with its tasks deleted but none re-created. Fix: one transaction that deletes the pair's
+  `log_*` rows (all five tables, scoped by the pair's task ids) **and** its tasks, then re-creates a
+  TODO task per imported entry — atomic + orphan-free. Test: extended
+  `corpora_test::register_service_creates_tasks_and_attributes_the_run` to seed a log, re-activate,
+  and assert the prior log is gone (no orphan) with exactly 2 fresh TODO tasks. **Recorded (not
+  fixed):** the *unused* `backend::delete_service_by_name` has the same orphan bug (deletes only the
+  `services` row) — KNOWN_ISSUES R-6. fmt + clippy clean; `corpora_test` green.
+
 - **I-1 (unpack glob) — hardened the complex-import glob compilation against metacharacter paths.**
   The complex-corpus `unpack` path had three `glob(pattern).unwrap()` sites
   (`unpack_arxiv_top`/`unpack_extend_arxiv_top`/`unpack_arxiv_months`) that **panicked** when a
