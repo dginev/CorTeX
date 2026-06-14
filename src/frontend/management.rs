@@ -35,14 +35,14 @@ use crate::frontend::actor::{owner_for_token, Actor};
 pub struct ConfigFile(pub PathBuf);
 
 /// Masked view of the database settings — the password is never exposed.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct DatabaseDto {
   /// Connection URL with any password component replaced by `***`.
   pub url: String,
 }
 
 /// Masked view of the auth settings — secrets are summarized, never exposed.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct AuthDto {
   /// Whether a captcha secret is configured.
   pub captcha_secret_set: bool,
@@ -51,7 +51,7 @@ pub struct AuthDto {
 }
 
 /// A masked, serializable view of [`CortexConfig`] safe to expose over the API and UI.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct ConfigDto {
   /// Database settings (password masked).
   pub database: DatabaseDto,
@@ -81,14 +81,14 @@ impl ConfigDto {
 }
 
 /// Health of the database dependency.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct DbHealth {
   /// Whether the configured database accepts a connection and a trivial query.
   pub reachable: bool,
 }
 
 /// Health of the schema migrations.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct MigrationsHealth {
   /// Whether the database schema is at the latest embedded migration.
   pub current: bool,
@@ -96,7 +96,7 @@ pub struct MigrationsHealth {
 
 /// Utilization of the web frontend's database connection pool — a key load / saturation signal
 /// (when `in_use` approaches `max`, requests start waiting on `pool.get()` and may `503`).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct PoolHealth {
   /// Configured maximum pool size (`database.pool_size`).
   pub max: u32,
@@ -112,7 +112,7 @@ pub struct PoolHealth {
 /// frontend doesn't otherwise speak to the dispatcher (workers do), so this is a pure liveness
 /// probe of the **co-located** dispatcher (localhost) — informational, it does not flip the overall
 /// `status` (a read-only/report-only frontend deployment legitimately runs without a dispatcher).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct DispatcherHealth {
   /// Whether both the ventilator and sink ports accept a TCP connection on localhost.
   pub reachable: bool,
@@ -124,7 +124,7 @@ pub struct DispatcherHealth {
 
 /// A corpus whose configured source directory could not be read on disk (missing / unmounted /
 /// wrong permissions). Its conversions and re-imports will fail until the path is restored.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct UnreadableCorpus {
   /// Corpus name (its external handle).
   pub name: String,
@@ -138,7 +138,7 @@ pub struct UnreadableCorpus {
 /// of only as mysterious cascading task failures. **Informational** (the frontend still serves
 /// reports from the DB), so it does not flip the overall `status`. Corpora with an empty path are
 /// skipped.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct StorageHealth {
   /// Number of corpora whose source path was checked (non-empty paths).
   pub corpora_checked: usize,
@@ -147,7 +147,7 @@ pub struct StorageHealth {
 }
 
 /// Structured health report, identical for agents and human supervisors.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct HealthDto {
   /// Overall status: `"ok"` when every *frontend* dependency (DB + migrations) is healthy, else
   /// `"degraded"`. Pool/dispatcher/storage fields are informational and do not flip this.
@@ -212,7 +212,7 @@ fn merge_and_persist(patch: &serde_json::Value, path: &Path) -> Result<CortexCon
 }
 
 /// One row of the mounted route surface — an endpoint's method, URI pattern, and handler name.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct RouteInfo {
   /// HTTP method (`GET`, `POST`, …).
   pub method: String,
@@ -244,7 +244,7 @@ impl RouteTable {
 /// Discovery index of the **agent API**: every mounted `/api/*` endpoint (method, path, handler
 /// name) in a single call, so an agent can enumerate CorTeX's machine surface without out-of-band
 /// docs. Self-describing — built by introspecting the live route table, so it never drifts.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct ApiIndexDto {
   /// Number of agent endpoints.
   pub count: usize,
@@ -253,6 +253,7 @@ pub struct ApiIndexDto {
 }
 
 /// `GET /api` — the agent-API discovery index (see [`ApiIndexDto`]).
+#[rocket_okapi::openapi(tag = "Meta")]
 #[get("/api")]
 pub fn api_index(routes: &State<RouteTable>) -> Json<ApiIndexDto> {
   let mut endpoints: Vec<RouteInfo> = routes
@@ -269,6 +270,7 @@ pub fn api_index(routes: &State<RouteTable>) -> Json<ApiIndexDto> {
 }
 
 /// The effective configuration, masked for safe exposure (the agent twin of the Settings screen).
+#[rocket_okapi::openapi(tag = "Management")]
 #[get("/api/config")]
 pub fn api_config() -> Json<ConfigDto> { Json(ConfigDto::from_config(config())) }
 
@@ -355,6 +357,7 @@ fn health_report(pool: &DbPool) -> HealthDto {
 
 /// A structured, pollable health report for agents (probes through the pool, samples pool
 /// utilization). The JSON twin of the human [`health_page`] screen.
+#[rocket_okapi::openapi(tag = "Management")]
 #[get("/healthz")]
 pub fn healthz(pool: &State<DbPool>) -> Json<HealthDto> { Json(health_report(pool)) }
 
@@ -412,7 +415,7 @@ pub fn post_settings(
 }
 
 /// Acknowledgement for a maintenance job: the background [`crate::jobs`] handle to poll.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct MaintenanceAckDto {
   /// The spawned (or already-running, if debounced) maintenance job's external uuid.
   pub job: String,
@@ -500,10 +503,8 @@ pub fn analyze_human(
 
 /// The route set for the management/health/settings capability.
 pub fn routes() -> Vec<Route> {
+  // NB: `api_index` + `api_config` + `healthz` are mounted via `frontend::apidoc` (rocket_okapi).
   routes![
-    api_index,
-    api_config,
-    healthz,
     health_page,
     reindex,
     reindex_human,

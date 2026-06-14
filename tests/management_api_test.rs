@@ -244,6 +244,8 @@ fn openapi_spec_and_rapidoc_are_served() {
     "/api/jobs",
     "/api/runs/{corpus}/{service}",
     "/api/reports/{corpus}/{service}/{severity}",
+    "/api/config",
+    "/healthz",
   ] {
     assert!(
       spec["paths"][path]["get"].is_object(),

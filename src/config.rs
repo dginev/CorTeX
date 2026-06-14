@@ -52,7 +52,7 @@ impl Default for DatabaseConfig {
 }
 
 /// ZeroMQ dispatcher settings.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DispatcherConfig {
   /// Port the ventilator listens on for worker task requests.
   pub source_port: usize,
@@ -104,7 +104,7 @@ pub struct AuthConfig {
 }
 
 /// On-disk asset locations, so the binary is not bound to its working directory.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AssetsConfig {
   /// Directory holding the Tera templates.
   pub template_dir: String,

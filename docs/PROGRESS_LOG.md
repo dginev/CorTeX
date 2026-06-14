@@ -12,9 +12,11 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   + `schemars` moved to real deps; new `frontend::apidoc` mounts the **generated OpenAPI 3 document**
   at `GET /api/openapi.json` and a **RapiDoc** browser page at `GET /api/docs`, both built by
   rocket_okapi *from the `#[openapi]`-annotated routes themselves* — so the spec is the single source
-  of truth and can't drift (the symmetry contract extended to the docs). **Documented so far** (all
-  the **read** routes — 14 endpoints across 5 modules): corpora, services, jobs, **runs** (`/api/runs/…`
-  ×4), **reports** (`/api/reports/…` ×2) — each carries `#[openapi(tag=…)]`,
+  of truth and can't drift (the symmetry contract extended to the docs). **Documented so far** (every
+  **read** route — 17 endpoints across all 6 capability modules): corpora, services, jobs, runs,
+  reports, and management (`GET /api`, `/api/config`, `/healthz` — incl. the `ConfigDto`/`HealthDto`
+  nested-DTO cascade and the two `config.rs` structs now deriving `JsonSchema`) — each carries
+  `#[openapi(tag=…)]`,
   its DTOs derive `JsonSchema`, and it's mounted via `openapi_get_routes_spec!` in `apidoc` (moved out
   of the plain route groups; the multi-module wiring imports each handler + its generated
   `okapi_add_operation_for_*` companion, explicit not glob so the per-module `routes` fns don't
