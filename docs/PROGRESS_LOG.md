@@ -506,3 +506,19 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   Rocket decodes it). Regression: `corpora_test::overview_and_corpus_pages_render_server_side` now asserts
   the corpus screen exposes a per-service run-history link. *Next:* the symmetry convergence (parallel
   `/api/*` → `Accept`-negotiation) and/or the matview REFRESH timing on real data.
+- **Matview REFRESH measured + made non-blocking (R-4 resolved; load-test step done):** measured the
+  `report_summary` rebuild on the production-scale dump (5.87M tasks, 273M `log_infos` + 61M
+  `log_warnings` + 10M `log_errors`): **~2 min 13 s** for a full `REFRESH MATERIALIZED VIEW`. That sits on
+  the dispatcher's run-completion (drain) + daily path, and the plain refresh holds an ACCESS EXCLUSIVE
+  lock → **every report read blocked for ~2 min**. Fixed with `REFRESH ... CONCURRENTLY` (measured ~2 min
+  14 s — ~1 s more for the writer, but readers keep seeing the prior rollup throughout). Required a UNIQUE
+  index, added via migration `2026-06-14-040000_report_summary_concurrent_refresh`:
+  `(corpus_id, service_id, severity, category_is_total, what_is_total, category, what) NULLS NOT DISTINCT`
+  (the `NULLS NOT DISTINCT`, PG15+, keys the ROLLUP subtotal/grand-total `NULL`s); drops the now-redundant
+  prefix `report_summary_lookup_idx`. Verified transaction-safety (CONCURRENTLY forbids running in a
+  transaction — every caller is outside one) and reversibility (`migration redo`); `refresh_report_summary`
+  falls back to a plain refresh if CONCURRENTLY is ever unavailable. Applied via `diesel migration run` to
+  cortex + cortex_tester; `rollup_path_matches_live_path` lib test exercises the new path. **Found R-5
+  (🔴):** the **rerun request blocks ~2 min** on this refresh synchronously (`serve_rerun` → `mark_new_run`
+  → inline refresh on a Rocket worker) — CONCURRENTLY doesn't shorten *that* request; the fix is to route
+  the post-rerun refresh through `jobs::spawn_job` (off the request path, observable) — next increment.

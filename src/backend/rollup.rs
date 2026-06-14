@@ -45,11 +45,29 @@ pub struct ReportSummaryRow {
   pub message_count: i64,
 }
 
-/// Recomputes the `report_summary` materialized view. Cheap relative to per-read recomputation;
-/// brief lock — see the migration note on `REFRESH ... CONCURRENTLY`.
+/// Recomputes the `report_summary` materialized view.
+///
+/// Uses `REFRESH ... CONCURRENTLY` so the rebuild does **not** take an ACCESS EXCLUSIVE lock —
+/// report reads keep seeing the previous rollup until the new one is ready (the rebuild is ~2 min
+/// at production scale; blocking every report read for that long is unacceptable). CONCURRENTLY
+/// needs a populated matview + the unique index from migration
+/// `2026-06-14-040000_report_summary_concurrent_refresh`; both hold after migrations, but if
+/// CONCURRENTLY is somehow unavailable (e.g. the view was left un-populated) we fall back to a
+/// plain refresh so the rollup still updates instead of getting stuck.
+///
+/// **Must not be called inside a transaction** — `REFRESH ... CONCURRENTLY` forbids it. Every
+/// caller (the finalize thread, `mark_new_run`) runs it outside a transaction; keep it that way.
 pub(crate) fn refresh_report_summary(connection: &mut PgConnection) -> QueryResult<()> {
-  sql_query("REFRESH MATERIALIZED VIEW report_summary").execute(connection)?;
-  Ok(())
+  match sql_query("REFRESH MATERIALIZED VIEW CONCURRENTLY report_summary").execute(connection) {
+    Ok(_) => Ok(()),
+    Err(e) => {
+      eprintln!(
+        "-- report_summary CONCURRENTLY refresh failed ({e:?}); falling back to a plain refresh"
+      );
+      sql_query("REFRESH MATERIALIZED VIEW report_summary").execute(connection)?;
+      Ok(())
+    },
+  }
 }
 
 /// Category-grain report for a `(corpus, service, severity)`: one row per category with its
