@@ -75,7 +75,6 @@ fn sign_in(client: &Client) {
     .dispatch();
 }
 
-#[test]
 fn worker_fleet_api_and_screen() {
   let service_id = seed();
   let client = client();
@@ -398,6 +397,14 @@ fn worker_fleet_api_and_screen() {
   diesel::delete(services::table.filter(services::name.eq(SERVICE_NAME)))
     .execute(&mut db.connection)
     .ok();
-  // Exit before the racy libpq/OpenSSL atexit teardown of the still-live Client (KNOWN_ISSUES L-1).
+}
+
+// Custom harness (`harness = false`): own `main`, so we end with `libc::_exit(0)` while the Client
+// is still alive — skipping the racy libpq/OpenSSL `atexit` teardown that SIGSEGVs a
+// default-harness exit (KNOWN_ISSUES L-1). A panic still aborts non-zero, so a real assertion
+// failure still fails CI.
+fn main() {
+  worker_fleet_api_and_screen();
+  eprintln!("services_test: all cases passed");
   unsafe { libc::_exit(0) }
 }

@@ -6,6 +6,17 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **L-1 (CI trustworthiness) — converted the last two test stragglers to the uniform `_exit` harness.**
+  `reports_api_test` and `services_test` were the only `Client`-building integration binaries still on
+  the **default** libtest harness, using a single `#[test]` that called `libc::_exit(0)` at its end. That
+  worked but was a latent trap: a *second* `#[test]` would be run concurrently by libtest and the first to
+  finish would `_exit` the process, **silently skipping the rest** (masking failures). Both are now full
+  `harness = false` + `fn main()` binaries (Cargo.toml `[[test]]` entries added), matching the other 11.
+  Compile-checked + both green (`reports_api_test` / `services_test`: "all cases passed"). **Remaining for
+  L-1 🟢:** a full-suite teardown-SIGSEGV survey (incl. the bare-pool `pool_test`/`jobs_test`) → then drop
+  `scripts/ci_test.sh`'s SIGSEGV tolerance. Deferred mid-increment to the owner's new priority (the
+  latexml-oxide "oxidized-tex-to-html" Add-Service UX).
+
 - **Dispatcher D-12 RESOLVED — root-caused to a sink framing desync (NOT the worker throttle, the
   original suspicion was wrong) + ventilator-flood gate re-added.** Re-investigated the straggler now
   that the worker throttle is configurable (#14). The throttle was **exonerated** — stragglers persist

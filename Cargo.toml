@@ -134,6 +134,16 @@ name = "dispatcher_torture_test"
 path = "tests/dispatcher_torture_test.rs"
 harness = false
 
+[[test]]
+name = "reports_api_test"
+path = "tests/reports_api_test.rs"
+harness = false
+
+[[test]]
+name = "services_test"
+path = "tests/services_test.rs"
+harness = false
+
 # The rocket_okapi spike (the chosen framework) — reproduces docs/api-spike/okapi-openapi.json and is
 # referenced by docs/api-spike/COMPARISON.md. (The utoipa runner-up was pruned once okapi was chosen.)
 [[example]]
