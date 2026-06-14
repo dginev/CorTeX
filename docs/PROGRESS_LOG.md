@@ -443,3 +443,19 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   rewritten (autovacuum now automatic; points at DB_TUNING.md).
   *Next:* apply the pgtune values to this box (after the load-test migration run finishes — needs a restart);
   implement the `cortex tune-db` step; REFRESH the matview on real data to measure the build time.
+- **pgtune applied live + DB_TUNING.md re-based on the authoritative le0pard output (owner: "I mostly mean
+  this service" = pgtune.leopard.in.ua; "max 64 GB to postgres"; "1x–3x RAM"):** classified CorTeX as the
+  **Mixed** application type (OLTP task/log writes + DW bulk-loads + DW reporting — *not* Web: our DB isn't
+  ≪ RAM and the reports aren't simple). Owner ran the live tool (DB=mixed, RAM=256 GB, CPUs=**64** physical /
+  not 128 HT, conns=**300**, storage=nvme, PG18/linux); applied that output **verbatim** to the `cortex`
+  node and restarted: `shared_buffers=64GB`, `effective_cache_size=192GB`, `work_mem=92182kB`,
+  `maintenance_work_mem=8GB`, `random_page_cost=1.1`, `effective_io_concurrency=1000` (NVMe), WAL 1/4 GB,
+  parallel 64/4/4, plus the modern adds **`io_method=io_uring`** (PG18 async I/O — verified active, not a
+  silent fallback), **`wal_compression=lz4`**, **`jit=off`**, **`autovacuum_max_workers=5`** +
+  **`autovacuum_work_mem=2GB`** (the *global* pool, complementing the *per-table* autovacuum migration).
+  Confirmed this Ubuntu 26.04 PG 18.4 build has `--with-lz4`/`--with-liburing` (enumvals). "Total data size"
+  = larger than RAM (full arXiv ≥250 GB, est. 1–3× RAM). DB_TUNING.md rewritten to carry the verbatim tool
+  output + exact inputs + build-dependency caveats as the source of truth (was my hand-derived approximation;
+  corrected `maintenance_work_mem` 8 GB cap is Linux not the Windows-only 2 GB, and `effective_io_concurrency`
+  1000 for NVMe not 200). *Next:* decide `cortex tune-db` scope (port the le0pard model + capability-detect,
+  vs print-and-link) — see the open question to the owner.
