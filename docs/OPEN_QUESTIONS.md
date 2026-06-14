@@ -42,5 +42,22 @@ wasn't blocked; each can be revised/refactored on return. Newest first.
    response shapes), which needs a framework: `utoipa` vs `rocket_okapi` (both dev-dependencies for a spike).
    *Direction:* pick one and annotate the endpoints, or decide the route index is enough for now.
 
+9. **Stalled-job handling: observe now, auto-interrupt deferred (W-4).** A hung job *body* (e.g. the
+   importer blocked on a stale mount) can't be force-cancelled in Rust, so its thread + pooled connection
+   leak for the process's life. I added **judgment-free observability** — `JobDto.seconds_since_update`
+   (heartbeat age vs the DB clock), so a stalled running job is *visible* on `/api/jobs` and the `/jobs`
+   dashboard — but did **not** add any auto-kill, because every safe remedy needs a **tuning threshold the
+   owner should set**, and a too-tight one would false-kill legitimately-long ops (a full-table
+   `REINDEX (CONCURRENTLY)` or a production-scale `REFRESH` can run for many minutes with no `step()`):
+   - a **watchdog** that flips a running job past a deadline to `failed`/`stalled` (registry-accurate, but
+     the thread keeps running);
+   - a **`lock_timeout`** on the refresh/reindex connections (caps *lock acquisition*, not runtime — so it
+     won't false-kill a progressing op; the safest of the operation bounds, my tentative recommendation);
+   - a **`statement_timeout`** (caps total runtime — riskier for legitimately-long maintenance);
+   - **timeouts on the importer's blocking filesystem I/O**.
+   *Direction:* which remedies, and what thresholds (you're particular about DB tuning values — same as the
+   pgtune episode)? Until then the leak is *surfaced, not bounded*. (`src/jobs.rs`, `src/frontend/jobs.rs`,
+   KNOWN_ISSUES W-4)
+
 8. **`src/frontend/cached/` naming — done.** Flattened the one-function nested module and renamed it to
    `src/frontend/render.rs` (the presentation layer). No open decision.

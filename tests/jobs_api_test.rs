@@ -120,6 +120,10 @@ fn jobs_list_carries_health_and_duration_and_supports_pending() {
     ours["duration_seconds"].is_number(),
     "duration metadata present"
   );
+  assert!(
+    ours["seconds_since_update"].is_number(),
+    "heartbeat-age metadata present"
+  );
 
   // The HTML dashboard renders.
   let response = client.get("/jobs").dispatch();
@@ -171,6 +175,40 @@ fn jobs_dashboard_auto_refreshes_while_a_job_is_active() {
     .ok();
 }
 
+fn stalled_running_job_reports_a_large_heartbeat_age() {
+  use diesel::prelude::*;
+  // Seed a job stuck `running` whose last update is well in the past — a stalled body (the W-4
+  // residual). `mount_api_with` does not interrupt orphans, so the running row survives the probe.
+  let mut db = cortex::backend::testdb();
+  diesel::sql_query(
+    "INSERT INTO jobs (kind, actor, status, params, created_at, updated_at) \
+     VALUES ('stall_probe_test', 'tester', 'running', '{}'::jsonb, \
+             LOCALTIMESTAMP - interval '1 hour', LOCALTIMESTAMP - interval '1 hour')",
+  )
+  .execute(&mut db.connection)
+  .expect("seed a stalled running job");
+
+  let client = client();
+  let response = client.get("/api/jobs?limit=200").dispatch();
+  let body: serde_json::Value = response.into_json().expect("a JSON array");
+  let ours = body
+    .as_array()
+    .expect("array")
+    .iter()
+    .find(|j| j["kind"] == "stall_probe_test")
+    .expect("the stalled job is listed");
+  assert_eq!(ours["health"], "running");
+  let idle = ours["seconds_since_update"].as_i64().expect("a number");
+  assert!(
+    idle >= 3000,
+    "a job idle for ~1h reports a large heartbeat age, got {idle}s"
+  );
+
+  diesel::sql_query("DELETE FROM jobs WHERE kind = 'stall_probe_test'")
+    .execute(&mut db.connection)
+    .ok();
+}
+
 // Custom harness (see KNOWN_ISSUES L-1): run the cases then `_exit(0)`.
 fn main() {
   api_job_polls_a_spawned_job();
@@ -178,6 +216,7 @@ fn main() {
   job_progress_page_renders_html();
   jobs_list_carries_health_and_duration_and_supports_pending();
   jobs_dashboard_auto_refreshes_while_a_job_is_active();
+  stalled_running_job_reports_a_large_heartbeat_age();
   eprintln!("jobs_api_test: all cases passed");
   unsafe { libc::_exit(0) }
 }

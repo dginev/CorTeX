@@ -6,6 +6,19 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **W-4 observability — job heartbeat age (`seconds_since_update`).** A hung job *body* can't be
+  force-cancelled in Rust, so a stalled job's thread + pooled connection leak. Rather than guess a
+  kill threshold, surfaced the residual transparently: `JobDto` now carries `seconds_since_update`
+  (`db_now - updated_at`), the **heartbeat age** of a running job — it climbs while no progress is
+  made, so a stall is visible on `GET /api/jobs[/<uuid>]` and the `/jobs` dashboard ("Idle (s)"
+  column). Measured against the DB clock via a new `jobs::db_now` (`LOCALTIMESTAMP`, the same session
+  tz the timestamps are written in) so it's skew-free vs the app process's `Utc::now()`. Added
+  `JobDto::at(job, now)`; `From<Job>` (spawn-return paths, age≈0) delegates with `None`. Test:
+  `jobs_api_test` seeds a 1h-stale running job and asserts a large heartbeat age. The auto-interrupt
+  / operation-timeout half needs an owner-set tuning threshold (legitimately-long reindex/refresh
+  must not be false-killed) — logged in OPEN_QUESTIONS #9; W-4 stays 🟡. fmt + clippy clean;
+  `jobs_api_test` + `jobs_test` green.
+
 - **D-8 closed — `mark_done` message inserts now batched (finalize hot path).** The deletes were
   already collapsed to one `task_id = ANY(...)` per `log_*` table; the per-message `INSERT` loop is
   now gone too. `mark_done` partitions the batch's new messages by severity into five `Vec<NewLog*>`

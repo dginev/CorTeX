@@ -243,6 +243,21 @@ fn finish(pool: &DbPool, job_id: i64, status: &str, message: &str, result: Optio
   }
 }
 
+/// The database's current wall clock as a tz-naive timestamp **in the session timezone** — i.e. the
+/// same clock `created_at`/`updated_at` are written in (Postgres `now()` stored into a `timestamp`
+/// column). Differencing a job's `updated_at` against this is therefore skew-free, unlike comparing
+/// against the *app process's* `chrono::Utc::now()` (which differs by the session offset when the
+/// DB is not on UTC). Used to compute a running job's heartbeat age (W-4 stall observability).
+/// Best-effort: returns `None` if the probe fails (a broken connection), so callers degrade to "no
+/// age" rather than reporting a bogus one.
+pub fn db_now(connection: &mut PgConnection) -> Option<NaiveDateTime> {
+  use diesel::dsl::sql;
+  use diesel::sql_types::Timestamp;
+  diesel::select(sql::<Timestamp>("LOCALTIMESTAMP"))
+    .get_result(connection)
+    .ok()
+}
+
 /// Finds a job by its external uuid handle.
 pub fn find_job(connection: &mut PgConnection, job_uuid: Uuid) -> Option<Job> {
   jobs::table

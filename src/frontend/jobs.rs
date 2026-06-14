@@ -46,6 +46,13 @@ pub struct JobDto {
   /// Seconds of activity (`updated_at - created_at`): a finished job's total runtime, or a running
   /// one's time from start to its last progress update — observability on duration.
   pub duration_seconds: i64,
+  /// Seconds since the last progress update (`now - updated_at`), measured against the DB clock.
+  /// For a *running* job this is its **heartbeat age**: it keeps climbing while the job makes no
+  /// progress, so a large value flags a stalled job (the W-4 residual — a hung body Rust cannot
+  /// force-cancel — surfaced transparently rather than auto-killed). Terminal jobs report their
+  /// age-since-completion. `0` when the DB clock is unavailable (degrade to "no age", never
+  /// bogus).
+  pub seconds_since_update: i64,
   /// Normalized health derived from `status`: `ok` (succeeded), `failed`, `interrupted`, `pending`
   /// (queued), or `running` — the at-a-glance state for the fleet-wide pending check.
   pub health: String,
@@ -64,12 +71,19 @@ fn health_of(status: &str) -> &'static str {
   }
 }
 
-impl From<Job> for JobDto {
-  fn from(job: Job) -> Self {
+impl JobDto {
+  /// Builds the DTO, computing the heartbeat age (`seconds_since_update`) against `now` — the DB
+  /// clock from [`jobs::db_now`]. `None` (probe failed, or a just-spawned job where the age is
+  /// trivially ~0) yields `seconds_since_update = 0`.
+  pub fn at(job: Job, now: Option<chrono::NaiveDateTime>) -> Self {
+    let seconds_since_update = now
+      .map(|n| (n - job.updated_at).num_seconds().max(0))
+      .unwrap_or(0);
     JobDto {
       uuid: job.uuid.to_string(),
       health: health_of(&job.status).to_string(),
       duration_seconds: (job.updated_at - job.created_at).num_seconds().max(0),
+      seconds_since_update,
       kind: job.kind,
       status: job.status,
       progress_current: job.progress_current,
@@ -83,13 +97,20 @@ impl From<Job> for JobDto {
   }
 }
 
+impl From<Job> for JobDto {
+  /// Used by the spawn-return paths, where the job was created moments ago so its heartbeat age is
+  /// trivially ~0; the polling list/get handlers use [`JobDto::at`] with the live DB clock instead.
+  fn from(job: Job) -> Self { JobDto::at(job, None) }
+}
+
 /// Polls a job by its uuid (the agent twin of the progress page).
 #[get("/api/jobs/<uuid>")]
 pub fn api_job(uuid: &str, pool: &State<DbPool>) -> Result<Json<JobDto>, Status> {
   let parsed = Uuid::parse_str(uuid).map_err(|_| Status::NotFound)?;
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let job = jobs::find_job(&mut connection, parsed).ok_or(Status::NotFound)?;
-  Ok(Json(JobDto::from(job)))
+  let now = jobs::db_now(&mut connection);
+  Ok(Json(JobDto::at(job, now)))
 }
 
 /// Lists recent jobs across every background-task capability (import / extend / activate / …) — the
@@ -105,7 +126,10 @@ pub fn api_jobs(
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let limit = limit.unwrap_or(50).clamp(1, 200);
   let jobs = jobs::list_recent(&mut connection, active.unwrap_or(false), limit);
-  Ok(Json(jobs.into_iter().map(JobDto::from).collect()))
+  let now = jobs::db_now(&mut connection);
+  Ok(Json(
+    jobs.into_iter().map(|job| JobDto::at(job, now)).collect(),
+  ))
 }
 
 /// The human jobs dashboard (HTML twin of [`api_jobs`]): recent background jobs with their health,
@@ -119,9 +143,10 @@ pub fn jobs_page(
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let limit = limit.unwrap_or(50).clamp(1, 200);
   let active = active.unwrap_or(false);
+  let now = jobs::db_now(&mut connection);
   let jobs: Vec<JobDto> = jobs::list_recent(&mut connection, active, limit)
     .into_iter()
-    .map(JobDto::from)
+    .map(|job| JobDto::at(job, now))
     .collect();
   // Auto-refresh the (otherwise static) list while any job is in flight, so an admin who just
   // kicked off a multi-minute refresh/reindex/import watches its progress live — no JS, no manual

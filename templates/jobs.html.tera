@@ -31,6 +31,7 @@
             <th class="right">Duration (s)</th>
             <th class="left">Started</th>
             <th class="left">Updated</th>
+            <th class="right" title="Seconds since the last progress update; for a running job this is its heartbeat age — a large value flags a stalled job.">Idle (s)</th>
             <th class="left">Detail</th>
           </tr>
         </thead>
@@ -44,6 +45,7 @@
             <td class="right">{{job.duration_seconds}}</td>
             <td class="left">{{job.created_at}}</td>
             <td class="left">{{job.updated_at}}</td>
+            <td class="right">{% if job.health == "running" or job.health == "pending" %}{{job.seconds_since_update}}{% else %}—{% endif %}</td>
             <td class="left"><a href="/jobs/{{job.uuid}}">view</a></td>
           </tr>
           {% endfor %}
