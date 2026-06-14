@@ -6,6 +6,22 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **UI — typography scale, link styling, and a headless-screenshot loop for visual QA.**
+  - **Type scale** — added theme-independent size tokens (`--fs-xs/sm/base/md/lg/xl` + line-heights)
+    and mapped the scattered ad-hoc `rem`/`em` font-sizes across the report/homepage/widget CSS onto
+    them, so sizing is consistent and tunable in one place. Body now sets `font-family: var(--sans)`
+    + base size/line-height explicitly.
+  - **Links** — one consistent treatment: `--link` color, smooth hover, **underline-on-hover**
+    (`text-underline-offset`) for content links; chrome/nav and card links opt out (they have their
+    own affordance). Report row labels are neutral ink → accent+underline on hover.
+  - **0% bar** — removed the leftover `.bar { min-width: 2px }` so a 0% share renders empty (no
+    sliver); the earlier attempt hadn't actually landed.
+  - **Theme URL override** — the no-FOUC bootstrap now honors `?theme=paper|midnight` (handy for
+    sharing a themed link and for screenshots).
+  - **Screenshot capability** — `scripts/screenshot.sh <url> <out.png> [w] [h]` (headless Chromium,
+    else headless Firefox) for visual verification each UI round; `.shots/` gitignored. Used it to
+    verify the overview, report (paper + midnight), and severity pages this round.
+
 - **UI — report color/font/layout discipline pass.** Tightened the report dashboard after review:
   (1) **color** — severity is now carried by **one** element per row (the bar + its matching count
   number, same token hue); row labels are neutral ink (quiet links, accent on hover) instead of

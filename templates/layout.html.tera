@@ -8,8 +8,10 @@
       // `data-theme="paper"` on <html> is the default.
       (function () {
         try {
+          var q = new URLSearchParams(window.location.search).get('theme');
           var saved = localStorage.getItem('cortex-theme');
-          var theme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'midnight' : 'paper');
+          var theme = (q === 'paper' || q === 'midnight') ? q
+            : (saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'midnight' : 'paper'));
           document.documentElement.setAttribute('data-theme', theme);
         } catch (e) {}
       })();

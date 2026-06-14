@@ -49,20 +49,47 @@
   --bad: #f06363;
 }
 
+/* Type scale + line-heights (theme-independent — one vocabulary for every font-size, so sizes are
+   consistent and tunable in one place instead of scattered ad-hoc rem/em values). */
+:root {
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.875rem;
+  --fs-base: 1rem;
+  --fs-md: 1.125rem;
+  --fs-lg: 1.375rem;
+  --fs-xl: 1.75rem;
+  --lh-tight: 1.2;
+  --lh-base: 1.55;
+}
+
 /* === Theme application: map the Bootstrap-3 surfaces onto the tokens ========================== */
 html,
 body {
   background-color: var(--bg);
   color: var(--ink);
+  font-family: var(--sans);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
 }
 a,
 a:link,
 a:visited {
   color: var(--link);
+  transition: color 0.12s ease;
 }
 a:hover,
 a:focus {
   color: var(--link-hover);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* Chrome + card links carry their own affordance (menu hover / card lift) — no hover underline. */
+.navbar a:hover,
+.navbar a:focus,
+.corpus-card:hover,
+.corpus-card:focus,
+.brand-logo {
+  text-decoration: none;
 }
 
 /* Chrome: the header + fixed-bottom footer navbars. */
@@ -352,7 +379,7 @@ footer {
 h1 {
   font-weight: bold;
   padding-bottom: 0.3em;
-  font-size: 2.25em;
+  font-size: var(--fs-xl);
   line-height: 1.2;
 }
 .bold {
@@ -553,7 +580,7 @@ h1 {
   letter-spacing: -0.01em;
 }
 h3 {
-  font-size: 1.35em;
+  font-size: var(--fs-lg);
   font-weight: 700;
   margin-top: 1.4em;
 }
@@ -561,7 +588,7 @@ h3 {
   font-family: var(--sans);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   font-weight: 700;
   color: var(--ink-muted);
 }
@@ -590,7 +617,7 @@ h3 {
 }
 .stat-number {
   font-family: var(--serif);
-  font-size: 1.75rem;
+  font-size: var(--fs-xl);
   font-weight: 700;
   line-height: 1.1;
   color: var(--ink);
@@ -612,7 +639,7 @@ h3 {
   font-family: var(--sans);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   font-weight: 700;
   color: var(--ink-muted);
   background-color: var(--bg-sunken);
@@ -663,7 +690,7 @@ h3 {
   display: inline-block;
   padding: 0.1rem 0.55rem;
   border-radius: 999px;
-  font-size: 0.78rem;
+  font-size: var(--fs-xs);
   font-weight: 600;
   background-color: var(--accent-soft);
   color: var(--accent);
@@ -730,7 +757,7 @@ h3 {
   margin: 1.1rem auto 0;
   max-width: 36rem;
   font-family: var(--serif);
-  font-size: 1.12rem;
+  font-size: var(--fs-md);
   font-style: italic;
   color: var(--ink-soft);
   line-height: 1.5;
@@ -741,7 +768,7 @@ h3 {
   font-family: var(--sans);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  font-size: 0.8rem;
+  font-size: var(--fs-xs);
   font-weight: 700;
   color: var(--ink-muted);
   margin: 0 0 1rem;
@@ -776,12 +803,12 @@ h3 {
 }
 .corpus-card-name {
   font-family: var(--serif);
-  font-size: 1.2rem;
+  font-size: var(--fs-md);
   font-weight: 700;
   color: var(--link);
 }
 .corpus-card-desc {
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
   color: var(--ink-muted);
   line-height: 1.45;
 }
@@ -806,7 +833,7 @@ h3 {
 }
 .report-title {
   font-family: var(--serif);
-  font-size: 1.65rem;
+  font-size: var(--fs-xl);
   font-weight: 700;
   margin: 0;
 }
@@ -817,7 +844,7 @@ h3 {
 .report-sub {
   margin: 0.35rem 0 0;
   color: var(--ink-muted);
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
 }
 .report-table {
   width: 100%;
@@ -836,7 +863,6 @@ h3 {
 .bar {
   display: block;
   height: 100%;
-  min-width: 2px;
   border-radius: 999px;
   background-color: var(--accent);
 }
@@ -892,17 +918,17 @@ h3 {
   display: flex;
   flex-wrap: wrap;
   gap: 1.25rem;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
 }
 .report-toggle {
   margin: 0 0 1rem;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   color: var(--ink-muted);
 }
 .report-pagination {
   margin: 1.5rem 0;
   text-align: center;
-  font-size: 1.1rem;
+  font-size: var(--fs-md);
 }
 .report-pagination a {
   padding: 0 0.6rem;
@@ -911,7 +937,7 @@ h3 {
 /* A delicate, unobtrusive admin sign-in hint under public content. */
 .admin-hint {
   margin-top: 2rem;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   color: var(--ink-muted);
 }
 .admin-hint a {
