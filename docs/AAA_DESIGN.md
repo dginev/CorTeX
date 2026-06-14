@@ -94,4 +94,28 @@ regardless of the human-AuthN choice; plaintext until agent-key hashing lands.
 - *JWT/OIDC is the same shape if you'd rather be IdP-agnostic than GitHub-specific; local accounts if
   you want zero external dependency.*
 
-*Recorded; building begins once the §3 method is chosen (asked via the question UI).*
+## 5. Conclusion (2026-06-14, after the owner ruled out external auth)
+
+GitHub OAuth was chosen, then **ruled out**: it makes each deployment register its own GitHub OAuth
+App (`client_id`/`client_secret`) — exactly the external, per-deploy dependency the owner rejects.
+Generic OIDC/JWT has the same shape (needs an IdP). And **self-contained *verified* identity
+inherently needs a per-user secret** (passwords → local accounts), which is heavier than "lightweight
++ single uniform admin token for simplicity". So the pragmatic answer satisfying *every* stated
+constraint (self-contained, lightweight, no external app, single uniform admin gate, but know the
+actor) **reuses what already exists**:
+
+- **AuthN / identity:** keep the existing **`token → owner`** scheme — give each admin their **own**
+  token mapped to their name; the `/admin` cookie session (already built) then identifies the actor.
+  No new auth, no external dependency, no passwords. (The shared single token is the *simplest* setup;
+  per-admin tokens are the *identifiable* setup — same mechanism, the operator's choice.)
+- **AuthZ:** **uniform** — any valid admin token/session may do every write. Unchanged.
+- **Accounting (the genuinely missing pillar, the owner's actual ask — "observability of actions
+  taken"):** a new **`audit_log`** table recording every admin action with its **actor** (the token's
+  owner), its action/target/outcome and time, **viewable in the admin UI**. This is **auth-agnostic**
+  (the actor is just a string), so it's forward-compatible if the auth model is ever upgraded
+  (local accounts / OIDC) later.
+- **Agents/machines:** keep the `X-Cortex-Token` API token. Optional hardening later: hash tokens at
+  rest.
+
+**So the build is the Accounting pillar (`audit_log`) on top of the existing token→owner identity —
+no new auth dependency, nothing external.** That is what the following increments implement.
