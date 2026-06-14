@@ -656,3 +656,14 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   dashboard. Verified the numbers match `api_corpus` against the live dump exactly (tex_to_html: warn
   1,563,521 · err 700,605 · fatal 86,320 — equal to the ground-truth task-status counts; `import` is all-TODO,
   legitimately zero on the severities). `corpora_test` asserts the dashboard columns render. clippy/fmt clean.
+- **Performance: batch the per-task log deletes on the hot finalize path (D-8 → 🟡; autonomous-night
+  progress):** `mark_done` (the dispatcher's finalize write path) issued **5 deletes per task** (one per
+  `log_*` table) in its loop — at a queue-batch of hundreds, thousands of delete round-trips per drain. Now
+  it collects the batch's task ids once and clears prior logs with **one `task_id = ANY(...)` delete per
+  table** (5 statements regardless of batch size), then loops only the status-update + message-insert. This
+  is provably equivalent (a finalize batch holds distinct task ids, so the batched `ANY` delete = the union
+  of the per-task deletes) and a real round-trip reduction on the hottest path. Led with the safety net:
+  strengthened `backend_test` to **re-finalize the same tasks with no messages and assert the prior logs are
+  deleted** (the case delete-batching could regress) — green. Kept the insert/update logic untouched (lowest
+  risk). The remaining D-8 piece (a diff/upsert to skip genuinely-unchanged message reinserts) is the smaller
+  follow-up. clippy/fmt clean.

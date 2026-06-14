@@ -204,6 +204,33 @@ fn batch_ops_test() {
     .count()
     .get_result(&mut backend.connection);
   assert_eq!(done_logs_result, Ok(mock_task_count as i64));
+
+  // Re-finalize the SAME tasks with NO messages: mark_done must batch-delete the prior logs (not
+  // leave them stale), even when the new report carries no messages (covers the D-8 batched
+  // delete).
+  let refinalize_targets: Vec<Task> = tasks::table
+    .filter(tasks::id.eq_any(&done_task_ids))
+    .get_results(&mut backend.connection)
+    .expect("refetch the done tasks");
+  let empty_reports: Vec<TaskReport> = refinalize_targets
+    .into_iter()
+    .map(|task| TaskReport {
+      status: TaskStatus::NoProblem,
+      messages: vec![],
+      task,
+    })
+    .collect();
+  assert!(backend.mark_done(&empty_reports).is_ok());
+  let logs_after_refinalize: Result<i64, _> = log_infos::table
+    .filter(task_id.eq_any(&done_task_ids))
+    .count()
+    .get_result(&mut backend.connection);
+  assert_eq!(
+    logs_after_refinalize,
+    Ok(0),
+    "re-finalizing with no messages deletes the prior logs (batched delete)"
+  );
+
   // There should be no TODO tasks left for this service
   let pre_rerun_todo_count = tasks::table
     .filter(service_id.eq(mock_service.id))

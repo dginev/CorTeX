@@ -29,30 +29,28 @@ pub(crate) fn mark_done(
 ) -> Result<(), Error> {
   use crate::schema::tasks::{id, status};
 
+  // Collect the finalized task ids once, to clear their prior logs in a single batched statement
+  // per table instead of five deletes *per task*. The done-queue yields distinct task ids per
+  // drain, so a batched `task_id = ANY(...)` deletes exactly the same rows as the old per-task
+  // loop — far fewer round-trips on the hot finalize path (KNOWN_ISSUES D-8 write-amplification).
+  let task_ids: Vec<i64> = reports.iter().map(|report| report.task.id).collect();
   connection.transaction::<(), Error, _>(|t_connection| {
+    // Clear the prior log messages for every finalized task (one statement per severity table).
+    delete(log_infos::table.filter(log_infos::task_id.eq_any(&task_ids))).execute(t_connection)?;
+    delete(log_warnings::table.filter(log_warnings::task_id.eq_any(&task_ids)))
+      .execute(t_connection)?;
+    delete(log_errors::table.filter(log_errors::task_id.eq_any(&task_ids)))
+      .execute(t_connection)?;
+    delete(log_fatals::table.filter(log_fatals::task_id.eq_any(&task_ids)))
+      .execute(t_connection)?;
+    delete(log_invalids::table.filter(log_invalids::task_id.eq_any(&task_ids)))
+      .execute(t_connection)?;
     for report in reports.iter() {
-      // Update the status
+      // Update the status, then add the new messages onto the now-clean slate.
       update(tasks::table)
         .filter(id.eq(report.task.id))
         .set(status.eq(report.status.raw()))
         .execute(t_connection)?;
-      // Next, delete all previous log messages for this task.id
-      delete(log_infos::table)
-        .filter(log_infos::task_id.eq(report.task.id))
-        .execute(t_connection)?;
-      delete(log_warnings::table)
-        .filter(log_warnings::task_id.eq(report.task.id))
-        .execute(t_connection)?;
-      delete(log_errors::table)
-        .filter(log_errors::task_id.eq(report.task.id))
-        .execute(t_connection)?;
-      delete(log_fatals::table)
-        .filter(log_fatals::task_id.eq(report.task.id))
-        .execute(t_connection)?;
-      delete(log_invalids::table)
-        .filter(log_invalids::task_id.eq(report.task.id))
-        .execute(t_connection)?;
-      // Clean slate, so proceed to add the new messages
       for message in &report.messages {
         if message.severity() != "status" {
           message.create(t_connection)?;
