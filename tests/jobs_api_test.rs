@@ -137,7 +137,7 @@ fn jobs_list_carries_health_and_duration_and_supports_pending() {
     dashboard.contains("cortex-admin-nav"),
     "the persistent admin nav renders on non-landing pages"
   );
-  for link in ["/services", "/health", "/settings"] {
+  for link in ["/services", "/health", "/settings", "/api/docs"] {
     assert!(
       dashboard.contains(&format!("href=\"{link}\"")),
       "the admin nav links to {link}"
