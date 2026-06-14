@@ -51,8 +51,8 @@
                     </span>
                 </span>
             </div>
-            {% if global.corpus_name %}
             <nav class="collapse navbar-collapse bs-navbar-collapse" role="navigation">
+                {% if global.corpus_name %}
                 <ul class="nav navbar-nav">
                     <li class="nav-link" data-nav-name="{{global.corpus_name}}">
                         <a href="/corpus/{{global.corpus_name_uri}}">
@@ -83,8 +83,16 @@
                     </li>
                     {% endif %} {% endif %} {% endif %} {% endif %}
                 </ul>
+                {% endif %}
+                <!-- Persistent admin navigation: every management surface reachable from any page. -->
+                <ul class="nav navbar-nav navbar-right cortex-admin-nav">
+                    <li><a href="/" title="Corpora overview"><i class="fa fa-home"></i>&nbsp;Overview</a></li>
+                    <li><a href="/services" title="Services &amp; worker fleets"><i class="fa fa-cogs"></i>&nbsp;Services</a></li>
+                    <li><a href="/jobs" title="Background jobs"><i class="fa fa-tasks"></i>&nbsp;Jobs</a></li>
+                    <li><a href="/health" title="System health"><i class="fa fa-heartbeat"></i>&nbsp;Health</a></li>
+                    <li><a href="/settings" title="Settings"><i class="fa fa-sliders"></i>&nbsp;Settings</a></li>
+                </ul>
             </nav>
-            {% endif %}
         </div>
     </header>
 

@@ -6,6 +6,16 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **Admin UX cohesion — persistent admin nav on every page.** The management surfaces (Services,
+  Jobs, Health, Settings) were only linked from the landing overview; every other screen (corpus
+  reports, jobs, health, runs, worker fleets) had no global navigation — you had to return to `/` to
+  move between them. The shared `layout.html.tera` header now always renders a persistent
+  `cortex-admin-nav` (Overview / Services / Jobs / Health / Settings, FA-iconed, Bootstrap navbar —
+  no new JS), with the existing corpus→service→severity breadcrumb kept on the left when in report
+  context. Now every management capability is reachable from anywhere — the "thorough and complete
+  Admin UX" cohesion goal. Regression: `jobs_api_test` asserts the nav + its links render on a
+  non-landing page (`/jobs`). All 6 HTML-rendering integration suites green; clippy clean.
+
 - **Worker-fleet liveness: F-4 panic fixed + agent-twin parity.** Two issues in the worker-fleet
   surface (the ~200-worker production fleet's observability). **(1) F-4 panic:** the `/workers/<svc>`
   HTML screen rendered workers via `From<WorkerMetadata> for HashMap`, whose `since_string` did
