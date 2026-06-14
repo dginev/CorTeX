@@ -6,6 +6,19 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **W-1 — scoped + located the concrete CorTeX-side gap (the unbounded sink result write).** W-1 was
+  a broad S1 ("no per-task timeout / resource cap"). Reading the sink let me separate what's actually
+  covered from the real residual: ① a worker that **hangs/dies** is *covered* — the reaper time-boxes
+  dispatched tasks (`expected_at` + `MAX_DISPATCH_RETRIES`, D-6); ② the worker's *own* memory/CPU is a
+  `pericortex`/cgroup concern outside this repo; ③ the **concrete CorTeX-side residual** is the sink
+  streaming a result archive to `/data` with **no size cap** (`sink.rs:121-136` — tracks
+  `total_incoming`, never bounds it), so a runaway/malicious worker or a decompression bomb can fill
+  the disk. Did **not** patch: the cap value is owner tuning, and the fix is on the ZMQ frame path
+  (overflow must drain remaining frames to keep the PULL socket aligned — botched drain cascades like
+  D-4 — then clean up the partial file + finalize `Fatal`). Sharpened KNOWN_ISSUES W-1 (still 🔴, now
+  precisely located) and logged the `dispatcher.max_result_size_bytes` design as OPEN_QUESTIONS #11.
+  (Docs only.)
+
 - **D-4 (partial) — fixed the restart band-aid's limbo-clearing double-dispatch.** Reading the
   ventilator to characterize D-4 surfaced a concrete correctness bug: `Ventilator::start` calls
   `clear_limbo_tasks` on **every (re)start** (`ventilator.rs:59`), bluntly resetting **all** `status>0`

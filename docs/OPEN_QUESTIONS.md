@@ -73,3 +73,16 @@ wasn't blocked; each can be revised/refactored on return. Newest first.
     direction. *Direction:* approve a drain-protocol design (I can draft one) before I touch the three
     dispatcher threads. **Not urgent for production** — the perpetual dispatcher runs `job_limit = None`;
     this is benchmark/bounded-run-only. (`src/dispatcher/{ventilator,sink,finalize,manager}.rs`)
+
+11. **W-1 — oversized-result cap needs a value + behaviour (diagnosed, not patched).** The concrete
+    CorTeX-side residual of W-1 is the sink streaming a worker's result archive to `/data` with **no
+    size bound** (`sink.rs:121-136`) — a runaway/malicious worker or a decompression bomb can fill the
+    disk. I did **not** patch it because (a) the cap is a value you'd want to set (a safety backstop —
+    e.g. a few GB, clearly beyond any legitimate conversion result — but still your call, given how
+    particular you are about such numbers), and (b) the fix lives on the **ZMQ frame path**: on
+    overflow it must *drain the remaining frames* to keep the PULL socket aligned (a botched drain
+    desyncs every later result — the same fragility as D-4), then clean up the partial file and
+    finalize the task `Fatal`. That behaviour (reject vs. truncate; configurable vs. fixed default) +
+    the frame-drain are worth a review before I touch the sink hot path. *Direction:* approve a
+    `dispatcher.max_result_size_bytes` design (I can draft it). (`src/dispatcher/sink.rs`, KNOWN_ISSUES
+    W-1)
