@@ -153,6 +153,18 @@ fn reindex_is_token_gated() {
   );
 }
 
+fn analyze_is_token_gated() {
+  // The planner-statistics refresh is the same token-gated maintenance write as reindex; assert the
+  // 401 path (its 202 + job-handle path is structurally identical to the tested reindex endpoint).
+  let client = client();
+  let response = client.post("/api/maintenance/analyze").dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Unauthorized,
+    "analyze without a token is 401 (no unauthenticated maintenance)"
+  );
+}
+
 // Custom harness (Cargo.toml `harness = false`): run the cases then `_exit(0)`, skipping the racy
 // libpq/OpenSSL atexit teardown that SIGSEGVs after assertions pass (KNOWN_ISSUES L-1).
 fn main() {
@@ -160,6 +172,7 @@ fn main() {
   healthz_reports_ok_when_db_reachable();
   api_index_lists_the_agent_surface();
   reindex_is_token_gated();
+  analyze_is_token_gated();
   eprintln!("management_api_test: all cases passed");
   unsafe { libc::_exit(0) }
 }

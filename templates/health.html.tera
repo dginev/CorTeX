@@ -36,5 +36,11 @@
     <p><input type="password" name="token" placeholder="admin token" required>
       <button type="submit">Reindex database now</button></p>
   </form>
+  <form method="post" action="/maintenance/analyze">
+    <label>Refresh the query planner's statistics (ANALYZE; run after a bulk import or rerun so the
+      planner keeps choosing the right indexes — runs as a background job):</label>
+    <p><input type="password" name="token" placeholder="admin token" required>
+      <button type="submit">Refresh planner statistics now</button></p>
+  </form>
 </div>
 {% endblock content %}

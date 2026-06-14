@@ -8,7 +8,16 @@ Three layers, all productization concerns ("from the installation of cortex…")
 2. **Server-level config** (`postgresql.conf` / `ALTER SYSTEM`) — sized to the host. The stock
    PostgreSQL defaults (`shared_buffers = 128MB`, `work_mem = 4MB`, `effective_cache_size = 4GB`)
    are wildly undersized for a real CorTeX box and leave most of RAM unused while report sorts spill.
-3. **Index maintenance** — periodic online `REINDEX`.
+3. **On-demand maintenance** — admin-triggerable background jobs on the **Health** screen
+   (`/health`) and their agent twins, for when you don't want to wait for autovacuum's next pass:
+   - **Reindex** (`POST /api/maintenance/reindex`) — online `REINDEX (CONCURRENTLY)` over the
+     high-churn tables; indexes bloat over time.
+   - **Refresh planner statistics** (`POST /api/maintenance/analyze`) — `ANALYZE` over the same
+     tables. Run it **after a bulk import or a large rerun**: those churn `tasks.status` (millions
+     of rows flip to/from TODO), and stale statistics make the planner mis-estimate and skip the
+     right index — notably the TODO leasing index (`todo_index`, migration `…060000`), which only
+     helps if the planner knows TODO rows are sparse. Both run as observable, debounced
+     [`jobs`](../src/jobs.rs) (watch progress on `/jobs`).
 
 ## Server config — pgtune
 

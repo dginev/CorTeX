@@ -6,6 +6,20 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **DB-health maintenance — on-demand `ANALYZE` (planner-statistics refresh) job.** Completes the
+  ongoing-maintenance Admin UX the owner flagged as "very important": alongside the existing online
+  reindex, added an `ANALYZE`-over-the-high-churn-tables job. **Why it matters now:** a bulk import
+  or large rerun flips millions of `tasks.status` rows to/from TODO, and stale planner statistics
+  make Postgres mis-estimate and **skip the TODO leasing index** (`todo_index`, added earlier this
+  session) — an `ANALYZE` refreshes the stats so the index is actually used, instead of waiting for
+  autovacuum's next pass. Mirrors the reindex job exactly: `jobs::spawn_analyze` (ANALYZE_KIND,
+  debounced, per-table progress), agent `POST /api/maintenance/analyze` (token-gated, 202 + job
+  handle) + human `POST /maintenance/analyze` + a "Refresh planner statistics" button on `/health` —
+  full symmetry, observable on `/jobs`. Rationalized the shared table list `REINDEX_TABLES` →
+  `MAINTENANCE_TABLES` (used by both jobs). Tested: `analyze_is_token_gated` (401 without a token,
+  mirroring reindex); the ANALYZE SQL verified valid against all 7 tables. fmt + clippy clean;
+  `management_api_test` green. Documented in `docs/DB_TUNING.md` (the maintenance source of truth).
+
 - **F-5 — hardened the last request-path panics in the live report engine.** Audited the
   request-reachable layer (frontend handlers + the models/helpers they call) for `.unwrap()`/
   `.expect()`/`panic!` — most candidates were guarded-safe (the `concerns.rs` severity/category/what

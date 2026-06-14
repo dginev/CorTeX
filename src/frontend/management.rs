@@ -415,6 +415,41 @@ pub fn reindex_human(
   Ok(rocket::response::Redirect::to("/jobs"))
 }
 
+/// Triggers a planner-statistics refresh (`ANALYZE` over the high-churn tables) as a background job
+/// — keeps the planner's row estimates current after bulk imports/reruns so it keeps choosing the
+/// right indexes (e.g. the TODO leasing index) instead of waiting for autovacuum (DB
+/// ongoing-maintenance; `docs/DB_TUNING.md`). **Token-gated**; returns `202` + the job handle, poll
+/// `GET /api/jobs/<job>` for per-table progress. Debounced.
+#[post("/api/maintenance/analyze")]
+pub fn analyze(
+  actor: Actor,
+  pool: &State<DbPool>,
+) -> Result<(Status, Json<MaintenanceAckDto>), Status> {
+  let job_uuid = crate::jobs::spawn_analyze(pool.inner().clone(), &actor.owner)
+    .map_err(|_| Status::InternalServerError)?;
+  Ok((
+    Status::Accepted,
+    Json(MaintenanceAckDto {
+      job: job_uuid.to_string(),
+      poll: format!("/api/jobs/{job_uuid}"),
+      actor: actor.owner,
+    }),
+  ))
+}
+
+/// The human twin of [`analyze`]: the health screen's "Refresh planner statistics" button. Spawns
+/// the same debounced analyze job and redirects to `/jobs` to watch it. `401` on a bad token.
+#[post("/maintenance/analyze", data = "<form>")]
+pub fn analyze_human(
+  form: rocket::form::Form<MaintenanceForm>,
+  pool: &State<DbPool>,
+) -> Result<rocket::response::Redirect, Status> {
+  let owner = owner_for_token(&form.token).ok_or(Status::Unauthorized)?;
+  crate::jobs::spawn_analyze(pool.inner().clone(), &owner)
+    .map_err(|_| Status::InternalServerError)?;
+  Ok(rocket::response::Redirect::to("/jobs"))
+}
+
 /// The route set for the management/health/settings capability.
 pub fn routes() -> Vec<Route> {
   routes![
@@ -424,6 +459,8 @@ pub fn routes() -> Vec<Route> {
     health_page,
     reindex,
     reindex_human,
+    analyze,
+    analyze_human,
     settings,
     put_config,
     post_settings

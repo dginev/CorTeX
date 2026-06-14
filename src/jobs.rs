@@ -161,9 +161,11 @@ pub fn spawn_report_refresh(pool: DbPool, actor: &str) -> Result<Uuid, String> {
 /// The job `kind` for an online index rebuild.
 pub const REINDEX_KIND: &str = "reindex";
 
-/// The high-churn / append-heavy tables whose indexes bloat over time and benefit from periodic
-/// rebuilds (mirrors the autovacuum-tuned set + `docs/DB_TUNING.md`).
-const REINDEX_TABLES: [&str; 7] = [
+/// The high-churn / append-heavy tables that benefit from periodic maintenance — index rebuilds
+/// (their indexes bloat over time) and planner-statistics refreshes (bulk imports/reruns shift
+/// their row distributions). Mirrors the autovacuum-tuned set + `docs/DB_TUNING.md`. Shared by
+/// [`spawn_reindex`] and [`spawn_analyze`].
+const MAINTENANCE_TABLES: [&str; 7] = [
   "tasks",
   "log_infos",
   "log_warnings",
@@ -194,11 +196,11 @@ pub fn spawn_reindex(pool: DbPool, actor: &str) -> Result<Uuid, String> {
     pool,
     REINDEX_KIND,
     actor,
-    serde_json::json!({ "tables": REINDEX_TABLES }),
+    serde_json::json!({ "tables": MAINTENANCE_TABLES }),
     |progress| {
       let mut connection = progress.pool.get().map_err(|e| e.to_string())?;
-      let total = REINDEX_TABLES.len() as i32;
-      for (index, table) in REINDEX_TABLES.iter().enumerate() {
+      let total = MAINTENANCE_TABLES.len() as i32;
+      for (index, table) in MAINTENANCE_TABLES.iter().enumerate() {
         progress.step(index as i32, Some(total), &format!("reindexing {table}"));
         // `table` is a fixed identifier (not user input), so the interpolation is injection-safe.
         diesel::sql_query(format!("REINDEX (CONCURRENTLY) TABLE {table}"))
@@ -206,7 +208,48 @@ pub fn spawn_reindex(pool: DbPool, actor: &str) -> Result<Uuid, String> {
           .map_err(|e| format!("reindex {table} failed: {e}"))?;
       }
       progress.step(total, Some(total), "reindex complete");
-      Ok(serde_json::json!({ "reindexed": REINDEX_TABLES }))
+      Ok(serde_json::json!({ "reindexed": MAINTENANCE_TABLES }))
+    },
+  )
+}
+
+/// The job `kind` for a planner-statistics refresh.
+pub const ANALYZE_KIND: &str = "analyze";
+
+/// Spawns a background job that refreshes the query planner's statistics with `ANALYZE` over the
+/// high-churn tables. After a bulk import or a large rerun churns `tasks.status`, stale statistics
+/// can make the planner mis-estimate and skip the right index (e.g. the TODO leasing index,
+/// `todo_index`), so an operator can refresh them on demand instead of waiting for autovacuum's
+/// next pass (DB ongoing-maintenance; `docs/DB_TUNING.md`). `ANALYZE` is online (a brief lock per
+/// table, sampling only) and runs **off** the request path, reporting per-table progress.
+/// **Debounced:** an analyze already queued/running is reused.
+pub fn spawn_analyze(pool: DbPool, actor: &str) -> Result<Uuid, String> {
+  {
+    let mut connection = pool.get().map_err(|e| e.to_string())?;
+    if let Some(existing) = list_recent(&mut connection, true, 200)
+      .into_iter()
+      .find(|job| job.kind == ANALYZE_KIND)
+    {
+      return Ok(existing.uuid);
+    }
+  }
+  spawn_job(
+    pool,
+    ANALYZE_KIND,
+    actor,
+    serde_json::json!({ "tables": MAINTENANCE_TABLES }),
+    |progress| {
+      let mut connection = progress.pool.get().map_err(|e| e.to_string())?;
+      let total = MAINTENANCE_TABLES.len() as i32;
+      for (index, table) in MAINTENANCE_TABLES.iter().enumerate() {
+        progress.step(index as i32, Some(total), &format!("analyzing {table}"));
+        // `table` is a fixed identifier (not user input), so the interpolation is injection-safe.
+        diesel::sql_query(format!("ANALYZE {table}"))
+          .execute(&mut connection)
+          .map_err(|e| format!("analyze {table} failed: {e}"))?;
+      }
+      progress.step(total, Some(total), "analyze complete");
+      Ok(serde_json::json!({ "analyzed": MAINTENANCE_TABLES }))
     },
   )
 }
