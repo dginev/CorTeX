@@ -10,8 +10,10 @@
 use cortex::backend::{self, test_db_address};
 use cortex::frontend::server::mount_api_with;
 use cortex::helpers::TaskStatus;
-use cortex::models::{Corpus, NewCorpus, NewLogWarning, NewService, NewTask, Service, Task};
-use cortex::schema::{corpora, historical_runs, log_warnings, services, tasks};
+use cortex::models::{
+  Corpus, NewCorpus, NewLogError, NewLogWarning, NewService, NewTask, Service, Task,
+};
+use cortex::schema::{corpora, historical_runs, log_errors, log_warnings, services, tasks};
 use diesel::prelude::*;
 use rocket::http::{ContentType, Status};
 use rocket::local::blocking::Client;
@@ -425,6 +427,14 @@ fn delete_corpus_removes_corpus_tasks_and_logs() {
     details: "d".to_string(),
   })
   .expect("insert log");
+  // A second severity, to prove the transactional primitive cascades across *all* the log_* tables.
+  db.add(&NewLogError {
+    task_id: task.id,
+    category: "c".to_string(),
+    what: "w".to_string(),
+    details: "d".to_string(),
+  })
+  .expect("insert error log");
 
   let client = client();
   // Token-gated: an untokened delete is denied before anything else (no unauthenticated wipe).
@@ -460,7 +470,16 @@ fn delete_corpus_removes_corpus_tasks_and_logs() {
     .count()
     .get_result(&mut db.connection)
     .unwrap();
-  assert_eq!(log_count, 0, "logs should be deleted (no orphans)");
+  assert_eq!(log_count, 0, "warning logs should be deleted (no orphans)");
+  let error_log_count: i64 = log_errors::table
+    .filter(log_errors::task_id.eq(task.id))
+    .count()
+    .get_result(&mut db.connection)
+    .unwrap();
+  assert_eq!(
+    error_log_count, 0,
+    "error logs should be deleted too (cascade covers every log_* table)"
+  );
 }
 
 fn delete_corpus_is_404_for_unknown() {

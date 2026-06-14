@@ -6,6 +6,20 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **Corpus deletion — made `Corpus::destroy` the complete, transactional, orphan-free primitive.**
+  The CLAUDE.md hazard "deleting a corpus orphans `log_*` rows" was real at the model layer:
+  `Corpus::destroy` deleted tasks + the corpus but **not** the `log_*` rows (which have no FK to
+  `tasks`), so any direct caller orphaned them. The frontend `delete_corpus_cascade` worked around it
+  by deleting the 5 log tables first — but as **6 separate non-transactional statements**, so a crash
+  mid-delete left a half-deleted corpus (crash-consistency gap). Moved the log cleanup **into**
+  `destroy` and wrapped the whole thing (`log_*` → tasks → corpus, with `historical_tasks` cascading
+  via its FK) in **one transaction**: now atomic, orphan-free, and correct for *every* caller, not
+  just the frontend. `delete_corpus_cascade` collapses to a one-line delegation. Strengthened
+  `corpora_test::delete_corpus_removes_corpus_tasks_and_logs` to seed + assert **two** severities
+  (warning + error) gone, proving the cascade covers all `log_*` tables. Updated the CLAUDE.md
+  load-bearing fact. Full suite green (lib 13, backend 4, importer 3, + all integration suites); fmt
+  + clippy clean.
+
 - **Docs — corrected the stale agent-API surface in `TEST_DRIVE.md` (agent-first parity).** The
   "Agent-API parity" section was stale and undersold the system: it listed "13 handlers" — all
   *read* twins — and omitted every write/maintenance endpoint, misrepresenting an agent-first

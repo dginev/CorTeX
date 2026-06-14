@@ -45,8 +45,11 @@ read it before non-trivial work. Active work branch: **`productize-2026`**.
   `Rocket.toml`/`templates/`/`public/` are CWD-relative — **run binaries from the repo root.**
 - **The dispatcher panics on purpose** (mutex poisoning → process abort → external restart). Don't
   "fix" those panics into silent recovery; preserve fail-fast where it's the design (see Arm 4/12).
-- **Only one FK exists** (`historical_tasks.task_id → tasks ON DELETE CASCADE`). Deleting a corpus
-  orphans `log_*` rows. (The dead `dependencies` table was dropped — migration `…050000`, Arm 12.)
+- **Only one FK exists** (`historical_tasks.task_id → tasks ON DELETE CASCADE`). The `log_*` tables
+  have no FK to `tasks`, so a **raw** `DELETE FROM corpora`/`tasks` orphans their rows — always delete
+  a corpus through **`Corpus::destroy`**, which removes `log_*` + tasks + corpus in **one
+  transaction** (orphan-free + crash-consistent; the frontend `delete_corpus` path uses it). (The dead
+  `dependencies` table was dropped — migration `…050000`, Arm 12.)
 
 ## Build / run
 

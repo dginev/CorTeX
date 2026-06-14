@@ -70,21 +70,50 @@ impl Corpus {
     Ok(services)
   }
 
-  /// Deletes a corpus and its dependent tasks from the DB, consuming the object
+  /// Deletes a corpus and **all** its dependent rows — the `log_*` messages, the tasks, and the
+  /// corpus registration — consuming the object. Runs in a single transaction so a crash mid-delete
+  /// can't leave a half-deleted corpus (crash-consistency, `docs/DESIGN_PRINCIPLES.md`).
+  ///
+  /// The `log_*` tables have **no** foreign key to `tasks` (the only FK is
+  /// `historical_tasks.task_id → tasks ON DELETE CASCADE`), so their rows must be deleted
+  /// explicitly **before** the tasks or they orphan — this is why deletion lives in one complete
+  /// primitive rather than a bare `DELETE FROM corpora` (the CLAUDE.md "deleting a corpus orphans
+  /// log_* rows" hazard, now closed at the source so every caller is safe).
   pub fn destroy(self, connection: &mut PgConnection) -> Result<usize, Error> {
-    // all tasks for entries of this corpus
-    delete(tasks::table)
-      .filter(tasks::corpus_id.eq(self.id))
-      .execute(connection)?;
-    // the init task of this corpus
-    delete(tasks::table)
-      .filter(tasks::entry.eq(self.path))
-      .filter(tasks::service_id.eq(1))
-      .execute(connection)?;
-    // the corpus registration
-    delete(corpora::table)
-      .filter(corpora::id.eq(self.id))
-      .execute(connection)
+    use crate::schema::{log_errors, log_fatals, log_infos, log_invalids, log_warnings};
+    let corpus_id = self.id;
+    let corpus_path = self.path;
+    connection.transaction(|t_connection| {
+      // The task ids of this corpus, rebuilt per delete (the subquery is consumed by `eq_any`).
+      let task_ids = || {
+        tasks::table
+          .filter(tasks::corpus_id.eq(corpus_id))
+          .select(tasks::id)
+      };
+      delete(log_infos::table.filter(log_infos::task_id.eq_any(task_ids())))
+        .execute(t_connection)?;
+      delete(log_warnings::table.filter(log_warnings::task_id.eq_any(task_ids())))
+        .execute(t_connection)?;
+      delete(log_errors::table.filter(log_errors::task_id.eq_any(task_ids())))
+        .execute(t_connection)?;
+      delete(log_fatals::table.filter(log_fatals::task_id.eq_any(task_ids())))
+        .execute(t_connection)?;
+      delete(log_invalids::table.filter(log_invalids::task_id.eq_any(task_ids())))
+        .execute(t_connection)?;
+      // all tasks for entries of this corpus (cascades to historical_tasks via its FK)
+      delete(tasks::table)
+        .filter(tasks::corpus_id.eq(corpus_id))
+        .execute(t_connection)?;
+      // the init task of this corpus
+      delete(tasks::table)
+        .filter(tasks::entry.eq(corpus_path))
+        .filter(tasks::service_id.eq(1))
+        .execute(t_connection)?;
+      // the corpus registration
+      delete(corpora::table)
+        .filter(corpora::id.eq(corpus_id))
+        .execute(t_connection)
+    })
   }
 }
 

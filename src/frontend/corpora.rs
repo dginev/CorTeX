@@ -543,32 +543,12 @@ pub fn delete_corpus_human(
 /// Removes a corpus's log messages (the `log_*` tables have no FK cascade), then its tasks and the
 /// corpus row itself.
 fn delete_corpus_cascade(connection: &mut PgConnection, corpus: Corpus) -> Result<(), Status> {
-  use crate::schema::{log_errors, log_fatals, log_infos, log_invalids, log_warnings, tasks};
-  use diesel::prelude::*;
-  let corpus_id = corpus.id;
-  let task_ids = || {
-    tasks::table
-      .filter(tasks::corpus_id.eq(corpus_id))
-      .select(tasks::id)
-  };
-  let fail = |_| Status::InternalServerError;
-  diesel::delete(log_infos::table.filter(log_infos::task_id.eq_any(task_ids())))
-    .execute(connection)
-    .map_err(fail)?;
-  diesel::delete(log_warnings::table.filter(log_warnings::task_id.eq_any(task_ids())))
-    .execute(connection)
-    .map_err(fail)?;
-  diesel::delete(log_errors::table.filter(log_errors::task_id.eq_any(task_ids())))
-    .execute(connection)
-    .map_err(fail)?;
-  diesel::delete(log_fatals::table.filter(log_fatals::task_id.eq_any(task_ids())))
-    .execute(connection)
-    .map_err(fail)?;
-  diesel::delete(log_invalids::table.filter(log_invalids::task_id.eq_any(task_ids())))
-    .execute(connection)
-    .map_err(fail)?;
-  corpus.destroy(connection).map_err(fail)?;
-  Ok(())
+  // `Corpus::destroy` is the complete, transactional deletion primitive (log_* + tasks + corpus,
+  // atomic + orphan-free); the handler only maps its error to an HTTP status.
+  corpus
+    .destroy(connection)
+    .map(|_| ())
+    .map_err(|_| Status::InternalServerError)
 }
 
 // --- Human screens (HTML twins of the corpora API above) ---------------------------------------
