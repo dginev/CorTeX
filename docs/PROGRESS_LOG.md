@@ -6,6 +6,20 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **D-5 — precisely root-caused the `job_limit` shutdown hang (diagnosis, not a patch).** Read the
+  three dispatcher threads and found the desync is a **units mismatch**, not just "mock-replies": the
+  **ventilator** counts `job_limit` in *requests* (incl. every mock-reply — unknown-service,
+  backpressure, empty-queue), the **sink** in *results received*, and **finalize** in *non-empty drain
+  cycles* (`mark_done_arc` `.drain(..)`s the whole `done_queue` per increment). Three incompatible
+  units → the threads can't agree on "done" → the ventilator stops early while finalize/sink block →
+  hang. A correct fix is a cross-thread **drain-coordination protocol** (shared dispatched-task
+  counter; terminate when finalized == dispatched after a source-exhausted signal; explicit "no more
+  TODO" drain) with `bench_pipeline` integration risk — a wrong move deadlocks either way, so it needs
+  owner-reviewed design rather than an autonomous patch. Upgraded KNOWN_ISSUES D-5 from a vague note to
+  the precise multi-axis diagnosis + fix sketch, and logged the design decision in OPEN_QUESTIONS #10.
+  **Not a production hang** — the perpetual dispatcher runs `job_limit = None` (benchmark/bounded-run
+  only). (Docs only; no code touched on this risky concurrent path.)
+
 - **Corpus deletion — made `Corpus::destroy` the complete, transactional, orphan-free primitive.**
   The CLAUDE.md hazard "deleting a corpus orphans `log_*` rows" was real at the model layer:
   `Corpus::destroy` deleted tasks + the corpus but **not** the `log_*` rows (which have no FK to

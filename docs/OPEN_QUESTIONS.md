@@ -61,3 +61,15 @@ wasn't blocked; each can be revised/refactored on return. Newest first.
 
 8. **`src/frontend/cached/` naming — done.** Flattened the one-function nested module and renamed it to
    `src/frontend/render.rs` (the presentation layer). No open decision.
+
+10. **D-5 — `job_limit` drain protocol needs a design (diagnosed, not patched).** Root-caused the
+    finite-`job_limit` shutdown hang: the ventilator counts `job_limit` in **requests** (including
+    mock-replies), the sink in **results received**, and finalize in **drain *cycles*** (each drains
+    the whole `done_queue`) — three incompatible units that can never agree on "done" (full analysis in
+    KNOWN_ISSUES D-5). I deliberately did **not** patch it: a correct fix is a cross-thread coordination
+    protocol (a shared *dispatched-real-task* counter; finalize/sink terminating when *finalized ==
+    dispatched* once the ventilator signals source-exhausted; an explicit "no more TODO tasks" drain),
+    and it must stay consistent with `bench_pipeline`'s expectations — a wrong move deadlocks in either
+    direction. *Direction:* approve a drain-protocol design (I can draft one) before I touch the three
+    dispatcher threads. **Not urgent for production** — the perpetual dispatcher runs `job_limit = None`;
+    this is benchmark/bounded-run-only. (`src/dispatcher/{ventilator,sink,finalize,manager}.rs`)
