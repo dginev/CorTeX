@@ -239,5 +239,11 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   reports `OK` (so our 18 migrations reproduce the live-equivalent schema exactly — no drift today), and
   against a synthetic drifted DB (an extra column) it correctly flags it. Ready to run on a restored
   `cortex_load` the moment the backup lands. Doc (`docs/LOAD_TESTING.md` Phase 2) points at it.
+  - **Already paid off:** building the reference regenerated `src/schema.rs` via `diesel print_schema` and
+    surfaced a **latent inconsistency** — the R-2 widen migration (`20260613170000`) made `tasks.entry`
+    `varchar(4096)`, but `schema.rs` still carried `#[max_length = 200]` (that tick wrongly assumed
+    varchar-length changes don't touch `schema.rs`; diesel *does* emit `#[max_length]`). Corrected to
+    `4096` so `schema.rs` matches the migrations + DB (descriptive only — `Varchar` still maps to `String`,
+    no behaviour change — but now consistent).
   *Next:* (when the backup arrives) restore + run the verifier + load test; meanwhile continue pooling the
   remaining `Backend::default()` routes, the D-6 reaper, or service-management UX.
