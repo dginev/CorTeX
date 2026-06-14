@@ -52,11 +52,11 @@
                 <span class="navbar-brand">
                     <span class="hidden-xs">
                         <a href="/" class="quietlink">
-                            <img src="/public/img/logo.jpg" width="80"> Framework</a>
+                            <span class="brand-logo" role="img" aria-label="CorTeX"></span> Framework</a>
                     </span>
                     <span class="hidden-sm hidden-md hidden-lg">
                         <a href="/" class="quietlink">
-                            <img src="/public/img/logo.jpg" width="80">
+                            <span class="brand-logo" role="img" aria-label="CorTeX"></span>
                         </a>
                     </span>
                 </span>

@@ -514,6 +514,25 @@ fn service_activation_flows() {
       .starts_with("/admin/login?next="),
     "the add-service screen requires sign-in"
   );
+
+  // The corpus page is public, but its "Corpus actions" are admin-only: an anonymous visitor sees
+  // only the delicate sign-in hint, never the service picker / extend / delete controls.
+  let anon = client.get(format!("/corpus/{CORPUS}")).dispatch();
+  assert_eq!(
+    anon.status(),
+    Status::Ok,
+    "the corpus page itself is public"
+  );
+  let anon_body = anon.into_string().expect("html");
+  assert!(
+    anon_body.contains("Log in here for admin actions"),
+    "an anonymous visitor sees the sign-in hint"
+  );
+  assert!(
+    !anon_body.contains("<select name=\"service\""),
+    "an anonymous visitor does NOT see the corpus-actions service picker"
+  );
+
   sign_in(&client);
 
   // --- "Add a service": the form lists corpora as checkboxes ------------------------------------

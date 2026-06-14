@@ -23,17 +23,18 @@
             <a href="/corpus/{{global.corpus_name_uri}}/{{service.name_uri}}">{{service.name}}</a>
           </td>
           <td class="right">{{service.total}}</td>
-          <td class="right">{{service.no_problem}}</td>
-          <td class="right">{{service.warning}}</td>
-          <td class="right">{{service.error}}</td>
-          <td class="right">{{service.fatal}}</td>
-          <td class="right">{{service.todo}}</td>
+          <td class="right {% if service.no_problem == '0' %}count-zero{% else %}count-ok{% endif %}">{{service.no_problem}}</td>
+          <td class="right {% if service.warning == '0' %}count-zero{% else %}count-warn{% endif %}">{{service.warning}}</td>
+          <td class="right {% if service.error == '0' %}count-zero{% else %}count-error{% endif %}">{{service.error}}</td>
+          <td class="right {% if service.fatal == '0' %}count-zero{% else %}count-fatal{% endif %}">{{service.fatal}}</td>
+          <td class="right {% if service.todo == '0' %}count-zero{% else %}count-todo{% endif %}">{{service.todo}}</td>
           <td class="left">
             <a href="/runs/{{global.corpus_name_uri}}/{{service.name_uri}}">runs</a> &middot;
             <a href="/runs/{{global.corpus_name_uri}}/{{service.name_uri}}/diff">diff</a> &middot;
             <a href="/history/{{global.corpus_name_uri}}/{{service.name_uri}}">chart</a>
-            {# init (1) / import (2) are magic infrastructure services — never deactivatable. #}
-            {% if service.id != "1" and service.id != "2" %}
+            {# init (1) / import (2) are magic infrastructure services — never deactivatable.
+               Admin-only: a non-signed-in visitor never sees the deactivate control. #}
+            {% if is_admin and service.id != "1" and service.id != "2" %}
             <form method="post"
               action="/corpus/{{global.corpus_name_uri}}/services/{{service.name_uri}}/deactivate"
               style="display:inline; margin-left:0.5rem;"
@@ -49,8 +50,10 @@
     </table>
   </div>
 
+  {% if is_admin %}
   <hr>
   <h3>Corpus actions</h3>
+  <div class="action-panel">
   {% if all_services and all_services | length > 0 %}
   <form method="post" action="/corpus/{{global.corpus_name_uri}}/activate"
     style="display:inline-block; margin:0 1.5rem; vertical-align:top;">
@@ -77,5 +80,9 @@
         required>
       <button type="submit">Delete corpus</button></p>
   </form>
+  </div>
+  {% else %}
+  <p class="admin-hint"><a href="/admin/login?next=/corpus/{{global.corpus_name_uri}}">Log in here for admin actions</a></p>
+  {% endif %}
 </div>
 {% endblock content %}

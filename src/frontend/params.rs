@@ -45,4 +45,8 @@ pub struct TemplateContext {
   pub history: Option<Vec<RunMetadata>>,
   /// serialized data for easy plotting of rerun history
   pub history_serialized: Option<String>,
+  /// Whether the current viewer is a signed-in admin. Gates admin-only affordances in the shared
+  /// templates (e.g. the corpus screen's "Corpus actions"); defaults to `false` (anonymous), so a
+  /// page that doesn't set it shows nothing privileged.
+  pub is_admin: bool,
 }

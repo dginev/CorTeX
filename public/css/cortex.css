@@ -541,3 +541,173 @@ table.diff-tasks-report {
     font-size: 1rem;
   }
 }
+
+/* === Productized scholarly component theme ===================================================
+   A cohesive widget layer over the tokens: serif display headings, carded panels, a clean report
+   grid, status-tinted counts, and pill badges — so the admin + report dashboards read as a polished
+   scholarly product in both paper and midnight. */
+
+/* Display headings — serif masthead (Roboto Slab) for a scholarly register; body stays sans. */
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--serif);
+  color: var(--ink);
+}
+h1 {
+  letter-spacing: -0.01em;
+}
+h3 {
+  font-size: 1.35em;
+  font-weight: 700;
+  margin-top: 1.4em;
+}
+.section-label {
+  font-family: var(--sans);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--ink-muted);
+}
+
+/* Cards / panels. */
+.card,
+.admin-card,
+.action-panel {
+  background-color: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+.card,
+.action-panel {
+  padding: 1rem 1.15rem;
+  margin: 1rem 0;
+}
+.admin-card {
+  transition:
+    box-shadow 0.15s ease,
+    border-color 0.15s ease;
+}
+.admin-card:hover {
+  box-shadow: var(--shadow-lg);
+}
+.stat-number {
+  font-family: var(--serif);
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+/* The corpus "Corpus actions" panel — cards the inline forms together. */
+.action-panel form {
+  display: inline-block;
+  vertical-align: top;
+  margin: 0 0.75rem;
+}
+
+/* Report / registry / jobs grid — a clean scholarly table. */
+.table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.table > thead > tr > th {
+  font-family: var(--sans);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--ink-muted);
+  background-color: var(--bg-sunken);
+  border-bottom: 1px solid var(--rule);
+  padding: 0.55rem 0.8rem;
+  vertical-align: bottom;
+}
+.table > tbody > tr > td {
+  padding: 0.5rem 0.8rem;
+  border-top: 1px solid var(--rule-soft);
+  vertical-align: middle;
+}
+.table > tbody > tr:hover > td {
+  background-color: var(--accent-soft);
+}
+/* Numeric columns: tabular figures + monospace so counts line up and scan. */
+.table td.right,
+.table th.right {
+  font-variant-numeric: tabular-nums;
+}
+.table td.right {
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+
+/* Status-tinted report counts (a zero is de-emphasised, a fatal stands out). */
+.count-ok {
+  color: var(--ok);
+}
+.count-warn {
+  color: var(--warn);
+}
+.count-error {
+  color: var(--bad);
+}
+.count-fatal {
+  color: var(--bad);
+  font-weight: 700;
+}
+.count-todo {
+  color: var(--ink-muted);
+}
+.count-zero {
+  color: var(--ink-muted);
+  opacity: 0.5;
+}
+
+/* Pill badge / chip. */
+.chip {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background-color: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Brand wordmark: one PNG holds two stacked variants (top = paper, bottom = midnight). Crop to the
+   active variant per theme via `background-size: 100% 200%` + position, and blend each variant's
+   solid background into the navbar (white melts on the light chrome via `multiply`, black melts on
+   the dark chrome via `screen`) so the wordmark sits seamlessly with no logo box. */
+.brand-logo {
+  display: inline-block;
+  width: 120px;
+  height: 40px;
+  vertical-align: middle;
+  background-image: url("/public/img/logo.png");
+  background-repeat: no-repeat;
+  background-size: 100% 200%;
+  background-position: center top;
+  mix-blend-mode: multiply;
+}
+:root[data-theme="midnight"] .brand-logo {
+  background-position: center bottom;
+  mix-blend-mode: screen;
+}
+
+/* A delicate, unobtrusive admin sign-in hint under public content. */
+.admin-hint {
+  margin-top: 2rem;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+.admin-hint a {
+  color: var(--ink-muted);
+  border-bottom: 1px dotted var(--rule);
+}
+.admin-hint a:hover {
+  color: var(--link);
+  border-bottom-color: var(--link);
+}

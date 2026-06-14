@@ -13,15 +13,15 @@
 
   <div class="admin-status" style="display:flex; flex-wrap:wrap; gap:0.75rem; margin:1rem 0;">
     <div class="admin-card" style="flex:1; min-width:8rem; text-align:center;">
-      <div style="font-size:1.6rem; font-weight:bold;">{{ corpus_count }}</div>
+      <div class="stat-number">{{ corpus_count }}</div>
       <div class="muted"><a href="/">corpora</a></div>
     </div>
     <div class="admin-card" style="flex:1; min-width:8rem; text-align:center;">
-      <div style="font-size:1.6rem; font-weight:bold;{% if active_jobs > 0 %} color:var(--ok);{% endif %}">{{ active_jobs }}</div>
+      <div class="stat-number"{% if active_jobs > 0 %} style="color:var(--ok);"{% endif %}>{{ active_jobs }}</div>
       <div class="muted"><a href="/jobs">active jobs</a></div>
     </div>
     <div class="admin-card" style="flex:1; min-width:8rem; text-align:center;">
-      <div style="font-size:1.6rem; font-weight:bold;">{{ active_sessions }}</div>
+      <div class="stat-number">{{ active_sessions }}</div>
       <div class="muted"><a href="/admin/sessions">active sessions</a></div>
     </div>
     <div class="admin-card" style="flex:2; min-width:12rem;">

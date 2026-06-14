@@ -6,6 +6,29 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **UI polish — admin-gated corpus actions, a scholarly widget theme, and a dual-variant logo.**
+  - **Admin-gated "Corpus actions".** The corpus page (`GET /corpus/<name>`) is public, but its
+    activate/extend/delete forms (and the per-service deactivate buttons) were shown to everyone and
+    only bounced to sign-in on submit. Now `corpus_page` threads `Option<AdminSession>` → a real
+    `TemplateContext.is_admin` bool; `services.html.tera` renders the actions **only when signed in**,
+    and an anonymous visitor sees a delicate **"Log in here for admin actions"** hint (with `?next=`
+    back to the corpus) under the content. Tested (`services_test`: anonymous sees the hint and no
+    picker; signed-in sees the controls).
+  - **Scholarly widget theme.** A component layer on the tokens (`public/css/cortex.css`): serif
+    (Roboto Slab) display headings, carded panels (`.card`/`.admin-card`/`.action-panel`, subtle
+    shadow + hover), a clean report grid (uppercase small-cap headers on `--bg-sunken`, `--rule-soft`
+    row separators, hover, tabular-nums + monospace numeric cells), **status-tinted counts**
+    (`.count-ok/-warn/-error/-fatal/-todo`, zeros de-emphasised), pill `.chip`, and the `.admin-hint`.
+    Applied to the admin stat cards (`.stat-number`) and the corpus service-report counts.
+  - **Dual-variant logo.** `~/Downloads/…png` (1536×1024, two stacked CoRTeX wordmarks — top for
+    paper, bottom for midnight) renamed to `public/img/logo.png`; the navbar brand is now a
+    `.brand-logo` span that crops to the active variant per theme (`background-size: 100% 200%` +
+    top/bottom position) and **blends the variant's solid background into the chrome** (`multiply` on
+    paper so white melts into the light nav, `screen` on midnight so black melts into the dark nav) —
+    seamless, no logo box. Replaces the old `logo.jpg`.
+  Render-checked (`admin_test` / `corpora_test` / `services_test`); fmt + clippy clean; frontend
+  restarted for the live preview.
+
 - **UI theming — adopted the "paper" (light) + "midnight" (dark) design tokens from `ar5iv-editor`.**
   Added the two `data-theme` token sets (`:root[data-theme="paper"]` / `[data-theme="midnight"]` —
   `--bg/--bg-elev/--bg-sunken/--ink*/--rule*/--accent*/--link*/--code-bg/--shadow*/--ok/--warn/--bad`

@@ -698,7 +698,11 @@ pub fn overview_page(pool: &State<DbPool>) -> Result<Template, Status> {
 /// The corpus screen (HTML twin of [`api_corpus`]): the services registered on a corpus. `404` if
 /// the corpus is unknown, `503` if the pool is exhausted.
 #[get("/corpus/<name>")]
-pub fn corpus_page(name: &str, pool: &State<DbPool>) -> Result<Template, Status> {
+pub fn corpus_page(
+  name: &str,
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+) -> Result<Template, Status> {
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let corpus = Corpus::find_by_name(name, &mut connection).map_err(|_| Status::NotFound)?;
   let mut global = HashMap::new();
@@ -757,6 +761,7 @@ pub fn corpus_page(name: &str, pool: &State<DbPool>) -> Result<Template, Status>
     global,
     services: Some(services),
     all_services: Some(all_services),
+    is_admin: session.is_some(),
     ..TemplateContext::default()
   };
   decorate_uri_encodings(&mut context);
