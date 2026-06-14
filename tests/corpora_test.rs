@@ -711,6 +711,103 @@ fn human_corpus_forms_are_token_and_confirm_gated() {
 }
 
 // Custom harness (see KNOWN_ISSUES L-1): run the cases then `_exit(0)`.
+fn deactivate_service_removes_pair_tasks_and_logs() {
+  let corpus_name = "deactivate_test_corpus";
+  let target_svc = "deactivate_target_svc";
+  let mut db = backend::testdb();
+  cleanup(&mut db, corpus_name, target_svc);
+  db.add(&NewCorpus {
+    name: corpus_name.to_string(),
+    path: "/tmp/deactivate_test_corpus".to_string(),
+    complex: true,
+    description: "d".to_string(),
+  })
+  .expect("corpus");
+  let corpus = Corpus::find_by_name(corpus_name, &mut db.connection).unwrap();
+  db.add(&NewService {
+    name: target_svc.to_string(),
+    version: 0.1,
+    inputformat: "tex".to_string(),
+    outputformat: "html".to_string(),
+    inputconverter: None,
+    complex: true,
+    description: "t".to_string(),
+  })
+  .expect("service");
+  let target = Service::find_by_name(target_svc, &mut db.connection).unwrap();
+  db.add(&NewTask {
+    service_id: target.id,
+    corpus_id: corpus.id,
+    status: TaskStatus::Warning.raw(),
+    entry: "/tmp/deactivate_test_corpus/1/1.zip".to_string(),
+  })
+  .expect("task");
+  let task: Task = tasks::table
+    .filter(tasks::corpus_id.eq(corpus.id))
+    .filter(tasks::service_id.eq(target.id))
+    .first(&mut db.connection)
+    .unwrap();
+  db.add(&NewLogWarning {
+    task_id: task.id,
+    category: "c".to_string(),
+    what: "w".to_string(),
+    details: "d".to_string(),
+  })
+  .expect("log");
+
+  let client = client();
+  // Token-gated: no token -> 401 (before any deletion).
+  let untokened = format!("/api/corpora/{corpus_name}/services/{target_svc}?confirm={target_svc}");
+  assert_eq!(
+    client.delete(untokened.as_str()).dispatch().status(),
+    Status::Unauthorized,
+    "deactivate without a token is 401"
+  );
+  // Wrong confirmation (with a valid token) -> 400.
+  let bad_confirm =
+    format!("/api/corpora/{corpus_name}/services/{target_svc}?confirm=nope&token=token1");
+  assert_eq!(
+    client.delete(bad_confirm.as_str()).dispatch().status(),
+    Status::BadRequest
+  );
+  // Service echoed as confirmation + a valid token -> 204.
+  let confirmed =
+    format!("/api/corpora/{corpus_name}/services/{target_svc}?confirm={target_svc}&token=token1");
+  assert_eq!(
+    client.delete(confirmed.as_str()).dispatch().status(),
+    Status::NoContent
+  );
+
+  // The pair's tasks + logs are gone; the service definition survives.
+  let task_count: i64 = tasks::table
+    .filter(tasks::corpus_id.eq(corpus.id))
+    .filter(tasks::service_id.eq(target.id))
+    .count()
+    .get_result(&mut db.connection)
+    .unwrap();
+  assert_eq!(task_count, 0, "the pair's tasks are deleted");
+  let log_count: i64 = log_warnings::table
+    .filter(log_warnings::task_id.eq(task.id))
+    .count()
+    .get_result(&mut db.connection)
+    .unwrap();
+  assert_eq!(log_count, 0, "the pair's logs are deleted (no orphans)");
+  assert!(
+    Service::find_by_name(target_svc, &mut db.connection).is_ok(),
+    "the service definition survives deactivation"
+  );
+  // Unknown corpus/service -> 404.
+  assert_eq!(
+    client
+      .delete("/api/corpora/no_such_c/services/no_such_s?confirm=no_such_s&token=token1")
+      .dispatch()
+      .status(),
+    Status::NotFound
+  );
+
+  cleanup(&mut db, corpus_name, target_svc);
+}
+
 fn main() {
   api_corpora_lists_registered_corpora();
   api_corpus_detail_reports_services_and_counts();
@@ -723,6 +820,7 @@ fn main() {
   delete_corpus_is_404_for_unknown();
   post_corpora_extend_adds_new_entries();
   human_corpus_forms_are_token_and_confirm_gated();
+  deactivate_service_removes_pair_tasks_and_logs();
   eprintln!("corpora_test: all cases passed");
   unsafe { libc::_exit(0) }
 }

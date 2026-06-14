@@ -112,4 +112,47 @@ impl Service {
     let workers: Vec<WorkerMetadata> = workers_query.get_results(connection)?;
     Ok(workers)
   }
+
+  /// Deactivates (retires) this service from a single corpus: deletes the `(corpus, service)`
+  /// pair's tasks **and their `log_*` rows** in one transaction, returning the number of tasks
+  /// removed. The service *definition* and its work on other corpora are untouched. The `log_*`
+  /// tables have no FK to `tasks`, so their rows are deleted explicitly **before** the tasks or
+  /// they orphan (the same hazard closed in [`super::Corpus::destroy`]); transactional so a crash
+  /// can't half-delete. `historical_runs` tallies survive (no FK to tasks), while per-task
+  /// `historical_tasks` snapshots cascade away with the tasks — the same semantics as deleting a
+  /// corpus.
+  pub fn deactivate_from_corpus(
+    &self,
+    corpus: &super::Corpus,
+    connection: &mut PgConnection,
+  ) -> Result<usize, Error> {
+    use crate::schema::tasks;
+    use crate::schema::{log_errors, log_fatals, log_infos, log_invalids, log_warnings};
+    let service_id_val = self.id;
+    let corpus_id_val = corpus.id;
+    connection.transaction(|t_connection| {
+      let pair_task_ids = || {
+        tasks::table
+          .filter(tasks::service_id.eq(service_id_val))
+          .filter(tasks::corpus_id.eq(corpus_id_val))
+          .select(tasks::id)
+      };
+      delete(log_infos::table.filter(log_infos::task_id.eq_any(pair_task_ids())))
+        .execute(t_connection)?;
+      delete(log_warnings::table.filter(log_warnings::task_id.eq_any(pair_task_ids())))
+        .execute(t_connection)?;
+      delete(log_errors::table.filter(log_errors::task_id.eq_any(pair_task_ids())))
+        .execute(t_connection)?;
+      delete(log_fatals::table.filter(log_fatals::task_id.eq_any(pair_task_ids())))
+        .execute(t_connection)?;
+      delete(log_invalids::table.filter(log_invalids::task_id.eq_any(pair_task_ids())))
+        .execute(t_connection)?;
+      delete(
+        tasks::table
+          .filter(tasks::service_id.eq(service_id_val))
+          .filter(tasks::corpus_id.eq(corpus_id_val)),
+      )
+      .execute(t_connection)
+    })
+  }
 }

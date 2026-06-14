@@ -540,6 +540,76 @@ pub fn delete_corpus_human(
   Ok(Redirect::to("/"))
 }
 
+/// Deactivates (retires) a `service` from a `corpus`: deletes that pair's tasks + log messages (the
+/// service definition and its work on other corpora are untouched — the symmetric counterpart of
+/// [`activate_service`]). **Token-gated** via the [`Actor`] guard and confirmation-gated
+/// (`?confirm=<service>`, echoing the service name). Returns `204` on success, `400` if the
+/// confirmation doesn't match, `404` if the corpus or service is unknown.
+#[delete("/api/corpora/<corpus>/services/<service>?<confirm>")]
+pub fn deactivate_service(
+  corpus: &str,
+  service: &str,
+  confirm: Option<&str>,
+  _actor: Actor,
+  pool: &State<DbPool>,
+) -> Status {
+  if confirm != Some(service) {
+    return Status::BadRequest;
+  }
+  let mut connection = match pool.get() {
+    Ok(connection) => connection,
+    Err(_) => return Status::ServiceUnavailable,
+  };
+  let corpus_record = match Corpus::find_by_name(corpus, &mut connection) {
+    Ok(corpus) => corpus,
+    Err(_) => return Status::NotFound,
+  };
+  let service_record = match Service::find_by_name(service, &mut connection) {
+    Ok(service) => service,
+    Err(_) => return Status::NotFound,
+  };
+  match service_record.deactivate_from_corpus(&corpus_record, &mut connection) {
+    Ok(_) => Status::NoContent,
+    Err(_) => Status::InternalServerError,
+  }
+}
+
+/// Fields of the human per-service "Deactivate" form: the service echoed as confirmation + a token.
+#[derive(FromForm)]
+pub struct DeactivateForm {
+  /// Must equal the service name to confirm the destructive action.
+  pub confirm: String,
+  /// A rerun token, resolved to the acting owner.
+  pub token: String,
+}
+
+/// The human twin of [`deactivate_service`]: the corpus screen's per-service "Deactivate" form.
+/// Token-gated *and* confirmation-gated (echoes the service name), then redirects back to the
+/// corpus page. `401` on a bad token, `400` if the confirmation doesn't match, `404` if unknown.
+#[post("/corpus/<corpus>/services/<service>/deactivate", data = "<form>")]
+pub fn deactivate_service_human(
+  corpus: &str,
+  service: &str,
+  form: Form<DeactivateForm>,
+  pool: &State<DbPool>,
+) -> Result<Redirect, Status> {
+  if owner_for_token(&form.token).is_none() {
+    return Err(Status::Unauthorized);
+  }
+  if form.confirm != service {
+    return Err(Status::BadRequest);
+  }
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let corpus_record =
+    Corpus::find_by_name(corpus, &mut connection).map_err(|_| Status::NotFound)?;
+  let service_record =
+    Service::find_by_name(service, &mut connection).map_err(|_| Status::NotFound)?;
+  service_record
+    .deactivate_from_corpus(&corpus_record, &mut connection)
+    .map_err(|_| Status::InternalServerError)?;
+  Ok(Redirect::to(format!("/corpus/{corpus}")))
+}
+
 /// Removes a corpus's log messages (the `log_*` tables have no FK cascade), then its tasks and the
 /// corpus row itself.
 fn delete_corpus_cascade(connection: &mut PgConnection, corpus: Corpus) -> Result<(), Status> {
@@ -652,11 +722,13 @@ pub fn routes() -> Vec<Route> {
     import_corpus,
     extend_corpus,
     activate_service,
+    deactivate_service,
     delete_corpus,
     import_corpus_human,
     extend_corpus_human,
     delete_corpus_human,
     activate_service_human,
+    deactivate_service_human,
     overview_page,
     corpus_page
   ]

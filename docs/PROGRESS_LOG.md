@@ -6,6 +6,20 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **Admin UX — "deactivate (retire) a service from a corpus" (the symmetric counterpart of
+  activate).** Closes the management gap recorded in R-6 last increment: you could register/activate a
+  service on a corpus but not remove one. New `Service::deactivate_from_corpus` (models/services.rs) —
+  a **transactional, orphan-free** cascade of the `(corpus, service)` pair's `log_*` rows + tasks
+  (mirrors `Corpus::destroy`; the service definition + its work on other corpora untouched;
+  `historical_runs` tallies survive, per-task `historical_tasks` snapshots cascade with the tasks —
+  same semantics as deleting a corpus). Full symmetry: agent
+  `DELETE /api/corpora/<c>/services/<s>?confirm=<s>` (Actor-gated + confirmation, 204/400/404, sync
+  like corpus-delete) + human per-service "deactivate" form on the corpus screen (token + a native
+  `confirm()` guard — light vanilla JS, degrades gracefully). Test:
+  `corpora_test::deactivate_service_removes_pair_tasks_and_logs` (401 untokened, 400 bad-confirm, 204
+  success, cascade verified, service definition survives, 404 unknown). fmt + clippy clean;
+  `corpora_test` green. The *global* `delete_service_by_name` orphan remains (R-6, still unused).
+
 - **Service (re)activation — made `register_service` orphan-free + crash-consistent.** The
   activate-service action (`POST /api/corpora/<c>/services/<s>` → `backend::register_service`) deletes
   the `<service, corpus>` pair's prior tasks before re-creating them — but it deleted **only the

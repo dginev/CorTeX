@@ -86,6 +86,8 @@ curl -s -H "$T" -X POST -H 'Content-Type: application/json' \
   -d '{"name":"tex_to_html","version":0.1,"inputformat":"tex","outputformat":"html","complex":true}' \
   http://127.0.0.1:8044/api/services
 curl -s -H "$T" -X POST http://127.0.0.1:8044/api/corpora/demo/services/tex_to_html
+# retire a service from a corpus (deletes that pair's tasks + logs; confirm echoes the service)
+curl -s -H "$T" -X DELETE 'http://127.0.0.1:8044/api/corpora/demo/services/tex_to_html?confirm=tex_to_html'
 # manage runs: rerun a slice, then rebuild the report rollup
 curl -s -H "$T" -X POST 'http://127.0.0.1:8044/api/reports/demo/tex_to_html/rerun?severity=error'
 curl -s -H "$T" -X POST http://127.0.0.1:8044/api/reports/refresh
