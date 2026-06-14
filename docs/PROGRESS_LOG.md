@@ -1598,3 +1598,17 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   of exactly 1024 in ~8 ms each (~17 DB writes/s vs up-to-per-task before), **no loss, all NoProblem**;
   `echo_roundtrip` (job_limit=1) green. `finalize.rs` + `config.rs`; DISPATCHER_RATIONALIZATION phase 2
   ✅, DISPATCHER_BENCH knee table.
+- **Dispatcher D-10 fix: single-task loss under worker concurrency (record-lease-before-send).** The
+  bench's long-open "8-worker loses exactly one task" finding — previously pinned on the D-4 suspect — was
+  root-caused to a check-then-act **ordering race**: the ventilator recorded the lease in `progress_queue`
+  (`push_progress_task`) *after* streaming the payload, so a fast echo result could reach the sink before
+  the record existed → `pop_progress_task` missed it → the result was **discarded** → the task stranded
+  `Queued` until the ≥1 h reaper. Reproduced via `dispatcher_bench` at ~25 % of 8-worker runs (2/8, exactly
+  `Queued 1`); 4-worker clean (window widens with concurrency). **Fix:** push the lease immediately after
+  `task_queue.pop()`, before the send — the push completes before the first content frame, so a worker
+  cannot return a result before the task is tracked (race eliminated, not narrowed). **Verified 18/18
+  clean** at the previously-failing concurrencies (12×8-worker + 6×16-worker, 20000 tasks, 0 loss); the
+  8-worker config is now a standing gate. Distinct from D-4's ROUTER-framing fragility (still open).
+  Ledger: KNOWN_ISSUES **D-10** 🟢; DISPATCHER_BENCH open-finding → resolved + 8-worker baseline. Also
+  marked **W-1** ③ (oversized-result cap) 🟡→covered: the `max_result_bytes` 2 GiB cap + torture test
+  close the only CorTeX-side residual (worker's own resource limits stay out-of-repo).

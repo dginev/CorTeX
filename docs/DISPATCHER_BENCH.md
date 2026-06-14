@@ -39,31 +39,38 @@ best-effort (drops under saturation), so its counts would flake.
 | --- | --- | --- | --- |
 | 20000 tasks · 4 workers · 8 KB | **~10,900** | ~170 | ✓ pass |
 | 5000 tasks · 4 workers · 256 KB | ~3,500 | **~1,770** | ✓ pass |
-| 20000 tasks · 8 workers · 8 KB | — | — | **✗ see below** |
+| 20000 tasks · 8 workers · 8 KB | ~9,800 | ~155 | ✓ pass (18/18 after the D-10 fix) |
 
 These are loopback/in-process numbers (worker + dispatcher + DB on one box) — they bound *relative*
 regressions, not absolute production throughput (which is network + `/data` disk bound). The headline
 metric to watch over time is **tasks/s at the 4-worker baseline** and **MB/s at the fat-payload
 config**.
 
-## ⚠ Open finding — single-task loss under higher worker concurrency
+## ✅ Resolved finding — single-task loss under higher worker concurrency (2026-06-14)
 
-The **8-worker** run loses **exactly one task** (`19999/20000`): it is leased but never finalized, so
-it sits `Queued` until the ≥1 h visibility-timeout reaper — past the bench deadline. The 4-worker run
-is clean, so this surfaces only under higher concurrency. Leading suspects:
+The **8-worker** run used to lose **exactly one task** (`19999/20000`, `Queued 1`): leased but never
+finalized, so it sat `Queued` until the ≥1 h reaper — past the bench deadline. The 4-worker run was
+clean, so it surfaced only under higher concurrency. This bench was the repro harness; running the
+8-worker config in a loop reproduced it at **~25 % of runs (2/8)**.
 
-1. **D-4** — the ventilator's "3 adjacent empty messages" fragility (the manager restarts the
-   ventilator thread; a task leased right at the restart boundary could be stranded).
-2. A **sink/worker envelope desync** — a short/malformed multipart reply desyncing the sink's
-   `[identity, service, taskid, …data]` framing, mis-attributing or dropping a result.
+**Root cause (D-10) — not the originally-suspected D-4.** The ventilator recorded the lease in the
+in-flight `progress_queue` (`push_progress_task`) **after** streaming the payload to the worker. With a
+fast echo worker the result could reach the **sink before that record existed** → the sink's
+`pop_progress_task` missed it → it **discarded the result** → the task stranded `Queued`. A
+check-then-act ordering race; the window widens with worker count (more concurrent echoes lapping the
+ventilator), which is exactly why it tracked concurrency.
 
-**Update (2026-06-14):** the sink **envelope hardening** landed — every result is now `RCVMORE`-checked
-`[identity, service, taskid, …data]`, so a short/empty/malformed reply is skipped without desyncing the
-*next* reply's framing (this is real, and is the fix for case (2)). It **helps but does not fully
-close** the 8-worker loss: re-runs are now intermittent (~1 in 2 at 8 workers passes/fails), where
-before it failed consistently. So a **deeper, racy single-task-loss remains** — leading suspect **D-4**
-(the ventilator-restart boundary stranding one in-flight task). Still open; needs a dedicated repro
-(the bench is the repro harness — run the 8-worker config in a loop). **Tracked here so it isn't lost.**
+*(The earlier sink **envelope hardening** — every result `RCVMORE`-checked `[identity, service, taskid,
+…data]` — was a real, independent fix for short/malformed replies desyncing the framing, and is kept;
+it narrowed but did not close this loss because the true cause was the dispatch-ordering race, not a
+desync.)*
+
+**Fix:** record the lease **before** the payload send (`ventilator.rs` — `push_progress_task`
+immediately after `task_queue.pop()`). The push completes before the first content frame is sent, so a
+worker can't return a result before the task is tracked — the race is eliminated, not narrowed.
+**Verified:** **18 consecutive clean runs** at the previously-failing concurrencies (12×8-worker +
+6×16-worker, 20000 tasks, 0 loss). The 8-worker config is now a standing correctness gate. (Ledger:
+KNOWN_ISSUES **D-10**.)
 
 ## Finalize batch-size (N) knee — `finalize_batch_size` tuning (2026-06-14)
 

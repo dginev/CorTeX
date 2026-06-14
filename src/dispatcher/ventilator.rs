@@ -110,7 +110,6 @@ impl Ventilator {
         last_reap_sec = request_time.timestamp();
         server::reap_expired_into(&mut queues, progress_queue_arc, done_tx);
       }
-      let mut dispatched_task_opt: Option<TaskProgress> = None;
       // Requests for unknown service names will be silently ignored.
       let service_opt = match server::get_sync_service(&service_name, services_arc, &mut backend) {
         Some(s) => Some(s),
@@ -163,7 +162,15 @@ impl Ventilator {
         ventilator.send(identity, SNDMORE)?;
         let mut taskid = -1;
         if let Some(current_task_progress) = task_queue.pop() {
-          dispatched_task_opt = Some(current_task_progress.clone());
+          // Record the dispatch in the in-flight set BEFORE streaming the payload to the worker. A
+          // fast worker (e.g. echo) can return its result to the sink before this iteration even
+          // finishes; if the task were recorded only *after* the send (as it was), the sink's
+          // `pop_progress_task` could miss it and discard the result, stranding the task `Queued`
+          // until the ≥1h visibility-timeout reaper — the single-task-loss race that surfaced under
+          // higher worker concurrency (KNOWN_ISSUES D-4 / docs/DISPATCHER_BENCH.md 8-worker loss).
+          // Recording first also leaves a mid-stream send failure correctly in-flight for the
+          // reaper.
+          server::push_progress_task(progress_queue_arc, current_task_progress.clone());
 
           let current_task = current_task_progress.task;
           taskid = current_task.id;
@@ -218,10 +225,6 @@ impl Ventilator {
         eprintln!(
           "-- No such service {service_name:?} in ventilator request from {identity_str:?}"
         );
-      }
-      // Record that a task has been dispatched in the progress queue
-      if let Some(dispatched_task) = dispatched_task_opt {
-        server::push_progress_task(progress_queue_arc, dispatched_task);
       }
       if let Some(limit_number) = job_limit {
         if source_job_count >= limit_number {
