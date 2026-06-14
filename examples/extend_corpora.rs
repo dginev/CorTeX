@@ -40,12 +40,12 @@ fn main() {
 
     // Extend the already imported corpus. I prefer that method name to "update", as we won't yet
     // implement downsizing on deletion.
-    let extend_start = time::get_time();
+    let extend_start = chrono::Utc::now();
     println!("-- Extending: {:?}", corpus.name);
     if let Err(e) = importer.extend_corpus() {
       println!("Corpus extension panicked: {e:?}");
     };
-    let extend_end = time::get_time();
+    let extend_end = chrono::Utc::now();
     let extend_duration = (extend_end - extend_start).num_milliseconds();
     println!(
       "-- Extending corpus {:?} took {:?}ms",
@@ -53,7 +53,7 @@ fn main() {
     );
 
     // Then re-register all services, so that they pick up on the tasks
-    let register_start = time::get_time();
+    let register_start = chrono::Utc::now();
     match corpus.select_services(&mut backend.connection) {
       Ok(services) => {
         for service in services {
@@ -69,7 +69,7 @@ fn main() {
       },
       Err(e) => println!("Services could not be fetched: {e:?}"),
     };
-    let register_end = time::get_time();
+    let register_end = chrono::Utc::now();
     let register_duration = (register_end - register_start).num_milliseconds();
     println!(
       "-- Service registration on corpus {:?} took {:?}ms",

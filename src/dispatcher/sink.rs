@@ -68,7 +68,7 @@ impl Sink {
       // We have a job, count it
       sink_job_count += 1;
       let mut total_incoming = 0;
-      let request_time = time::get_time();
+      let request_time = chrono::Utc::now();
       println!(
         "sink {sink_job_count:?}: incoming result for {service_name:?}, worker {identity:?}, taskid: {taskid}");
 
@@ -171,7 +171,7 @@ impl Sink {
           }
         }
       }
-      let responded_time = time::get_time();
+      let responded_time = chrono::Utc::now();
       let request_duration = (responded_time - request_time).num_milliseconds();
       println!("sink {sink_job_count}: message size: {total_incoming}, took {request_duration}ms.");
       if let Some(limit_number) = job_limit {

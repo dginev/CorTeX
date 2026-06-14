@@ -48,7 +48,7 @@ pub fn mark_done_arc(
 
   let reports: Vec<TaskReport> = (*mutex_guard).drain(..).collect();
   if !reports.is_empty() {
-    let request_time = time::get_time();
+    let request_time = chrono::Utc::now();
     let mut success = false;
     if let Err(e) = backend.mark_done(&reports) {
       println!("-- mark_done attempt failed: {e:?}");
@@ -73,7 +73,7 @@ pub fn mark_done_arc(
         "Database ran away during mark_done persisting.",
       ));
     }
-    let responded_time = time::get_time();
+    let responded_time = chrono::Utc::now();
     let request_duration = (responded_time - request_time).num_milliseconds();
     println!("finalize: reporting tasks to DB took {request_duration}ms.");
     Ok(true)
@@ -102,7 +102,7 @@ pub fn timeout_progress_tasks<S: ::std::hash::BuildHasher>(
   let mut progress_queue = progress_queue_arc
     .lock()
     .expect("Failed to obtain Mutex lock in timeout_progress_tasks");
-  let now = time::get_time().sec;
+  let now = chrono::Utc::now().timestamp();
   let expired_keys = progress_queue
     .iter()
     .filter(|&(_, v)| v.expected_at() < now)

@@ -21,7 +21,7 @@ static MESSAGE_BUFFER_SIZE: usize = 1_000;
 
 /// traverse a (corpus,service) pair's results into a self-contained redistributable dataset.
 fn main() -> Result<(), Error> {
-  let start_traverse = time::get_time();
+  let start_traverse = chrono::Utc::now();
   let chunk_size = 10_240;
   // Setup CorTeX backend data
   let mut backend = Backend::default();
@@ -128,7 +128,7 @@ fn main() -> Result<(), Error> {
     })?;
   }
 
-  let end_traverse = time::get_time();
+  let end_traverse = chrono::Utc::now();
 
   let traverse_duration = (end_traverse - start_traverse).num_milliseconds();
   println!(

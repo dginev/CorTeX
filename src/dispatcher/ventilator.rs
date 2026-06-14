@@ -67,7 +67,7 @@ impl Ventilator {
     let mut source_job_count: usize = 0;
     // Reap timed-out in-flight tasks on a cadence rather than only on refetch (KNOWN_ISSUES D-6),
     // so the in-flight set drains even under sustained backpressure (when refetch never runs).
-    let mut last_reap_sec = time::get_time().sec;
+    let mut last_reap_sec = chrono::Utc::now().timestamp();
 
     loop {
       let mut identity = zmq::Message::new();
@@ -90,13 +90,13 @@ impl Ventilator {
         return Ok(source_job_count);
       }
 
-      let request_time = time::get_time();
+      let request_time = chrono::Utc::now();
       source_job_count += 1;
       // Reap timed-out in-flight tasks on a cadence (decoupled from refetch): routes each expired
       // task back to its own service's queue or reports it Fatal, so the in-flight set drains even
       // while saturated (backpressure) — closes the D-6 reaping-coupling residual.
-      if request_time.sec - last_reap_sec >= REAP_INTERVAL_SECS {
-        last_reap_sec = request_time.sec;
+      if request_time.timestamp() - last_reap_sec >= REAP_INTERVAL_SECS {
+        last_reap_sec = request_time.timestamp();
         server::reap_expired_into(&mut queues, progress_queue_arc, done_queue_arc);
       }
       let mut dispatched_task_opt: Option<TaskProgress> = None;
@@ -138,7 +138,7 @@ impl Ventilator {
             service_name, self.queue_size
           );
           // Refetch a new batch of tasks
-          let now = time::get_time().sec;
+          let now = chrono::Utc::now().timestamp();
           let fetched_tasks = backend
             .fetch_tasks(&service, self.queue_size)
             .unwrap_or_default();
@@ -185,7 +185,7 @@ impl Ventilator {
                   ventilator.send(&data, SNDMORE)?;
                 }
               }
-              let responded_time = time::get_time();
+              let responded_time = chrono::Utc::now();
               let request_duration = (responded_time - request_time).num_milliseconds();
               eprintln!(
                 "vent {source_job_count}: message size: {total_outgoing}, took {request_duration}ms.");

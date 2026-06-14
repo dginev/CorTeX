@@ -385,3 +385,15 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   unmaintained crate — `time::get_time()` in the dispatcher) needs a real **migration off `time` 0.1 → chrono**
   (a rationalization win, deferred — it touches the dispatcher hot loop, do it deliberately with tests).
   *Next:* migrate off `time` 0.1; the API-docs pick (awaiting owner); or (on backup) the load test.
+- **Migrated off the unmaintained `time` 0.1 → chrono (clears the last fixable advisory; rationalization):**
+  the prototype used `time = "0.1.4"` (`time::get_time()`, `time::now().rfc822()`) — unmaintained with two
+  RUSTSEC advisories (segfault / stack-exhaustion). Replaced every call site (dispatcher hot loop —
+  ventilator/sink/server — + frontend `concerns`/`cached` + 3 examples) with chrono (already a dep):
+  `time::get_time()` → `chrono::Utc::now()` (duration diffs keep `.num_milliseconds()`; the chrono `Duration`
+  is API-compatible), `.sec` epoch-seconds → `.timestamp()`, `time::now().rfc822()` →
+  `chrono::Local::now().to_rfc2822()`. Dropped `time = "0.1.4"` from Cargo.toml; `cargo tree` confirmed
+  nothing else needed it, so **`time` 0.1.45 is gone from the lock** entirely. `build` + `clippy
+  --all-targets -D warnings` clean; `dispatcher::server` units (reap/backpressure use timestamps) +
+  `echo_roundtrip` (full dispatcher) green. Only the `time` 0.3/0.2 transitive crates remain (0.3 already
+  bumped to the patched 0.3.47).
+  *Next:* the API-docs pick (awaiting owner); (on backup) the load test.

@@ -32,7 +32,7 @@ fn main() {
 
   // Fish out the arXiv root directory from CorTeX
   let mut backend = Backend::default();
-  let sandbox_start = time::get_time();
+  let sandbox_start = chrono::Utc::now();
   let corpus = match Corpus::find_by_name("arxmliv", &mut backend.connection) {
     Ok(corpus) => corpus,
     _ => {
@@ -128,7 +128,7 @@ fn main() {
     };
   }
 
-  let sandbox_end = time::get_time();
+  let sandbox_end = chrono::Utc::now();
   let sandbox_duration = (sandbox_end - sandbox_start).num_milliseconds();
   println!("-- Sandboxing {counter:?} arXiv papers took took {sandbox_duration:?}ms");
 }

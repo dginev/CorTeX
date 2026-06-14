@@ -34,7 +34,7 @@ pub fn serve_report(
   what: Option<String>,
   params: Option<ReportParams>,
 ) -> Result<Template, Status> {
-  let report_start = time::get_time();
+  let report_start = chrono::Utc::now();
   let mut context = TemplateContext::default();
   let mut global = HashMap::new();
 
@@ -103,7 +103,7 @@ pub fn serve_report(
         for (key, val) in report {
           global.insert(key.clone(), val.to_string());
         }
-        global.insert("report_time".to_string(), time::now().rfc822().to_string());
+        global.insert("report_time".to_string(), chrono::Local::now().to_rfc2822());
         template = "report";
       } else if category.is_none() {
         // Severity-level report
@@ -198,7 +198,7 @@ pub fn serve_report(
       decorate_uri_encodings(&mut context);
 
       // Report also the query times
-      let report_end = time::get_time();
+      let report_end = chrono::Utc::now();
       let report_duration = (report_end - report_start).num_milliseconds();
       context
         .global
@@ -243,7 +243,7 @@ pub fn serve_rerun(
     "-- User {user:?}: Mark for rerun on {corpus_name}/{service_name}/{severity:?}/{category:?}/{what:?}");
 
   // Run (and measure) the three rerun queries
-  let report_start = time::get_time();
+  let report_start = chrono::Utc::now();
   // Build corpus and service objects
   let corpus = match Corpus::find_by_name(&corpus_name, connection) {
     Err(_) => return Err(NotFound("Access Denied".to_string())), /* TODO: response.
@@ -270,7 +270,7 @@ pub fn serve_rerun(
       owner_opt: Some(user.to_string()),
     },
   );
-  let report_end = time::get_time();
+  let report_end = chrono::Utc::now();
   let report_duration = (report_end - report_start).num_milliseconds();
   println!("-- User {user:?}: Mark for rerun took {report_duration:?}ms");
   match rerun_result {
@@ -354,7 +354,7 @@ pub fn serve_entry_preview(
   service_name: String,
   entry_name: String,
 ) -> Result<Template, NotFound<String>> {
-  let report_start = time::get_time();
+  let report_start = chrono::Utc::now();
   let corpus_name = corpus_name.to_lowercase();
   let mut context = TemplateContext::default();
   let mut global = HashMap::new();
@@ -399,7 +399,7 @@ pub fn serve_entry_preview(
         },
         None => global.insert("inputconverter".to_string(), "missing?".to_string()),
       };
-      global.insert("report_time".to_string(), time::now().rfc822().to_string());
+      global.insert("report_time".to_string(), chrono::Local::now().to_rfc2822());
     }
     global.insert("severity".to_string(), entry_name.clone());
     global.insert("entry_name".to_string(), entry_name);
@@ -412,7 +412,7 @@ pub fn serve_entry_preview(
   decorate_uri_encodings(&mut context);
 
   // Report also the query times
-  let report_end = time::get_time();
+  let report_end = chrono::Utc::now();
   let report_duration = (report_end - report_start).num_milliseconds();
   context
     .global
