@@ -1352,3 +1352,23 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   residual = a real-network soak before flipping prod traffic). The torture spike already exercises the
   phase-1→3 design shape (bounded channel + batched finalize) end-to-end. Recommended next build step:
   phase 1 (done-queue → bounded channel). Hot path still untouched (example/dev-deps only).
+- **DISPATCHER_RATIONALIZATION.md revised to a decided design + supervised-shutdown / catastrophic-
+  death handling:** owner asked to revise in light of the settled decisions + assess whether we've
+  maximized the desired qualities + follow best practices. Restructured the doc from "proposal with
+  open questions" into a **decided design**: transport = pure-Rust zeromq (green-lit), phase-0 spikes
+  complete, hot-path build pending only the owner's nod on the phased plan. Added: (1) a **Robustness
+  model** section documenting that the dispatcher is ALREADY a textbook lease/visibility-timeout
+  (≥1h)/dead-letter work queue with a durable Queued source-of-truth, startup Queued→TODO crash
+  recovery (tasks_aggregate.rs:44), retry-budget poison-task dead-letter (server.rs), and idempotent
+  on_conflict finalize (mark.rs) — so the rationalization adds *throughput* (lock-free/async/batched)
+  WITHOUT regressing robustness; batching is crash-safe because the Queued mark persists until the
+  batch flushes. (2) A **modern-best-practices audit** table (verdict: resilience qualities already
+  maximized; the one must-add is observability for the new pipeline's backpressure/lag). (3) Narrowed
+  open questions (dashmap, config defaults incl. time-bound flush, worker migration, real-network soak,
+  start phase 1?). Then owner asked to examine **unexpected deaths**: added a **Failure modes &
+  supervised shutdown** section (recover-or-halt-ALL, no zombie arm) + built `examples/zmq_faults.rs`
+  — an async core with a JoinSet-style supervisor + shared HALT signal + a **progress watchdog** (new
+  requirement for one-directional/silent transport failure). Injects DB-death, disk-full, one-way
+  transport block: **transient faults recover (bounded retry), persistent faults halt EVERY arm with
+  one reason + consistent durable state (0 tasks lost; unpersisted = still Queued = recoverable)** —
+  all 5 FAULT modes green. Hot path still untouched (example/dev-deps only).

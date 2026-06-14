@@ -167,6 +167,14 @@ path = "examples/zmq_resilience.rs"
 name = "zmq_torture"
 path = "examples/zmq_torture.rs"
 
+# Supervised-shutdown / catastrophic-death harness: inject DB-connection death, disk-full I/O, and a
+# one-directional transport block into the async core; prove each either recovers (bounded retry) or
+# halts EVERY arm with one reason and a consistent durable state (no task acked-but-unpersisted) —
+# never a zombie arm leasing into a dead pipeline.
+[[example]]
+name = "zmq_faults"
+path = "examples/zmq_faults.rs"
+
 [dev-dependencies]
 # Phase-0 dispatcher spike only (NOT a production dependency — the dispatcher hot path is untouched,
 # held for owner review). `zeromq` = pure-Rust async ZMQ under empirical evaluation vs. libzmq.
