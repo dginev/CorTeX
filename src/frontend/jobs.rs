@@ -21,7 +21,7 @@ use crate::backend::DbPool;
 use crate::jobs::{self, Job};
 
 /// A job as exposed over the API/UI (uuid handle, no internal serial id).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct JobDto {
   /// External handle.
   pub uuid: String,
@@ -104,6 +104,7 @@ impl From<Job> for JobDto {
 }
 
 /// Polls a job by its uuid (the agent twin of the progress page).
+#[rocket_okapi::openapi(tag = "Jobs")]
 #[get("/api/jobs/<uuid>")]
 pub fn api_job(uuid: &str, pool: &State<DbPool>) -> Result<Json<JobDto>, Status> {
   let parsed = Uuid::parse_str(uuid).map_err(|_| Status::NotFound)?;
@@ -117,6 +118,7 @@ pub fn api_job(uuid: &str, pool: &State<DbPool>) -> Result<Json<JobDto>, Status>
 /// fleet-wide **pending check** the observability mandate requires. `?active=true` narrows to the
 /// non-terminal (queued/running) jobs; `?limit=` caps the page (default 50, max 200). Most-recent
 /// first; each carries `health` + `duration_seconds`.
+#[rocket_okapi::openapi(tag = "Jobs")]
 #[get("/api/jobs?<active>&<limit>")]
 pub fn api_jobs(
   active: Option<bool>,
@@ -169,4 +171,5 @@ pub fn jobs_page(
 pub fn job_page(uuid: &str) -> Template { Template::render("job", context! { uuid }) }
 
 /// The route set for the jobs capability.
-pub fn routes() -> Vec<Route> { routes![api_jobs, api_job, jobs_page, job_page] }
+// NB: `api_jobs` + `api_job` are mounted via `frontend::apidoc` (rocket_okapi).
+pub fn routes() -> Vec<Route> { routes![jobs_page, job_page] }

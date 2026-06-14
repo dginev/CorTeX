@@ -21,10 +21,21 @@ use rocket_okapi::openapi_get_routes_spec;
 use rocket_okapi::rapidoc::{make_rapidoc, GeneralConfig, RapiDocConfig};
 use rocket_okapi::settings::{OpenApiSettings, UrlObject};
 
-// Glob import so the `#[openapi]`-generated `okapi_add_operation_for_*` helpers (emitted in the
-// handler's own module) are in scope for `openapi_get_routes_spec!` below, alongside the handlers.
-#[allow(unused_imports)]
-use crate::frontend::corpora::*;
+// Each documented handler is imported alongside its `#[openapi]`-generated
+// `okapi_add_operation_for_*` companion (emitted in the handler's own module) — both must be in
+// scope for the `openapi_get_routes_spec!` call below. (Explicit rather than glob, so each module's
+// same-named `routes` fn doesn't collide.)
+use crate::frontend::corpora::{
+  api_corpora, api_corpus, okapi_add_operation_for_api_corpora_,
+  okapi_add_operation_for_api_corpus_,
+};
+use crate::frontend::jobs::{
+  api_job, api_jobs, okapi_add_operation_for_api_job_, okapi_add_operation_for_api_jobs_,
+};
+use crate::frontend::services::{
+  api_service_workers, api_services, okapi_add_operation_for_api_service_workers_,
+  okapi_add_operation_for_api_services_,
+};
 
 /// The generated OpenAPI document, serialized once at mount time and served verbatim.
 struct SpecJson(String);
@@ -46,7 +57,15 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
   let settings = OpenApiSettings::default();
   // Every `#[openapi]` agent handler is listed here; the macro returns the routes + the spec built
   // from them. (Expand this list as more endpoints are annotated.)
-  let (routes, spec) = openapi_get_routes_spec![settings: api_corpora, api_corpus];
+  let (routes, spec) = openapi_get_routes_spec![
+    settings:
+    api_corpora,
+    api_corpus,
+    api_services,
+    api_service_workers,
+    api_jobs,
+    api_job,
+  ];
   let spec_json = serde_json::to_string_pretty(&spec).unwrap_or_default();
   rocket
     .manage(SpecJson(spec_json))

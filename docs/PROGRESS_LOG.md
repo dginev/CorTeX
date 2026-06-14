@@ -12,15 +12,17 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   + `schemars` moved to real deps; new `frontend::apidoc` mounts the **generated OpenAPI 3 document**
   at `GET /api/openapi.json` and a **RapiDoc** browser page at `GET /api/docs`, both built by
   rocket_okapi *from the `#[openapi]`-annotated routes themselves* — so the spec is the single source
-  of truth and can't drift (the symmetry contract extended to the docs). First vertical slice: the
-  corpora read routes (`GET /api/corpora`, `GET /api/corpora/{name}`) carry
-  `#[openapi(tag="Corpora")]`, their DTOs derive `JsonSchema`, and they're mounted via
-  `openapi_get_routes_spec!` (moved out of the plain route group). Tested
-  (`management_api_test::openapi_spec_and_rapidoc_are_served`: the spec is OpenAPI 3.x with
-  `/api/corpora` documented, the route still serves, RapiDoc renders). **Next:** annotate the
-  remaining `/api` routes module-by-module (the write endpoints' `(Status, Json<T>)` responders + the
-  `Actor` guard's `OpenApiFromRequest` are the open integration points), then prune utoipa.
-  OPEN_QUESTIONS #7 resolved. fmt + clippy clean; `corpora_test` + `management_api_test` green.
+  of truth and can't drift (the symmetry contract extended to the docs). **Documented so far** (read
+  routes, expanding): corpora (`GET /api/corpora`, `/api/corpora/{name}`), services (`/api/services`,
+  `/api/services/{s}/workers`), jobs (`/api/jobs`, `/api/jobs/{uuid}`) — each carries `#[openapi(tag=…)]`,
+  its DTOs derive `JsonSchema`, and it's mounted via `openapi_get_routes_spec!` in `apidoc` (moved out
+  of the plain route groups; the multi-module wiring imports each handler + its generated
+  `okapi_add_operation_for_*` companion, explicit not glob so the per-module `routes` fns don't
+  collide). Tested (`management_api_test::openapi_spec_and_rapidoc_are_served`: OpenAPI 3.x doc with
+  corpora/services/jobs paths present, routes still serve, RapiDoc renders). **Next:** runs + reports
+  read routes, then the write endpoints (`(Status, Json<T>)` / bare-`Status` responders + the `Actor`
+  guard's `OpenApiFromRequest`), then prune utoipa. OPEN_QUESTIONS #7 resolved. fmt + clippy clean;
+  `corpora_test` / `services_test` / `jobs_api_test` / `management_api_test` green.
 
 - **Deactivate-service — guarded the magic `init`/`import` services (closed a footgun).** The corpus
   screen lists every service with tasks on the corpus, which **includes** the magic `init` (1) /

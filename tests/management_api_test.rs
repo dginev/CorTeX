@@ -238,10 +238,12 @@ fn openapi_spec_and_rapidoc_are_served() {
     "an OpenAPI 3.x document, got {:?}",
     spec["openapi"]
   );
-  assert!(
-    spec["paths"]["/api/corpora"]["get"].is_object(),
-    "the corpora-listing endpoint is documented in the spec"
-  );
+  for path in ["/api/corpora", "/api/services", "/api/jobs"] {
+    assert!(
+      spec["paths"][path]["get"].is_object(),
+      "{path} is documented in the OpenAPI spec"
+    );
+  }
   // The documented route still serves (it is mounted via the openapi mechanism now).
   assert_eq!(client.get("/api/corpora").dispatch().status(), Status::Ok);
   // The RapiDoc browser page renders.

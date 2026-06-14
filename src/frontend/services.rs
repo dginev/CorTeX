@@ -32,7 +32,7 @@ use crate::models::{NewService, Service, WorkerMetadata};
 
 /// A registered service as exposed over the API/UI — the service-registry view. `name` is the
 /// stable external handle used by every service route.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct ServiceDto {
   /// Service name (its external handle); `init`/`import` are the magic internal services.
   pub name: String,
@@ -65,7 +65,7 @@ impl From<Service> for ServiceDto {
 }
 
 /// A worker's dispatch/return tallies for a service — the machine-readable fleet-health view.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct WorkerDto {
   /// Worker identity (usually `hostname:pid`).
   pub name: String,
@@ -123,6 +123,7 @@ fn resolve(service: &str, connection: &mut diesel::PgConnection) -> Result<Servi
 
 /// The service registry (agent twin of the registry screen): every registered service. `503` if the
 /// pool is exhausted.
+#[rocket_okapi::openapi(tag = "Services")]
 #[get("/api/services")]
 pub fn api_services(pool: &State<DbPool>) -> Result<Json<Vec<ServiceDto>>, Status> {
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
@@ -266,6 +267,7 @@ pub fn services_page(pool: &State<DbPool>) -> Result<Template, Status> {
 
 /// The worker-fleet status for a service (agent twin of the workers screen): per-worker dispatch/
 /// return tallies and in-flight backlog. `404` if the service is unknown.
+#[rocket_okapi::openapi(tag = "Services")]
 #[get("/api/services/<service>/workers")]
 pub fn api_service_workers(
   service: &str,
@@ -315,12 +317,11 @@ pub fn worker_report_page(service: &str, pool: &State<DbPool>) -> Result<Templat
 
 /// The route set for the services capability (registry + worker-fleet, screens + agent API).
 pub fn routes() -> Vec<Route> {
+  // NB: `api_services` + `api_service_workers` are mounted via `frontend::apidoc` (rocket_okapi).
   routes![
-    api_services,
     register_service,
     register_service_human,
     services_page,
-    api_service_workers,
     worker_report_page
   ]
 }
