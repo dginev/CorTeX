@@ -1089,3 +1089,20 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   **inside** the existing `spawn_blocking`, so the new DB session lookup stays off the async reactor.
   `tests/admin_test.rs` additionally asserts the cookie value is NOT the raw token; the live test DB
   shows the session rows created end-to-end. All auth/gated tests + clippy -D warnings green.
+- **WebAuthn arm — passkey enrollment ceremony + "Your passkeys" UI (autonomous-day progress):** the
+  registration half of passkey sign-in. In-memory `CeremonyStore` (managed; cookie-keyed via
+  `cortex_ceremony`, 5-min TTL, prune-on-insert, mutex-poisoning-safe) holds the `PasskeyRegistration`
+  state between begin/finish — no `danger-allow-state-serialisation` needed. `POST /admin/passkeys/
+  register/begin` (signed-in admin; `WebauthnUser::ensure` handle + `start_passkey_registration`,
+  excluding already-enrolled creds → `CreationChallengeResponse` JSON) + `.../finish?label=`
+  (`finish_passkey_registration` → `WebauthnCredential::store`). The **"Your passkeys"** management
+  page `GET /admin/passkeys` (list with enrolled/last-used, enroll button, per-key remove via `POST
+  /admin/passkeys/<id>/delete` filtered by owner) + vanilla `public/js/webauthn.js` (base64url↔
+  ArrayBuffer helpers + `navigator.credentials.create()` flow, 401→/admin/login, 503→token-only
+  notice). Managed state (`Option<WebauthnState>` + `CeremonyStore`) + routes wired in server.rs;
+  passkeys gracefully `503` when disabled. `tests/webauthn_test.rs` (harness=false; enables passkeys
+  via `CORTEX_WEBAUTHN__*` env before config() loads) asserts gating (401 unauth, 303 page redirect)
+  + begin returns a challenge when enabled+signed-in + the page renders the enroll affordance. The
+  full biometric round-trip needs a real/virtual authenticator (manual). Also (owner request): removed
+  the redundant "Admin dashboard — sign in to manage…" link from the homepage (it's in the top nav);
+  added a "Your passkeys" link to the /admin dashboard. clippy -D warnings + all auth tests green.

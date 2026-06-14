@@ -121,6 +121,18 @@ impl WebauthnCredential {
       .get_results(connection)
   }
 
+  /// Removes one of `owner`'s passkeys by id (the `owner` filter prevents removing another's key).
+  /// Returns the number deleted (`0` if it wasn't theirs / didn't exist).
+  pub fn delete(connection: &mut PgConnection, id: i64, owner: &str) -> Result<usize, Error> {
+    use crate::schema::webauthn_credentials::dsl;
+    diesel::delete(
+      dsl::webauthn_credentials
+        .filter(dsl::id.eq(id))
+        .filter(dsl::owner.eq(owner)),
+    )
+    .execute(connection)
+  }
+
   /// Replaces a credential's serialized state (e.g. the signature counter after a login) and stamps
   /// `last_used`. Called when WebAuthn reports the authenticator's counter advanced.
   pub fn update_after_use(

@@ -103,6 +103,11 @@ name = "audit_test"
 path = "tests/audit_test.rs"
 harness = false
 
+[[test]]
+name = "webauthn_test"
+path = "tests/webauthn_test.rs"
+harness = false
+
 # The rocket_okapi spike (the chosen framework) — reproduces docs/api-spike/okapi-openapi.json and is
 # referenced by docs/api-spike/COMPARISON.md. (The utoipa runner-up was pruned once okapi was chosen.)
 [[example]]

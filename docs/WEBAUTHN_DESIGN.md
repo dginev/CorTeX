@@ -113,8 +113,17 @@ in front of the deployment — a **one-time deployment measure for the `corpora.
 - ✅ **Sessions**: `sessions` table + `models::session`; `AdminSession` now resolves a server-side
   session id (token sign-in opens a session, sign-out revokes it); audit-fairing actor resolution
   split for off-reactor cookie lookup. (See "Sessions" above.)
-- ⏭️ **Next**: the enroll + sign-in ceremonies (`start/finish_passkey_*`) + the in-memory ceremony
-  store + vanilla `navigator.credentials` JS + the "Your passkeys" management view; passkey sign-in
-  opens a `Session::open(owner, "passkey")`.
+- ✅ **Enrollment**: the in-memory `CeremonyStore` (cookie-keyed, 5-min TTL, no state-serialisation
+  feature); `POST /admin/passkeys/register/{begin,finish}` (signed-in admin enrolls a passkey, with
+  already-enrolled credentials excluded); the **"Your passkeys"** page `GET /admin/passkeys` (list +
+  enroll + remove, `POST /admin/passkeys/<id>/delete`); vanilla `public/js/webauthn.js`
+  (base64url ↔ ArrayBuffer + `navigator.credentials.create()`). Linked from `/admin`.
+  `tests/webauthn_test.rs` asserts the boundaries (gating + `begin` returns a challenge when enabled);
+  the biometric round-trip needs a real/virtual authenticator (manual).
+- ⏭️ **Next**: the **sign-in** ceremony — `POST /admin/passkeys/auth/{begin,finish}` (owner-first),
+  a "Sign in with a passkey" affordance on `/admin/login`, the auth JS, and on success
+  `Session::open(owner, "passkey")` + set the admin cookie + `update_after_use`/`touch` the credential.
+- ⏭️ **Then** (separately tracked): the deferred confirmation-dialog refactor (session cookie instead
+  of token entry; anonymous write attempts → `/admin/login`).
 - ⏭️ **Then** (separately tracked, [`AAA_DESIGN.md`](AAA_DESIGN.md)): switch the human write/confirm
   dialogs from token-entry to the session cookie + redirect anonymous write attempts to `/admin/login`.

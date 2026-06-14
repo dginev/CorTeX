@@ -17,11 +17,30 @@
 //! the token path: a disabled or misconfigured relying party degrades to `None` (logged), and
 //! sign-in still works via the token.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
+use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
+use rocket::http::{Cookie, CookieJar, SameSite, Status};
+use rocket::response::Redirect;
+use rocket::serde::json::Json;
+use rocket::{Route, State};
+use rocket_dyn_templates::{context, Template};
+use serde::Serialize;
 use webauthn_rs::prelude::*;
 
+use crate::backend::DbPool;
 use crate::config::WebauthnConfig;
+use crate::frontend::actor::{require_admin, AdminReject, AdminSession};
+use crate::models::{WebauthnCredential, WebauthnUser};
+
+/// The cookie carrying the in-flight ceremony id between a `…/begin` and its `…/finish` (scoped to
+/// the passkey paths, HttpOnly, SameSite=Strict — it is never a credential, just a lookup key).
+const CEREMONY_COOKIE: &str = "cortex_ceremony";
+/// How long an in-flight ceremony is valid (a user taps their authenticator within seconds).
+const CEREMONY_TTL: Duration = Duration::from_secs(300);
 
 /// The configured WebAuthn relying-party instance, shared as Rocket managed state. Present only
 /// when passkeys are **enabled** and the relying party built successfully; absent ⇒ token sign-in
@@ -64,6 +83,224 @@ pub fn build_state(config: &WebauthnConfig) -> Option<WebauthnState> {
       None
     },
   }
+}
+
+/// In-flight WebAuthn ceremony state, kept **server-side** between the begin and finish requests
+/// (never serialized to the client) and keyed by a random id in the [`CEREMONY_COOKIE`].
+pub enum Ceremony {
+  /// A passkey **enrollment** in progress (the owner is known from the signed-in session).
+  Register(PasskeyRegistration),
+}
+
+/// A short-lived, process-local store of in-flight ceremonies. Ceremonies live seconds, so an
+/// in-memory map (pruned on insert, capacity-bounded by the TTL) is sufficient and needs no
+/// `danger-allow-state-serialisation`. Mutex poisoning is recovered from, never panicked on (this
+/// is a request path — `docs/DESIGN_PRINCIPLES.md`).
+pub struct CeremonyStore {
+  inner: Mutex<HashMap<String, (Ceremony, Instant)>>,
+}
+
+impl CeremonyStore {
+  /// An empty store (managed by Rocket).
+  pub fn new() -> Self {
+    CeremonyStore {
+      inner: Mutex::new(HashMap::new()),
+    }
+  }
+
+  /// Stores a ceremony, pruning expired entries, and returns its random id (for the cookie).
+  pub fn put(&self, ceremony: Ceremony) -> String {
+    let id: String = thread_rng()
+      .sample_iter(&Alphanumeric)
+      .take(32)
+      .map(char::from)
+      .collect();
+    let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+    let now = Instant::now();
+    map.retain(|_, (_, expiry)| *expiry > now);
+    map.insert(id.clone(), (ceremony, now + CEREMONY_TTL));
+    id
+  }
+
+  /// Removes and returns a ceremony if present and unexpired (single-use).
+  pub fn take(&self, id: &str) -> Option<Ceremony> {
+    let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+    match map.remove(id) {
+      Some((ceremony, expiry)) if expiry > Instant::now() => Some(ceremony),
+      _ => None,
+    }
+  }
+}
+
+impl Default for CeremonyStore {
+  fn default() -> Self { Self::new() }
+}
+
+/// Checks out the relying party, mapping "passkeys disabled" to `503` (the caller's UI offers the
+/// token sign-in instead).
+fn relying_party(webauthn: &State<Option<WebauthnState>>) -> Result<&Webauthn, Status> {
+  webauthn
+    .inner()
+    .as_ref()
+    .map(|state| state.webauthn.as_ref())
+    .ok_or(Status::ServiceUnavailable)
+}
+
+/// **Enroll, step 1** (`POST /admin/passkeys/register/begin`): a signed-in admin starts registering
+/// a new passkey for their own identity. Returns the WebAuthn `CreationChallengeResponse` JSON for
+/// `navigator.credentials.create()` and stashes the ceremony state server-side (cookie-keyed).
+/// `401` if not signed in, `503` if passkeys are disabled. Already-enrolled credentials are
+/// excluded so the same authenticator isn't registered twice.
+#[post("/admin/passkeys/register/begin")]
+pub fn register_begin(
+  session: AdminSession,
+  webauthn: &State<Option<WebauthnState>>,
+  store: &State<CeremonyStore>,
+  cookies: &CookieJar<'_>,
+  pool: &State<DbPool>,
+) -> Result<Json<CreationChallengeResponse>, Status> {
+  let webauthn = relying_party(webauthn)?;
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let handle = WebauthnUser::ensure(&mut connection, &session.owner)
+    .map_err(|_| Status::InternalServerError)?;
+  let exclude: Vec<CredentialID> = WebauthnCredential::for_owner(&mut connection, &session.owner)
+    .unwrap_or_default()
+    .iter()
+    .filter_map(|row| serde_json::from_value::<Passkey>(row.credential.clone()).ok())
+    .map(|passkey| passkey.cred_id().clone())
+    .collect();
+  let (challenge, state) = webauthn
+    .start_passkey_registration(handle, &session.owner, &session.owner, Some(exclude))
+    .map_err(|error| {
+      eprintln!("-- webauthn: start_passkey_registration failed: {error}");
+      Status::InternalServerError
+    })?;
+  let ceremony_id = store.put(Ceremony::Register(state));
+  cookies.add(
+    Cookie::build((CEREMONY_COOKIE, ceremony_id))
+      .http_only(true)
+      .same_site(SameSite::Strict)
+      .path("/admin/passkeys")
+      .build(),
+  );
+  Ok(Json(challenge))
+}
+
+/// **Enroll, step 2** (`POST /admin/passkeys/register/finish?label=`): finishes registration with
+/// the authenticator's response, persisting the new passkey (public key only) under an optional
+/// `label`. `400` if the ceremony cookie/state is missing or the attestation doesn't verify.
+#[post("/admin/passkeys/register/finish?<label>", data = "<credential>")]
+pub fn register_finish(
+  session: AdminSession,
+  label: Option<String>,
+  credential: Json<RegisterPublicKeyCredential>,
+  webauthn: &State<Option<WebauthnState>>,
+  store: &State<CeremonyStore>,
+  cookies: &CookieJar<'_>,
+  pool: &State<DbPool>,
+) -> Result<Status, Status> {
+  let webauthn = relying_party(webauthn)?;
+  let ceremony_id = cookies
+    .get(CEREMONY_COOKIE)
+    .map(|cookie| cookie.value().to_string())
+    .ok_or(Status::BadRequest)?;
+  cookies.remove(
+    Cookie::build(CEREMONY_COOKIE)
+      .path("/admin/passkeys")
+      .build(),
+  );
+  let state = match store.take(&ceremony_id) {
+    Some(Ceremony::Register(state)) => state,
+    _ => return Err(Status::BadRequest),
+  };
+  let passkey = webauthn
+    .finish_passkey_registration(&credential, &state)
+    .map_err(|_| Status::BadRequest)?;
+  let value = serde_json::to_value(&passkey).map_err(|_| Status::InternalServerError)?;
+  let label = label.unwrap_or_default();
+  let label = if label.trim().is_empty() {
+    "passkey"
+  } else {
+    label.trim()
+  };
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  WebauthnCredential::store(&mut connection, &session.owner, label, &value)
+    .map_err(|_| Status::InternalServerError)?;
+  Ok(Status::Created)
+}
+
+/// A passkey as shown on the management page.
+#[derive(Debug, Serialize)]
+pub struct PasskeyDto {
+  /// Row id (for the remove action).
+  pub id: i64,
+  /// The human label.
+  pub label: String,
+  /// When it was enrolled (formatted).
+  pub created_at: String,
+  /// When it was last used to sign in, or "never".
+  pub last_used: String,
+}
+
+/// The "Your passkeys" management screen (`GET /admin/passkeys`): the signed-in admin's enrolled
+/// passkeys, with enroll + remove actions. Signed-in admins only (unauthenticated → sign-in page).
+#[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
+#[get("/admin/passkeys")]
+pub fn passkeys_page(
+  session: Option<AdminSession>,
+  webauthn: &State<Option<WebauthnState>>,
+  pool: &State<DbPool>,
+) -> Result<Template, AdminReject> {
+  let session = require_admin(session)?;
+  let passkeys: Vec<PasskeyDto> = pool
+    .get()
+    .ok()
+    .and_then(|mut connection| WebauthnCredential::for_owner(&mut connection, &session.owner).ok())
+    .unwrap_or_default()
+    .into_iter()
+    .map(|row| PasskeyDto {
+      id: row.id,
+      label: row.label,
+      created_at: row.created_at.format("%Y-%m-%d %H:%M").to_string(),
+      last_used: row
+        .last_used
+        .map(|when| when.format("%Y-%m-%d %H:%M").to_string())
+        .unwrap_or_else(|| "never".to_string()),
+    })
+    .collect();
+  let global = serde_json::json!({
+    "title": "Your passkeys",
+    "description": "Manage the passkeys that sign you in to CorTeX",
+  });
+  Ok(Template::render(
+    "passkeys",
+    context! { global, owner: session.owner, enabled: webauthn.inner().is_some(), passkeys },
+  ))
+}
+
+/// Removes one of the signed-in admin's passkeys (`POST /admin/passkeys/<id>/delete`); the `owner`
+/// filter means a session can only remove its own. Redirects back to the management page.
+#[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
+#[post("/admin/passkeys/<id>/delete")]
+pub fn passkey_delete(
+  id: i64,
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+) -> Result<Redirect, AdminReject> {
+  let session = require_admin(session)?;
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let _ = WebauthnCredential::delete(&mut connection, id, &session.owner);
+  Ok(Redirect::to("/admin/passkeys"))
+}
+
+/// The passkey routes (the management page + the enrollment ceremony).
+pub fn routes() -> Vec<Route> {
+  routes![
+    passkeys_page,
+    register_begin,
+    register_finish,
+    passkey_delete,
+  ]
 }
 
 #[cfg(test)]

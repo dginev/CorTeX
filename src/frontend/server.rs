@@ -54,6 +54,10 @@ pub fn mount_api_with(
     .manage(ConfigFile(config_file))
     .manage(DatabaseUrl(database_url.to_string()))
     .manage(pool)
+    // Passkey (WebAuthn) sign-in: the relying-party instance (`None` when disabled) + the in-memory
+    // ceremony store. See `frontend::webauthn`.
+    .manage(crate::frontend::webauthn::build_state(&config().webauthn))
+    .manage(crate::frontend::webauthn::CeremonyStore::new())
     .mount("/", management::routes())
     .mount("/", corpora::routes())
     .mount("/", reports::routes())
@@ -62,6 +66,7 @@ pub fn mount_api_with(
     .mount("/", services::routes())
     .mount("/", crate::frontend::admin::routes())
     .mount("/", crate::frontend::audit::routes())
+    .mount("/", crate::frontend::webauthn::routes())
     .register("/", crate::frontend::catchers::catchers())
     .attach(Template::fairing())
     // Accounting (AAA): record every mutating admin request to the `audit_log` (drift-proof —
