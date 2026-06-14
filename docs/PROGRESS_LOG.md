@@ -1372,3 +1372,17 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   transport block: **transient faults recover (bounded retry), persistent faults halt EVERY arm with
   one reason + consistent durable state (0 tasks lost; unpersisted = still Queued = recoverable)** —
   all 5 FAULT modes green. Hot path still untouched (example/dev-deps only).
+- **Dispatcher memory-discipline audit (owner: light RAM ≤32GB, co-resident with workers, 300
+  concurrent jobs, 200MB tails):** added a Memory-discipline section to DISPATCHER_RATIONALIZATION.md +
+  built `examples/dispatcher_memory.rs` (isolates the whole-archive-vs-chunked-streaming decision by
+  materializing each design's resident set for 300 jobs and reading process VmRSS). **Empirical:**
+  whole-archive RSS tracks actual sizes — 0.4GB typical but **8.2GB under a 40-giant (200MB) burst →
+  OOM under a larger one**; chunked streaming is **flat ~0.2–1.2GB regardless of size**, ~1GB even when
+  ALL 300 jobs are 200MB giants (58.6GB of underlying data). Rules required of the rationalized hot
+  path: (1) never hold a whole archive — stream both directions in bounded chunks, writing each to
+  /data + dropping it (per-job footprint O(chunk) not O(archive); huge archives must be a SEQUENCE of
+  chunk-messages, not one giant multipart since zeromq reassembles a whole message before recv
+  returns); (2) tight dealloc — Bytes/move, finalize channel carries METADATA only, never bytes; (3)
+  bounded ZMQ HWM; (4) byte-aware admission control as a hard backstop. Budget: ~0.2–1GB job-data at
+  300 jobs / 1MB chunks, other consumers negligible → a few GB peak, ≥28GB left for workers. New knobs
+  proposed: chunk_bytes (1MB), inflight_bytes_budget. Best-practices audit + evidence table updated.

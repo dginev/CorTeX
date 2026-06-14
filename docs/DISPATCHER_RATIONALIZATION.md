@@ -150,6 +150,56 @@ halt. Add it as part of the supervisor.
 one-directional transport block; confirm each either *recovers* (transient) or *halts every arm* with a
 single clear reason and a **consistent durable state** (no task both acked and unpersisted).
 
+## Memory discipline — a light dispatcher co-resident with workers
+
+Owner requirement (2026-06-14): *"discipline in memory use — deallocations of RAM tightly after use,
+buffered streaming for enormous items … max 300 concurrent jobs … the dispatcher runs while the
+workers also use the machine, so be light on RAM, likely at most 32 GB."*
+
+The dispatcher shares the box with ~200–300 worker processes, so its own footprint must be a **small,
+*bounded* slice of the 32 GB** — single-digit GB, leaving the bulk for workers + Postgres + OS. The one
+decision that governs this is: **do we ever hold a whole archive resident per in-flight job, or do we
+stream it in bounded chunks?** With 300 concurrent jobs and a 200 MB tail, the answer is forced.
+
+**Empirical (`examples/dispatcher_memory.rs`, process VmRSS for 300 concurrent jobs):**
+
+| Design | Typical mix (no burst) | 40 concurrent 200 MB giants (8.2 GB of data) | 300 all-giant (58.6 GB of data) |
+| --- | --- | --- | --- |
+| **Whole archive resident / job** | 0.40 GB | **8.2 GB** | ~58 GB → **OOM** |
+| **Chunked streaming, 1 MB** | ~0.2 GB | **0.23 GB** | ~0.3 GB |
+| **Chunked streaming, 4 MB** | ~0.5 GB | ~0.5 GB | **1.18 GB** |
+
+The whole-archive design's RSS tracks the *actual* job sizes — fine on the average (0.4 GB) but **8 GB
+under a 40-giant burst and OOM under a larger one**: it honors 32 GB only by luck of the workload.
+Chunked streaming makes the footprint **flat and independent of job size** — **~1 GB even when all 300
+jobs are 200 MB giants** (58.6 GB of underlying data). That is the only design that *guarantees* the
+cap rather than hoping the distribution stays benign.
+
+**The rules (required of the rationalized hot path):**
+
+1. **Never hold a whole archive resident.** Stream both directions in bounded chunks: the ventilator
+   reads `/data` chunk-by-chunk and sends; the sink writes each received chunk straight to `/data` and
+   drops it. Per-job footprint is **O(chunk)**, not O(archive). *(Caveat: a single multi-frame `zeromq`
+   message reassembles the whole archive in memory before `recv()` returns — so genuinely-huge
+   archives must be sent as a **sequence of bounded chunk-messages**, not one giant multipart message.
+   The torture spike used one-message-per-archive, which is fine up to a few MB but not for the 200 MB
+   tail — chunk those.)*
+2. **Tight deallocation.** Chunk buffers are *moved* (`Bytes`/ownership), used, and dropped at end of
+   scope — no accumulation. The **finalize channel carries metadata only** (task id, status, parsed-log
+   digest, `/data` path) — *never* the archive bytes; those are already on disk.
+3. **Bound the ZMQ high-water-marks** (`SNDHWM`/`RCVHWM`) so the socket layer can't buffer more than a
+   fixed number of in-flight chunk-messages per socket — end-to-end backpressure with a fixed ceiling.
+4. **Byte-aware admission control (hard backstop).** Alongside `max_in_flight` (300 jobs), track an
+   estimated in-flight-bytes budget and pause leasing if a new lease would exceed it — so even a
+   pathological burst can't exceed the cap, regardless of streaming.
+
+**Budget (300 jobs, 1 MB chunks, a few buffers/job + bounded HWM):** job-data RSS ≈ **0.2–1 GB**; with
+4 MB chunks ≈ **~1 GB worst-case**. Other consumers are negligible by comparison: the r2d2 Postgres
+pool (a handful of connections), the in-flight `DashMap` (300 × a small `TaskProgress` ≈ KB), the
+finalize batch (≈ a few hundred metadata `TaskReport`s ≈ MB), the service cache (KB). **Net: a few GB
+peak, well under 32 GB, flat against the 200 MB tail** — leaving ≥28 GB for the co-resident workers.
+*Recommend a `chunk_bytes` (default 1 MB) and an `inflight_bytes_budget` config knob.*
+
 ## Validation evidence (phase 0 — all spikes green)
 
 Five throwaway spikes (`examples/zmq_*.rs`, dev-deps only). Workloads are parameterizable; numbers are
@@ -163,6 +213,7 @@ release-build, loopback.
 | `zmq_resilience` | worker churn (crash / request-then-die / reconnect) | **every task recovered, zero loss** even at 80 % flaky / 40 killed + 41 reconnects |
 | `zmq_torture` | all 5 owner stressors at once (below) | **2000/2000 persisted exactly once, zero anomalies** |
 | `zmq_faults` | catastrophic deaths (DB-dead, disk-full, one-way transport block) | transient faults **recover**; persistent faults **halt every arm** with one reason + **consistent durable state** (no task acked-but-unpersisted) |
+| `dispatcher_memory` | RAM footprint at 300 jobs (whole-archive vs chunked) | whole-archive **8 GB under a 40-giant burst → OOM**; chunked streaming **~1 GB even with 300×200 MB jobs** (flat, independent of size) |
 
 **Feature coverage — complete for our usage.** Confirmed from `src/`: we use `ROUTER` (ventilator),
 `DEALER` (worker source), `PUSH` (worker sink), `PULL` (dispatcher sink) over TCP, multi-frame. The
@@ -222,7 +273,8 @@ is the bottleneck *before* it backs up (and feed the `/metrics` endpoint already
 | Poison-task containment | retry budget → dead-letter | ✅ today |
 | Transparent failure | fail-fast on poisoned state → abort → restart; everything else logged + counted | ✅ today |
 | Observability | tracing + metrics on every lifecycle transition; backpressure/lag visible | 🟡 **required by the refactor** |
-| Dependency hygiene | escape the unmaintained libzmq C FFI → pure-Rust async | ✅ decided |
+| Memory discipline | chunked streaming + tight dealloc + bounded HWM + byte-admission ⇒ flat ~1 GB at 300 jobs, independent of the 200 MB tail | 🟡 **required by the refactor** (empirically scoped) |
+| Dependency hygiene | escape the unmaintained libzmq C FFI → pure-Rust async; **archive crate under review** (libarchive-sys git dep) | 🟡 zeromq decided; archive crate evaluating |
 | Graceful shutdown | *intentional fail-fast* (abort) — optional SIGTERM drain of the finalize batch is a nicety, not needed (crash recovery covers it) | ⚪ optional |
 
 **Verdict:** the resilience qualities are largely **already maximized** by the existing

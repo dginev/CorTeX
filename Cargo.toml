@@ -175,6 +175,13 @@ path = "examples/zmq_torture.rs"
 name = "zmq_faults"
 path = "examples/zmq_faults.rs"
 
+# Memory-discipline audit: the dispatcher is co-resident with workers and must stay light (≤32 GB) at
+# 300 concurrent jobs with 200 MB tails. Isolates the whole-archive-vs-chunked-streaming decision by
+# materializing each design's resident set for 300 jobs and reporting process VmRSS.
+[[example]]
+name = "dispatcher_memory"
+path = "examples/dispatcher_memory.rs"
+
 [dev-dependencies]
 # Phase-0 dispatcher spike only (NOT a production dependency — the dispatcher hot path is untouched,
 # held for owner review). `zeromq` = pure-Rust async ZMQ under empirical evaluation vs. libzmq.
