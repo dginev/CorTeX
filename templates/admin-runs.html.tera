@@ -8,6 +8,30 @@
       per-service history, run-to-run diff, and per-task drill-down.</p>
   </div>
 
+  <form method="get" action="/admin/runs" class="center" style="margin-bottom:1rem;">
+    <label>Corpus
+      <select name="corpus">
+        <option value="">(any)</option>
+        {% for name in corpus_names %}
+        <option value="{{ name }}"{% if name == filter_corpus %} selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Service
+      <select name="service">
+        <option value="">(any)</option>
+        {% for name in service_names %}
+        <option value="{{ name }}"{% if name == filter_service %} selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Owner
+      <input type="text" name="owner" value="{{ filter_owner | default(value='') }}" placeholder="(any)" size="12">
+    </label>
+    <button type="submit">Filter</button>
+    {% if filter_corpus or filter_service or filter_owner %}<a href="/admin/runs" style="margin-left:0.5rem;">clear</a>{% endif %}
+  </form>
+
   <table id="historical-runs" class="table">
     <thead>
       <tr>

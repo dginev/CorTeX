@@ -194,9 +194,32 @@ impl HistoricalRun {
     connection: &mut PgConnection,
     limit: i64,
   ) -> Result<Vec<HistoricalRun>, Error> {
-    use crate::schema::historical_runs::dsl::start_time;
-    historical_runs::table
-      .order(start_time.desc())
+    Self::recent_filtered(connection, None, None, None, limit)
+  }
+
+  /// The most recent historical runs, newest first, optionally narrowed to a `corpus_id`,
+  /// `service_id`, and/or exact `owner` — the filter-driven run-management overview. Capped at
+  /// `limit`. Any combination of filters may be `None` (no constraint on that field).
+  pub fn recent_filtered(
+    connection: &mut PgConnection,
+    corpus: Option<i32>,
+    service: Option<i32>,
+    owner: Option<&str>,
+    limit: i64,
+  ) -> Result<Vec<HistoricalRun>, Error> {
+    use crate::schema::historical_runs::dsl;
+    let mut query = dsl::historical_runs.into_boxed();
+    if let Some(corpus) = corpus {
+      query = query.filter(dsl::corpus_id.eq(corpus));
+    }
+    if let Some(service) = service {
+      query = query.filter(dsl::service_id.eq(service));
+    }
+    if let Some(owner) = owner {
+      query = query.filter(dsl::owner.eq(owner.to_string()));
+    }
+    query
+      .order(dsl::start_time.desc())
       .limit(limit)
       .get_results(connection)
   }

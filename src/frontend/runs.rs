@@ -158,12 +158,37 @@ impl RunOverviewDto {
   }
 }
 
-/// Loads the most-recent historical runs across **all** corpora/services as overview rows (the
-/// shared core of `GET /api/runs` and the `/admin/runs` screen). `limit` is clamped by the caller.
-fn load_recent_runs(pool: &DbPool, limit: i64) -> Result<Vec<RunOverviewDto>, Status> {
+/// Loads the most-recent historical runs as overview rows, optionally narrowed by `corpus` and/or
+/// `service` name and/or exact `owner` (the **filter-driven** run-management surface the owner
+/// asked for) — the shared core of `GET /api/runs` and the `/admin/runs` screen. An unknown
+/// corpus/service name matches nothing (empty result, not an error). `limit` is clamped by the
+/// caller.
+fn load_recent_runs(
+  pool: &DbPool,
+  corpus: Option<&str>,
+  service: Option<&str>,
+  owner: Option<&str>,
+  limit: i64,
+) -> Result<Vec<RunOverviewDto>, Status> {
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
-  let runs =
-    HistoricalRun::recent_all(&mut connection, limit).map_err(|_| Status::InternalServerError)?;
+  // Resolve the corpus/service name filters to ids; an unknown name narrows to nothing.
+  let corpus_id = match corpus.filter(|name| !name.is_empty()) {
+    Some(name) => match Corpus::find_by_name(name, &mut connection) {
+      Ok(corpus) => Some(corpus.id),
+      Err(_) => return Ok(Vec::new()),
+    },
+    None => None,
+  };
+  let service_id = match service.filter(|name| !name.is_empty()) {
+    Some(name) => match Service::find_by_name(name, &mut connection) {
+      Ok(service) => Some(service.id),
+      Err(_) => return Ok(Vec::new()),
+    },
+    None => None,
+  };
+  let owner = owner.filter(|owner| !owner.is_empty());
+  let runs = HistoricalRun::recent_filtered(&mut connection, corpus_id, service_id, owner, limit)
+    .map_err(|_| Status::InternalServerError)?;
   // The corpora/services tables are small; one batched read each beats N+1 per-run lookups.
   let corpora: HashMap<i32, String> = Corpus::all(&mut connection)
     .unwrap_or_default()
@@ -183,25 +208,37 @@ fn load_recent_runs(pool: &DbPool, limit: i64) -> Result<Vec<RunOverviewDto>, St
   )
 }
 
-/// The system-wide run history (agent twin of the `/admin/runs` screen): the most recent runs
-/// across every corpus/service, newest first, capped at `limit` (default 100, max 500). `503` if
-/// the pool is exhausted.
+/// The system-wide run history (agent twin of the `/admin/runs` screen): the most recent runs,
+/// newest first, optionally filtered by `corpus`/`service`/`owner`, capped at `limit` (default 100,
+/// max 500). `503` if the pool is exhausted.
 #[rocket_okapi::openapi(tag = "Runs")]
-#[get("/api/runs?<limit>")]
+#[get("/api/runs?<corpus>&<service>&<owner>&<limit>")]
 pub fn api_all_runs(
+  corpus: Option<String>,
+  service: Option<String>,
+  owner: Option<String>,
   limit: Option<i64>,
   pool: &State<DbPool>,
 ) -> Result<Json<Vec<RunOverviewDto>>, Status> {
   let limit = limit.unwrap_or(100).clamp(1, 500);
-  Ok(Json(load_recent_runs(pool, limit)?))
+  Ok(Json(load_recent_runs(
+    pool,
+    corpus.as_deref(),
+    service.as_deref(),
+    owner.as_deref(),
+    limit,
+  )?))
 }
 
-/// The system-wide run-management overview (`GET /admin/runs`): the most recent runs across every
-/// corpus/service, each linking into its per-service history + diff drill-downs. Signed-in admins
-/// only (unauthenticated → sign-in, returning here).
+/// The system-wide run-management overview (`GET /admin/runs`): the most recent runs, filterable by
+/// corpus/service/owner, each linking into its per-service history + diff drill-downs. Signed-in
+/// admins only (unauthenticated → sign-in, returning here).
 #[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
-#[get("/admin/runs?<limit>")]
+#[get("/admin/runs?<corpus>&<service>&<owner>&<limit>")]
 pub fn all_runs_page(
+  corpus: Option<String>,
+  service: Option<String>,
+  owner: Option<String>,
   limit: Option<i64>,
   session: Option<AdminSession>,
   return_to: ReturnTo,
@@ -210,14 +247,39 @@ pub fn all_runs_page(
   let admin = require_admin_to(session, &return_to)?;
   let limit = limit.unwrap_or(100).clamp(1, 500);
   // Best-effort, like the other admin screens: a db hiccup renders an empty table, never a 500.
-  let runs = load_recent_runs(pool, limit).unwrap_or_default();
+  let runs = load_recent_runs(
+    pool,
+    corpus.as_deref(),
+    service.as_deref(),
+    owner.as_deref(),
+    limit,
+  )
+  .unwrap_or_default();
+  // The known corpus + service names seed the filter dropdowns (small tables).
+  let mut corpus_names: Vec<String> = Vec::new();
+  let mut service_names: Vec<String> = Vec::new();
+  if let Ok(mut connection) = pool.get() {
+    corpus_names = Corpus::all(&mut connection)
+      .unwrap_or_default()
+      .into_iter()
+      .map(|corpus| corpus.name)
+      .collect();
+    service_names = Service::all(&mut connection)
+      .unwrap_or_default()
+      .into_iter()
+      .map(|service| service.name)
+      .collect();
+  }
   let global = serde_json::json!({
     "title": "Historical runs",
     "description": "Recent conversion runs across every corpus and service",
   });
   Ok(Template::render(
     "admin-runs",
-    context! { global, owner: admin.owner, runs },
+    context! {
+      global, owner: admin.owner, runs, corpus_names, service_names,
+      filter_corpus: corpus, filter_service: service, filter_owner: owner,
+    },
   ))
 }
 

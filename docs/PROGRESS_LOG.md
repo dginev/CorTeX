@@ -1178,3 +1178,14 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   Deliberately cheap queries on small tables only — no dispatcher/storage probe (that is the System
   Health screen's job). `templates/admin.html.tera` renders the status row; `admin_test` asserts the
   cards render. clippy -D warnings + fmt + admin_test green.
+- **Admin UX — filters on the historical-runs overview (autonomous-day progress, the owner's
+  filter-driven steer):** the owner steered "run-management is FILTER-DRIVEN — prioritize filter/
+  inspection UX". The system-wide `/admin/runs` + `GET /api/runs` overview (built last tick) now
+  filters by **corpus**, **service**, and/or **owner**: new `HistoricalRun::recent_filtered`
+  (boxed query, any combination of optional `corpus_id`/`service_id`/exact `owner`; `recent_all`
+  delegates to it); `load_recent_runs` resolves the corpus/service *name* filters to ids (an unknown
+  name narrows to an empty result, not an error) and threads them through both surfaces. The screen
+  gains a `<form method=get>` with corpus/service dropdowns (seeded from the known names) + an owner
+  text field, pre-selected to the active filter, with a clear link. `runs_test` extends the overview
+  case (corpus filter keeps/excludes; owner filter keeps tester's / excludes a stranger's).
+  clippy -D warnings + fmt + the runs/admin sweep green.

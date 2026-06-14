@@ -126,6 +126,45 @@ fn overview_lists_runs_system_wide(client: &Client) {
     "the system-wide run list includes the seeded corpus"
   );
 
+  // Filter-driven: a matching corpus filter keeps the run; an unknown corpus narrows to nothing.
+  let body = client
+    .get(format!("/api/runs?corpus={CORPUS_NAME}"))
+    .dispatch()
+    .into_string()
+    .expect("json");
+  assert!(
+    body.contains(CORPUS_NAME),
+    "the corpus filter keeps matching runs"
+  );
+  let body = client
+    .get("/api/runs?corpus=no-such-corpus-xyz")
+    .dispatch()
+    .into_string()
+    .expect("json");
+  assert!(
+    !body.contains(CORPUS_NAME),
+    "an unknown corpus filter narrows to nothing"
+  );
+  // The owner filter (the seed ran as 'tester').
+  let body = client
+    .get("/api/runs?owner=tester")
+    .dispatch()
+    .into_string()
+    .expect("json");
+  assert!(
+    body.contains(CORPUS_NAME),
+    "the owner filter keeps tester's runs"
+  );
+  let body = client
+    .get("/api/runs?owner=nobody-xyz")
+    .dispatch()
+    .into_string()
+    .expect("json");
+  assert!(
+    !body.contains(CORPUS_NAME),
+    "an owner with no runs narrows to nothing"
+  );
+
   // Signed in, the human screen renders with the seeded run.
   client
     .post("/admin/login")
