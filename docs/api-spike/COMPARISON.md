@@ -6,11 +6,18 @@ spike. Both frameworks annotate the **same slice** — the corpora read endpoint
 spec. Reproduce with:
 
 ```bash
-cargo run --example api_doc_spike_utoipa   # -> docs/api-spike/utoipa-openapi.json
 cargo run --example api_doc_spike_okapi    # -> docs/api-spike/okapi-openapi.json
+# (the utoipa spike example was pruned once rocket_okapi was chosen — see the note at the bottom)
 ```
 
-Generated specs are committed alongside this file. Sources: `examples/api_doc_spike_{utoipa,okapi}.rs`.
+Generated specs are committed alongside this file. Source: `examples/api_doc_spike_okapi.rs` (the
+utoipa spike's `utoipa-openapi.json` remains here as a frozen comparison artifact).
+
+> **DECIDED + LANDED (2026-06-14):** `rocket_okapi` was chosen and is now **wired into the live app** —
+> the generated OpenAPI 3 spec is served at `GET /api/openapi.json` with a RapiDoc page at `GET /api/docs`,
+> built from the `#[openapi]`-annotated routes (`src/frontend/apidoc.rs`). The whole agent surface (26
+> endpoints, reads + writes) is documented, with the `Actor` token guard as a `CortexToken` ApiKey
+> security scheme. The utoipa runner-up (dev-dep + spike example) has been pruned.
 
 ## 1. Annotation ergonomics (the per-endpoint cost)
 

@@ -36,16 +36,15 @@ wasn't blocked; each can be revised/refactored on return. Newest first.
    human `rerun.html.tera` UI posts to). *Direction:* migrate the human UI onto the modern endpoint and
    retire the legacy routes, or keep both?
 
-7. **API-docs framework — DECIDED: `rocket_okapi` (owner, 2026-06-14).** After previewing both spikes
-   side by side, the owner chose `rocket_okapi` and asked for the full API docs generated. **Landing
-   in progress:** `rocket_okapi` + `schemars` are now real deps; `frontend::apidoc` serves the
-   generated **OpenAPI 3** spec at `GET /api/openapi.json` and a **RapiDoc** page at `GET /api/docs`,
-   built from the `#[openapi]`-annotated routes (DTOs derive `JsonSchema`). The corpora read slice
-   (`GET /api/corpora`, `GET /api/corpora/{name}`) is annotated + documented as the proven first
-   vertical slice (tested in `management_api_test`). **Remaining:** annotate the rest of the `/api`
-   routes module-by-module — including the write endpoints (whose `(Status, Json<T>)` / bare `Status`
-   responders need an okapi responder check) and the `Actor` token guard (needs an `OpenApiFromRequest`
-   impl to document the security scheme); then prune the `utoipa` dev-dep + its spike example.
+7. **API-docs framework — DONE: `rocket_okapi`, full docs generated (owner-chosen 2026-06-14).** The
+   owner previewed both spikes and chose `rocket_okapi`. **Landed in full:** `rocket_okapi` + `schemars`
+   are real deps; `frontend::apidoc` serves the generated **OpenAPI 3** spec at `GET /api/openapi.json`
+   and a **RapiDoc** page at `GET /api/docs`, built from the `#[openapi]`-annotated routes. **The
+   complete agent surface — all 26 endpoints (reads *and* writes) across all 6 capability modules — is
+   documented**, request/response DTOs derive `JsonSchema`, and the `Actor` token guard is an
+   `OpenApiFromRequest` impl advertising a `CortexToken` ApiKey security scheme (`X-Cortex-Token`). The
+   `utoipa` runner-up (dev-dep + spike example) is **pruned**. No open question remains; left here as a
+   pointer. (`src/frontend/apidoc.rs`, `src/frontend/actor.rs`)
 
 9. **Stalled-job handling: observe now, auto-interrupt deferred (W-4).** A hung job *body* (e.g. the
    importer blocked on a stale mount) can't be force-cancelled in Rust, so its thread + pooled connection

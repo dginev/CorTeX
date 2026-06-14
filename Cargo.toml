@@ -64,10 +64,6 @@ lazy_static = "1.0.0"
 rocket_okapi = { version = "0.9", features = ["rapidoc"] }
 schemars = "0.8"
 
-# --- utoipa: the API-docs spike's runner-up, kept dev-only until its spike example is pruned.
-[dev-dependencies]
-utoipa = "4"
-
 # Integration tests that build a Rocket Client over the libpq pool run under a custom harness
 # (their own `main` + `process::exit(0)`) to ELIMINATE the L-1 diesel/libpq/Tokio teardown SIGSEGV
 # that fires after assertions pass — the racy global teardown is simply never run.
@@ -96,10 +92,8 @@ name = "runs_test"
 path = "tests/runs_test.rs"
 harness = false
 
-[[example]]
-name = "api_doc_spike_utoipa"
-path = "examples/api_doc_spike_utoipa.rs"
-
+# The rocket_okapi spike (the chosen framework) — reproduces docs/api-spike/okapi-openapi.json and is
+# referenced by docs/api-spike/COMPARISON.md. (The utoipa runner-up was pruned once okapi was chosen.)
 [[example]]
 name = "api_doc_spike_okapi"
 path = "examples/api_doc_spike_okapi.rs"
