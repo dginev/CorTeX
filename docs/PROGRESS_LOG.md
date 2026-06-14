@@ -247,3 +247,20 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
     no behaviour change — but now consistent).
   *Next:* (when the backup arrives) restore + run the verifier + load test; meanwhile continue pooling the
   remaining `Backend::default()` routes, the D-6 reaper, or service-management UX.
+- **D-6 reaper residual closed + latent cross-service requeue bug fixed (dispatcher robustness):** the
+  ventilator's timeout-reaping of crashed-worker tasks was coupled to the refetch path
+  (`task_queue.is_empty()`), so under sustained **backpressure** (refetch never runs) the in-flight set
+  wouldn't drain. Decoupled it onto a fixed **60s cadence** at the top of the dispatch loop, so the set
+  drains regardless. While extracting the inline reap logic into pure, **unit-tested** helpers in
+  `server.rs` (`classify_expired` → retry-or-`Fatal` at `MAX_DISPATCH_RETRIES`; `reap_expired_into` →
+  routes each expired task), found + fixed a **latent cross-service bug**: expired tasks were re-queued
+  into the *requesting* worker's service queue (the dispatch queues were keyed by service *name* and the
+  reap ran inside one service's branch), so a service-B task could be handed to a service-A worker. The
+  dispatch queues are now keyed by **`service_id`** and each reaped task returns to its **own** service.
+  Tests: `classify_expired` (retry budget → `Fatal`) + `reap_expired_into` (routes retriable to its own
+  service with retry++, exhausted → done queue, in-flight fully drained); `echo_roundtrip` (full
+  dispatcher) green; `clippy --all-targets -D warnings` clean. Ledger: **D-6 reaping residual → closed**.
+  The dispatcher is now race-free (D-2) + bounded fan-out (D-1) + backpressured **and promptly-draining**
+  (D-6) + correctly per-service-routed.
+  *Next:* pool the remaining `Backend::default()` routes; service-management UX; or (on backup arrival) the
+  load test.

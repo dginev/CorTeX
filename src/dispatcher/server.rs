@@ -5,7 +5,7 @@ use std::thread;
 use std::time::Duration;
 
 use crate::backend::Backend;
-use crate::helpers::{TaskProgress, TaskReport};
+use crate::helpers::{NewTaskMessage, TaskProgress, TaskReport, TaskStatus};
 use crate::models::Service;
 
 /// Hard ceiling on the in-flight (progress) set. Reaching it means backpressure
@@ -151,6 +151,64 @@ pub fn push_progress_task<S: ::std::hash::BuildHasher>(
   progress_queue.insert(progress_task.task.id, progress_task);
 }
 
+/// The maximum number of dispatch retries before a perpetually-incomplete task is given up on.
+/// A task re-dispatched this many times that still never returns a result is treated as a hard
+/// failure (`Fatal`) rather than retried forever.
+pub const MAX_DISPATCH_RETRIES: i64 = 4;
+
+/// The fate of a timed-out in-flight task, decided by [`classify_expired`].
+pub enum ExpiredOutcome {
+  /// Re-dispatch the task — retry budget remains; its retry count is incremented.
+  Requeue(TaskProgress),
+  /// Give up — retry budget exhausted; report the task `Fatal`.
+  Fatal(TaskReport),
+}
+
+/// Decides what to do with an in-flight task that timed out: retry it (until
+/// [`MAX_DISPATCH_RETRIES`] dispatches) or give up and report it `Fatal`.
+pub fn classify_expired(expired: TaskProgress) -> ExpiredOutcome {
+  if expired.retries > MAX_DISPATCH_RETRIES {
+    let task_id = expired.task.id;
+    ExpiredOutcome::Fatal(TaskReport {
+      task: expired.task,
+      status: TaskStatus::Fatal,
+      messages: vec![NewTaskMessage::new(
+        task_id,
+        "fatal",
+        "cortex".to_string(),
+        "never_completed_with_retries".to_string(),
+        String::new(),
+      )],
+    })
+  } else {
+    ExpiredOutcome::Requeue(TaskProgress {
+      task: expired.task,
+      created_at: expired.created_at,
+      retries: expired.retries + 1,
+    })
+  }
+}
+
+/// Reaps timed-out in-flight tasks and routes each to **its own service's** dispatch queue (a
+/// retry) or the done queue (a `Fatal`). Decoupled from the refetch path so the in-flight set
+/// drains even under sustained backpressure (KNOWN_ISSUES D-6); routing by `task.service_id` rather
+/// than the requesting service fixes the latent cross-service requeue bug.
+pub fn reap_expired_into(
+  queues: &mut HashMap<i32, Vec<TaskProgress>>,
+  progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>,
+  done_queue_arc: &Arc<Mutex<Vec<TaskReport>>>,
+) {
+  for expired in timeout_progress_tasks(progress_queue_arc) {
+    match classify_expired(expired) {
+      ExpiredOutcome::Requeue(task_progress) => queues
+        .entry(task_progress.task.service_id)
+        .or_default()
+        .push(task_progress),
+      ExpiredOutcome::Fatal(report) => push_done_queue(done_queue_arc, report),
+    }
+  }
+}
+
 /// Memoized getter for a `Service` record from the backend
 pub fn get_sync_service<S: ::std::hash::BuildHasher>(
   service_name: &str,
@@ -233,5 +291,51 @@ mod tests {
     // The sink draining a returned result shrinks the in-flight set — how backpressure recovers.
     pop_progress_task(&queue, 1);
     assert_eq!(progress_queue_len(&queue), 1);
+  }
+
+  fn expired_progress(id: i64, service_id: i32, retries: i64) -> TaskProgress {
+    let mut tp = dummy_progress(id);
+    tp.task.service_id = service_id;
+    tp.created_at = 0; // expected_at = (retries+1)*3600, far in the past -> always expired
+    tp.retries = retries;
+    tp
+  }
+
+  #[test]
+  fn classify_expired_retries_then_gives_up() {
+    // Budget remains -> requeue with the retry count incremented.
+    match classify_expired(expired_progress(1, 3, MAX_DISPATCH_RETRIES)) {
+      ExpiredOutcome::Requeue(tp) => assert_eq!(tp.retries, MAX_DISPATCH_RETRIES + 1),
+      ExpiredOutcome::Fatal(_) => panic!("still within retry budget -> should requeue"),
+    }
+    // Budget exhausted -> Fatal.
+    match classify_expired(expired_progress(2, 3, MAX_DISPATCH_RETRIES + 1)) {
+      ExpiredOutcome::Fatal(report) => assert_eq!(report.task.id, 2),
+      ExpiredOutcome::Requeue(_) => panic!("retry budget exhausted -> should be Fatal"),
+    }
+  }
+
+  #[test]
+  fn reap_routes_to_own_service_and_drains() {
+    let progress = Arc::new(Mutex::new(HashMap::new()));
+    push_progress_task(&progress, expired_progress(1, 7, 0)); // retriable, service 7
+    push_progress_task(&progress, expired_progress(2, 9, MAX_DISPATCH_RETRIES + 1)); // fatal, svc 9
+    let mut queues: HashMap<i32, Vec<TaskProgress>> = HashMap::new();
+    let done = Arc::new(Mutex::new(Vec::new()));
+
+    reap_expired_into(&mut queues, &progress, &done);
+
+    // The retriable task is requeued to ITS OWN service (7), not some requester's queue, retry++.
+    assert_eq!(queues.get(&7).map(Vec::len), Some(1));
+    assert_eq!(queues[&7][0].retries, 1);
+    assert!(
+      !queues.contains_key(&9),
+      "the exhausted task is not requeued"
+    );
+    // The exhausted task is reported Fatal on the done queue.
+    assert_eq!(done.lock().unwrap().len(), 1);
+    assert_eq!(done.lock().unwrap()[0].task.id, 2);
+    // The in-flight set is fully drained.
+    assert_eq!(progress_queue_len(&progress), 0);
   }
 }

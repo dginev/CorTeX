@@ -6,10 +6,15 @@ use std::sync::Mutex;
 use crate::backend;
 use crate::dispatcher::server;
 use crate::helpers;
-use crate::helpers::{NewTaskMessage, TaskProgress, TaskReport, TaskStatus};
+use crate::helpers::{TaskProgress, TaskReport};
 use crate::models::{Service, WorkerMetadataSender};
 use std::error::Error;
 use zmq::SNDMORE;
+
+/// How often (seconds) the ventilator reaps timed-out in-flight tasks. Well below the per-task
+/// timeout (`TaskProgress::expected_at`, ≥1h), so expired tasks are recovered promptly without
+/// scanning the in-flight set on every request.
+const REAP_INTERVAL_SECS: i64 = 60;
 
 /// Specifies the binding and operation parameters for a ZMQ ventilator component
 pub struct Ventilator {
@@ -45,8 +50,10 @@ impl Ventilator {
     done_queue_arc: &Arc<Mutex<Vec<TaskReport>>>,
     job_limit: Option<usize>,
   ) -> Result<usize, Box<dyn Error>> {
-    // We have a Ventilator-exclusive "queues" stack for tasks to be dispatched
-    let mut queues: HashMap<String, Vec<TaskProgress>> = HashMap::new();
+    // We have a Ventilator-exclusive "queues" stack of tasks to be dispatched, keyed by service id
+    // so a reaped task is always re-queued to its own service (not whichever service is
+    // requesting).
+    let mut queues: HashMap<i32, Vec<TaskProgress>> = HashMap::new();
     // Assuming this is the only And tidy up the postgres tasks:
     let mut backend = backend::from_address(&self.backend_address);
     backend.clear_limbo_tasks()?;
@@ -58,6 +65,9 @@ impl Ventilator {
     let address = format!("tcp://*:{}", self.port);
     ventilator.bind(&address).unwrap();
     let mut source_job_count: usize = 0;
+    // Reap timed-out in-flight tasks on a cadence rather than only on refetch (KNOWN_ISSUES D-6),
+    // so the in-flight set drains even under sustained backpressure (when refetch never runs).
+    let mut last_reap_sec = time::get_time().sec;
 
     loop {
       let mut identity = zmq::Message::new();
@@ -82,6 +92,13 @@ impl Ventilator {
 
       let request_time = time::get_time();
       source_job_count += 1;
+      // Reap timed-out in-flight tasks on a cadence (decoupled from refetch): routes each expired
+      // task back to its own service's queue or reports it Fatal, so the in-flight set drains even
+      // while saturated (backpressure) — closes the D-6 reaping-coupling residual.
+      if request_time.sec - last_reap_sec >= REAP_INTERVAL_SECS {
+        last_reap_sec = request_time.sec;
+        server::reap_expired_into(&mut queues, progress_queue_arc, done_queue_arc);
+      }
       let mut dispatched_task_opt: Option<TaskProgress> = None;
       // Requests for unknown service names will be silently ignored.
       let service_opt = match server::get_sync_service(&service_name, services_arc, &mut backend) {
@@ -114,12 +131,7 @@ impl Ventilator {
           ventilator.send(Vec::new(), 0)?;
           continue;
         }
-        if !queues.contains_key(&service_name) {
-          queues.insert(service_name.clone(), Vec::new());
-        }
-        let task_queue: &mut Vec<TaskProgress> = queues
-          .get_mut(&service_name)
-          .unwrap_or_else(|| panic!("Could not obtain queue mutex lock in main ventilator loop"));
+        let task_queue: &mut Vec<TaskProgress> = queues.entry(service.id).or_default();
         if task_queue.is_empty() {
           eprintln!(
             "-- No tasks in task queue for service {:?}, fetching up to {:?} more from backend...",
@@ -135,37 +147,6 @@ impl Ventilator {
             created_at: now,
             retries: 0,
           }));
-
-          // This is a good time to also take care that none of the old tasks are dead in the
-          // progress queue since the re-fetch happens infrequently, and directly
-          // implies the progress queue will grow
-          let expired_tasks = server::timeout_progress_tasks(progress_queue_arc);
-          for expired_t in expired_tasks {
-            if expired_t.retries > 4 {
-              // Too many retries, mark as fatal failure
-              server::push_done_queue(
-                done_queue_arc,
-                TaskReport {
-                  task: expired_t.task.clone(),
-                  status: TaskStatus::Fatal,
-                  messages: vec![NewTaskMessage::new(
-                    expired_t.task.id,
-                    "fatal",
-                    "cortex".to_string(),
-                    "never_completed_with_retries".to_string(),
-                    String::new(),
-                  )],
-                },
-              );
-            } else {
-              // We can still retry, re-add to the dispatch queue
-              task_queue.push(TaskProgress {
-                task: expired_t.task,
-                created_at: expired_t.created_at,
-                retries: expired_t.retries + 1,
-              });
-            }
-          }
         }
 
         ventilator.send(identity, SNDMORE)?;
