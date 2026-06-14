@@ -1516,3 +1516,17 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   `manager.rs`. **Green:** `echo_roundtrip` passes (full round-trip); `bench_pipeline` runs clean at
   ~8125 tasks/s (1 worker, unsaturated, no hang/panic). Design doc phase 1 marked ✅. Phases 2–4 +
   transport swap remain.
+- **Archive Path A — part 1: per-task result parse migrated to the pure-Rust `zip` crate (owner: "the
+  pure rust recommendation wins, go"):** `helpers::generate_report` (the dispatcher sink's per-task
+  hot path, called for every result) now reads `cortex.log` via the **`zip` crate's random-access
+  `by_name`** instead of libarchive's sequential scan — it seeks straight to the log via the central
+  directory, never decompressing the (large) converted output (~1.4x libarchive, pure-Rust). Also
+  **closes a dispatch-path panic**: the old `.expect("Could not create libarchive Reader struct")` is
+  gone — a non-zip/corrupt/missing-cortex.log result now returns a graceful `Err` and leaves the task
+  `Fatal` (the default) rather than panicking the sink. Promoted `zip` to a real dependency; removed
+  `use Archive::*` + the dead `BUFFER_SIZE` const from helpers.rs. The parse-and-derive logic is
+  byte-identical (only the log-extraction method changed). **Green:** `echo_roundtrip` passes (full
+  pipeline exercises generate_report on a real-service result .zip) + a new DB-free unit test
+  (`read_cortex_log_extracts_from_zip_and_errors_gracefully`: extracts cortex.log past a 200KB output
+  entry; errors gracefully on a non-zip). **Remaining Path A:** migrate `importer.rs` unpack
+  (.tar/.gz → flate2+tar, .zip output, infer detection + I-1 hardening) and remove libarchive-sys.

@@ -10,9 +10,9 @@ use rand::{thread_rng, Rng};
 use regex::Regex;
 use std::fs::File;
 use std::io;
+use std::io::Read;
 use std::path::Path;
 use std::str;
-use Archive::*;
 
 use diesel::pg::PgConnection;
 use diesel::result::Error;
@@ -22,8 +22,6 @@ use crate::models::{
   LogError, LogFatal, LogInfo, LogInvalid, LogRecord, LogWarning, NewLogError, NewLogFatal,
   NewLogInfo, NewLogInvalid, NewLogWarning, Task,
 };
-
-const BUFFER_SIZE: usize = 10_240;
 
 lazy_static! {
   static ref MESSAGE_LINE_REGEX: Regex =
@@ -488,83 +486,75 @@ fn decode_worker_log(raw: &[u8]) -> String {
   }
 }
 
-/// Generates a `TaskReport`, given the path to a result archive from a `CorTeX` processing job
-/// Expects a "cortex.log" file in the archive, following the `LaTeXML` messaging conventions
+/// Reads + decodes the `cortex.log` entry out of a result `.zip`. Uses the pure-Rust `zip` crate's
+/// **random-access `by_name`** — it seeks straight to `cortex.log` via the archive's central
+/// directory, never decompressing the (potentially large) converted output (the per-task hot path;
+/// ~1.4× libarchive on this op, see `docs/ARCHIVE_RATIONALIZATION.md`). Returns the decoded log
+/// text, or an `Err` describing why it couldn't (a non-zip / corrupt archive, or a missing
+/// `cortex.log` → the task is left `Fatal`), rather than `.expect()`-panicking the dispatch path as
+/// the old libarchive reader did.
+fn read_cortex_log(result: &Path) -> Result<String, String> {
+  let file = File::open(result).map_err(|e| format!("cannot open result archive: {e}"))?;
+  let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("not a readable zip: {e}"))?;
+  let mut entry = archive
+    .by_name("cortex.log")
+    .map_err(|e| format!("no cortex.log entry: {e}"))?;
+  let mut raw = Vec::new();
+  entry
+    .read_to_end(&mut raw)
+    .map_err(|e| format!("reading cortex.log failed: {e}"))?;
+  Ok(decode_worker_log(&raw))
+}
+
+/// Generates a `TaskReport`, given the path to a result archive (`.zip`) from a `CorTeX` processing
+/// job. Expects a `cortex.log` file in the archive, following the `LaTeXML` messaging conventions;
+/// a missing/unreadable log leaves the task `Fatal` (the default).
 pub fn generate_report(task: Task, result: &Path) -> TaskReport {
-  // println!("Preparing report for {:?}, result at {:?}",self.entry, result);
   let mut messages = Vec::new();
   let mut status = TaskStatus::Fatal; // Fatal by default
-  {
-    // -- Archive::Reader, trying to localize (to .drop asap)
-    // Let's open the archive file and find the cortex.log file:
-    let log_name = "cortex.log";
-    match Reader::new()
-      .expect("Could not create libarchive Reader struct")
-      .support_filter_all()
-      .support_format_all()
-      .open_filename(result.to_str().unwrap_or_default(), BUFFER_SIZE)
-    {
-      Err(e) => {
-        println!("Error TODO: Couldn't open archive_reader: {e:?}");
-      },
-      Ok(archive_reader) => {
-        while let Ok(entry) = archive_reader.next_header() {
-          if entry.pathname() != log_name {
-            continue;
-          }
-
-          // In a "raw" read, we don't know the data size in advance. So we bite the bullet and
-          // read the usually manageable log file in memory
-          let mut raw_log_data = Vec::new();
-          while let Ok(chunk) = archive_reader.read_data(BUFFER_SIZE) {
-            raw_log_data.extend(chunk);
-          }
-          let log_string: String = decode_worker_log(&raw_log_data);
-
-          // Look for the special status message - Fatal otherwise!
-          for message in parse_log(task.id, &log_string).into_iter() {
-            // Invalids are a bit of a workaround for now, they're fatal messages in latexml, but
-            // we want them separated out in cortex
-            let mut skip_message = false;
-            match message {
-              NewTaskMessage::Invalid(ref _log_invalid) => {
-                status = TaskStatus::Invalid;
-              },
-              NewTaskMessage::Info(ref _log_info) => {
-                let message_what = message.what();
-                if message.category() == "conversion" && !message_what.is_empty() {
-                  // Adapt status to the CorTeX scheme: cortex_status = -(latexml_status+1)
-                  let latexml_scheme_status = match message_what.parse::<i32>() {
-                    Ok(num) => num,
-                    Err(e) => {
-                      println!(
-                        "Error TODO: Failed to parse conversion status {message_what:?}: {e:?}"
-                      );
-                      3 // latexml raw fatal
-                    },
-                  };
-                  let cortex_scheme_status = -(latexml_scheme_status + 1);
-                  if status != TaskStatus::Invalid {
-                    // Invalid status is final, and derived, all others are set directly from the
-                    // log.
-                    status = TaskStatus::from_raw(cortex_scheme_status);
-                  }
-                  skip_message = true; // do not record the status message
-                }
-              },
-              _ => {},
-            };
-            if !skip_message {
-              messages.push(message);
+  match read_cortex_log(result) {
+    Ok(log_string) => {
+      // Look for the special status message - Fatal otherwise!
+      for message in parse_log(task.id, &log_string).into_iter() {
+        // Invalids are a bit of a workaround for now, they're fatal messages in latexml, but
+        // we want them separated out in cortex
+        let mut skip_message = false;
+        match message {
+          NewTaskMessage::Invalid(ref _log_invalid) => {
+            status = TaskStatus::Invalid;
+          },
+          NewTaskMessage::Info(ref _log_info) => {
+            let message_what = message.what();
+            if message.category() == "conversion" && !message_what.is_empty() {
+              // Adapt status to the CorTeX scheme: cortex_status = -(latexml_status+1)
+              let latexml_scheme_status = match message_what.parse::<i32>() {
+                Ok(num) => num,
+                Err(e) => {
+                  println!(
+                    "-- generate_report: failed to parse conversion status {message_what:?}: {e:?}"
+                  );
+                  3 // latexml raw fatal
+                },
+              };
+              let cortex_scheme_status = -(latexml_scheme_status + 1);
+              if status != TaskStatus::Invalid {
+                // Invalid status is final, and derived, all others are set directly from the log.
+                status = TaskStatus::from_raw(cortex_scheme_status);
+              }
+              skip_message = true; // do not record the status message
             }
-          }
-          // We recorded the messages, stop archive traversal
-          break;
+          },
+          _ => {},
+        };
+        if !skip_message {
+          messages.push(message);
         }
-        drop(archive_reader);
-      },
-    }
-  } // -- END: Archive::Reader, trying to localize (to .drop asap)
+      }
+    },
+    Err(reason) => {
+      println!("-- generate_report: {reason} (result {result:?}); task left Fatal");
+    },
+  }
 
   TaskReport {
     task,
@@ -651,5 +641,32 @@ mod log_decode_tests {
       parse_log(1, &decoded).len() >= 2,
       "real messages are preserved, not collapsed into one fatal"
     );
+  }
+
+  #[test]
+  fn read_cortex_log_extracts_from_zip_and_errors_gracefully() {
+    use super::read_cortex_log;
+    use std::fs::File;
+    use std::io::Write;
+    let zip_path = std::env::temp_dir().join("cortex_read_log_unit_test.zip");
+    {
+      let mut zw = zip::ZipWriter::new(File::create(&zip_path).unwrap());
+      let opts: zip::write::FileOptions<()> = zip::write::FileOptions::default();
+      // A large output entry first; cortex.log last — `by_name` must seek straight past it.
+      zw.start_file("html/index.html", opts).unwrap();
+      zw.write_all(&vec![b'x'; 200_000]).unwrap();
+      zw.start_file("cortex.log", opts).unwrap();
+      zw.write_all(b"Info:cortex:hello a worker log line\n")
+        .unwrap();
+      zw.finish().unwrap();
+    }
+    let log = read_cortex_log(&zip_path).expect("reads cortex.log out of the zip");
+    assert!(
+      log.contains("hello a worker log line"),
+      "by_name extracted the cortex.log content, got: {log:?}"
+    );
+    // A missing / non-zip path is a graceful Err (task left Fatal), never a panic.
+    assert!(read_cortex_log(std::path::Path::new("/nonexistent/x.zip")).is_err());
+    std::fs::remove_file(&zip_path).ok();
   }
 }

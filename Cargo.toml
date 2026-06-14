@@ -64,6 +64,11 @@ lazy_static = "1.0.0"
 rocket_okapi = { version = "0.9", features = ["rapidoc"] }
 schemars = "0.8"
 webauthn-rs = "0.5"
+# Pure-Rust archive handling (archive rationalization Path A, docs/ARCHIVE_RATIONALIZATION.md). `zip`
+# reads the per-task result archive via random-access `by_name("cortex.log")` (the dispatcher hot
+# path), and is the importer's `.zip` output format. (flate2/tar/infer join here as the importer
+# unpack migrates off the libarchive-sys C fork.)
+zip = "2"
 
 # Integration tests that build a Rocket Client over the libpq pool run under a custom harness
 # (their own `main` + `process::exit(0)`) to ELIMINATE the L-1 diesel/libpq/Tokio teardown SIGSEGV
@@ -201,6 +206,5 @@ zeromq = "0.6.0"
 # all streaming-native (Read/Write). Default flate2 backend is miniz_oxide (pure Rust, zero C).
 flate2 = "1"
 tar = "0.4"
-zip = "2"
 # Content-based file-type detection delegated to a crate (owner preference over a hand-rolled sniffer).
 infer = "0.16"
