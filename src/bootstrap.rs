@@ -30,7 +30,12 @@ pub struct DoctorReport {
   pub migrations_current: bool,
   /// The built-in `init` and `import` services are seeded.
   pub services_seeded: bool,
-  /// Whether every check passed.
+  /// At least one admin/API token is configured (`auth.rerun_tokens`) — i.e. the deployment is
+  /// sign-in-able. **Informational, not part of `ok`**: a freshly-`init`ed box legitimately has
+  /// none until `cortex set-admin-token` runs, so this must not make `cortex init` exit
+  /// non-zero.
+  pub admin_token_configured: bool,
+  /// Whether every *blocking* check passed (database + migrations + seeded services).
   pub ok: bool,
 }
 
@@ -45,6 +50,9 @@ pub struct InitOutcome {
 
 /// Runs the install diagnostics against the given database URL.
 pub fn doctor(database_url: &str) -> DoctorReport {
+  // Auth readiness is independent of the database — a token may be configured even if the DB is
+  // down.
+  let admin_token_configured = !crate::config::config().auth.rerun_tokens.is_empty();
   match PgConnection::establish(database_url) {
     Ok(mut connection) => {
       let database_reachable = diesel::sql_query("SELECT 1")
@@ -56,6 +64,7 @@ pub fn doctor(database_url: &str) -> DoctorReport {
         database_reachable,
         migrations_current,
         services_seeded,
+        admin_token_configured,
         ok: database_reachable && migrations_current && services_seeded,
       }
     },
@@ -63,6 +72,7 @@ pub fn doctor(database_url: &str) -> DoctorReport {
       database_reachable: false,
       migrations_current: false,
       services_seeded: false,
+      admin_token_configured,
       ok: false,
     },
   }

@@ -112,10 +112,13 @@ fn run_init() {
       println!();
       let report = bootstrap::doctor(default_db_address());
       print_doctor_text(&report);
-      println!(
-        "\nNext step — create an admin token so you can sign in and make write actions:\n  \
-         cortex set-admin-token --generate --owner <your-name>"
-      );
+      // Only nudge to create a token when there isn't one yet (doctor already flags the state).
+      if !report.admin_token_configured {
+        println!(
+          "\nNext step — create an admin token so you can sign in and make write actions:\n  \
+           cortex set-admin-token --generate --owner <your-name>"
+        );
+      }
       println!(
         "\nNext step — tune PostgreSQL for this host:\n{}",
         bootstrap::db_tuning_guidance()
@@ -152,5 +155,19 @@ fn print_doctor_text(report: &DoctorReport) {
   println!("  [{}] database reachable", mark(report.database_reachable));
   println!("  [{}] migrations current", mark(report.migrations_current));
   println!("  [{}] services seeded", mark(report.services_seeded));
+  // Informational (does not affect `=> healthy`): no token just means nobody can sign in yet.
+  print!(
+    "  [{}] admin token configured",
+    if report.admin_token_configured {
+      "ok"
+    } else {
+      "--"
+    }
+  );
+  if report.admin_token_configured {
+    println!();
+  } else {
+    println!("  (set one to sign in: cortex set-admin-token --generate --owner <you>)");
+  }
   println!("  => {}", if report.ok { "healthy" } else { "DEGRADED" });
 }

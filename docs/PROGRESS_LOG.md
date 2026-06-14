@@ -1217,3 +1217,14 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   are a flagged follow-on needing hot-path instrumentation (owner-reviewed). `tests/metrics_test`
   (token-gated 401, both auth forms, Prometheus format + the gauge set). DEPLOYMENT.md gains a scrape-
   config snippet. clippy -D warnings + fmt green.
+- **Install UX — `cortex doctor` checks admin-token readiness (autonomous-day progress, "from the
+  installation of cortex"):** after `cortex init` migrates + scaffolds config, nothing told the
+  operator they still need an admin credential before the web UI is usable. `DoctorReport` gains
+  `admin_token_configured` (true iff `auth.rerun_tokens` is non-empty) — **informational, NOT part of
+  `ok`** (a freshly-init'd box legitimately has none until `set-admin-token` runs, so it must not
+  make `cortex init` exit non-zero). The CLI shows `[ok]`/`[--] admin token configured` (+ a hint to
+  run `cortex set-admin-token` when missing); `cortex doctor --json` carries the field; `cortex init`
+  now nudges to create a token only when there isn't one (doctor already flags the state, so no more
+  double-mention when re-running init on a configured box). `tests/bootstrap_test` asserts the field.
+  clippy -D warnings + fmt green. Closes the install→sign-in gap at the CLI level (the operator learns
+  auth isn't set up before hitting the web UI).

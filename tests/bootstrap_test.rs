@@ -23,6 +23,10 @@ fn doctor_is_healthy_against_a_migrated_db() {
     report.services_seeded,
     "built-in init/import services should be seeded"
   );
+  assert!(
+    report.admin_token_configured,
+    "the test config.json provides token1, so an admin token is configured"
+  );
   assert!(report.ok, "overall status should be healthy");
 }
 
