@@ -86,6 +86,13 @@ jobs:
       - name: Clippy (warnings are errors)
         run: cargo clippy --all-targets -- -D warnings
 
+      - name: Provide test auth fixtures
+        # The integration tests sign in / authenticate as `token1` (resolved through
+        # config().auth.rerun_tokens). Those tokens live in config.json, which is gitignored (it is a
+        # real deployment's secrets file), so CI materializes it from the shipped template — which
+        # carries exactly the test fixtures token1/token2 used by the suite.
+        run: cp config.default.json config.json
+
       - name: Tests
         # Wrapper runs the full suite and fails on real failures, but tolerates ONLY the pre-existing
         # L-1 teardown SIGSEGV (a diesel/libpq/Tokio teardown race in Rocket-Client-over-pool binaries
