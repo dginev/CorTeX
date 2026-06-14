@@ -50,7 +50,7 @@ pub fn mount_api_with(
   database_url: &str,
 ) -> Rocket<Build> {
   let pool = build_pool(database_url, config().database.pool_size);
-  rocket
+  let rocket = rocket
     .manage(ConfigFile(config_file))
     .manage(DatabaseUrl(database_url.to_string()))
     .manage(pool)
@@ -61,5 +61,9 @@ pub fn mount_api_with(
     .mount("/", jobs::routes())
     .mount("/", services::routes())
     .register("/", crate::frontend::catchers::catchers())
-    .attach(Template::fairing())
+    .attach(Template::fairing());
+  // Snapshot the now-complete route table (legacy binary routes + all library routes) so the `/api`
+  // discovery index introspects the real surface and can never drift.
+  let route_table = management::RouteTable::snapshot(&rocket);
+  rocket.manage(route_table)
 }

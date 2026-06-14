@@ -36,8 +36,11 @@ wasn't blocked; each can be revised/refactored on return. Newest first.
    human `rerun.html.tera` UI posts to). *Direction:* migrate the human UI onto the modern endpoint and
    retire the legacy routes, or keep both?
 
-7. **API-docs framework pick (Arm 9).** `utoipa` vs `rocket_okapi` are both dev-dependencies for a
-   side-by-side spike. *Direction:* pick one and generate the OpenAPI surface for the agent API.
+7. **API-docs framework pick (Arm 9) — partially addressed.** A self-describing, drift-proof route
+   discovery index now exists at `GET /api` (method + path + handler name for every agent endpoint,
+   introspected from the live route table). What's *still* open is a **schema-level OpenAPI** spec (request/
+   response shapes), which needs a framework: `utoipa` vs `rocket_okapi` (both dev-dependencies for a spike).
+   *Direction:* pick one and annotate the endpoints, or decide the route index is enough for now.
 
 8. **`src/frontend/cached/` naming — done.** Flattened the one-function nested module and renamed it to
    `src/frontend/render.rs` (the presentation layer). No open decision.

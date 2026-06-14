@@ -109,11 +109,42 @@ fn healthz_reports_ok_when_db_reachable() {
   );
 }
 
+fn api_index_lists_the_agent_surface() {
+  let client = client();
+  let response = client.get("/api").dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  assert_eq!(response.content_type(), Some(ContentType::JSON));
+
+  let body: serde_json::Value = response.into_json().expect("a JSON body");
+  let endpoints = body["endpoints"].as_array().expect("endpoints array");
+  assert!(!endpoints.is_empty(), "the agent surface is non-empty");
+  assert_eq!(
+    body["count"].as_u64().unwrap() as usize,
+    endpoints.len(),
+    "count matches the listed endpoints"
+  );
+  // Every listed endpoint is part of the agent surface (under /api), and known ones are
+  // discoverable.
+  assert!(
+    endpoints
+      .iter()
+      .all(|e| e["uri"].as_str().unwrap().starts_with("/api")),
+    "the index lists only /api endpoints"
+  );
+  assert!(
+    endpoints
+      .iter()
+      .any(|e| e["uri"] == "/api/corpora" && e["method"] == "GET"),
+    "the corpora-listing endpoint is discoverable, with method + handler name"
+  );
+}
+
 // Custom harness (Cargo.toml `harness = false`): run the cases then `_exit(0)`, skipping the racy
 // libpq/OpenSSL atexit teardown that SIGSEGVs after assertions pass (KNOWN_ISSUES L-1).
 fn main() {
   get_api_config_returns_masked_contract();
   healthz_reports_ok_when_db_reachable();
+  api_index_lists_the_agent_surface();
   eprintln!("management_api_test: all cases passed");
   unsafe { libc::_exit(0) }
 }

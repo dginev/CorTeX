@@ -590,3 +590,13 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   (connection-refused is immediate; the 200 ms timeout only bounds a rare filtered-port hang — verified
   2.3 ms with no dispatcher). Regression in `management_api_test`. Completes the Arm 2 doctor checklist
   (DB · migrations · pool · dispatcher); clippy/fmt clean.
+- **Self-describing agent-API discovery index `GET /api` (full API parity for agentic use;
+  autonomous-night progress):** an agent can now enumerate CorTeX's machine surface from one call —
+  `GET /api` returns `{count, endpoints:[{method, uri, name}]}` for every mounted `/api/*` endpoint (URI
+  with `<param>`/`?<query>` placeholders + the handler fn name). **Self-describing & drift-proof:**
+  `management::RouteTable::snapshot(&rocket)` introspects the live route table at mount time (after *all*
+  mounts incl. the binary's legacy routes), managed as state; the handler filters/sorts it — so the index
+  can never fall out of sync with the routes actually served. 21 endpoints discovered automatically.
+  Regression in `management_api_test`. OPEN_QUESTIONS #7 updated: this covers *route-level* discovery; a
+  *schema-level* OpenAPI spec (request/response shapes, needs a utoipa/rocket_okapi pick) remains the
+  richer follow-up. clippy/fmt clean.

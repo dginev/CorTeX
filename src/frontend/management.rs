@@ -23,7 +23,7 @@ use rocket::form::Form;
 use rocket::http::Status;
 use rocket::response::Redirect;
 use rocket::serde::json::Json;
-use rocket::{Route, State};
+use rocket::{Build, Rocket, Route, State};
 use rocket_dyn_templates::{context, Template};
 use serde::Serialize;
 
@@ -181,6 +181,63 @@ fn merge_and_persist(patch: &serde_json::Value, path: &Path) -> Result<CortexCon
   Ok(merged)
 }
 
+/// One row of the mounted route surface — an endpoint's method, URI pattern, and handler name.
+#[derive(Debug, Clone, Serialize)]
+pub struct RouteInfo {
+  /// HTTP method (`GET`, `POST`, …).
+  pub method: String,
+  /// URI pattern, with `<param>` placeholders and any `?<query>` parameters.
+  pub uri: String,
+  /// The handler's name (the Rust fn) — a hint at the operation.
+  pub name: Option<String>,
+}
+
+/// A snapshot of the mounted route table, captured at mount time so the discovery index can never
+/// drift from the routes actually served.
+pub struct RouteTable(pub Vec<RouteInfo>);
+impl RouteTable {
+  /// Introspects a built Rocket's mounted routes into a serializable snapshot.
+  pub fn snapshot(rocket: &Rocket<Build>) -> RouteTable {
+    RouteTable(
+      rocket
+        .routes()
+        .map(|route| RouteInfo {
+          method: route.method.to_string(),
+          uri: route.uri.to_string(),
+          name: route.name.as_deref().map(str::to_string),
+        })
+        .collect(),
+    )
+  }
+}
+
+/// Discovery index of the **agent API**: every mounted `/api/*` endpoint (method, path, handler
+/// name) in a single call, so an agent can enumerate CorTeX's machine surface without out-of-band
+/// docs. Self-describing — built by introspecting the live route table, so it never drifts.
+#[derive(Debug, Serialize)]
+pub struct ApiIndexDto {
+  /// Number of agent endpoints.
+  pub count: usize,
+  /// The agent endpoints, sorted by path then method.
+  pub endpoints: Vec<RouteInfo>,
+}
+
+/// `GET /api` — the agent-API discovery index (see [`ApiIndexDto`]).
+#[get("/api")]
+pub fn api_index(routes: &State<RouteTable>) -> Json<ApiIndexDto> {
+  let mut endpoints: Vec<RouteInfo> = routes
+    .0
+    .iter()
+    .filter(|r| r.uri == "/api" || r.uri.starts_with("/api/"))
+    .cloned()
+    .collect();
+  endpoints.sort_by(|a, b| a.uri.cmp(&b.uri).then_with(|| a.method.cmp(&b.method)));
+  Json(ApiIndexDto {
+    count: endpoints.len(),
+    endpoints,
+  })
+}
+
 /// The effective configuration, masked for safe exposure (the agent twin of the Settings screen).
 #[get("/api/config")]
 pub fn api_config() -> Json<ConfigDto> { Json(ConfigDto::from_config(config())) }
@@ -304,6 +361,7 @@ pub fn post_settings(
 /// The route set for the management/health/settings capability.
 pub fn routes() -> Vec<Route> {
   routes![
+    api_index,
     api_config,
     healthz,
     health_page,
