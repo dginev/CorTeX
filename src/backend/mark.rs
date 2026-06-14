@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::schema::{
   historical_tasks, log_errors, log_fatals, log_infos, log_invalids, log_warnings, tasks,
 };
@@ -46,19 +48,21 @@ pub(crate) fn mark_done(
       .execute(t_connection)?;
     delete(log_invalids::table.filter(log_invalids::task_id.eq_any(&task_ids)))
       .execute(t_connection)?;
-    // Apply the per-task status updates and partition the new messages by severity table, so each
-    // table is filled with a single batched INSERT below (instead of one INSERT per message — the
-    // other half of the D-8 write-amplification on the hot finalize path).
+    // Group the finalized task ids by their target status, and partition the new messages by
+    // severity table, in one pass — so both the status UPDATEs and the message INSERTs become a
+    // handful of batched statements below instead of two-per-task in a loop (the finalize hot
+    // path).
+    let mut ids_by_status: HashMap<i32, Vec<i64>> = HashMap::new();
     let mut new_infos: Vec<NewLogInfo> = Vec::new();
     let mut new_warnings: Vec<NewLogWarning> = Vec::new();
     let mut new_errors: Vec<NewLogError> = Vec::new();
     let mut new_fatals: Vec<NewLogFatal> = Vec::new();
     let mut new_invalids: Vec<NewLogInvalid> = Vec::new();
     for report in reports.iter() {
-      update(tasks::table)
-        .filter(id.eq(report.task.id))
-        .set(status.eq(report.status.raw()))
-        .execute(t_connection)?;
+      ids_by_status
+        .entry(report.status.raw())
+        .or_default()
+        .push(report.task.id);
       for message in &report.messages {
         // The synthetic conversion-status message is not a real log entry (kept out of the tables).
         if message.severity() == "status" {
@@ -73,6 +77,15 @@ pub(crate) fn mark_done(
         }
       }
       // TODO: Update dependenct services, when integrated in DB
+    }
+    // Apply the status updates: one batched UPDATE per *distinct* terminal status (a small fixed
+    // set — NoProblem/Warning/Error/Fatal/Invalid), each over the disjoint id set that resolved
+    // to it.
+    for (status_value, status_ids) in &ids_by_status {
+      update(tasks::table)
+        .filter(id.eq_any(status_ids))
+        .set(status.eq(*status_value))
+        .execute(t_connection)?;
     }
     // One batched INSERT per non-empty severity table.
     if !new_infos.is_empty() {

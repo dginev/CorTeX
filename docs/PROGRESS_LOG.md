@@ -6,6 +6,17 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **Finalize hot path fully batched — per-task status `UPDATE` collapsed (completes D-8).** The
+  finalize loop still issued one `UPDATE tasks SET status=… WHERE id=…` per task. Terminal statuses
+  are a tiny fixed set (`NoProblem/Warning/Error/Fatal/Invalid`), so `mark_done` now groups the
+  finalized ids by distinct target status (`HashMap<i32, Vec<i64>>`) in the same pass that partitions
+  messages, then issues **one `UPDATE … WHERE id = ANY(...)` per distinct status** (≤~6, over disjoint
+  id sets) — native, type-safe Diesel, no raw SQL. With the already-batched deletes (5) and inserts
+  (≤5), a finalize batch of N tasks / M messages dropped from `≈7·N + M` statements to **≤16,
+  independent of N and M**. Extended `mark_done_routes_messages_to_severity_tables` to use two
+  *distinct* statuses and assert each task receives its own (covers the by-status grouping).
+  `backend_test` 4/4; fmt + clippy clean.
+
 - **W-4 observability — job heartbeat age (`seconds_since_update`).** A hung job *body* can't be
   force-cancelled in Rust, so a stalled job's thread + pooled connection leak. Rather than guess a
   kill threshold, surfaced the residual transparently: `JobDto` now carries `seconds_since_update`

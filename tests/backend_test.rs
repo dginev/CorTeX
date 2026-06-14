@@ -339,6 +339,29 @@ fn mark_done_routes_messages_to_severity_tables() {
   ];
   backend.mark_done(&reports).expect("mark_done");
 
+  // The status UPDATEs are batched by distinct status; with two different statuses in one batch,
+  // each task must still receive its own (the grouping routes the disjoint id sets correctly).
+  let status_a: i32 = tasks::table
+    .find(id_a)
+    .select(tasks::status)
+    .first(&mut backend.connection)
+    .unwrap();
+  let status_b: i32 = tasks::table
+    .find(id_b)
+    .select(tasks::status)
+    .first(&mut backend.connection)
+    .unwrap();
+  assert_eq!(
+    status_a,
+    TaskStatus::Error.raw(),
+    "task_a finalized as Error"
+  );
+  assert_eq!(
+    status_b,
+    TaskStatus::Fatal.raw(),
+    "task_b finalized as Fatal"
+  );
+
   let ids = vec![id_a, id_b];
   let warns: i64 = log_warnings::table
     .filter(log_warnings::task_id.eq_any(&ids))
