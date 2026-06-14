@@ -54,9 +54,27 @@ impl Default for Backend {
   }
 }
 
-/// Constructs a new Task store representation from a Postgres DB address
+/// Constructs a new Task store representation from a Postgres DB address.
+///
+/// A transient connect failure — a momentary `too many clients` / a DB restarting — is retried a
+/// few times with linear backoff before giving up, so a blip doesn't become an instant fatal panic
+/// (the robustness mandate: degrade through transients, fail fast only when the DB is truly down).
 pub fn connection_at(address: &str) -> PgConnection {
-  PgConnection::establish(address).unwrap_or_else(|e| panic!("Error connecting to {address}: {e}"))
+  const MAX_ATTEMPTS: u32 = 5;
+  let mut attempt = 1;
+  loop {
+    match PgConnection::establish(address) {
+      Ok(connection) => return connection,
+      Err(e) if attempt < MAX_ATTEMPTS => {
+        eprintln!(
+          "-- connect to {address} failed (attempt {attempt}/{MAX_ATTEMPTS}): {e}; retrying"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(100 * u64::from(attempt)));
+        attempt += 1;
+      },
+      Err(e) => panic!("Error connecting to {address} after {MAX_ATTEMPTS} attempts: {e}"),
+    }
+  }
 }
 
 /// A pool of PostgreSQL connections (Diesel + r2d2).
