@@ -555,3 +555,13 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   (HTML 404 page for `/corpus/...`, JSON for `/api/...` and `Accept: json`, JSON 401 for an untokened
   `/api/reports/refresh`). Regression in `reports_api_test` (api 404 → JSON `{error,status}`, human 404 →
   HTML). clippy/fmt clean.
+- **Arm 12 dead-code rationalization (autonomous-night progress):** removed two long-dead files —
+  `src/backend/make_history.rs` (an undeclared empty `make_history` fn — never a module) and
+  `src/dispatcher/metadata.rs` (undeclared, a no-op `register_event` + an edition-2018 `use backend;`
+  that wouldn't even compile today) — both confirmed uncompiled (build unaffected). Dropped the dead
+  `dependencies` table (2017, `master`/`foundation` integer pairs for an inter-service-dependency feature
+  never built; queried nowhere, no FKs) via reversible migration `2026-06-14-050000_drop_dependencies`;
+  applied to cortex + cortex_tester, `diesel` regenerated `schema.rs` (diff = *only* the table block + its
+  `allow_tables_to_appear_in_same_query!` entry), reversibility verified by `migration redo`. Future
+  service-dependency management (Arm 6) would design a fresh schema with real service FKs, so nothing is
+  lost. CLAUDE.md load-bearing facts updated (the dead-files + dead-table notes are now obsolete).

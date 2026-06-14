@@ -45,9 +45,7 @@ read it before non-trivial work. Active work branch: **`productize-2026`**.
 - **The dispatcher panics on purpose** (mutex poisoning → process abort → external restart). Don't
   "fix" those panics into silent recovery; preserve fail-fast where it's the design (see Arm 4/12).
 - **Only one FK exists** (`historical_tasks.task_id → tasks ON DELETE CASCADE`). Deleting a corpus
-  orphans `log_*` rows. The `dependencies` table is **dead** (never read/written).
-- **Dead files:** `src/backend/make_history.rs` (not even a declared module),
-  `src/dispatcher/metadata.rs` (no-op). Slated for removal (Arm 12).
+  orphans `log_*` rows. (The dead `dependencies` table was dropped — migration `…050000`, Arm 12.)
 
 ## Build / run
 
