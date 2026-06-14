@@ -290,6 +290,12 @@ fn overview_and_corpus_pages_render_server_side() {
     body.contains("Run history") && body.contains("/runs/"),
     "corpus screen exposes a run-history link per service"
   );
+  // Progress dashboard: the corpus screen shows per-service severity counts (the same numbers the
+  // agent api_corpus reports), not just service names.
+  assert!(
+    body.contains("No&nbsp;problem") && body.contains("Fatal"),
+    "corpus screen shows the per-service progress columns"
+  );
 
   cleanup(&mut db, corpus_name, service_name);
 }

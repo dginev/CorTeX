@@ -648,3 +648,11 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   `POST /api/corpora/<c>/services/<s>` which *activates* it on a corpus. Verified the form renders;
   `services_test` asserts 401-without-token, 201-with-token + DTO, 409-on-duplicate, and the human form's
   303 redirect + persisted row. clippy/fmt clean.
+- **Corpus screen is now a progress dashboard (symmetry + Admin UX; autonomous-night progress):** the human
+  corpus page listed service *names* but not the per-service **task counts** the agent `api_corpus` already
+  computes — so a human saw less than an agent. `corpus_page` now enriches each service row with its
+  per-severity counts (`total · no_problem · warning · error · fatal · todo`, via the same
+  `progress_report`), and the table was restructured from static metadata columns into a progress
+  dashboard. Verified the numbers match `api_corpus` against the live dump exactly (tex_to_html: warn
+  1,563,521 · err 700,605 · fatal 86,320 — equal to the ground-truth task-status counts; `import` is all-TODO,
+  legitimately zero on the severities). `corpora_test` asserts the dashboard columns render. clippy/fmt clean.

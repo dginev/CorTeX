@@ -6,12 +6,14 @@
     <table id="service-report" class="table">
       <thead>
         <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>From</th>
-          <th>To</th>
-          <th>Description</th>
-          <th>Run history</th>
+          <th class="left">Service</th>
+          <th class="right">Total</th>
+          <th class="right">No&nbsp;problem</th>
+          <th class="right">Warning</th>
+          <th class="right">Error</th>
+          <th class="right">Fatal</th>
+          <th class="right">TODO</th>
+          <th class="left">Run history</th>
         </tr>
       </thead>
       <tbody>
@@ -20,10 +22,12 @@
           <td class="left">
             <a href="/corpus/{{global.corpus_name_uri}}/{{service.name_uri}}">{{service.name}}</a>
           </td>
-          <td class="left">converter</td>
-          <td class="left">{{service.inputformat}}</td>
-          <td class="left">{{service.outputformat}}</td>
-          <td class="left">{{service.description}}</td>
+          <td class="right">{{service.total}}</td>
+          <td class="right">{{service.no_problem}}</td>
+          <td class="right">{{service.warning}}</td>
+          <td class="right">{{service.error}}</td>
+          <td class="right">{{service.fatal}}</td>
+          <td class="right">{{service.todo}}</td>
           <td class="left">
             <a href="/runs/{{global.corpus_name_uri}}/{{service.name_uri}}">runs</a> &middot;
             <a href="/runs/{{global.corpus_name_uri}}/{{service.name_uri}}/diff">diff</a> &middot;

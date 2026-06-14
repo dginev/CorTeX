@@ -624,12 +624,29 @@ pub fn corpus_page(name: &str, pool: &State<DbPool>) -> Result<Template, Status>
   );
   global.insert("corpus_name".to_string(), corpus.name.clone());
   global.insert("corpus_description".to_string(), corpus.description.clone());
-  let services = corpus
-    .select_services(&mut connection)
-    .unwrap_or_default()
-    .iter()
-    .map(Service::to_hash)
-    .collect::<Vec<_>>();
+  // Each activated service, enriched with its per-severity task counts (the same numbers the agent
+  // `api_corpus` reports) so the corpus screen is a progress dashboard, not just a service list.
+  let service_records = corpus.select_services(&mut connection).unwrap_or_default();
+  let mut services = Vec::with_capacity(service_records.len());
+  for service in &service_records {
+    let mut hash = service.to_hash();
+    let report = progress_report(&mut connection, corpus.id, service.id);
+    for key in [
+      "total",
+      "no_problem",
+      "warning",
+      "error",
+      "fatal",
+      "invalid",
+      "todo",
+    ] {
+      hash.insert(
+        key.to_string(),
+        (report.get(key).copied().unwrap_or(0.0) as i64).to_string(),
+      );
+    }
+    services.push(hash);
+  }
   // All real (non-init/import) services, for the "activate a service" picker.
   let all_services = Service::all(&mut connection)
     .unwrap_or_default()
