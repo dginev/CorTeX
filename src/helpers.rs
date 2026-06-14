@@ -469,6 +469,25 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
   messages
 }
 
+/// Decodes raw worker-log bytes into a string, **tolerating non-UTF-8 input** (arXiv data is
+/// hostile and workers are unpredictable — W-2). A single invalid byte used to discard the whole
+/// log and force-mark the task `Fatal`, throwing away every real conversion message + the true
+/// status. Instead we decode lossily (invalid sequences → U+FFFD), preserving the real log, and
+/// append a `Warning` line so the encoding issue is recorded *transparently* rather than silently
+/// swallowed.
+fn decode_worker_log(raw: &[u8]) -> String {
+  match str::from_utf8(raw) {
+    Ok(valid) => valid.to_string(),
+    Err(_) => {
+      let mut lossy = String::from_utf8_lossy(raw).into_owned();
+      lossy.push_str(
+        "\nWarning:cortex:non_utf8_log the worker log was not valid UTF-8; decoded lossily\n",
+      );
+      lossy
+    },
+  }
+}
+
 /// Generates a `TaskReport`, given the path to a result archive from a `CorTeX` processing job
 /// Expects a "cortex.log" file in the archive, following the `LaTeXML` messaging conventions
 pub fn generate_report(task: Task, result: &Path) -> TaskReport {
@@ -500,14 +519,7 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
           while let Ok(chunk) = archive_reader.read_data(BUFFER_SIZE) {
             raw_log_data.extend(chunk);
           }
-          let log_string: String = match str::from_utf8(&raw_log_data) {
-            Ok(some_utf_string) => some_utf_string.to_string(),
-            Err(e) => {
-              "Fatal:cortex:unicode_parse_error ".to_string()
-                + &e.to_string()
-                + "\nStatus:conversion:3"
-            },
-          };
+          let log_string: String = decode_worker_log(&raw_log_data);
 
           // Look for the special status message - Fatal otherwise!
           for message in parse_log(task.id, &log_string).into_iter() {
@@ -598,4 +610,46 @@ pub fn rand_in_range(from: u16, to: u16) -> u16 {
   let mut rng = thread_rng();
   let mark_rng: u16 = rng.gen_range(from..=to);
   mark_rng
+}
+
+#[cfg(test)]
+mod log_decode_tests {
+  //! W-2: a non-UTF-8 worker log must degrade gracefully (decode lossily + record a warning), not
+  //! get discarded wholesale with the task force-marked Fatal. DB-free, so no L-1 teardown risk.
+  use super::{decode_worker_log, parse_log};
+
+  #[test]
+  fn valid_utf8_passes_through_unchanged() {
+    let valid = "Warning:math:undefined hello\nStatus:conversion:1\n";
+    assert_eq!(decode_worker_log(valid.as_bytes()), valid);
+    assert!(
+      !decode_worker_log(valid.as_bytes()).contains("non_utf8_log"),
+      "no spurious warning is added to a clean log"
+    );
+  }
+
+  #[test]
+  fn non_utf8_decodes_lossily_not_fatal() {
+    // A stray 0xFF byte in an otherwise-real conversion log.
+    let raw = b"Warning:math:undefined bad \xFF byte\nStatus:conversion:1\n";
+    let decoded = decode_worker_log(raw);
+    // The real conversion status + the real message survive (the W-2 regression: previously the
+    // whole log was thrown away and the task force-marked Fatal over this single byte).
+    assert!(
+      decoded.contains("Status:conversion:1"),
+      "the real conversion status survives lossy decoding"
+    );
+    assert!(decoded.contains("Warning:math:undefined"));
+    assert!(
+      decoded.contains('\u{FFFD}'),
+      "the invalid byte became the Unicode replacement char"
+    );
+    // The encoding issue is recorded transparently rather than silently swallowed.
+    assert!(decoded.contains("Warning:cortex:non_utf8_log"));
+    // And it parses into multiple real messages, not a single fatal.
+    assert!(
+      parse_log(1, &decoded).len() >= 2,
+      "real messages are preserved, not collapsed into one fatal"
+    );
+  }
 }

@@ -600,3 +600,12 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   Regression in `management_api_test`. OPEN_QUESTIONS #7 updated: this covers *route-level* discovery; a
   *schema-level* OpenAPI spec (request/response shapes, needs a utoipa/rocket_okapi pick) remains the
   richer follow-up. clippy/fmt clean.
+- **W-2 resolved: tolerant worker-log decoding (robustness sweep; autonomous-night progress):** a non-UTF-8
+  worker log used to be discarded *wholesale* — `generate_report` replaced the whole log with a synthetic
+  `Fatal:...unicode_parse_error` + `Status:conversion:3`, losing every real message and force-marking the
+  task **Fatal** over one stray byte (hostile arXiv data makes this real). New `decode_worker_log(&[u8])`
+  helper decodes lossily (invalid bytes → U+FFFD), **preserving the real log** (so the true status +
+  messages survive) and appends a `Warning:cortex:non_utf8_log` line so the encoding issue is recorded
+  transparently. DB-free unit tests (`helpers::log_decode_tests`): clean UTF-8 untouched; a `0xFF` log keeps
+  its real status + parses into multiple real messages instead of collapsing to one fatal. clippy/fmt clean.
+  Open 🔴 count: 9 → 8.
