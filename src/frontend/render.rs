@@ -1,10 +1,12 @@
-//! Thin presentation proxy over [`crate::backend::Backend::task_report`].
+//! Report-rendering layer: the thin presentation proxy over [`crate::backend::task_report`] that
+//! the HTML report screens use.
 //!
 //! The category/`what` aggregate grains are served by the `report_summary` rollup (an indexed
-//! lookup, kept fresh on the run-completion path), so the former Redis cache that shielded the
+//! lookup, kept fresh on the run-completion path), so the former Redis **cache** that shielded the
 //! expensive live aggregation is gone — Redis is no longer a hard dependency of the frontend. This
-//! function now only translates request params into a [`TaskReportOptions`], delegates, and records
-//! the pagination/`report_time` globals the report templates expect.
+//! module (formerly `frontend::cached`, renamed once the cache was removed) now only translates
+//! request params into a [`TaskReportOptions`], delegates, and records the pagination/`report_time`
+//! globals the report templates expect.
 use crate::backend::{task_report as backend_task_report, TaskReportOptions};
 use crate::frontend::params::ReportParams;
 use crate::models::{Corpus, Service};

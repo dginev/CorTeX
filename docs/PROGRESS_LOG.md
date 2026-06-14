@@ -574,3 +574,10 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   Verified on the live dump (pool `32/32 idle`; correctly reports `degraded` when a DB is behind on
   migrations — caught that `cortex_load` lacks the latest migrations). Regression in `management_api_test`
   (pool fields present + `in_use ≤ max`; `/health` renders HTML). clippy/fmt clean.
+- **Rationalization: `frontend::cached` → `frontend::render` (autonomous-night progress):** the one-function
+  nested module `src/frontend/cached/` (a misleading name — it's been a thin uncached proxy since Redis was
+  removed) was flattened to a single file `src/frontend/render.rs` and renamed to the presentation layer it
+  is. Only 2 references (`frontend/mod.rs`, `concerns.rs`) — clean swap; build/clippy/`reports_api_test`
+  green (the HTML report screens exercise `render::task_report`). Updated CLAUDE.md (the load-bearing note +
+  the Map) and closed OPEN_QUESTIONS #8. No behavior change; removes a stale name that implied caching where
+  there is none.

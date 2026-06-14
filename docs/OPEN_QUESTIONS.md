@@ -39,6 +39,5 @@ wasn't blocked; each can be revised/refactored on return. Newest first.
 7. **API-docs framework pick (Arm 9).** `utoipa` vs `rocket_okapi` are both dev-dependencies for a
    side-by-side spike. *Direction:* pick one and generate the OpenAPI surface for the agent API.
 
-8. **`src/frontend/cached/` naming.** It's now a thin uncached proxy (Redis is gone); CLAUDE.md notes a
-   rename is pending. *Direction:* rename to something like `frontend/render/` or fold into the capability
-   modules.
+8. **`src/frontend/cached/` naming — done.** Flattened the one-function nested module and renamed it to
+   `src/frontend/render.rs` (the presentation layer). No open decision.

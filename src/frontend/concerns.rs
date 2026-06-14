@@ -11,9 +11,9 @@ use std::collections::HashMap;
 use std::str;
 
 use crate::backend::{mark_rerun, progress_report, save_historical_tasks, DbPool, RerunOptions};
-use crate::frontend::cached::task_report;
 use crate::frontend::helpers::*;
 use crate::frontend::params::{ReportParams, RerunRequestParams, TemplateContext};
+use crate::frontend::render::task_report;
 use crate::models::{Corpus, HistoricalRun, Service, Task};
 
 lazy_static! {

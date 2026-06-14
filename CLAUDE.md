@@ -39,7 +39,8 @@ read it before non-trivial work. Active work branch: **`productize-2026`**.
   refreshed on the run-completion path (finalize drain + at-least-daily, plus `mark_new_run`); the
   old `cached/worker.rs` cache daemon, the `redis` crate, and the dead `CacheConfig` (Redis settings,
   incl. the phantom Settings-page inputs) are gone. **The frontend boots without Redis.**
-  (`src/frontend/cached/` is now a thin uncached proxy; rename pending.)
+  (The thin uncached proxy formerly at `src/frontend/cached/` was renamed to
+  `src/frontend/render.rs`.)
 - **CWD-coupled:** `load_config()` reads `config.json` from the CWD (panics if missing), and
   `Rocket.toml`/`templates/`/`public/` are CWD-relative — **run binaries from the repo root.**
 - **The dispatcher panics on purpose** (mutex poisoning → process abort → external restart). Don't
@@ -95,7 +96,7 @@ additionally needs `latexmlc` (skips otherwise): `cargo test`.
 ## Map
 
 `bin/{frontend,dispatcher}.rs` · `src/backend/` (aggregate DB ops) · `src/dispatcher/`
-(ventilator/sink/finalize/manager/server) · `src/frontend/` (routes, cached/, concerns, params) ·
+(ventilator/sink/finalize/manager/server) · `src/frontend/` (routes, render.rs, concerns, params) ·
 `src/models/` (Diesel structs) · `src/helpers.rs` (`TaskStatus`, log parsing, `generate_report`) ·
 `src/importer.rs` (corpus ingest) · `src/worker.rs` (the `init` worker) · `migrations/` ·
 `templates/` (Tera) · `scripts/` + `examples/` (the out-of-band admin tasks we are productizing).
