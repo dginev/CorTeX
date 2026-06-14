@@ -26,8 +26,10 @@ if [[ "$status" -eq 0 ]]; then
   exit 0
 fi
 
-# A genuine assertion failure anywhere -> fail.
-if grep -qE "test result: FAILED|[1-9][0-9]* failed" "$log"; then
+# A genuine assertion failure -> fail. Anchor "N failed" to libtest's summary format ("X passed;
+# Y failed; …") so it can't false-match an error message that merely contains a number + "failed"
+# (e.g. "port 5432 failed: FATAL: …").
+if grep -qE "test result: FAILED|; [1-9][0-9]* failed" "$log"; then
   echo "::error::Real test failures detected (see 'FAILED' / 'N failed' above)."
   exit 1
 fi

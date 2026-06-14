@@ -27,6 +27,11 @@ jobs:
     env:
       DATABASE_URL: postgres://cortex:cortex@localhost/cortex
       TEST_DATABASE_URL: postgres://cortex_tester:cortex_tester@localhost/cortex_tester
+      # Each integration binary builds a Rocket Client whose pool is sized from
+      # `config().database.pool_size` (default 32); parallel tests multiply that and exhaust
+      # PostgreSQL's default `max_connections=100` ("too many clients already"). Cap the test pool
+      # small (the blocking Client uses one connection at a time) and give Postgres headroom below.
+      CORTEX_DATABASE__POOL_SIZE: "8"
     steps:
       - uses: actions/checkout@v4
 
@@ -39,6 +44,11 @@ jobs:
 
       - name: Start PostgreSQL
         run: sudo systemctl start postgresql.service
+
+      - name: Raise max_connections (headroom for the connection-hungry test suite)
+        run: |
+          sudo -u postgres psql -c "ALTER SYSTEM SET max_connections = 300;"
+          sudo systemctl restart postgresql.service
 
       - name: Provision databases and roles
         run: |

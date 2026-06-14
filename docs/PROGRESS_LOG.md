@@ -361,3 +361,16 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   open happens after the lookup borrow ends. **No `Backend::default()` remains anywhere on the frontend
   request path** — every route is pooled. `build` (lib+bins) + `clippy --all-targets -D warnings` clean.
   *Next:* the API-docs pick (awaiting owner); (on backup) the load test; or more dispatcher/perf hardening.
+- **CI green, take 2 — the real cause was PostgreSQL connection exhaustion (not L-1):** `gh` showed CI still
+  red; the logs had genuine failures (`test result: FAILED. … 3 failed`) caused by `FATAL: sorry, too many
+  clients already` / `remaining connection slots are reserved for SUPERUSER`. Each integration binary builds
+  a Rocket `Client` whose pool is `config().database.pool_size` (**32**); parallel tests multiply that past
+  the runner's default `max_connections=100`, so `testdb()`/`from_address()` fresh connects panic and fail
+  those tests (the tick's `connection_at` message change made them legible). Fix: **cap the test pool** via
+  `CORTEX_DATABASE__POOL_SIZE: "8"` env (the blocking Client uses one connection at a time) **and** raise
+  PostgreSQL `max_connections` to 300 (`ALTER SYSTEM` + restart). Also **tightened `ci_test.sh`'s
+  failure grep** — `[1-9][0-9]* failed` false-matched the port number in `port 5432 failed: FATAL …`; now
+  anchored to libtest's `"; N failed"` summary so only a real `; <N> failed` (or `test result: FAILED`)
+  trips it (validated against the captured CI log: catches the real `; 3 failed`, ignores `5432 failed`,
+  still tolerates the L-1 SIGSEGV). KNOWN_ISSUES updated.
+  *Next:* confirm CI green via `gh` once this run completes; then the API-docs pick / load test / hardening.
