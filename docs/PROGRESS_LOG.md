@@ -14,9 +14,12 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   rocket_okapi *from the `#[openapi]`-annotated routes themselves* — so the spec is the single source
   of truth and can't drift (the symmetry contract extended to the docs). **Documented so far** (every
   **read** route — 17 endpoints across all 6 capability modules): corpora, services, jobs, runs,
-  reports, and management (`GET /api`, `/api/config`, `/healthz` — incl. the `ConfigDto`/`HealthDto`
-  nested-DTO cascade and the two `config.rs` structs now deriving `JsonSchema`) — each carries
-  `#[openapi(tag=…)]`,
+  reports, and management — plus **every write route** (import/extend/activate/deactivate/delete-corpus,
+  register-service, rerun/refresh, reindex/analyze, put-config), so the **complete agent surface (26
+  endpoints)** is now in the spec. Their request bodies derive `JsonSchema`, and the **`Actor` token
+  guard** is documented via an `OpenApiFromRequest` impl that advertises a `CortexToken` ApiKey
+  security scheme (`X-Cortex-Token`) on every gated call. The okapi tuple/`Status` responders
+  (`(Status, Json<T>)`, bare `Status`) all generate cleanly. Each route carries `#[openapi(tag=…)]`,
   its DTOs derive `JsonSchema`, and it's mounted via `openapi_get_routes_spec!` in `apidoc` (moved out
   of the plain route groups; the multi-module wiring imports each handler + its generated
   `okapi_add_operation_for_*` companion, explicit not glob so the per-module `routes` fns don't

@@ -146,7 +146,7 @@ fn insert_service(pool: &DbPool, mut service: NewService) -> Result<(), Status> 
 }
 
 /// Request body for registering (defining) a new service.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ServiceRegisterRequest {
   /// Service name (external handle).
   pub name: String,
@@ -168,6 +168,7 @@ pub struct ServiceRegisterRequest {
 /// "Register a service" form. **Token-gated** via the [`Actor`] guard; `401` without a valid token,
 /// `409` if the service name already exists, `201` with the service on success. (This *defines* a
 /// service; activating it on a corpus — creating tasks — is `POST /api/corpora/<c>/services/<s>`.)
+#[rocket_okapi::openapi(tag = "Services")]
 #[post("/api/services", format = "json", data = "<request>")]
 pub fn register_service(
   request: Json<ServiceRegisterRequest>,
@@ -317,11 +318,7 @@ pub fn worker_report_page(service: &str, pool: &State<DbPool>) -> Result<Templat
 
 /// The route set for the services capability (registry + worker-fleet, screens + agent API).
 pub fn routes() -> Vec<Route> {
-  // NB: `api_services` + `api_service_workers` are mounted via `frontend::apidoc` (rocket_okapi).
-  routes![
-    register_service,
-    register_service_human,
-    services_page,
-    worker_report_page
-  ]
+  // NB: `api_services` + `api_service_workers` + `register_service` are mounted via
+  // `frontend::apidoc` (rocket_okapi).
+  routes![register_service_human, services_page, worker_report_page]
 }

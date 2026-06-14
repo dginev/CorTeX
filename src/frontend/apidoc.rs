@@ -26,19 +26,25 @@ use rocket_okapi::settings::{OpenApiSettings, UrlObject};
 // scope for the `openapi_get_routes_spec!` call below. (Explicit rather than glob, so each module's
 // same-named `routes` fn doesn't collide.)
 use crate::frontend::corpora::{
-  api_corpora, api_corpus, okapi_add_operation_for_api_corpora_,
-  okapi_add_operation_for_api_corpus_,
+  activate_service, api_corpora, api_corpus, deactivate_service, delete_corpus, extend_corpus,
+  import_corpus, okapi_add_operation_for_activate_service_, okapi_add_operation_for_api_corpora_,
+  okapi_add_operation_for_api_corpus_, okapi_add_operation_for_deactivate_service_,
+  okapi_add_operation_for_delete_corpus_, okapi_add_operation_for_extend_corpus_,
+  okapi_add_operation_for_import_corpus_,
 };
 use crate::frontend::jobs::{
   api_job, api_jobs, okapi_add_operation_for_api_job_, okapi_add_operation_for_api_jobs_,
 };
 use crate::frontend::management::{
-  api_config, api_index, healthz, okapi_add_operation_for_api_config_,
-  okapi_add_operation_for_api_index_, okapi_add_operation_for_healthz_,
+  analyze, api_config, api_index, healthz, okapi_add_operation_for_analyze_,
+  okapi_add_operation_for_api_config_, okapi_add_operation_for_api_index_,
+  okapi_add_operation_for_healthz_, okapi_add_operation_for_put_config_,
+  okapi_add_operation_for_reindex_, put_config, reindex,
 };
 use crate::frontend::reports::{
   api_category_report, api_what_report, okapi_add_operation_for_api_category_report_,
-  okapi_add_operation_for_api_what_report_,
+  okapi_add_operation_for_api_what_report_, okapi_add_operation_for_refresh_reports_,
+  okapi_add_operation_for_rerun_report_, refresh_reports, rerun_report,
 };
 use crate::frontend::runs::{
   api_run_current, api_run_diff, api_run_task_diffs, api_runs,
@@ -47,7 +53,8 @@ use crate::frontend::runs::{
 };
 use crate::frontend::services::{
   api_service_workers, api_services, okapi_add_operation_for_api_service_workers_,
-  okapi_add_operation_for_api_services_,
+  okapi_add_operation_for_api_services_, okapi_add_operation_for_register_service_,
+  register_service,
 };
 
 /// The generated OpenAPI document, serialized once at mount time and served verbatim.
@@ -87,6 +94,17 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
     api_index,
     api_config,
     healthz,
+    register_service,
+    import_corpus,
+    extend_corpus,
+    activate_service,
+    deactivate_service,
+    delete_corpus,
+    rerun_report,
+    refresh_reports,
+    reindex,
+    analyze,
+    put_config,
   ];
   let spec_json = serde_json::to_string_pretty(&spec).unwrap_or_default();
   rocket

@@ -252,6 +252,20 @@ fn openapi_spec_and_rapidoc_are_served() {
       "{path} is documented in the OpenAPI spec"
     );
   }
+  // Write endpoints are documented too (a representative POST + DELETE).
+  assert!(
+    spec["paths"]["/api/services"]["post"].is_object(),
+    "the register-service write endpoint is documented"
+  );
+  assert!(
+    spec["paths"]["/api/corpora/{name}"]["delete"].is_object(),
+    "the delete-corpus write endpoint is documented"
+  );
+  // The token-gating is described as a security scheme (the Actor guard's OpenApiFromRequest).
+  assert!(
+    spec["components"]["securitySchemes"]["CortexToken"].is_object(),
+    "the X-Cortex-Token security scheme is documented"
+  );
   // The documented route still serves (it is mounted via the openapi mechanism now).
   assert_eq!(client.get("/api/corpora").dispatch().status(), Status::Ok);
   // The RapiDoc browser page renders.

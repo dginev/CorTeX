@@ -189,7 +189,7 @@ pub fn api_what_report(
 }
 
 /// Acknowledgement of a rerun: the scope that was marked and who marked it.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct RerunAckDto {
   /// Corpus the rerun targeted.
   pub corpus: String,
@@ -206,6 +206,7 @@ pub struct RerunAckDto {
 /// the [`Actor`] guard (`X-Cortex-Token` header or `?token=`); `401` without a valid token, so
 /// results can't be wiped by an unauthenticated caller. `400` on an unknown severity, `404` on an
 /// unknown corpus/service. Returns `202 Accepted`.
+#[rocket_okapi::openapi(tag = "Reports")]
 #[post("/api/reports/<corpus>/<service>/rerun?<severity>&<category>&<what>&<description>")]
 #[allow(clippy::too_many_arguments)]
 pub fn rerun_report(
@@ -260,7 +261,7 @@ pub fn rerun_report(
 
 /// Acknowledgement for a forced report-rollup refresh: the background [`crate::jobs`] handle to
 /// poll.
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 pub struct RefreshAckDto {
   /// The spawned (or already-running, if debounced) refresh job's external uuid.
   pub job: String,
@@ -276,6 +277,7 @@ pub struct RefreshAckDto {
 /// poll `GET /api/jobs/<job>` for status/health. **Debounced:** a refresh already in flight is
 /// reused rather than piled on. **Token-gated** via the [`Actor`] guard (`X-Cortex-Token` /
 /// `?token=`); `401` without a valid token.
+#[rocket_okapi::openapi(tag = "Reports")]
 #[post("/api/reports/refresh")]
 pub fn refresh_reports(
   actor: Actor,
@@ -484,11 +486,9 @@ pub fn what_service_report_all(
 
 /// The route set for the reports capability (typed API + the human report screens).
 pub fn routes() -> Vec<Route> {
-  // NB: `api_category_report` + `api_what_report` are mounted via `frontend::apidoc`
-  // (rocket_okapi).
+  // NB: the agent report routes (`api_category_report`, `api_what_report`, `rerun_report`,
+  // `refresh_reports`) are mounted via `frontend::apidoc` (rocket_okapi).
   routes![
-    rerun_report,
-    refresh_reports,
     refresh_reports_human,
     top_service_report,
     severity_service_report,

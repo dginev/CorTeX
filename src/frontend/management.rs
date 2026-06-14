@@ -383,6 +383,7 @@ pub fn settings() -> Template {
 }
 
 /// Agent write path: deep-merge a partial config patch, persist it, and return the masked result.
+#[rocket_okapi::openapi(tag = "Management")]
 #[put("/api/config", format = "json", data = "<patch>")]
 pub fn put_config(
   patch: Json<serde_json::Value>,
@@ -429,6 +430,7 @@ pub struct MaintenanceAckDto {
 /// background job — index bloat slows scans over time, and this rebuilds without an exclusive lock
 /// (DB ongoing-maintenance; `docs/DB_TUNING.md`). **Token-gated**; returns `202` + the job handle,
 /// poll `GET /api/jobs/<job>` for per-table progress. Debounced.
+#[rocket_okapi::openapi(tag = "Management")]
 #[post("/api/maintenance/reindex")]
 pub fn reindex(
   actor: Actor,
@@ -471,6 +473,7 @@ pub fn reindex_human(
 /// right indexes (e.g. the TODO leasing index) instead of waiting for autovacuum (DB
 /// ongoing-maintenance; `docs/DB_TUNING.md`). **Token-gated**; returns `202` + the job handle, poll
 /// `GET /api/jobs/<job>` for per-table progress. Debounced.
+#[rocket_okapi::openapi(tag = "Management")]
 #[post("/api/maintenance/analyze")]
 pub fn analyze(
   actor: Actor,
@@ -503,15 +506,13 @@ pub fn analyze_human(
 
 /// The route set for the management/health/settings capability.
 pub fn routes() -> Vec<Route> {
-  // NB: `api_index` + `api_config` + `healthz` are mounted via `frontend::apidoc` (rocket_okapi).
+  // NB: the agent management routes (`api_index`, `api_config`, `healthz`, `put_config`, `reindex`,
+  // `analyze`) are mounted via `frontend::apidoc` (rocket_okapi).
   routes![
     health_page,
-    reindex,
     reindex_human,
-    analyze,
     analyze_human,
     settings,
-    put_config,
     post_settings
   ]
 }

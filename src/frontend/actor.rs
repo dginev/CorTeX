@@ -48,3 +48,36 @@ impl<'r> FromRequest<'r> for Actor {
     }
   }
 }
+
+/// Documents the [`Actor`] guard for the generated OpenAPI spec (`frontend::apidoc`): every
+/// endpoint that takes an `Actor` advertises a `CortexToken` **ApiKey** security scheme — the
+/// `X-Cortex-Token` request header — so the docs show which calls are token-gated.
+impl<'r> rocket_okapi::request::OpenApiFromRequest<'r> for Actor {
+  fn from_request_input(
+    _gen: &mut rocket_okapi::gen::OpenApiGenerator,
+    _name: String,
+    _required: bool,
+  ) -> rocket_okapi::Result<rocket_okapi::request::RequestHeaderInput> {
+    use rocket_okapi::okapi::openapi3::{SecurityRequirement, SecurityScheme, SecuritySchemeData};
+    let security_scheme = SecurityScheme {
+      description: Some(
+        "A CorTeX rerun token, sent in the `X-Cortex-Token` request header (a `?token=` query \
+         parameter is also accepted). It maps to an owner in `auth.rerun_tokens`; a missing or \
+         unknown token is rejected with `401`."
+          .to_owned(),
+      ),
+      data: SecuritySchemeData::ApiKey {
+        name: "X-Cortex-Token".to_owned(),
+        location: "header".to_owned(),
+      },
+      extensions: Default::default(),
+    };
+    let mut security_req = SecurityRequirement::new();
+    security_req.insert("CortexToken".to_owned(), Vec::new());
+    Ok(rocket_okapi::request::RequestHeaderInput::Security(
+      "CortexToken".to_owned(),
+      security_scheme,
+      security_req,
+    ))
+  }
+}

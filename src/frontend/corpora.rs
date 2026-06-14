@@ -147,7 +147,7 @@ pub fn api_corpus(name: &str, pool: &State<DbPool>) -> Result<Json<CorpusDetailD
 }
 
 /// Request body for registering and importing a corpus.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ImportRequest {
   /// Corpus name (external handle).
   pub name: String,
@@ -163,6 +163,7 @@ pub struct ImportRequest {
 /// Agents and humans poll `GET /api/jobs/<uuid>` (or the progress page) for completion.
 /// **Token-gated** via the [`Actor`] guard (creating a corpus + a filesystem import job is a
 /// consequential write); `401` without a valid token, `409` if the corpus name already exists.
+#[rocket_okapi::openapi(tag = "Corpora")]
 #[post("/api/corpora", format = "json", data = "<request>")]
 pub fn import_corpus(
   request: Json<ImportRequest>,
@@ -303,6 +304,7 @@ fn count_service_tasks(connection: &mut PgConnection, corpus: i32, service: i32)
 /// Extends an existing corpus with newly-arrived entries; starts an in-process job and returns
 /// `202 Accepted` + the job handle. **Token-gated** via the [`Actor`] guard; `401` without a valid
 /// token, `404` if the corpus is unknown.
+#[rocket_okapi::openapi(tag = "Corpora")]
 #[post("/api/corpora/<name>/extend")]
 pub fn extend_corpus(
   name: &str,
@@ -389,6 +391,7 @@ fn run_extend(database_url: &str, corpus: Corpus, progress: &JobProgress) -> Res
 /// the authenticated actor); the work runs as a background job — poll `GET /api/jobs/<uuid>` for
 /// the pending/done status. `401` without a valid token, `404` on an unknown corpus/service, `202`
 /// with the job handle on success.
+#[rocket_okapi::openapi(tag = "Corpora")]
 #[post("/api/corpora/<corpus>/services/<service>")]
 pub fn activate_service(
   corpus: &str,
@@ -495,6 +498,7 @@ fn run_activate(
 /// double-guarded: the caller must also echo the corpus name via `?confirm=<name>` to proceed
 /// (prevents accidental wipes; the UI confirms the same way). Returns 204 on success, 400 if the
 /// confirmation does not match, 404 if unknown.
+#[rocket_okapi::openapi(tag = "Corpora")]
 #[delete("/api/corpora/<name>?<confirm>")]
 pub fn delete_corpus(
   name: &str,
@@ -554,6 +558,7 @@ pub fn delete_corpus_human(
 /// [`activate_service`]). **Token-gated** via the [`Actor`] guard and confirmation-gated
 /// (`?confirm=<service>`, echoing the service name). Returns `204` on success, `400` if the
 /// confirmation doesn't match, `404` if the corpus or service is unknown.
+#[rocket_okapi::openapi(tag = "Corpora")]
 #[delete("/api/corpora/<corpus>/services/<service>?<confirm>")]
 pub fn deactivate_service(
   corpus: &str,
@@ -734,14 +739,10 @@ pub fn corpus_page(name: &str, pool: &State<DbPool>) -> Result<Template, Status>
 
 /// The route set for the corpus-management capability (API + human screens).
 pub fn routes() -> Vec<Route> {
+  // NB: the agent `/api/corpora*` routes (read + write) are mounted via `frontend::apidoc`
+  // (rocket_okapi) so they land in the generated OpenAPI spec; only the human screens + form posts
+  // are in this plain route group.
   routes![
-    // NB: `api_corpora` + `api_corpus` are mounted via `frontend::apidoc` (rocket_okapi) so they
-    // land in the generated OpenAPI spec; they are deliberately not in this plain route group.
-    import_corpus,
-    extend_corpus,
-    activate_service,
-    deactivate_service,
-    delete_corpus,
     import_corpus_human,
     extend_corpus_human,
     delete_corpus_human,
