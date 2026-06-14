@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>API-docs spike — rocket_okapi vs utoipa (side by side)</title>
+  <style>
+    body {{ margin:0; font-family:-apple-system,Segoe UI,Roboto,sans-serif; }}
+    .bar {{ display:flex; background:#222; color:#fff; }}
+    .bar div {{ flex:1; padding:8px 14px; font-weight:600; }}
+    .bar div:first-child {{ border-right:1px solid #555; }}
+    .panes {{ display:flex; height:calc(100vh - 38px); }}
+    .panes iframe {{ flex:1; border:0; border-right:1px solid #ccc; height:100%; }}
+  </style>
+</head>
+<body>
+  <div class="bar"><div>rocket_okapi (OpenAPI 3.0.0)</div><div>utoipa (OpenAPI 3.0.3)</div></div>
+  <div class="panes">
+    <iframe src="okapi-docs.html"></iframe>
+    <iframe src="utoipa-docs.html"></iframe>
+  </div>
+</body>
+</html>

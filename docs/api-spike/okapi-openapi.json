@@ -1,0 +1,181 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "cortex",
+    "description": "A general purpose processing framework for corpora of scientific documents\n",
+    "contact": {
+      "name": "Repository",
+      "url": "https://github.com/dginev/cortex"
+    },
+    "version": "0.4.3"
+  },
+  "paths": {
+    "/api/corpora": {
+      "get": {
+        "description": "List all registered corpora.",
+        "operationId": "api_corpora",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CorpusDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/corpora/{name}": {
+      "get": {
+        "description": "Inspect a single corpus: its activated services and per-service status counts.",
+        "operationId": "api_corpus",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorpusDetailDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CorpusDto": {
+        "description": "A corpus as exposed over the API/UI (mirror of `frontend::corpora::CorpusDto`).",
+        "type": "object",
+        "required": [
+          "complex",
+          "description",
+          "name",
+          "path"
+        ],
+        "properties": {
+          "name": {
+            "description": "Human-readable corpus name (its external handle).",
+            "type": "string"
+          },
+          "path": {
+            "description": "Filesystem path to the corpus root.",
+            "type": "string"
+          },
+          "description": {
+            "description": "Human-readable description.",
+            "type": "string"
+          },
+          "complex": {
+            "description": "Whether documents are multi-file (complex).",
+            "type": "boolean"
+          }
+        }
+      },
+      "CorpusDetailDto": {
+        "description": "A corpus with its activated services and status counts.",
+        "type": "object",
+        "required": [
+          "complex",
+          "description",
+          "name",
+          "path",
+          "services"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "complex": {
+            "type": "boolean"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceStatusDto"
+            }
+          }
+        }
+      },
+      "ServiceStatusDto": {
+        "description": "Per-service status counts within a corpus.",
+        "type": "object",
+        "required": [
+          "error",
+          "fatal",
+          "invalid",
+          "name",
+          "no_problem",
+          "todo",
+          "total",
+          "version",
+          "warning"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number",
+            "format": "float"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "no_problem": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "warning": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "error": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fatal": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "invalid": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "todo": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      }
+    }
+  }
+}

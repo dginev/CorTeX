@@ -54,3 +54,17 @@ diesel_migrations = "2.2"
 clap = { version = "4", features = ["derive"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 lazy_static = "1.0.0"
+
+# --- API-docs head-to-head spike (Arm 9). Dev-only: the loser is pruned once a framework is chosen.
+[dev-dependencies]
+utoipa = "4"
+rocket_okapi = "0.9"
+schemars = "0.8"
+
+[[example]]
+name = "api_doc_spike_utoipa"
+path = "examples/api_doc_spike_utoipa.rs"
+
+[[example]]
+name = "api_doc_spike_okapi"
+path = "examples/api_doc_spike_okapi.rs"

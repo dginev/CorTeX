@@ -279,3 +279,17 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   (`serve_rerun`/`serve_savetasks`/`serve_entry`/`serve_entry_preview`).
   *Next:* pool those four `concerns` helpers; service *activation* UX (Arm 6 — register/extend a service on
   a corpus as a job); or (on backup arrival) the load test.
+- **API-docs head-to-head spike — `rocket_okapi` vs `utoipa` (Arm 9, owner-requested):** the plan was to
+  *compare the generated outcomes, not pick on advice* — done. Both frameworks annotate the **same** corpora
+  read slice (`examples/api_doc_spike_{utoipa,okapi}.rs`, dev-deps only) and emit an OpenAPI spec
+  (`docs/api-spike/{utoipa,okapi}-openapi.json`), rendered side-by-side as browser-openable RapiDoc pages
+  (`scripts/render_api_spike.py` → `docs/api-spike/*-docs.html` + `index.html`, self-contained/inline spec).
+  Findings (in `docs/api-spike/COMPARISON.md`): **okapi** = one `#[openapi]` on the *real* route, spec
+  derived from the signature (zero duplication, fits the symmetry contract) but **thinner by default** (no
+  param/response descriptions, errors collapse to a generic `default`) **and version-pinned to Rocket**
+  (`0.8.0` needs `rocket =0.5.0`; only `0.9.0` resolves with our `0.5.1`). **utoipa** = framework-agnostic,
+  **richer by default** (param + per-status response descriptions, summaries) but every operation is a
+  **second source of truth** restated in `#[utoipa::path]` on a dummy fn (drift risk, more upkeep).
+  Schema/array-body quality is identical. Recommendation recorded: lean **okapi** (route-derived, no
+  duplication — enrich the few guarded/error endpoints by hand), unless framework-independence is weighted
+  higher. **Awaiting the owner's final pick after viewing**, then prune the loser's dev-dep + example.

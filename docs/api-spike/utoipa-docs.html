@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>utoipa — CorTeX corpora API</title>
+  <script type="module" src="https://unpkg.com/rapidoc@9.3.4/dist/rapidoc-min.js"></script>
+</head>
+<body style="margin:0">
+  <rapi-doc id="doc" render-style="read" theme="light" show-header="false"
+            schema-style="table" allow-try="false" regular-font="-apple-system,Segoe UI,Roboto,sans-serif">
+  </rapi-doc>
+  <script>
+    const spec = {
+  "openapi": "3.0.3",
+  "info": {
+    "title": "cortex",
+    "description": "A general purpose processing framework for corpora of scientific documents\n",
+    "contact": {
+      "name": "Deyan Ginev",
+      "email": "deyan.ginev@gmail.com"
+    },
+    "license": {
+      "name": "MIT"
+    },
+    "version": "0.4.3"
+  },
+  "paths": {
+    "/api/corpora": {
+      "get": {
+        "tags": [
+          "crate"
+        ],
+        "summary": "List all registered corpora.",
+        "operationId": "api_corpora",
+        "responses": {
+          "200": {
+            "description": "All registered corpora",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CorpusDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/corpora/{name}": {
+      "get": {
+        "tags": [
+          "crate"
+        ],
+        "summary": "Inspect a single corpus: its activated services and per-service status counts.",
+        "operationId": "api_corpus",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "Corpus name (external handle)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Corpus detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorpusDetailDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown corpus"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CorpusDetailDto": {
+        "type": "object",
+        "description": "A corpus with its activated services and status counts.",
+        "required": [
+          "name",
+          "path",
+          "description",
+          "complex",
+          "services"
+        ],
+        "properties": {
+          "complex": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceStatusDto"
+            }
+          }
+        }
+      },
+      "CorpusDto": {
+        "type": "object",
+        "description": "A corpus as exposed over the API/UI (mirror of `frontend::corpora::CorpusDto`).",
+        "required": [
+          "name",
+          "path",
+          "description",
+          "complex"
+        ],
+        "properties": {
+          "complex": {
+            "type": "boolean",
+            "description": "Whether documents are multi-file (complex)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable description."
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable corpus name (its external handle)."
+          },
+          "path": {
+            "type": "string",
+            "description": "Filesystem path to the corpus root."
+          }
+        }
+      },
+      "ServiceStatusDto": {
+        "type": "object",
+        "description": "Per-service status counts within a corpus.",
+        "required": [
+          "name",
+          "version",
+          "total",
+          "no_problem",
+          "warning",
+          "error",
+          "fatal",
+          "invalid",
+          "todo"
+        ],
+        "properties": {
+          "error": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fatal": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "invalid": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "no_problem": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "todo": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "version": {
+            "type": "number",
+            "format": "float"
+          },
+          "warning": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      }
+    }
+  }
+};
+    customElements.whenDefined('rapi-doc').then(() => document.getElementById('doc').loadSpec(spec));
+  </script>
+</body>
+</html>

@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>rocket_okapi — CorTeX corpora API</title>
+  <script type="module" src="https://unpkg.com/rapidoc@9.3.4/dist/rapidoc-min.js"></script>
+</head>
+<body style="margin:0">
+  <rapi-doc id="doc" render-style="read" theme="light" show-header="false"
+            schema-style="table" allow-try="false" regular-font="-apple-system,Segoe UI,Roboto,sans-serif">
+  </rapi-doc>
+  <script>
+    const spec = {
+  "openapi": "3.0.0",
+  "info": {
+    "title": "cortex",
+    "description": "A general purpose processing framework for corpora of scientific documents\n",
+    "contact": {
+      "name": "Repository",
+      "url": "https://github.com/dginev/cortex"
+    },
+    "version": "0.4.3"
+  },
+  "paths": {
+    "/api/corpora": {
+      "get": {
+        "description": "List all registered corpora.",
+        "operationId": "api_corpora",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CorpusDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/corpora/{name}": {
+      "get": {
+        "description": "Inspect a single corpus: its activated services and per-service status counts.",
+        "operationId": "api_corpus",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorpusDetailDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CorpusDto": {
+        "description": "A corpus as exposed over the API/UI (mirror of `frontend::corpora::CorpusDto`).",
+        "type": "object",
+        "required": [
+          "complex",
+          "description",
+          "name",
+          "path"
+        ],
+        "properties": {
+          "name": {
+            "description": "Human-readable corpus name (its external handle).",
+            "type": "string"
+          },
+          "path": {
+            "description": "Filesystem path to the corpus root.",
+            "type": "string"
+          },
+          "description": {
+            "description": "Human-readable description.",
+            "type": "string"
+          },
+          "complex": {
+            "description": "Whether documents are multi-file (complex).",
+            "type": "boolean"
+          }
+        }
+      },
+      "CorpusDetailDto": {
+        "description": "A corpus with its activated services and status counts.",
+        "type": "object",
+        "required": [
+          "complex",
+          "description",
+          "name",
+          "path",
+          "services"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "complex": {
+            "type": "boolean"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceStatusDto"
+            }
+          }
+        }
+      },
+      "ServiceStatusDto": {
+        "description": "Per-service status counts within a corpus.",
+        "type": "object",
+        "required": [
+          "error",
+          "fatal",
+          "invalid",
+          "name",
+          "no_problem",
+          "todo",
+          "total",
+          "version",
+          "warning"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number",
+            "format": "float"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "no_problem": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "warning": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "error": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fatal": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "invalid": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "todo": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      }
+    }
+  }
+};
+    customElements.whenDefined('rapi-doc').then(() => document.getElementById('doc').loadSpec(spec));
+  </script>
+</body>
+</html>
