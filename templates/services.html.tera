@@ -37,6 +37,21 @@
 
   <hr>
   <h3>Corpus actions</h3>
+  {% if all_services %}
+  <form method="post" action="/corpus/{{global.corpus_name_uri}}/activate"
+    style="display:inline-block; margin:0 1.5rem; vertical-align:top;">
+    <p>Activate a registered service on this corpus:</p>
+    <p>
+      <select name="service" required>
+        {% for service in all_services %}
+        <option value="{{ service.name }}">{{ service.name }}</option>
+        {% endfor %}
+      </select>
+      <input type="password" name="token" placeholder="admin token" required>
+      <button type="submit">Activate</button>
+    </p>
+  </form>
+  {% endif %}
   <form method="post" action="/corpus/{{global.corpus_name_uri}}/extend"
     style="display:inline-block; margin:0 1.5rem; vertical-align:top;">
     <p>Re-scan the corpus path for newly-arrived entries:</p>

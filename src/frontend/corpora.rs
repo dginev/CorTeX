@@ -388,37 +388,71 @@ pub fn activate_service(
   pool: &State<DbPool>,
   database_url: &State<DatabaseUrl>,
 ) -> Result<(Status, Json<JobDto>), Status> {
+  let job_uuid = start_activate(pool, &database_url.0, &actor.owner, corpus, service)?;
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let job = jobs::find_job(&mut connection, job_uuid).ok_or(Status::InternalServerError)?;
+  Ok((Status::Accepted, Json(JobDto::from(job))))
+}
+
+/// Resolves the `(corpus, service)`, spawns the activation job (attributed to `actor`), and returns
+/// the job uuid. `404` on an unknown corpus/service. Shared by the agent endpoint and the human
+/// form.
+fn start_activate(
+  pool: &DbPool,
+  database_url: &str,
+  actor: &str,
+  corpus: &str,
+  service: &str,
+) -> Result<Uuid, Status> {
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let corpus_record =
     Corpus::find_by_name(corpus, &mut connection).map_err(|_| Status::NotFound)?;
   let service_record =
     Service::find_by_name(service, &mut connection).map_err(|_| Status::NotFound)?;
   drop(connection);
-
-  let database_url = database_url.0.clone();
-  let owner = actor.owner.clone();
-  let job_owner = owner.clone();
+  let database_url = database_url.to_string();
+  let owner = actor.to_string();
   let params = serde_json::json!({ "corpus": corpus, "service": service });
-  let job_uuid = jobs::spawn_job(
-    pool.inner().clone(),
+  jobs::spawn_job(
+    pool.clone(),
     "service_activate",
-    &owner,
+    actor,
     params,
     move |progress| {
       run_activate(
         &database_url,
         corpus_record,
         service_record,
-        job_owner,
+        owner,
         progress,
       )
     },
   )
-  .map_err(|_| Status::InternalServerError)?;
+  .map_err(|_| Status::InternalServerError)
+}
 
-  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
-  let job = jobs::find_job(&mut connection, job_uuid).ok_or(Status::InternalServerError)?;
-  Ok((Status::Accepted, Json(JobDto::from(job))))
+/// Fields of the human "Activate a service" form on the corpus screen.
+#[derive(FromForm)]
+pub struct ActivateForm {
+  /// The registered service to activate on this corpus.
+  pub service: String,
+  /// A rerun token, resolved to the acting owner.
+  pub token: String,
+}
+
+/// The human twin of [`activate_service`]: the corpus screen's "Activate a service" form. Resolves
+/// the token, spawns the activation job, and redirects to `/jobs`. `401` on a bad token, `404` on
+/// an unknown corpus/service.
+#[post("/corpus/<corpus>/activate", data = "<form>")]
+pub fn activate_service_human(
+  corpus: &str,
+  form: Form<ActivateForm>,
+  pool: &State<DbPool>,
+  database_url: &State<DatabaseUrl>,
+) -> Result<Redirect, Status> {
+  let owner = owner_for_token(&form.token).ok_or(Status::Unauthorized)?;
+  start_activate(pool, &database_url.0, &owner, corpus, &form.service)?;
+  Ok(Redirect::to("/jobs"))
 }
 
 /// The body of a `service_activate` job: register `service` on `corpus` (creating a TODO task per
@@ -596,9 +630,17 @@ pub fn corpus_page(name: &str, pool: &State<DbPool>) -> Result<Template, Status>
     .iter()
     .map(Service::to_hash)
     .collect::<Vec<_>>();
+  // All real (non-init/import) services, for the "activate a service" picker.
+  let all_services = Service::all(&mut connection)
+    .unwrap_or_default()
+    .iter()
+    .filter(|service| service.id > 2)
+    .map(Service::to_hash)
+    .collect::<Vec<_>>();
   let mut context = TemplateContext {
     global,
     services: Some(services),
+    all_services: Some(all_services),
     ..TemplateContext::default()
   };
   decorate_uri_encodings(&mut context);
@@ -617,6 +659,7 @@ pub fn routes() -> Vec<Route> {
     import_corpus_human,
     extend_corpus_human,
     delete_corpus_human,
+    activate_service_human,
     overview_page,
     corpus_page
   ]

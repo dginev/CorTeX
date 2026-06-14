@@ -593,6 +593,19 @@ fn human_corpus_forms_are_token_and_confirm_gated() {
     "human extend bad token -> 401"
   );
 
+  // Activate form with a bad token -> 401 (the guard runs before the corpus/service lookup).
+  let activate_path = format!("/corpus/{name}/activate");
+  let r = client
+    .post(activate_path.as_str())
+    .header(ContentType::Form)
+    .body("service=whatever&token=bogus")
+    .dispatch();
+  assert_eq!(
+    r.status(),
+    Status::Unauthorized,
+    "human activate bad token -> 401"
+  );
+
   // Delete form: bad token -> 401; valid token + wrong confirm -> 400; valid token + match -> 303.
   let delete_path = format!("/corpus/{name}/delete");
   let bad = client

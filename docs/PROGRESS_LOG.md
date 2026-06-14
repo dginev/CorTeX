@@ -631,3 +631,11 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   auth/confirm/redirect contract (bad token → 401, wrong confirm → 400, valid → 303 + corpus gone).
   clippy/fmt clean. (Activate-service from the UI — needs a service picker — is the remaining corpus-UI
   follow-up.)
+- **Corpus UI completed: activate-service from the screen (autonomous-night progress):** the last
+  corpus-lifecycle action gains its human twin. Extracted `start_activate` (shared by the agent endpoint
+  and the form), added `POST /corpus/<corpus>/activate` (token-gated, redirects to `/jobs`), threaded a new
+  `TemplateContext.all_services` (all real services, id > 2) into `corpus_page`, and added an **"Activate a
+  registered service"** form with a `<select>` dropdown on the corpus page. Verified on the live dump (the
+  dropdown lists `tex_to_html`); `corpora_test` asserts the activate form is token-gated (bad token → 401).
+  **The corpus lifecycle now has matched, secured human + agent surfaces end to end** (create · activate ·
+  extend · delete). clippy/fmt clean.

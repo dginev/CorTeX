@@ -32,6 +32,8 @@ pub struct TemplateContext {
   pub corpora: Option<Vec<HashMap<String, String>>>,
   /// tabular data for reporting on services
   pub services: Option<Vec<HashMap<String, String>>>,
+  /// all registered services (the corpus screen's "activate a service" picker)
+  pub all_services: Option<Vec<HashMap<String, String>>>,
   /// tabular data for reporting on entries
   pub entries: Option<Vec<HashMap<String, String>>>,
   /// tabular data for reporting on message `categories`
