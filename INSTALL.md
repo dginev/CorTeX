@@ -185,8 +185,11 @@ performance does not degrade as they grow into the tens/hundreds of millions of 
 
 **Server-level tuning** (`shared_buffers`, `work_mem`, `effective_cache_size`, …) is sized to the
 host's RAM/cores/storage — the PostgreSQL defaults are drastically undersized for a real CorTeX box.
-This is computed and applied for you (see the `cortex` CLI's DB-tuning step / `docs/DB_TUNING.md`):
-the values follow the standard pgtune algorithm for a mixed OLTP+reporting workload on SSD/NVMe.
+CorTeX is a **"Mixed" workload** (OLTP task/log writes + DW bulk-loads + reporting); generate a
+config with the pgtune service at <https://pgtune.leopard.in.ua/> (inputs: `mixed` / your RAM /
+physical cores / `300` connections / `nvme`), apply the `ALTER SYSTEM` block it prints, and restart
+PostgreSQL. A **verified example block** for a 256 GB / 64-core / NVMe box — plus the build caveats
+for `wal_compression=lz4` / `io_method=io_uring` — is in [`docs/DB_TUNING.md`](docs/DB_TUNING.md).
 
 **Index maintenance:** indexes on the high-churn tables bloat over time; periodically rebuild them
 online with `REINDEX (CONCURRENTLY) …` (see `docs/DB_TUNING.md` for the maintenance routine).

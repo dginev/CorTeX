@@ -101,17 +101,33 @@ ALTER SYSTEM SET max_parallel_maintenance_workers = '4';
 > spills under the (deliberately modest, 300-connection) `work_mem = 92182kB`, give *that session*
 > more room with `SET work_mem = '512MB'` before the refresh rather than raising the global.
 
-## Wiring into `cortex init` (planned)
+## Wiring into `cortex init` (decided: guide + link, don't reimplement)
 
-DB tuning is a natural env-setup step for the self-installing CLI. Planned `cortex tune-db`:
-- read host RAM (`/proc/meminfo`) + **physical** cores + storage class, default DB Type = `mixed`,
-- compute the le0pard model above (pure, unit-testable — port the open-source algorithm rather than
-  scrape the site), with `--connections`/`--ram`/`--db-type` overrides,
-- **detect build capability** from `pg_settings.enumvals` and skip/downgrade `wal_compression` /
-  `io_method` accordingly (never emit a value the server will reject at startup),
-- **print** the `ALTER SYSTEM` block by default (no elevated privileges needed), and with
-  `--apply <superuser-url>` execute it + `pg_reload_conf()` (warning which keys need a restart),
-- `cortex doctor` flags settings still at the stock default (observability).
+**Decision:** `cortex init` does *not* port the pgtune algorithm in-tree. Server tuning is a heuristic
+that the upstream tool maintains (and updates per PG version — `io_uring`/`lz4`/`jit` are recent
+additions), and it even warns it's "not optimal for very high memory systems". Reproducing it would
+be a maintenance burden for marginal gain over pointing operators at the authoritative source. So the
+init env-setup step **prints guidance + the live link**, and the repo carries one verified example
+block (above) for reference. Exact message `cortex init` should emit (drop-in when the init binary
+lands, Arm 2):
+
+```text
+NOTE: PostgreSQL server tuning is recommended but not automated.
+  CorTeX is a "Mixed" workload (OLTP task/log writes + DW bulk-loads + reporting).
+  Generate a config at https://pgtune.leopard.in.ua/
+    inputs: DB Type = mixed · OS = linux · DB Version = <your PG major>
+            Total RAM = <host RAM> · CPUs = <physical cores> · Connections = 300 · Storage = nvme|ssd
+  Apply the ALTER SYSTEM block it prints, then restart PostgreSQL.
+  A verified example (256 GB / 64 cores / nvme) is in docs/DB_TUNING.md.
+  Build note: the tool may emit wal_compression=lz4 / io_method=io_uring — keep them only if
+  `SELECT name, enumvals FROM pg_settings WHERE name IN ('wal_compression','io_method')` lists them.
+```
+
+`cortex init` can still *fill in* `<host RAM>` / `<physical cores>` / `<your PG major>` from the host
+so the operator's inputs are pre-computed; it just won't compute or apply the output itself. A future
+`cortex doctor` may add a cheap, high-signal warning if `shared_buffers` is still at the `128MB` stock
+default (no pgtune port needed for that one comparison) — optional, deferred. Per-table autovacuum is
+already handled by the migration, so the init guidance is server-config only.
 
 ## Index maintenance (REINDEX)
 
