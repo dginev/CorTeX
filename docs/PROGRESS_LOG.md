@@ -264,3 +264,18 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   (D-6) + correctly per-service-routed.
   *Next:* pool the remaining `Backend::default()` routes; service-management UX; or (on backup arrival) the
   load test.
+- **Services capability: worker-fleet screen + agent API (symmetry + Arm 3, last bin read route pooled):**
+  new `frontend/services.rs` — `GET /workers/<service>` (HTML, relocated from the bin) and its agent twin
+  `GET /api/services/<service>/workers` → `Vec<WorkerDto>`, both **pooled**. `WorkerDto` exposes per-worker
+  `total_dispatched`/`total_returned`/`last_dispatched_task_id` plus a computed **`in_flight`**
+  (`dispatched - returned`) — the operational signal for a stuck/struggling worker, newly useful for
+  watching the hardened dispatcher's fleet. Deleted the bin `worker_report` route (the **last** bin route
+  that built a `TemplateContext` / opened `Backend::default()` for reads) and pruned six now-orphaned bin
+  imports (`HashMap`, `Backend`, `Service`, `TemplateContext`, `helpers::*`, `UNKNOWN`); the binary is now
+  just file-serving + thin delegations to `concerns`. Test `services_test`: the API returns the seeded
+  worker with `in_flight = 3`, the HTML screen renders it, and both surfaces `404` on an unknown service.
+  `clippy --all-targets -D warnings` clean. **All frontend READ routes are now pooled + in the library;**
+  the only remaining `Backend::default()` opens are the four `concerns` write/file helpers
+  (`serve_rerun`/`serve_savetasks`/`serve_entry`/`serve_entry_preview`).
+  *Next:* pool those four `concerns` helpers; service *activation* UX (Arm 6 — register/extend a service on
+  a corpus as a job); or (on backup arrival) the load test.

@@ -8,7 +8,6 @@
 #[macro_use]
 extern crate rocket;
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use rocket::fs::NamedFile;
@@ -17,55 +16,10 @@ use rocket::response::status::{Accepted, NotFound};
 use rocket::serde::json::Json;
 use rocket_dyn_templates::Template;
 
-use cortex::backend::Backend;
 use cortex::config::config;
-use cortex::frontend::concerns::{
-  serve_entry, serve_entry_preview, serve_rerun, serve_savetasks, UNKNOWN,
-};
+use cortex::frontend::concerns::{serve_entry, serve_entry_preview, serve_rerun, serve_savetasks};
 use cortex::frontend::cors::CORS;
-use cortex::frontend::helpers::*;
-use cortex::frontend::params::{RerunRequestParams, TemplateContext};
-use cortex::models::Service;
-
-#[get("/workers/<service_name>")]
-fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
-  let mut backend = Backend::default();
-  let service_name = uri_unescape(Some(&service_name)).unwrap_or_else(|| UNKNOWN.to_string());
-  if let Ok(service) = Service::find_by_name(&service_name, &mut backend.connection) {
-    let mut global = HashMap::new();
-    global.insert(
-      "title".to_string(),
-      format!("Worker report for service {} ", service_name),
-    );
-    global.insert(
-      "description".to_string(),
-      format!(
-        "Worker report for service {} as registered by the CorTeX dispatcher",
-        service_name
-      ),
-    );
-    global.insert("service_name".to_string(), service_name.to_string());
-    global.insert(
-      "service_description".to_string(),
-      service.description.clone(),
-    );
-    let mut context = TemplateContext {
-      global,
-      ..TemplateContext::default()
-    };
-
-    let workers = service
-      .select_workers(&mut backend.connection)
-      .unwrap_or_default()
-      .into_iter()
-      .map(Into::into)
-      .collect();
-    context.workers = Some(workers);
-    Ok(Template::render("workers", context))
-  } else {
-    Err(NotFound(String::from("no such service")))
-  }
-}
+use cortex::frontend::params::RerunRequestParams;
 
 #[get("/preview/<corpus_name>/<service_name>/<entry_name>")]
 fn preview_entry(
@@ -205,7 +159,6 @@ fn rocket() -> _ {
         favicon,
         robots,
         files,
-        worker_report,
         preview_entry,
         entry_fetch,
         rerun_corpus,

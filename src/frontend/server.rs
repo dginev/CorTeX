@@ -27,6 +27,7 @@ use crate::frontend::jobs;
 use crate::frontend::management::{self, ConfigFile};
 use crate::frontend::reports;
 use crate::frontend::runs;
+use crate::frontend::services;
 
 /// Mounts the full library API/UI surface from the runtime configuration. The composition root the
 /// binary uses.
@@ -58,5 +59,6 @@ pub fn mount_api_with(
     .mount("/", reports::routes())
     .mount("/", runs::routes())
     .mount("/", jobs::routes())
+    .mount("/", services::routes())
     .attach(Template::fairing())
 }
