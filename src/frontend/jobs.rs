@@ -43,12 +43,33 @@ pub struct JobDto {
   pub created_at: String,
   /// Last-updated timestamp.
   pub updated_at: String,
+  /// Seconds of activity (`updated_at - created_at`): a finished job's total runtime, or a running
+  /// one's time from start to its last progress update — observability on duration.
+  pub duration_seconds: i64,
+  /// Normalized health derived from `status`: `ok` (succeeded), `failed`, `interrupted`, `pending`
+  /// (queued), or `running` — the at-a-glance state for the fleet-wide pending check.
+  pub health: String,
+}
+
+/// Maps a raw lifecycle `status` (`queued`→`running`→`succeeded`/`failed`, plus `interrupted` for
+/// orphans) to a normalized health label.
+fn health_of(status: &str) -> &'static str {
+  match status {
+    "succeeded" => "ok",
+    "failed" => "failed",
+    "interrupted" => "interrupted",
+    "queued" => "pending",
+    "running" => "running",
+    _ => "unknown",
+  }
 }
 
 impl From<Job> for JobDto {
   fn from(job: Job) -> Self {
     JobDto {
       uuid: job.uuid.to_string(),
+      health: health_of(&job.status).to_string(),
+      duration_seconds: (job.updated_at - job.created_at).num_seconds().max(0),
       kind: job.kind,
       status: job.status,
       progress_current: job.progress_current,
@@ -71,9 +92,47 @@ pub fn api_job(uuid: &str, pool: &State<DbPool>) -> Result<Json<JobDto>, Status>
   Ok(Json(JobDto::from(job)))
 }
 
+/// Lists recent jobs across every background-task capability (import / extend / activate / …) — the
+/// fleet-wide **pending check** the observability mandate requires. `?active=true` narrows to the
+/// non-terminal (queued/running) jobs; `?limit=` caps the page (default 50, max 200). Most-recent
+/// first; each carries `health` + `duration_seconds`.
+#[get("/api/jobs?<active>&<limit>")]
+pub fn api_jobs(
+  active: Option<bool>,
+  limit: Option<i64>,
+  pool: &State<DbPool>,
+) -> Result<Json<Vec<JobDto>>, Status> {
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let limit = limit.unwrap_or(50).clamp(1, 200);
+  let jobs = jobs::list_recent(&mut connection, active.unwrap_or(false), limit);
+  Ok(Json(jobs.into_iter().map(JobDto::from).collect()))
+}
+
+/// The human jobs dashboard (HTML twin of [`api_jobs`]): recent background jobs with their health,
+/// duration and progress — the at-a-glance observability screen. `?active=true` shows only pending.
+#[get("/jobs?<active>&<limit>")]
+pub fn jobs_page(
+  active: Option<bool>,
+  limit: Option<i64>,
+  pool: &State<DbPool>,
+) -> Result<Template, Status> {
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let limit = limit.unwrap_or(50).clamp(1, 200);
+  let active = active.unwrap_or(false);
+  let jobs: Vec<JobDto> = jobs::list_recent(&mut connection, active, limit)
+    .into_iter()
+    .map(JobDto::from)
+    .collect();
+  let global = serde_json::json!({
+    "title": "Background jobs",
+    "description": "Recent background jobs across the CorTeX framework",
+  });
+  Ok(Template::render("jobs", context! { global, jobs, active }))
+}
+
 /// The human progress page; it polls `GET /api/jobs/<uuid>` (vanilla fetch, no JS framework — D11).
 #[get("/jobs/<uuid>")]
 pub fn job_page(uuid: &str) -> Template { Template::render("job", context! { uuid }) }
 
 /// The route set for the jobs capability.
-pub fn routes() -> Vec<Route> { routes![api_job, job_page] }
+pub fn routes() -> Vec<Route> { routes![api_jobs, api_job, jobs_page, job_page] }

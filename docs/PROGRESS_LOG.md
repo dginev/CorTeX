@@ -317,3 +317,16 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   -D warnings` clean. **Service-management is now complete: registry + fleet + activation, screens + APIs.**
   *Next:* jobs-observability uplift (owner directive — a pending/list endpoint + duration/health metadata
   for every background-task capability); pool the 4 `concerns` helpers; or (on backup) the load test.
+- **Jobs observability uplift (owner directive — pending check + duration/health for all background tasks):**
+  background capabilities (corpus import/extend, service activation) were only pollable one-at-a-time by uuid
+  — no fleet-wide view. Added the **pending check**: `jobs::list_recent(active_only, limit)` + `GET /api/jobs`
+  (`?active=true` → just the non-terminal queued/running jobs; `?limit=`, capped 1–200; most-recent-first) and
+  its HTML dashboard twin `GET /jobs` (`templates/jobs.html.tera`, linked from the landing page). `JobDto`
+  gained **`duration_seconds`** (`updated_at − created_at` — total runtime / time-to-last-update) and
+  **`health`** (normalized from status → `ok`/`failed`/`interrupted`/`pending`/`running`), so every job
+  carries the metadata at a glance. Since all long work already routes through `jobs::spawn_job`, this makes
+  import/extend/activate observable together — and any future capability automatically. Test: the list
+  carries `health=ok` + `duration_seconds` for a finished job, the dashboard renders, and the `active` filter
+  excludes terminal jobs. Recorded the directive as a standing mandate ([[jobs-observability-mandate]]).
+  `clippy --all-targets -D warnings` clean.
+  *Next:* pool the 4 `concerns` helpers; the API-docs pick (awaiting owner); or (on backup) the load test.

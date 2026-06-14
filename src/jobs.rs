@@ -150,6 +150,20 @@ pub fn find_job(connection: &mut PgConnection, job_uuid: Uuid) -> Option<Job> {
     .flatten()
 }
 
+/// Lists recent jobs, most-recent-first, capped at `limit`. With `active_only`, returns just the
+/// **pending** (non-terminal: `queued`/`running`) jobs — the fleet-wide observability check for any
+/// background-task capability. Best-effort: an error yields an empty list rather than propagating.
+pub fn list_recent(connection: &mut PgConnection, active_only: bool, limit: i64) -> Vec<Job> {
+  let mut query = jobs::table
+    .order(jobs::created_at.desc())
+    .limit(limit)
+    .into_boxed();
+  if active_only {
+    query = query.filter(jobs::status.eq("queued").or(jobs::status.eq("running")));
+  }
+  query.load(connection).unwrap_or_default()
+}
+
 /// Marks any non-terminal jobs as `interrupted`; call once on frontend startup so jobs that died
 /// with a previous process are not left looking live.
 pub fn interrupt_orphans(connection: &mut PgConnection) -> usize {

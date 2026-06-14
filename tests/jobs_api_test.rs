@@ -79,3 +79,70 @@ fn job_progress_page_renders_html() {
   assert_eq!(response.status(), Status::Ok);
   assert_eq!(response.content_type(), Some(ContentType::HTML));
 }
+
+#[test]
+fn jobs_list_carries_health_and_duration_and_supports_pending() {
+  // Spawn a job and let it finish, so the list has a known recent entry.
+  let pool = build_pool(test_db_address(), 4);
+  let uuid = jobs::spawn_job(
+    pool,
+    "list_test_job",
+    "tester",
+    serde_json::json!({}),
+    |p| {
+      p.step(1, Some(1), "done");
+      Ok(serde_json::json!({ "ok": true }))
+    },
+  )
+  .expect("spawn the job");
+  // Give the worker thread a moment to reach a terminal state.
+  for _ in 0..100 {
+    let mut db = cortex::backend::testdb();
+    if let Some(job) = jobs::find_job(&mut db.connection, uuid) {
+      if job.status == "succeeded" {
+        break;
+      }
+    }
+    std::thread::sleep(std::time::Duration::from_millis(20));
+  }
+
+  let client = client();
+
+  // The fleet-wide list carries the observability metadata (health + duration) for every job.
+  let response = client.get("/api/jobs?limit=100").dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  assert_eq!(response.content_type(), Some(ContentType::JSON));
+  let body: serde_json::Value = response.into_json().expect("a JSON array");
+  let ours = body
+    .as_array()
+    .expect("array")
+    .iter()
+    .find(|j| j["uuid"] == uuid.to_string())
+    .expect("our job is listed");
+  assert_eq!(ours["health"], "ok", "succeeded -> ok health");
+  assert!(
+    ours["duration_seconds"].is_number(),
+    "duration metadata present"
+  );
+
+  // The HTML dashboard renders.
+  let response = client.get("/jobs").dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  assert_eq!(response.content_type(), Some(ContentType::HTML));
+  assert!(response
+    .into_string()
+    .expect("html")
+    .contains("Background jobs"));
+
+  // The pending filter excludes our now-terminal job.
+  let response = client.get("/api/jobs?active=true&limit=100").dispatch();
+  let pending: serde_json::Value = response.into_json().expect("a JSON array");
+  assert!(
+    !pending
+      .as_array()
+      .expect("array")
+      .iter()
+      .any(|j| j["uuid"] == uuid.to_string()),
+    "a finished job is not pending"
+  );
+}

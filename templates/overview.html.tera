@@ -8,7 +8,7 @@
     <h2 class="welcome-subtitle">A general-purpose processing framework for corpora of scientific documents</h2>
 
     <br>
-    <p><a href="/services">Registered services</a></p>
+    <p><a href="/services">Registered services</a> &nbsp;·&nbsp; <a href="/jobs">Background jobs</a></p>
   </div>
 
   {% for corpus in corpora %}
