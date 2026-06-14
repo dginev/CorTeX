@@ -12,7 +12,7 @@ use chrono::{NaiveDate, NaiveDateTime};
 use cortex::backend::{self, test_db_address};
 use cortex::frontend::server::mount_api_with;
 use cortex::helpers::TaskStatus;
-use cortex::models::{Corpus, NewCorpus, NewService, Service};
+use cortex::models::{Corpus, NewCorpus, NewService, NewTask, Service};
 use cortex::schema::{corpora, historical_runs, historical_tasks, services, tasks};
 use diesel::prelude::*;
 use rocket::http::{ContentType, Status};
@@ -91,6 +91,7 @@ fn main() {
   // the racy libpq/Tokio/r2d2 teardown never runs (the bench's `process::exit` trick).
   let client = client();
   api_lists_runs_and_reports_current(&client);
+  current_run_reports_live_tallies(&client);
   api_task_diff_over_real_snapshots(&client);
   api_runs_is_404_for_unknown_corpus(&client);
   overview_lists_runs_system_wide(&client);
@@ -98,6 +99,61 @@ fn main() {
   // `_exit` (not `process::exit`): skip C atexit handlers — libpq/OpenSSL global cleanup races with
   // the still-live Tokio/r2d2 threads and SIGSEGVs (L-1). The OS reclaims everything cleanly.
   unsafe { libc::_exit(0) }
+}
+
+// An OPEN (current) run must report **live** task tallies, not the zeros it carries until its
+// completion freezes them (the "live + historical run state" north star — most visible on the
+// current run + the dashboard's last-run card). Seeds known-status tasks, then asserts the
+// current-run API surfaces them rather than a row of zeros.
+fn current_run_reports_live_tallies(client: &Client) {
+  seed(); // clean slate: corpus + service + two runs (the second left open), no tasks yet
+  let mut backend = backend::testdb();
+  let corpus = Corpus::find_by_name(CORPUS_NAME, &mut backend.connection).expect("corpus");
+  let service = Service::find_by_name(SERVICE_NAME, &mut backend.connection).expect("service");
+  // 3 NoProblem, 1 Warning, 1 Error, 1 Invalid — `total` excludes the invalid (3+1+1 = 5).
+  let mut n = 0;
+  for (status, count) in [
+    (TaskStatus::NoProblem, 3),
+    (TaskStatus::Warning, 1),
+    (TaskStatus::Error, 1),
+    (TaskStatus::Invalid, 1),
+  ] {
+    for _ in 0..count {
+      backend
+        .add(&NewTask {
+          entry: format!("/tmp/runs-api/live-{n}.zip"),
+          service_id: service.id,
+          corpus_id: corpus.id,
+          status: status.raw(),
+        })
+        .expect("add task");
+      n += 1;
+    }
+  }
+
+  let current: Value = client
+    .get(format!("/api/runs/{CORPUS_NAME}/{SERVICE_NAME}/current"))
+    .dispatch()
+    .into_json()
+    .expect("current run json");
+  assert_eq!(current["completed"], false, "the second run is still open");
+  assert_eq!(
+    current["no_problem"], 3,
+    "the open run overlays LIVE no_problem, not the frozen zero"
+  );
+  assert_eq!(
+    current["warning"], 1,
+    "live warning overlaid on the open run"
+  );
+  assert_eq!(current["error"], 1, "live error overlaid on the open run");
+  assert_eq!(
+    current["invalid"], 1,
+    "live invalid overlaid on the open run"
+  );
+  assert_eq!(
+    current["total"], 5,
+    "total counts the non-invalid live tasks (3 + 1 + 1)"
+  );
 }
 
 // The system-wide run-management overview (`/admin/runs` + `GET /api/runs`). Runs after the seed.

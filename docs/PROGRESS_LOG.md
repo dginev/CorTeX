@@ -1627,3 +1627,16 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   #12 the phase-3 architecture fork (tokio async core vs std-thread writer-pool intermediate, closes D-7);
   #13 phase-4 `dashmap` dep + sequencing (4-after-3). Docs: config.rs knob docs, DISPATCHER_RATIONALIZATION
   robustness-table + phases 3-4 marked ⏸ gated, DISPATCHER_BENCH chaos section + throttle caveat.
+- **Admin UX: open/in-progress runs now show LIVE tallies, not zeros (the "live + historical run
+  state" north star).** A run only freezes its per-severity tallies at `mark_completed` (when the
+  *next* run supersedes it), so an **open** run carried stored counts of all-zero — meaning the
+  current run, the dashboard's "last run" card, the `/admin/runs` overview, the per-service history
+  table + Vega chart, and `GET /api/runs/.../current` all displayed `0 tasks` for the most
+  interesting (in-progress) run. Added `HistoricalRun::with_live_tallies` (a `#[must_use]` overlay
+  reusing the exact `progress_report` logic `mark_completed` freezes — extracted into a shared
+  `live_tally_fields`, so live == frozen) and applied it at every run-display site
+  (`runs.rs` list/current/history/Vega + `admin.rs` dashboard). No-op for completed runs (their
+  frozen snapshot stays authoritative); one bounded grouped query per *open* run only. Pinned by a
+  new `runs_test` contract case (`current_run_reports_live_tallies`: 3 NoProblem / 1 Warning / 1 Error
+  / 1 Invalid seeded → the open run reports `no_problem=3 … total=5`, would fail on the old zeros).
+  clippy + runs_test green.

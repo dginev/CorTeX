@@ -243,33 +243,76 @@ impl HistoricalRun {
   pub fn mark_completed(&self, connection: &mut PgConnection) -> Result<(), Error> {
     use diesel::dsl::now;
     if self.end_time.is_none() {
-      // gather the current statistics for this run, then update.
-      let report = progress_report(connection, self.corpus_id, self.service_id);
-      let total = *report.get("total").unwrap_or(&0.0) as i32;
-      let no_problem = *report.get("no_problem").unwrap_or(&0.0) as i32;
-      let warning = *report.get("warning").unwrap_or(&0.0) as i32;
-      let error = *report.get("error").unwrap_or(&0.0) as i32;
-      let fatal = *report.get("fatal").unwrap_or(&0.0) as i32;
-      let invalid = *report.get("invalid").unwrap_or(&0.0) as i32;
-      let queued_count_f64: f64 =
-        report.get("queued").unwrap_or(&0.0) + report.get("todo").unwrap_or(&0.0);
-      let in_progress = queued_count_f64 as i32;
-
-      //
+      // Freeze the current statistics for this run, then close it.
+      let t = live_tally_fields(connection, self.corpus_id, self.service_id);
       update(self)
         .set((
           historical_runs::end_time.eq(now),
-          historical_runs::total.eq(total),
-          historical_runs::in_progress.eq(in_progress),
-          historical_runs::invalid.eq(invalid),
-          historical_runs::no_problem.eq(no_problem),
-          historical_runs::warning.eq(warning),
-          historical_runs::error.eq(error),
-          historical_runs::fatal.eq(fatal),
+          historical_runs::total.eq(t.total),
+          historical_runs::in_progress.eq(t.in_progress),
+          historical_runs::invalid.eq(t.invalid),
+          historical_runs::no_problem.eq(t.no_problem),
+          historical_runs::warning.eq(t.warning),
+          historical_runs::error.eq(t.error),
+          historical_runs::fatal.eq(t.fatal),
         ))
         .execute(connection)?;
     }
     Ok(())
+  }
+
+  /// Returns this run with its per-severity tallies reflecting **live** task state *when the run is
+  /// still open* (`end_time` is `None`). A run only freezes its tallies at [`Self::mark_completed`]
+  /// (i.e. when the next run supersedes it), so an open run's stored tallies are all zero;
+  /// overlaying the current progress makes the in-progress run show its real state across the
+  /// run-management surfaces — the "live + historical run state" north star — instead of a
+  /// misleading row of zeros (most visible on the *current* run and the dashboard's "last run").
+  /// A completed run is returned unchanged: its frozen snapshot is authoritative and this is a
+  /// no-op (no extra query). Cost is one grouped `progress_report` per *open* run only.
+  #[must_use]
+  pub fn with_live_tallies(mut self, connection: &mut PgConnection) -> HistoricalRun {
+    if self.end_time.is_none() {
+      let t = live_tally_fields(connection, self.corpus_id, self.service_id);
+      self.total = t.total;
+      self.no_problem = t.no_problem;
+      self.warning = t.warning;
+      self.error = t.error;
+      self.fatal = t.fatal;
+      self.invalid = t.invalid;
+      self.in_progress = t.in_progress;
+    }
+    self
+  }
+}
+
+/// The per-severity tallies of a `(corpus, service)` at a point in time.
+struct RunTallies {
+  total: i32,
+  no_problem: i32,
+  warning: i32,
+  error: i32,
+  fatal: i32,
+  invalid: i32,
+  in_progress: i32,
+}
+
+/// Computes the live per-severity tallies for a `(corpus, service)` from the **current** task
+/// status distribution — the single source of truth shared by [`HistoricalRun::mark_completed`]
+/// (which freezes it) and [`HistoricalRun::with_live_tallies`] (which overlays it on an open run),
+/// so the in-progress numbers are identical to what gets frozen at completion. `in_progress` folds
+/// the not-yet-finished `todo` + `queued` tasks; `total` excludes invalids (as `progress_report`
+/// does).
+fn live_tally_fields(connection: &mut PgConnection, corpus_id: i32, service_id: i32) -> RunTallies {
+  let report = progress_report(connection, corpus_id, service_id);
+  let get = |key: &str| *report.get(key).unwrap_or(&0.0);
+  RunTallies {
+    total: get("total") as i32,
+    no_problem: get("no_problem") as i32,
+    warning: get("warning") as i32,
+    error: get("error") as i32,
+    fatal: get("fatal") as i32,
+    invalid: get("invalid") as i32,
+    in_progress: (get("queued") + get("todo")) as i32,
   }
 }
 

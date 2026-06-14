@@ -50,6 +50,9 @@ pub fn admin_page(
       .ok()
       .and_then(|runs| runs.into_iter().next())
       .map(|run| {
+        // The latest run is often still open (tallies frozen only at completion) — overlay live
+        // progress so the card shows real task counts, not a misleading zero.
+        let run = run.with_live_tallies(&mut connection);
         serde_json::json!({
           "when": run.start_time.format("%Y-%m-%d %H:%M").to_string(),
           "owner": run.owner,

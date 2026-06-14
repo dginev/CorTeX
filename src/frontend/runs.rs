@@ -33,8 +33,10 @@ use crate::models::{
 };
 
 /// A historical `(corpus, service)` run as exposed over the API: a stable `id` handle,
-/// who/why/when, whether it has completed, and the per-severity task tallies captured at
-/// completion.
+/// who/why/when, whether it has completed, and the per-severity task tallies. For a **completed**
+/// run these are the snapshot frozen at completion; for an **open** run they are overlaid with
+/// **live** progress (`HistoricalRun::with_live_tallies`), since stored tallies are only frozen at
+/// completion — so an in-progress run reports its real state, not zeros.
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct RunDto {
   /// Stable run identifier (the external handle for managing a specific run).
@@ -189,6 +191,12 @@ fn load_recent_runs(
   let owner = owner.filter(|owner| !owner.is_empty());
   let runs = HistoricalRun::recent_filtered(&mut connection, corpus_id, service_id, owner, limit)
     .map_err(|_| Status::InternalServerError)?;
+  // Open runs freeze their tallies only at completion, so their stored counts are zero; overlay the
+  // live progress so an in-progress run shows real numbers (a no-op for completed runs).
+  let runs: Vec<HistoricalRun> = runs
+    .into_iter()
+    .map(|run| run.with_live_tallies(&mut connection))
+    .collect();
   // The corpora/services tables are small; one batched read each beats N+1 per-run lookups.
   let corpora: HashMap<i32, String> = Corpus::all(&mut connection)
     .unwrap_or_default()
@@ -306,7 +314,13 @@ pub fn api_runs(
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let (corpus, service) = resolve(corpus, service, &mut connection)?;
   let runs = HistoricalRun::find_by(&corpus, &service, &mut connection).unwrap_or_default();
-  Ok(Json(runs.into_iter().map(RunDto::from).collect()))
+  // An open run's tallies are frozen only at completion; overlay live progress for any open run.
+  Ok(Json(
+    runs
+      .into_iter()
+      .map(|run| RunDto::from(run.with_live_tallies(&mut connection)))
+      .collect(),
+  ))
 }
 
 /// Returns the currently open run of a `(corpus, service)`, or `null` if none is in progress. `404`
@@ -322,7 +336,10 @@ pub fn api_run_current(
   let (corpus, service) = resolve(corpus, service, &mut connection)?;
   let current = HistoricalRun::find_current(&corpus, &service, &mut connection)
     .map_err(|_| Status::InternalServerError)?;
-  Ok(Json(current.map(RunDto::from)))
+  // The current run is by definition open, so its stored tallies are zero — overlay live progress.
+  Ok(Json(current.map(|run| {
+    RunDto::from(run.with_live_tallies(&mut connection))
+  })))
 }
 
 /// One cell of the run-comparison matrix: how many tasks moved from `previous_status` to
@@ -624,7 +641,8 @@ pub fn runs_page(corpus: &str, service: &str, pool: &State<DbPool>) -> Result<Te
   let runs: Vec<RunDto> = HistoricalRun::find_by(&corpus_record, &service_record, &mut connection)
     .unwrap_or_default()
     .into_iter()
-    .map(RunDto::from)
+    // Overlay live progress on any still-open run so the table doesn't show it as all-zeros.
+    .map(|run| RunDto::from(run.with_live_tallies(&mut connection)))
     .collect();
   // `global` carries the title/description the shared `layout` template expects.
   let global = serde_json::json!({
@@ -649,7 +667,11 @@ pub fn history_page(corpus: &str, service: &str, pool: &State<DbPool>) -> Result
   let mut context = TemplateContext::default();
   let mut global = HashMap::new();
   if let Ok(runs) = HistoricalRun::find_by(&corpus_record, &service_record, &mut connection) {
-    let runs_meta: Vec<RunMetadata> = runs.into_iter().map(RunMetadata::from).collect();
+    // Overlay live progress on any open run so the latest chart point reflects real progress.
+    let runs_meta: Vec<RunMetadata> = runs
+      .into_iter()
+      .map(|run| RunMetadata::from(run.with_live_tallies(&mut connection)))
+      .collect();
     let runs_meta_stack = RunMetadataStack::transform(&runs_meta);
     // Soften the legacy `.unwrap()` (a request-path panic on a serialization error) to an empty
     // series: the chart renders nothing rather than crashing the request.
