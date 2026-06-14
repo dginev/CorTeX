@@ -1244,3 +1244,21 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   the old snapshot while recent ones survive. clippy -D warnings + fmt + the sweep green. (Reconsidered
   the earlier "needs sign-off" framing: deleting old snapshots is the same category as the
   already-shipped delete-corpus, with the same confirm+audit+dry-run safeguards.)
+- **Dispatcher rationalization — design for review (autonomous-day progress; owner directive: "lock-
+  free design and fearless concurrency, more asynchronous + fanned out"):** rather than rewrite the
+  throughput-critical core unreviewed, produced `docs/DISPATCHER_RATIONALIZATION.md` — a full map of
+  the current design (3 threads sharing **three `Arc<Mutex<…>>`**: service cache, in-flight
+  `HashMap`, done-queue `Vec`; sink does the **blocking `/data` archive write inline** before
+  receiving the next = D-7) and an incremental, test-validated migration toward message-passing +
+  lock-free structures: (1) done-queue `Mutex<Vec>` → **bounded channel** (sink→finalize; deletes the
+  `DONE_QUEUE_HARD_LIMIT` panic — a bounded channel IS the backpressure); (2) **sink writer fan-out**
+  (receive loop + pool of archive-writers fed by a channel → closes D-7); (3) in-flight set →
+  **DashMap + AtomicUsize** counter; (4) service cache → DashMap/arc-swap; (5) optional later
+  full-async via tokio+`tmq`. Recommends approach A (channel-pipelined threads, works with the sync
+  `zmq` crate, bounded/incremental) over B (full tokio rewrite). Crates: crossbeam-channel/flume,
+  dashmap, std atomics. Each phase stays green on `echo_roundtrip` + `bench_pipeline`; bounded channels
+  **block rather than drop** so results are never lost. Open questions posed for the owner (approach
+  A-first, crate choices, writer-pool sizing). **Also: D-3 audited → 🟢** — every dispatcher panic
+  site classified (mutex-poison + hard-limit = deliberate fail-fast; connection_at retry-hardened;
+  thread deaths supervised → abort → restart): no accidental crash/silent-death gaps remain; what's
+  left is throughput, not resilience. D-7 re-pointed at the rationalization plan (phase 2).
