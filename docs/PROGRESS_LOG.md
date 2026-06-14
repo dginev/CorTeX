@@ -6,6 +6,21 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **UI — scholarly report dashboard (the report drill-down pages redesigned).** Replaced the narrow,
+  Bootstrap-contextual-colored report tables with a calm, productized dashboard built on the tokens:
+  a titled `.report-header` (corpus / service + format + latest-run provenance), a status/breakdown
+  grid with **inline proportion bars** (`.bar-track`/`.bar`, severity-tinted ok/warn/error/fatal/todo),
+  monospace tabular counts, an emphasised Total row, a de-emphasised Invalid row, and a quiet
+  `.report-links` row. Applied to **all three drill-down levels** — top (`report`), severity→category
+  (`severity-report`), category→what (`category-report`) — each with a Share-of-tasks bar. The
+  live **auto-refresh + rerun-progress overlay is preserved**: kept the `#report-div`, `td.queued/
+  .no-problem/.warning/.error/.fatal` count cells, and `tr.corpus-report-*` row classes that
+  `progress_report.js` drives, and made `#report-div` **visible by default** (graceful degradation —
+  the report no longer blanks if the CDN jQuery fails). Render-tested (`reports_api_test`); verified
+  live on the demo corpus (top/severity/category all 200 with bars). Closes the owner's "fresh
+  scholarly tabular view" idea. *(Residual: the `task-list-report` per-task view keeps the generic
+  table theme; a bespoke pass there is a future polish.)*
+
 - **UI — nav brand cleanup + logo theme-switch alignment fix.** Dropped the redundant "Framework"
   text and the duplicated hidden-xs/hidden-sm brand markup; the nav now shows **just the wordmark
   logo**, and only on **non-landing** pages (the landing page carries the hero, so `overview_page`

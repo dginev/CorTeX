@@ -1,60 +1,52 @@
 {% extends "layout" %} {% block content %}
-<div class="center">
-  <h1>"{{global.category}}" classes</h1>
+<div class="report">
+  <header class="report-header">
+    <h1 class="report-title">{{global.category}} <span class="report-sep">·</span> what</h1>
+    <p class="report-sub">{{global.corpus_name}} <span class="report-sep">/</span> {{global.service_name}} <span class="report-sep">·</span> {{global.severity}}</p>
+  </header>
 
-  {% if global.severity != "info" %} {% if global.all_messages_true %}
-  <h5>All Tasks</h5>
-  <h5>
-    <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}/{{global.category_uri}}?all=false">(Click
-      here to switch to {{global.severity}} only)</a>
-  </h5>
-  {% else %}
-  <h5>"{{global.severity}}" severity tasks</h5>
-  <h5>
-    <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}/{{global.category_uri}}?all=true">(Click
-      here to see this report for all tasks)</a>
-  </h5>
-  {% endif %} {% endif %}
-  <br>
+  {% if global.severity != "info" %}
+  <p class="report-toggle">
+    {% if global.all_messages_true %}
+    Showing every task &middot; <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}/{{global.category_uri}}?all=false">show {{global.severity}} only</a>
+    {% else %}
+    Showing {{global.severity}}-severity tasks &middot; <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}/{{global.category_uri}}?all=true">show across all tasks</a>
+    {% endif %}
+  </p>
+  {% endif %}
 
-  <div class="row">
-    <div class="col-md-3"></div>
-    <div class="col-md-6">
-      <table id="corpus-report" class="table">
-        <thead>
-          <tr>
-            <th class="left">What</th>
-            <th class="right">Tasks %</th>
-            <th class="right">Tasks</th>
-            <th class="right">Messages %</th>
-            <th class="right">Messages</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for this in whats %}
-          <tr class="{{global.highlight}} corpus-report-{{global.category}}">
-            <td class="left">
-              <a class="link-{{this.name}}" href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}/{{global.category_uri}}/{{this.name_uri}}?all={{global.all_messages}}">{{this.name}}</a>
-            </td>
-            <td class="right">{{this.tasks_percent}}%</td>
-            <td class="right">{{this.tasks}}</td>
-            <td class="right">{{this.messages_percent}}%</td>
-            <td class="right">{{this.messages}}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <div class="col-md-3"></div>
-  </div>
+  <table id="corpus-report" class="table report-table">
+    <thead>
+      <tr>
+        <th class="left">What</th>
+        <th class="left bar-col">Share of tasks</th>
+        <th class="right">Tasks %</th>
+        <th class="right">Tasks</th>
+        <th class="right">Messages</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for this in whats %}
+      <tr>
+        <td class="left">
+          <a class="link-{{this.name}}" href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}/{{global.category_uri}}/{{this.name_uri}}?all={{global.all_messages}}">{{this.name}}</a>
+        </td>
+        <td class="bar-cell"><span class="bar-track"><span class="bar {% if global.severity == 'warning' %}warn{% elif global.severity == 'error' %}error{% elif global.severity == 'fatal' %}fatal{% endif %}" style="width: {{this.tasks_percent}}%"></span></span></td>
+        <td class="right">{{this.tasks_percent}}%</td>
+        <td class="right">{{this.tasks}}</td>
+        <td class="right">{{this.messages}}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
   <div class="report-pagination">
     {% if global.offset_min_false %}
-    <span><a href="{{global.current_link_uri}}?offset={{global.prev_offset}}&page_size={{global.page_size}}&all={{global.all_messages}}">&lt;&lt;</a></span>
+    <a href="{{global.current_link_uri}}?offset={{global.prev_offset}}&page_size={{global.page_size}}&all={{global.all_messages}}">&laquo; prev</a>
     {% endif %}
     {% if global.offset_max_false %}
-    <span><a href="{{global.current_link_uri}}?offset={{global.next_offset}}&page_size={{global.page_size}}&all={{global.all_messages}}">&gt;&gt;</a></span>
+    <a href="{{global.current_link_uri}}?offset={{global.next_offset}}&page_size={{global.page_size}}&all={{global.all_messages}}">next &raquo;</a>
     {% endif %}
   </div>
 </div>
-
 {% endblock content %}

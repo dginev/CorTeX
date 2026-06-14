@@ -424,9 +424,8 @@ h1 {
   visibility: hidden;
 }
 
-div#report-div {
-  visibility: hidden;
-}
+/* #report-div is visible by default (graceful degradation — the report shows even if the CDN jQuery
+   that drives the live rerun-progress overlay fails to load); progress_report.js only *adds* to it. */
 
 p.corpus-description,
 p.service-description {
@@ -797,6 +796,96 @@ h3 {
   text-align: center;
   color: var(--ink-muted);
   padding: 2.5rem 1rem;
+}
+
+/* === Report dashboard (scholarly) ===========================================================
+   A calm progress dashboard: a titled header with run provenance, a status/breakdown grid with
+   inline proportion bars (severity-tinted), monospace counts, and a quiet links row. */
+.report {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+.report-header {
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 0.85rem;
+  margin-bottom: 1.5rem;
+}
+.report-title {
+  font-family: var(--serif);
+  font-size: 1.65rem;
+  font-weight: 700;
+  margin: 0;
+}
+.report-sep {
+  color: var(--ink-muted);
+  font-weight: 400;
+}
+.report-sub {
+  margin: 0.35rem 0 0;
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+}
+.report-table {
+  width: 100%;
+}
+/* Inline proportion bar. */
+.bar-cell {
+  width: 42%;
+}
+.bar-track {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background-color: var(--rule-soft);
+  overflow: hidden;
+}
+.bar {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 999px;
+  background-color: var(--accent);
+}
+.bar.ok {
+  background-color: var(--ok);
+}
+.bar.warn {
+  background-color: var(--warn);
+}
+.bar.error,
+.bar.fatal {
+  background-color: var(--bad);
+}
+.bar.todo {
+  background-color: var(--ink-muted);
+}
+.report-table tr.report-total > td {
+  border-top: 2px solid var(--rule);
+  font-weight: 700;
+}
+.report-table tr.report-muted > td {
+  color: var(--ink-muted);
+}
+.report-links {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  font-size: 0.9rem;
+}
+.report-toggle {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+.report-pagination {
+  margin: 1.5rem 0;
+  text-align: center;
+  font-size: 1.1rem;
+}
+.report-pagination a {
+  padding: 0 0.6rem;
 }
 
 /* A delicate, unobtrusive admin sign-in hint under public content. */
