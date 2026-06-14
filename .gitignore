@@ -25,3 +25,6 @@ docs/CorTeX-productizing-HANDOFF.md
 
 # Temp files
 *.rdb
+
+# Local UI screenshots (visual verification, not committed)
+.shots/
