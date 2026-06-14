@@ -104,6 +104,19 @@ pub fn metrics(_caller: Actor, pool: &State<DbPool>) -> (ContentType, String) {
       );
       gauge(
         &mut out,
+        "cortex_jobs_failed_recent",
+        "Background jobs that ended in `failed` within the last 24h (rolling window).",
+        crate::jobs::count_recent_with_status(&mut connection, "failed", 24),
+      );
+      gauge(
+        &mut out,
+        "cortex_jobs_interrupted_recent",
+        "Background jobs `interrupted` within the last 24h — stale-reaped (W-4) or restart orphans \
+         (rolling window).",
+        crate::jobs::count_recent_with_status(&mut connection, "interrupted", 24),
+      );
+      gauge(
+        &mut out,
         "cortex_sessions_active",
         "Active (unexpired) admin sessions.",
         Session::active(&mut connection).map_or(0, |sessions| sessions.len()),

@@ -347,6 +347,24 @@ pub fn reap_stale(connection: &mut PgConnection) -> usize {
   .unwrap_or(0)
 }
 
+/// Counts jobs in terminal `status` created within the last `hours` — a current-state observability
+/// signal for "are jobs failing / stalling lately?". A **rolling window** so the gauge
+/// auto-resolves (unlike an ever-growing total-failures counter, which would alert forever after
+/// one failure). Skew-free (windowed against the DB clock). Best-effort: `0` on error.
+pub fn count_recent_with_status(connection: &mut PgConnection, status: &str, hours: i64) -> usize {
+  let Some(clock) = db_now(connection) else {
+    return 0;
+  };
+  let cutoff = clock - chrono::Duration::hours(hours);
+  jobs::table
+    .filter(jobs::status.eq(status))
+    .filter(jobs::created_at.gt(cutoff))
+    .count()
+    .get_result::<i64>(connection)
+    .map(|count| count as usize)
+    .unwrap_or(0)
+}
+
 /// Lists recent jobs, most-recent-first, capped at `limit`. With `active_only`, returns just the
 /// **pending** (non-terminal: `queued`/`running`) jobs — the fleet-wide observability check for any
 /// background-task capability. Best-effort: an error yields an empty list rather than propagating.

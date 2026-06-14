@@ -1490,3 +1490,14 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   verified against the code. Pure docs. Note: the high-value *unblocked* queue is thinning — read
   paths are indexed + N+1-free, request paths panic-free, sessions/jobs bounded; the big remaining
   wins (dispatcher phase-1, archive swap) are gated on owner decisions.
+- **Observability: job-health metrics (`cortex_jobs_failed_recent` / `cortex_jobs_interrupted_recent`):**
+  `/metrics` exposed `cortex_jobs_active` (queued+running) but nothing on terminal job health — so an
+  operator could not alert on job **failures** or the W-4 reaper's **interrupted** outcomes (CLAUDE.md:
+  "observability is not optional"). Added `jobs::count_recent_with_status` (a **rolling 24h window**, so
+  the gauge auto-resolves rather than alerting forever after one failure; skew-free via `db_now`) and
+  two gauges: `cortex_jobs_failed_recent` and `cortex_jobs_interrupted_recent` (stale-reaped or restart
+  orphans). Operators can now alert on `cortex_jobs_failed_recent > 0`. The new
+  `jobs(created_at)` index backs the windowed query. Tested (`metrics_test`: names exposed + a seeded
+  failed/interrupted job is counted ≥1). Unblocked, frontend-only — no dispatcher/archive overlap.
+  Investigated the per-task `cortex.log` scan (`helpers::generate_report`, called by `sink.rs`) — it is
+  on the **held dispatcher hot path** AND part of the "say-the-word" archive swap, so left untouched.

@@ -61,6 +61,8 @@ fn metrics_is_token_gated_and_exposes_gauges() {
     "cortex_corpora_total",
     "cortex_services_total",
     "cortex_jobs_active",
+    "cortex_jobs_failed_recent",
+    "cortex_jobs_interrupted_recent",
     "cortex_sessions_active",
     "cortex_workers_total",
   ] {
@@ -79,9 +81,59 @@ fn metrics_is_token_gated_and_exposes_gauges() {
   );
 }
 
-// Custom harness (see KNOWN_ISSUES L-1): run the case then `_exit(0)`.
+/// The reading of an unlabeled Prometheus gauge line (`name <value>`), or -1 if absent/unparseable.
+fn gauge_value(body: &str, name: &str) -> i64 {
+  body
+    .lines()
+    .find(|line| line.starts_with(&format!("{name} ")))
+    .and_then(|line| line.rsplit(' ').next())
+    .and_then(|value| value.parse().ok())
+    .unwrap_or(-1)
+}
+
+fn job_health_gauges_count_recent_failures() {
+  use diesel::prelude::*;
+  // Seed a recently-failed and a recently-interrupted job (created_at defaults to now() → inside
+  // the 24h rolling window). Other failed/interrupted jobs in the window only increase the count,
+  // so we assert >= 1 (robust against the shared test DB).
+  let mut db = cortex::backend::testdb();
+  for status in ["failed", "interrupted"] {
+    diesel::sql_query(format!(
+      "INSERT INTO jobs (kind, actor, status, params) \
+       VALUES ('metrics_{status}_probe', 'tester', '{status}', '{{}}'::jsonb)"
+    ))
+    .execute(&mut db.connection)
+    .expect("seed a terminal job");
+  }
+
+  let client = client();
+  let body = client
+    .get("/metrics?token=token1")
+    .dispatch()
+    .into_string()
+    .expect("a metrics body");
+  assert!(
+    gauge_value(&body, "cortex_jobs_failed_recent") >= 1,
+    "the recent-failed gauge counts the seeded failure, got: {}",
+    gauge_value(&body, "cortex_jobs_failed_recent")
+  );
+  assert!(
+    gauge_value(&body, "cortex_jobs_interrupted_recent") >= 1,
+    "the recent-interrupted gauge counts the seeded interruption, got: {}",
+    gauge_value(&body, "cortex_jobs_interrupted_recent")
+  );
+
+  diesel::sql_query(
+    "DELETE FROM jobs WHERE kind IN ('metrics_failed_probe', 'metrics_interrupted_probe')",
+  )
+  .execute(&mut db.connection)
+  .ok();
+}
+
+// Custom harness (see KNOWN_ISSUES L-1): run the cases then `_exit(0)`.
 fn main() {
   metrics_is_token_gated_and_exposes_gauges();
+  job_health_gauges_count_recent_failures();
   eprintln!("metrics_test: all cases passed");
   unsafe { libc::_exit(0) }
 }
