@@ -6,6 +6,15 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **W-3 closed (in-repo worker) — honor the configured worker identity.** `InitWorker::start`
+  unconditionally generated a random 19-letter ZMQ identity, ignoring the configured `identity`
+  field — so worker metadata keys weren't operator-controlled and, worse, each restart produced a
+  fresh random name, fragmenting a worker's `worker_metadata` row (tallies/liveness) across restarts.
+  Extracted `resolve_worker_identity(configured, rng)`: honors a non-empty configured identity
+  verbatim (stable key, accumulates across restarts), falls back to the random handle only when
+  unset. Unit-tested (configured → verbatim; empty → 19 lowercase letters). External `pericortex`
+  workers are out of scope (their own crate). KNOWN_ISSUES W-3 🟡 → 🟢.
+
 - **Admin UX cohesion — persistent admin nav on every page.** The management surfaces (Services,
   Jobs, Health, Settings) were only linked from the landing overview; every other screen (corpus
   reports, jobs, health, runs, worker fleets) had no global navigation — you had to return to `/` to
