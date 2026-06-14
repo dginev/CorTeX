@@ -122,6 +122,19 @@ fn healthz_reports_ok_when_db_reachable() {
     "storage unreadable list is reported"
   );
 
+  // Remediations: the report carries actionable operator guidance (the runtime twin of `cortex
+  // doctor`). No dispatcher runs in the test, so the "dispatcher not listening" hint is present.
+  let remediations = body["remediations"]
+    .as_array()
+    .expect("remediations is an array");
+  assert!(
+    remediations.iter().any(|hint| hint
+      .as_str()
+      .unwrap_or("")
+      .contains("dispatcher not listening")),
+    "an unreachable dispatcher yields an actionable remediation in the JSON twin"
+  );
+
   // The human twin renders the same report as an HTML screen (shared HealthDto). Unlike the open
   // `/healthz` liveness probe above, the `/health` screen is admin-only: unauthenticated → sign-in.
   let unauth = client.get("/health").dispatch();
@@ -141,6 +154,10 @@ fn healthz_reports_ok_when_db_reachable() {
   assert!(
     html.contains("System health"),
     "the human health screen renders"
+  );
+  assert!(
+    html.contains("Recommended actions"),
+    "the health screen renders the actionable remediation block (dispatcher down in the test)"
   );
 }
 

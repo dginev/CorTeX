@@ -41,6 +41,16 @@
     </ul>
   </div>
   {% endif %}
+  {% if health.remediations | length > 0 %}
+  <div class="row" style="max-width: 34rem; margin: 1rem auto;">
+    <p><strong>Recommended actions</strong> — how to clear each red/amber signal above:</p>
+    <ul class="left">
+      {% for hint in health.remediations %}
+      <li>{{ hint }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
   <p>&nbsp;·&nbsp; <a href="/healthz">JSON</a> &nbsp;·&nbsp; <a href="/settings">Settings</a></p>
 
   <hr>

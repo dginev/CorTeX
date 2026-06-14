@@ -1661,3 +1661,16 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   guidance). Removed the now-redundant inline token nudge from `cortex init`. Unit-tested across all
   states (`bootstrap_test::doctor_remediations_guide_each_failure`); demonstrated end-to-end against a
   broken DB URL. clippy + bootstrap_test green.
+- **Admin UX (runtime diagnostics): `/health` now tells the operator HOW to fix each red/amber signal
+  — parity with `cortex doctor`.** The health report listed signals (DB, migrations, pool, dispatcher,
+  storage) but, unlike the doctor, offered no remediation. Added `HealthDto::remediations()` (library,
+  unit-tested) returning fix-this-first-ordered guidance: DB unreachable → surface only the DB fix (the
+  consequent migration `false` is a cascade, not chased); pending migrations → `cortex init`; pool
+  exhausted (`in_use ≥ max`) → raise `database.pool_size` / investigate slow queries (with the live
+  counts); dispatcher port-probe down → start the dispatcher (or ignore for a report-only node); each
+  unreadable corpus path → check the mount/permissions (names the corpora). The `remediations` array is
+  a field on the shared `HealthDto`, so it shows in the OpenAPI schema and the `/healthz` JSON (agents
+  get the same guidance), and the `/health` screen renders a "Recommended actions" block. Tested: 5
+  unit cases for the logic + management_api_test now asserts the JSON remediation (dispatcher-down hint)
+  and the HTML "Recommended actions" render. clippy --all-targets + tests green. Completes the
+  install-time (doctor) ↔ runtime (/health) diagnostic-remediation symmetry.

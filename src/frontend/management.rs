@@ -164,6 +164,63 @@ pub struct HealthDto {
   pub dispatcher: DispatcherHealth,
   /// Shared document-storage reachability per corpus (informational).
   pub storage: StorageHealth,
+  /// Actionable operator guidance for every degraded or warning signal above, in fix-this-first
+  /// order (empty when all-clear). The runtime twin of `cortex doctor`'s remediation hints — so an
+  /// operator (or agent) polling health is told *how* to fix a red/amber signal, not just that it
+  /// is one. Computed from the fields above by [`HealthDto::remediations`].
+  pub remediations: Vec<String>,
+}
+
+impl HealthDto {
+  /// Builds the actionable remediation hints from the report's signals (reads every field *except*
+  /// `remediations` itself, so it can populate that field). Fix-this-first ordered: a down database
+  /// degrades the frontend and makes the migration check unknowable, so it is surfaced alone;
+  /// otherwise pending migrations, then the informational pool / dispatcher / storage warnings.
+  #[must_use]
+  pub fn remediations(&self) -> Vec<String> {
+    let mut hints = Vec::new();
+    if !self.database.reachable {
+      hints.push(
+        "database unreachable — the frontend is degraded; check the database URL (`cortex.toml` \
+         [database].url or DATABASE_URL) and that PostgreSQL is running"
+          .to_string(),
+      );
+    } else if !self.migrations.current {
+      hints
+        .push("schema out of date — run `cortex init` to apply the pending migrations".to_string());
+    }
+    // Pool exhaustion: with every connection checked out, new requests block on `pool.get()` and
+    // may time out to 503. Surface it before it cascades.
+    if self.pool.in_use >= self.pool.max {
+      hints.push(format!(
+        "connection pool exhausted ({}/{} in use) — requests are waiting and may 503; raise \
+         `database.pool_size` or investigate slow / long-held queries",
+        self.pool.in_use, self.pool.max
+      ));
+    }
+    if !self.dispatcher.reachable {
+      hints.push(format!(
+        "dispatcher not listening on localhost:{}/{} — if this node runs conversions, start the \
+         dispatcher; a report-only frontend can ignore this",
+        self.dispatcher.source_port, self.dispatcher.result_port
+      ));
+    }
+    if !self.storage.unreadable.is_empty() {
+      let names: Vec<&str> = self
+        .storage
+        .unreadable
+        .iter()
+        .map(|corpus| corpus.name.as_str())
+        .collect();
+      hints.push(format!(
+        "{} corpus source path(s) unreadable ({}) — check the mount / permissions; conversions and \
+         re-imports for them fail until restored",
+        self.storage.unreadable.len(),
+        names.join(", ")
+      ));
+    }
+    hints
+  }
 }
 
 /// The editable, non-secret fields of the Settings form (database/auth are edited out-of-band).
@@ -330,7 +387,7 @@ fn health_report(pool: &DbPool) -> HealthDto {
   } else {
     "degraded"
   };
-  HealthDto {
+  let mut report = HealthDto {
     status,
     database: DbHealth { reachable },
     migrations: MigrationsHealth {
@@ -354,7 +411,11 @@ fn health_report(pool: &DbPool) -> HealthDto {
       corpora_checked,
       unreadable,
     },
-  }
+    remediations: Vec::new(),
+  };
+  // Derive the operator guidance from the assembled signals.
+  report.remediations = report.remediations();
+  report
 }
 
 /// A structured, pollable health report for agents (probes through the pool, samples pool
@@ -533,4 +594,102 @@ pub fn routes() -> Vec<Route> {
     settings,
     post_settings
   ]
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  /// An all-clear report; tests mutate one signal at a time off this baseline.
+  fn healthy() -> HealthDto {
+    HealthDto {
+      status: "ok",
+      database: DbHealth { reachable: true },
+      migrations: MigrationsHealth { current: true },
+      pool: PoolHealth {
+        max: 32,
+        connections: 4,
+        idle: 4,
+        in_use: 0,
+      },
+      dispatcher: DispatcherHealth {
+        reachable: true,
+        source_port: 51695,
+        result_port: 51696,
+      },
+      storage: StorageHealth {
+        corpora_checked: 2,
+        unreadable: Vec::new(),
+      },
+      remediations: Vec::new(),
+    }
+  }
+
+  #[test]
+  fn healthy_report_has_no_remediations() {
+    assert!(
+      healthy().remediations().is_empty(),
+      "an all-clear report needs no actions"
+    );
+  }
+
+  #[test]
+  fn db_down_surfaces_only_the_db_fix() {
+    let mut health = healthy();
+    health.database.reachable = false;
+    health.migrations.current = false; // a consequence of the down DB — must not add its own hint
+    let hints = health.remediations();
+    assert_eq!(hints.len(), 1, "a down DB surfaces only the DB fix");
+    assert!(
+      hints[0].contains("database") && hints[0].contains("DATABASE_URL"),
+      "the DB hint names the URL to check"
+    );
+  }
+
+  #[test]
+  fn pending_migrations_point_at_init() {
+    let mut health = healthy();
+    health.migrations.current = false;
+    assert!(
+      health
+        .remediations()
+        .iter()
+        .any(|h| h.contains("cortex init")),
+      "pending migrations point at cortex init"
+    );
+  }
+
+  #[test]
+  fn pool_exhaustion_is_flagged_with_counts() {
+    let mut health = healthy();
+    health.pool.in_use = health.pool.max; // every connection checked out
+    assert!(
+      health
+        .remediations()
+        .iter()
+        .any(|h| h.contains("pool exhausted") && h.contains("32/32")),
+      "an exhausted pool is flagged with its in-use/max counts"
+    );
+  }
+
+  #[test]
+  fn dispatcher_and_storage_warnings_are_actionable() {
+    let mut health = healthy();
+    health.dispatcher.reachable = false;
+    health.storage.unreadable = vec![UnreadableCorpus {
+      name: "arxiv".to_string(),
+      path: "/data/arxiv".to_string(),
+    }];
+    let hints = health.remediations();
+    assert!(
+      hints.iter().any(|h| h.contains("dispatcher not listening")),
+      "an unreachable dispatcher is actionable"
+    );
+    assert!(
+      hints
+        .iter()
+        .any(|h| h.contains("unreadable") && h.contains("arxiv")),
+      "an unreadable corpus path is named in the hint"
+    );
+  }
 }
