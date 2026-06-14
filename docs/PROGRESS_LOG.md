@@ -6,6 +6,15 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **UI — homepage redesign (productized masthead + corpus-card grid).** The overview was noisy
+  (oversized serif-purple links, chunky chevrons, and a white-box `<img>` logo on the dark theme).
+  Rebuilt `overview.html.tera` as a disciplined `.overview` container: a centered **hero** (the
+  wordmark as a `.hero-logo` cropped+blended per theme — no white box) + an italic serif tagline over
+  a rule, then a quiet uppercase "Corpora" `.section-heading` and a responsive **`.corpus-card`
+  grid** (accent left-border, serif name, muted description, subtle hover-lift) with an empty-state
+  fallback. Dropped the Bootstrap `col-md-*` scaffolding + the per-corpus `<h2>`/chevron markup.
+  Render-checked (`corpora_test`); hot-reloaded live.
+
 - **UI polish — admin-gated corpus actions, a scholarly widget theme, and a dual-variant logo.**
   - **Admin-gated "Corpus actions".** The corpus page (`GET /corpus/<name>`) is public, but its
     activate/extend/delete forms (and the per-service deactivate buttons) were shown to everyone and

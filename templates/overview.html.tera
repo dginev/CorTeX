@@ -1,24 +1,22 @@
 {% extends "layout" %} {% block content %}
-<div class="col-md-2"></div>
-<div class="col-md-8">
-  <div class="center">
-    <h1 class="welcome-title">
-      <img src="/public/img/logo.jpg"> Framework</h1>
-    <div class="row"></div>
-    <h2 class="welcome-subtitle">A general-purpose processing framework for corpora of scientific documents</h2>
-  </div>
+<div class="overview">
+  <header class="hero">
+    <span class="hero-logo" role="img" aria-label="CorTeX"></span>
+    <p class="hero-tagline">A general-purpose processing framework for corpora of scientific documents</p>
+  </header>
 
-  {% for corpus in corpora %}
-  <h2>
-    <i class="fa fa-chevron-right fa-lg"></i>&nbsp;&nbsp;
-    <a href="/corpus/{{ corpus.name_uri }}">{{ corpus.name }}</a>
-  </h2>
-  {% if corpus.description %}
-  <p class="corpus-description">{{ corpus.description }}</p>
-  {% endif %} {% endfor %}
-
-</div>
-<div class="col-md-2"></div>
-
+  {% if corpora and corpora | length > 0 %}
+  <h2 class="section-heading">Corpora</h2>
+  <section class="corpora-grid">
+    {% for corpus in corpora %}
+    <a class="corpus-card" href="/corpus/{{ corpus.name_uri }}">
+      <span class="corpus-card-name">{{ corpus.name }}</span>
+      {% if corpus.description %}<span class="corpus-card-desc">{{ corpus.description }}</span>{% endif %}
+    </a>
+    {% endfor %}
+  </section>
+  {% else %}
+  <p class="empty-state">No corpora registered yet. <a href="/admin">Sign in</a> to import one.</p>
+  {% endif %}
 </div>
 {% endblock content %}

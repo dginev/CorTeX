@@ -697,6 +697,100 @@ h3 {
   mix-blend-mode: screen;
 }
 
+/* === Homepage / overview ====================================================================
+   A disciplined masthead (the wordmark cropped+blended per theme) over a calm corpus-card grid —
+   no oversized chevrons or shouting serif links. */
+.overview {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+.hero {
+  text-align: center;
+  padding: 2.5rem 1rem 2rem;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 2.25rem;
+}
+.hero-logo {
+  display: inline-block;
+  width: 320px;
+  max-width: 78%;
+  height: 107px;
+  background-image: url("/public/img/logo.png");
+  background-repeat: no-repeat;
+  background-size: 100% 200%;
+  background-position: center top;
+  mix-blend-mode: multiply;
+}
+:root[data-theme="midnight"] .hero-logo {
+  background-position: center bottom;
+  mix-blend-mode: screen;
+}
+.hero-tagline {
+  margin: 1.1rem auto 0;
+  max-width: 36rem;
+  font-family: var(--serif);
+  font-size: 1.12rem;
+  font-style: italic;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+/* A quiet uppercase section heading (sans, not the serif display h2). */
+.section-heading {
+  font-family: var(--sans);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--ink-muted);
+  margin: 0 0 1rem;
+  padding-bottom: 0.4rem;
+}
+
+.corpora-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 1rem;
+}
+.corpus-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1rem 1.15rem;
+  background-color: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  text-decoration: none;
+  transition:
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+.corpus-card:hover,
+.corpus-card:focus {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-1px);
+  text-decoration: none;
+}
+.corpus-card-name {
+  font-family: var(--serif);
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--link);
+}
+.corpus-card-desc {
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+  line-height: 1.45;
+}
+.empty-state {
+  text-align: center;
+  color: var(--ink-muted);
+  padding: 2.5rem 1rem;
+}
+
 /* A delicate, unobtrusive admin sign-in hint under public content. */
 .admin-hint {
   margin-top: 2rem;
