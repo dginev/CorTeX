@@ -6,6 +6,22 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **Perf — partial index for the hot task-leasing path (migration).** The ventilator leases work via
+  `tasks_aggregate::fetch_tasks`: `SELECT * FROM tasks WHERE service_id = $1 AND status = 0 (TODO)
+  LIMIT n FOR UPDATE` (~100/s at production scale). The `tasks` table had a partial index per
+  *completed* status (`ok_index` … `invalid_index`, WHERE status = −1…−5, for reports) but **none for
+  TODO (status = 0)** — the status leasing filters on. So leasing fell back to the broad
+  `service_idx (service_id)` and, on a mostly-processed corpus, scanned every completed task for the
+  service to find the sparse TODO rows. Added migration `2026-06-14-060000_tasks_todo_lease_index`:
+  `todo_index ON tasks(status, service_id, corpus_id, id, entry) WHERE status = 0` — mirrors the
+  sibling per-status indexes' shape, restricted to TODO. **Verified on a seeded 50k-completed /
+  30-TODO service:** EXPLAIN(ANALYZE) goes from `Index Scan using service_idx … Rows Removed by
+  Filter: 50000` (489 buffer hits) to `Index Scan using todo_index … Index Cond: (status=0 AND
+  service_id=…)` (33 buffer hits) — ~15× fewer reads here, widening with the completed-task count.
+  Idempotent (`IF NOT EXISTS`, so an operator can pre-build it `CONCURRENTLY` on the live table and
+  let the migration no-op); reversible (verified via `diesel migration redo`). Already covered by the
+  reindex maintenance job (whole-table `REINDEX`). `backend_test` green.
+
 - **W-3 closed (in-repo worker) — honor the configured worker identity.** `InitWorker::start`
   unconditionally generated a random 19-letter ZMQ identity, ignoring the configured `identity`
   field — so worker metadata keys weren't operator-controlled and, worse, each restart produced a
