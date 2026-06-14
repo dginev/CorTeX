@@ -267,11 +267,6 @@ footer {
   height: 15px;
 }
 
-tr.error,
-td.error {
-  background-color: color-mix(in srgb, var(--warn) 22%, transparent);
-}
-
 .welcome-title {
   font-weight: normal;
 }
@@ -633,14 +628,12 @@ h3 {
 .table > tbody > tr:hover > td {
   background-color: var(--accent-soft);
 }
-/* Numeric columns: tabular figures + monospace so counts line up and scan. */
+/* Numeric columns: tabular (lining) figures so counts line up and scan — in the body sans, not a
+   monospace (a missing JetBrains Mono falls back to Courier, which clashes with the chrome). */
 .table td.right,
 .table th.right {
   font-variant-numeric: tabular-nums;
-}
-.table td.right {
-  font-family: var(--mono);
-  font-size: 0.92em;
+  font-feature-settings: "tnum" 1;
 }
 
 /* Status-tinted report counts (a zero is de-emphasised, a fatal stands out). */
@@ -866,6 +859,25 @@ h3 {
 }
 .report-table tr.report-muted > td {
   color: var(--ink-muted);
+}
+/* Color discipline: severity is carried by the bar + its matching count number only. Row labels
+   stay a neutral-ink quiet link (accent on hover, not purple-by-default), and no stray cell-
+   background tints leak in from Bootstrap's contextual classes or the legacy `td.error`/`td.warning`
+   rules (those were off-palette and applied to the wrong severities). */
+.report-table td.left a {
+  color: var(--ink);
+}
+.report-table td.left a:hover,
+.report-table td.left a:focus {
+  color: var(--link);
+}
+.report-table td.no-problem,
+.report-table td.warning,
+.report-table td.error,
+.report-table td.fatal,
+.report-table td.todo,
+.report-table td.queued {
+  background-color: transparent !important;
 }
 .report-links {
   margin-top: 1.5rem;

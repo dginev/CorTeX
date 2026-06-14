@@ -6,6 +6,18 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **UI — report color/font/layout discipline pass.** Tightened the report dashboard after review:
+  (1) **color** — severity is now carried by **one** element per row (the bar + its matching count
+  number, same token hue); row labels are neutral ink (quiet links, accent on hover) instead of
+  all-purple; **removed the stray cell-background tints** (Bootstrap's off-palette `td.warning`
+  `#fcf8e3` and a legacy `td.error` rule that tinted the *error* cell with the *warning* color — both
+  gone / neutralized). (2) **fonts** — numeric columns now use the body **sans with tabular figures**
+  (`tabular-nums`/`tnum`) instead of `--mono`, which was falling back to Courier (JetBrains Mono isn't
+  installed) and clashing. (3) **layout** — percentages render as **consistent integers** (`| float
+  | round`; the bar keeps the precise width) instead of the `45%` vs `28.33%` mix; the **0% bar no
+  longer shows a sliver** (dropped `min-width`). Verified live (`reports_api_test` green; integer %
+  served, neutralizer applied).
+
 - **UI — scholarly report dashboard (the report drill-down pages redesigned).** Replaced the narrow,
   Bootstrap-contextual-colored report tables with a calm, productized dashboard built on the tokens:
   a titled `.report-header` (corpus / service + format + latest-run provenance), a status/breakdown
