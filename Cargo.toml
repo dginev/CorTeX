@@ -182,9 +182,23 @@ path = "examples/zmq_faults.rs"
 name = "dispatcher_memory"
 path = "examples/dispatcher_memory.rs"
 
+# Archive-library rationalization: the pure-Rust stack (flate2/tar/zip) vs. the self-maintained
+# libarchive-sys C fork — gzip decompress A/B (the import hot op), compress + zip-build throughput,
+# streaming (bounded memory), and content-based format auto-detection (magic bytes, since filenames
+# lie). docs/ARCHIVE_RATIONALIZATION.md.
+[[example]]
+name = "archive_bench"
+path = "examples/archive_bench.rs"
+
 [dev-dependencies]
 # Phase-0 dispatcher spike only (NOT a production dependency — the dispatcher hot path is untouched,
 # held for owner review). `zeromq` = pure-Rust async ZMQ under empirical evaluation vs. libzmq.
 bytes = "1.11.1"
 tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "fs", "time", "sync"] }
 zeromq = "0.6.0"
+# Archive-library rationalization spike (examples/archive_bench.rs): the pure-Rust archive stack under
+# evaluation to replace the self-maintained libarchive-sys C-FFI fork. flate2 (gzip), tar, zip —
+# all streaming-native (Read/Write). Default flate2 backend is miniz_oxide (pure Rust, zero C).
+flate2 = "1"
+tar = "0.4"
+zip = "2"

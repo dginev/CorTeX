@@ -1386,3 +1386,20 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   bounded ZMQ HWM; (4) byte-aware admission control as a hard backstop. Budget: ~0.2–1GB job-data at
   300 jobs / 1MB chunks, other consumers negligible → a few GB peak, ≥28GB left for workers. New knobs
   proposed: chunk_bytes (1MB), inflight_bytes_budget. Best-practices audit + evidence table updated.
+- **Archive-library rationalization (owner: replace libarchive, flexible generality + high efficiency
+  hot path + content auto-detection):** created `docs/ARCHIVE_RATIONALIZATION.md` + built
+  `examples/archive_bench.rs`. Current state: `libarchive-sys` is a **self-maintained C-FFI fork**
+  (bus-factor 1) used in just 2 files (importer.rs reads .tar/.gz + writes .zip; helpers.rs reads .zip
+  entries; the dispatcher sink writes raw bytes, no codec). Recommendation: the pure-Rust **flate2 +
+  tar + zip** stack (+ a magic-byte sniffer), which is better-maintained, removes a C dep (complements
+  libzmq→zeromq), covers our exact formats (.gz/.tar/.tar.gz/.zip), and streams natively (Read/Write →
+  bounded memory, serves the memory-discipline audit). **Empirical (8MB realistic ~2.9x source):**
+  gzip decompress flate2 1314 MB/s vs libarchive 1467 MB/s = **0.90x (near parity)**; both ~1.3-1.5
+  GB/s ≫ the /data disk that bounds bulk import → codec is NOT the bottleneck. (zlib-ng backend
+  available for C-speed if ever needed — a perf/purity knob.) **Content-based auto-detection** (owner:
+  filenames lie, some files are wrong/corrupt e.g. raw PDF): a ~10-line magic-byte sniffer replicates
+  libarchive's support_*_all — validated: real gz/zip/tar classify correctly, a .gz-that's-really-PDF
+  is **rejected**, a .gz-that's-really-plain-TeX falls back to raw (the arXiv "surprise"); the `infer`
+  crate is an off-the-shelf alternative. Detect-then-dispatch also closes part of I-1 (corrupt entry =
+  log+skip, not panic). Migration surface = importer.rs + helpers.rs, behind importer_test; pairs with
+  the I-1 unpack hardening. Spikes are example/dev-deps only.
