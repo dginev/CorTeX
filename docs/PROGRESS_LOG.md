@@ -1478,3 +1478,15 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   "no unwrap/expect/panic on request paths" — the 18 frontend unwraps are all safe (constant regex,
   guarded option-unwraps inside is_some() branches, or doc comments describing already-fixed legacy
   panics); no request-path panic risk remains.
+- **README brought current (Admin UX "from installation" entry point; PRODUCTIZING_PLAN Arm 13):** the
+  README still read like the pre-productization prototype (News stopped at 2019, "not ready for
+  off-the-shelf use") — yet it's the first thing a new admin sees. Updated factually: added a
+  **Getting started** quick-path (the verified `cortex init` / `set-admin-token` / `doctor` / frontend
+  commands + links to INSTALL.md + the new MANUAL.md); added feature lines for the shipped
+  capabilities (self-install, agent-first API with `/api/docs`, observability `/health`+`/metrics`+
+  audit log, passkeys/sessions); and replaced the flat "not ready" closing with a **measured**
+  productization statement (self-installing now, active sprint, public preview in prep, some
+  hardening/rationalization still in flight — no over-claim of production readiness). Every claim
+  verified against the code. Pure docs. Note: the high-value *unblocked* queue is thinning — read
+  paths are indexed + N+1-free, request paths panic-free, sessions/jobs bounded; the big remaining
+  wins (dispatcher phase-1, archive swap) are gated on owner decisions.
