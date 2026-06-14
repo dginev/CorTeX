@@ -1262,3 +1262,18 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   site classified (mutex-poison + hard-limit = deliberate fail-fast; connection_at retry-hardened;
   thread deaths supervised → abort → restart): no accidental crash/silent-death gaps remain; what's
   left is throughput, not resilience. D-7 re-pointed at the rationalization plan (phase 2).
+- **Dispatcher rationalization — design REVISED per owner steer (autonomous-day progress):** the owner
+  answered the design questions with three reshaping factors + "hold for review" (no hot-path code).
+  Revised `docs/DISPATCHER_RATIONALIZATION.md`: (1) **ZMQ-crate evaluation** — key finding that
+  `tmq`/`async-zmq` merely *wrap the same libzmq `zmq` crate* (don't address the owner's maintenance
+  concern), while **`zeromq` 0.6 (zmq.rs) is pure-Rust + async-native** = the real escape from the C
+  FFI binding *and* async; the rare large-multipart-response flakiness is partly a framing issue + must
+  be validated on any new crate. (2) **async file I/O** added (sink writes + ventilator source reads →
+  `tokio::fs`). (3) **DB-finalize batching** added as a phase (drain up to N off the channel → one
+  multi-row INSERT → the owner's "reduces latency tremendously"). Revised recommendation now leans a
+  **tokio async core on pure-Rust `zeromq`** (≈approach B, motivated by maintenance + async-I/O), but
+  **de-risked by a phase-0 throwaway SPIKE** (examples/: large-multipart round-trip + async fs write +
+  bench vs libzmq) before any commitment; transport-independent phases (done-queue→bounded channel; DB
+  batching; sink writer fan-out + async I/O; DashMap in-flight/services) ship regardless. Open
+  questions narrowed to: green-light the spike, dashmap OK, the config knobs. Still **holding all
+  hot-path implementation for owner review** per the directive.

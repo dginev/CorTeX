@@ -40,15 +40,24 @@ investigation.** **D-7 (single blocking sink writer) folds into this work.**
 
 ## Where it is "not asynchronous / not fanned out / not lock-free"
 
-1. **The sink serializes receive + slow disk write + DB-queueing on one thread.** Each result blocks
-   the next on a `/data` QLC-RAID6 write (D-7). This is the single biggest throughput ceiling: ZMQ
-   PULL backs up behind disk latency.
+1. **The sink serializes receive + slow *blocking* disk write + DB-queueing on one thread.** Each
+   result blocks the next on a `/data` QLC-RAID6 write (D-7), and the write is **synchronous** (no
+   async file I/O). This is the single biggest throughput ceiling: ZMQ PULL backs up behind disk
+   latency. *(Owner: wants async file I/O for both the sink writes and the ventilator source reads.)*
 2. **`Mutex<Vec>` done queue** between sink and finalize: a lock on every result (write side) and on
    every drain (read side), plus the `DONE_QUEUE_HARD_LIMIT` panic backstop standing in for real
    backpressure. A channel *is* this hand-off, without the lock or the panic.
 3. **`Mutex<HashMap>` in-flight set**: locked on every lease, every return, every backpressure size
    check, and the timeout sweep — contended between vent + sink + reaper.
 4. **`Mutex<HashMap>` service cache**: locked on every dispatch though it is ~read-only after warmup.
+5. **The DB finalize persists per-result, not in batches.** *(Owner: batching enough results into a
+   single multi-row INSERT "reduces latency tremendously".)* Larger batches amortize the round-trip,
+   the index maintenance, and the rollup-refresh trigger across many results — a major throughput win
+   that a channel hand-off makes natural (the finalize drains *up to N* off the channel, inserts once).
+6. **The ZMQ binding (`zmq` 0.10) is libzmq-FFI, battle-proven but slow-maintained**, and shows **rare
+   large-response flakiness** — a big result archive streamed as tens of multipart frames can
+   interleave/corrupt against other messages. *(Owner: is an async ZMQ crate better maintained?)* See
+   the ZMQ-library evaluation below.
 
 ## Target shape — fearless concurrency by message-passing + lock-free structures
 
@@ -70,42 +79,80 @@ The compiler then guarantees data-race freedom — "fearless concurrency" in the
 - **Service cache → `DashMap`** (or `arc-swap` for a near-static snapshot): contention-free dispatch
   lookups.
 
-### "How async?" — the one architecture fork for the owner
+## ZMQ-library evaluation (owner: maintenance + the large-multipart flakiness)
 
-Two ways to be "more asynchronous"; they are not exclusive (start with A, consider B later):
+The owner's two pointed concerns — *is an async ZMQ crate better maintained?* and *the rare large
+multi-frame response interleaving/corrupting* — reframe the transport choice. The landscape (verify
+versions/activity on crates.io before committing):
 
-- **A. Channel-pipelined threads (recommended first).** Keep the synchronous `zmq` sockets, but make
-  the *dataflow* asynchronous/pipelined via channels + a writer pool, and lock-free via DashMap/atomics.
-  Achieves lock-free + fan-out + pipelining with **bounded, incremental, well-tested** changes and no
-  new runtime. Works with the existing sync `zmq` crate.
-- **B. Full async runtime (tokio + `tmq`/`async-zmq`).** Rewrite the vent/sink event loops as async
-  tasks awaiting socket readiness, fanning out writes as spawned tasks. More uniform "async", but a
-  larger rewrite: swaps the `zmq` crate for an async binding, threads a runtime through the dispatcher,
-  and re-validates the whole ZMQ lifecycle. Higher risk; better as a *second* step once A proves out.
+| Crate | Kind | Async? | Escapes libzmq FFI? | Notes |
+| --- | --- | --- | --- | --- |
+| `zmq` 0.10 (current) | libzmq C-FFI binding | sync | no | battle-proven; **slow-maintained**; the large-multipart flakiness lives here/in our framing |
+| `tmq` 0.5 / `async-zmq` 0.4 | **tokio/async wrappers over `zmq`** | yes | **no** — still libzmq underneath | async ergonomics, but inherit the *same* binding + its maintenance + (likely) the same multipart behavior |
+| **`zeromq` 0.6 (zmq.rs)** | **pure-Rust** reimplementation | **async-native** | **yes** | escapes the C FFI entirely + is async-native (fits async file I/O too); **caveat: less battle-proven than libzmq** — must validate the large-multipart case + perf in a spike |
 
-**Recommendation: do A incrementally now; revisit B afterwards.** A delivers most of the directive's
-benefit (lock-free + fan-out + pipelined) at a fraction of B's risk, and leaves B as a clean follow-on.
+**Key correction to the earlier framing:** `tmq`/`async-zmq` do **not** solve the maintenance concern
+— they wrap the very `zmq` libzmq binding the owner is wary of. The only option that *escapes* it is
+the pure-Rust **`zeromq`** crate, which is also async-native. So the owner's "better maintained +
+async" goal points at **`zeromq` (zmq.rs)**, not at the async wrappers.
+
+The large-multipart bug is partly a *framing* issue (the sink must reassemble all `RCVMORE` frames of
+one message atomically before processing). A new crate may handle it more robustly, but the
+application-level reassembly should be made bullet-proof regardless. **A spike is the way to know.**
+
+### Revised recommendation (given the owner's async-I/O + maintenance input)
+
+The earlier doc leaned "A (channel threads) first, B (async) later." The owner's specific asks —
+**async file I/O** (needs a runtime) and **escaping the libzmq binding** — now tilt toward a
+**tokio-based async core on the pure-Rust `zeromq` crate** (effectively approach **B**, but motivated
+by maintenance + async I/O, not uniformity). That is a larger rewrite, so **de-risk it with a spike
+first**:
+
+> **Proposed next step — a throwaway spike** (in `examples/`, not touching the production dispatcher):
+> a minimal `zeromq`-crate (pure-Rust, async) ROUTER/PULL round-trip that (a) streams a **large
+> multi-frame** result and confirms it reassembles without interleaving (the owner's bug), (b) does an
+> **async `tokio::fs`** write of the archive, and (c) sanity-benches the dispatched/returned rate vs.
+> the current libzmq path. If the spike holds, commit to the tokio + `zeromq` core; if not, fall back
+> to **approach A** (channel-pipelined threads over the existing sync `zmq`), which still delivers
+> lock-free + fan-out + batching without the transport swap.
+
+Either way, the **lock-free / fan-out / batching** work below is shared — only the socket layer
+differs (async `zeromq` tasks vs. channel-pipelined sync threads).
 
 ## Incremental migration plan (each phase = one reviewable PR, green on echo_roundtrip + bench)
 
+The **transport-independent** phases (1–4) deliver lock-free + fan-out + batching and ship first; the
+**transport** decision (phase 0 spike → async `zeromq` vs. stay sync `zmq`) is settled in parallel and
+only changes the socket layer.
+
+0. **Spike the pure-Rust async `zeromq` crate** (`examples/`, throwaway): large-multipart round-trip +
+   async `tokio::fs` write + a quick dispatched/returned bench vs. libzmq. Decides the socket layer
+   (async `zeromq` core, or stay on sync `zmq` + channel-pipelined threads).
 1. **Done queue → bounded channel.** Replace `Arc<Mutex<Vec<TaskReport>>>` + `push_done_queue`/drain
-   with a `crossbeam-channel` (bounded). Delete `DONE_QUEUE_HARD_LIMIT`. Finalize loops on `recv`;
-   sink `send`s. Supervision: a disconnected channel (a dead peer) is detected directly. *Smallest,
-   highest-clarity first step.*
-2. **Sink writer fan-out (closes D-7).** Split the sink: a receive loop + a pool of K archive-writer
-   threads fed by a bounded channel; writers forward `TaskReport`s to the phase-1 finalize channel.
-   Bench the dispatched/returned rate before/after on the production-scale dump.
-3. **In-flight set → DashMap + AtomicUsize.** Replace `Arc<Mutex<HashMap<i64, TaskProgress>>>`;
-   backpressure reads the atomic counter; the reaper iterates the DashMap. Removes the busiest mutex.
-4. **Service cache → DashMap / arc-swap.** Contention-free dispatch lookups.
-5. **(Optional, later) Option B**: async ZMQ event loops on tokio, if A leaves headroom worth taking.
+   with a bounded channel. Delete `DONE_QUEUE_HARD_LIMIT`. Finalize loops on `recv`; sink `send`s.
+   *Smallest, highest-clarity first step; transport-independent.*
+2. **DB finalize batching.** The finalize drains **up to N** reports (or a short time-window) off the
+   channel and persists them in **one multi-row INSERT** (then one rollup refresh), instead of
+   per-result. Amortizes the round-trip + index + trigger across a batch — the owner's "reduces
+   latency tremendously". Tune N as a `DispatcherConfig` knob (`finalize_batch`).
+3. **Sink writer fan-out + async file I/O (closes D-7).** Split the sink: a receive loop + a pool of K
+   writers fed by a bounded channel doing the **archive write asynchronously** (`tokio::fs` if on the
+   async core, else blocking writes on the pool threads); writers forward `TaskReport`s to the
+   finalize channel. The ventilator's **source reads** go async likewise. Receiving is no longer
+   hostage to disk latency, and I/O fans out across the RAID.
+4. **In-flight set → DashMap + AtomicUsize; service cache → DashMap/arc-swap.** Replace the two
+   remaining `Mutex<HashMap>`s: backpressure reads the atomic counter, the reaper iterates the
+   DashMap, dispatch lookups are contention-free.
 
 ## Crates ("prefer the foundations")
 
-- `crossbeam-channel` (or `flume`) — bounded MPSC/SPSC channels (the done-queue + writer-pool feeds).
-- `dashmap` — sharded concurrent maps (in-flight set, service cache).
-- `std::sync::atomic` — the in-flight counter.
-- (Option B only) `tmq` or `async-zmq` + `tokio`.
+- **Transport (phase 0 outcome):** either **`zeromq` 0.6 (zmq.rs, pure-Rust async)** — escapes the
+  libzmq FFI + async-native — **or** keep `zmq` 0.10 (sync) if the spike disfavors the pure-Rust impl.
+  `tmq`/`async-zmq` are *not* recommended (they wrap libzmq → don't address the maintenance concern).
+- `tokio` — the async runtime (if the async core is chosen), incl. `tokio::fs` async file I/O and
+  `tokio::sync::mpsc` channels.
+- `crossbeam-channel` (or `flume`) — bounded channels for the channel-pipelined (sync) variant.
+- `dashmap` — sharded concurrent maps (in-flight set, service cache). `std::sync::atomic` — counters.
 
 ## Risk & validation
 
@@ -119,12 +166,19 @@ benefit (lock-free + fan-out + pipelined) at a fraction of B's risk, and leaves 
   silently drop a `TaskReport` — unlike best-effort metadata, a dropped result loses work). Bounded
   channels **block** the producer rather than drop, which preserves this.
 
-## Open questions for the owner (please confirm before phase 1)
+## Open questions for the owner (please confirm before implementing)
 
-1. **Approach A (channel-pipelined threads) first, B (full tokio/async-zmq) later — agree?**
-2. **`crossbeam-channel` vs `flume`** for the channels (both fine; crossbeam is the more standard
-   "foundation", flume is a touch faster + simpler API). Default: `crossbeam-channel`.
-3. **`dashmap`** for the in-flight set + service cache — acceptable new dependency? (Alternative: keep
-   a `Mutex<HashMap>` but shard it by hand — more code, no new dep.)
-4. **Sink writer-pool size** — fixed (e.g. `cores`) or a `DispatcherConfig` knob (`sink_writers`,
-   defaulting to host cores)? Default: a config knob (consistent with the existing dispatcher knobs).
+1. **Green-light the phase-0 spike** of the pure-Rust async **`zeromq`** crate (throwaway, in
+   `examples/`)? It settles the transport: does it reassemble large multi-frame results without the
+   interleaving bug, and is its throughput acceptable vs. libzmq? (`tmq`/`async-zmq` are off the table —
+   they wrap the same libzmq binding, so they don't address your maintenance concern.)
+2. **If the spike holds → go async core (tokio + `zeromq` + `tokio::fs`)**; if not → channel-pipelined
+   threads over the existing sync `zmq`. Agree with letting the spike decide?
+3. **`dashmap`** for the in-flight set + service cache — acceptable new dependency? (Alternative: a
+   hand-sharded `Mutex<HashMap>` — more code, no new dep.)
+4. **Config knobs**: `finalize_batch` (DB batch size) and the sink writer-pool size as
+   `DispatcherConfig` knobs (defaulting batch ~ a few hundred, writers ~ host cores)? Consistent with
+   the existing dispatcher knobs.
+
+*(Status: holding implementation for your review per the 2026-06-14 directive. The transport-
+independent phases 1–4 are ready to start the moment you confirm; phase 0 is the spike.)*
