@@ -238,6 +238,50 @@ Recommend adopting `zeromq` for the dispatcher behind the staged plan below (tra
 phases 1–4 first; transport swap as a separable layer), gating the cutover on a real-network soak +
 heartbeat/reconnect validation, then optionally migrating the workers to finish removing libzmq.
 
+### Caveat #3 — resilience + realistic torture (2026-06-14): **PASSED → owner green-lit the switch**
+
+The owner made the transport switch conditional on a resilience spike proving production-readiness,
+then specified a realistic torture profile. Two more spikes close it.
+
+**ZMTP-level findings (from the `zeromq` source):** the ROUTER + PULL implement **disconnect
+detection** (`set_on_disconnect`/`peer_disconnected`) and there is an auto-**reconnect** module — so a
+ROUTER `send` to a vanished peer returns an `Err` (not a hang) and reconnecting DEALERs are re-accepted.
+But there is **no ZMTP heartbeat (PING/PONG)** and no TCP-keepalive option, so a *silent/half-open*
+peer (power-cut host) is only noticed via OS TCP timeouts. **This does not threaten correctness**:
+CorTeX recovers dead-worker tasks via the **application-level lease-timeout reaper** (the in-flight
+set's timeout sweep), which is transport-agnostic and fires regardless of ZMTP keepalive. Heartbeats
+would only speed up *silent*-peer detection; the reaper is the real safety net.
+
+**`examples/zmq_resilience.rs`** — a zeromq ROUTER ventilator + lease-timeout reaper vs. libzmq workers
+under churn (crash-holding-a-lease, request-then-die → dead-peer send, drop+reconnect). Result: **every
+task recovered & completed, zero loss**, even at *extreme* churn (100 workers / 80 % flaky / 5000
+tasks → 40 killed + 41 reconnects, all recovered; no hang/panic). Two recovery paths confirmed: the
+ventilator catches dead-peer `send` errors (immediate re-lease) and the reaper re-queues timed-out
+leases.
+
+**The torture payload set (`examples/zmq_torture.rs`), per owner spec — all five stressors at once:**
+
+| Stressor | Model |
+| --- | --- |
+| Variable sizes | **log-normal** `μ=ln(800 KB), σ=1.121` ⇒ **median 800 KB, mean ~1.5 MB**, clamped [500 KB, 200 MB]; a 0.2 % giant-injector forces the 50–200 MB tail (pure log-normal puts 200 MB at ~5σ — never seen otherwise). Chunked at 256 KB/frame ⇒ a 200 MB job is an **~800-frame** multipart message. |
+| Flaky network | per-task random **disconnect → reconnect** of a fresh DEALER+PUSH pair (‰-rate knob). |
+| Cross-talk | **hundreds** of concurrent consumers round-tripping; every frame stamped `[seq|idx|nonce]` and re-verified ⇒ any interleaving/reordering/**misrouting** is counted. |
+| Timeout flakiness | a fraction of consumers **sleep an intended 10 s–45 min** (capped for runnability) on some tasks, blowing past the lease ⇒ must be re-issued; their late result deduped. |
+| Slow/unreliable DB | the **batch finalize** sleeps a random latency **≤15 s per batch**; a **bounded** sink→finalize channel must backpressure (no loss/OOM). |
+
+**Result (release, 250 consumers, 2000 tasks, DB ≤15 s):** realized payloads `min 500 KB · p50 867 KB ·
+mean 1.9 MB · max 150 MB · 6 giants ≥50 MB` (on spec; the mean rides above 1.5 MB only because of the
+torture giant-injector — `GIANT_BP=0` gives the pure 1.5 MB). **2000/2000 persisted exactly once, zero
+integrity anomalies**, under 5902 reconnects + 40 timeout-sleeper misses (all re-leased; 40 late results
+correctly **deduped**) + 40 reaper re-leases, with the **mock DB the bottleneck** (51 tasks/s — exactly
+the backpressure the bounded-channel + batched-finalize design must absorb). No hang, no OOM, no panic.
+
+**Decision:** the resilience + torture spikes **reveal production-readiness for our model**, so per the
+owner's conditional green light **the dispatcher transport will move to pure-Rust `zeromq`**. The lone
+residual that a loopback harness *cannot* prove is a **real multi-host network soak** (true packet
+loss, partitions, NIC saturation, OS-level half-open detection) — that stays the final gate before
+flipping production traffic, not a blocker for starting the staged implementation.
+
 ## Incremental migration plan (each phase = one reviewable PR, green on echo_roundtrip + bench)
 
 The **transport-independent** phases (1–4) deliver lock-free + fan-out + batching and ship first; the
@@ -285,22 +329,21 @@ only changes the socket layer.
   silently drop a `TaskReport` — unlike best-effort metadata, a dropped result loses work). Bounded
   channels **block** the producer rather than drop, which preserves this.
 
-## Open questions for the owner (please confirm before implementing)
+## Decisions & open questions
 
-1. **Phase-0 spike — DONE** (`examples/zmq_payload_{zeromq,libzmq}.rs`, see results above). It cleared
-   the pure-Rust `zeromq` crate: correct under heavy concurrent large-multipart stress, ~90 % of
-   libzmq throughput, async-native. **No action needed except your read of the results.**
-2. **Transport decision (your call):** given the spike, go **async core (tokio + `zeromq` +
-   `tokio::fs`)** for the maintenance-escape + async-nativeness, **or** keep battle-proven libzmq and
-   take approach A (channel-pipelined sync threads)? Both reach the same lock-free/fan-out/batching end
-   state; the spike shows `zeromq` is viable but loopback can't prove the production interleaving bug is
-   gone (that's phase-3 reassembly hardening + a real-network soak, crate-independent).
-3. **`dashmap`** for the in-flight set + service cache — acceptable new dependency? (Alternative: a
-   hand-sharded `Mutex<HashMap>` — more code, no new dep.)
-4. **Config knobs**: `finalize_batch` (DB batch size) and the sink writer-pool size as
+1. **Phase-0 spikes — DONE & SETTLED.** Payload A/B, full-topology, ZMTP interop, resilience, and the
+   five-stressor torture all pass (see above). **Transport decided: pure-Rust `zeromq`** (owner green
+   light, 2026-06-14, conditional on the resilience spike — condition met). `tmq`/`async-zmq` are off
+   the table (they wrap the same libzmq binding). The one open *validation* is the real-network soak,
+   which gates flipping production traffic, not starting the build.
+2. **`dashmap`** for the in-flight set + service cache — acceptable new dependency? (Alternative: a
+   hand-sharded `Mutex<HashMap>` — more code, no new dep.) *Needed at phase 4.*
+3. **Config knobs**: `finalize_batch` (DB batch size) and the sink writer-pool size as
    `DispatcherConfig` knobs (defaulting batch ~ a few hundred, writers ~ host cores)? Consistent with
-   the existing dispatcher knobs.
+   the existing dispatcher knobs. *Needed at phases 2–3.*
 
-*(Status: holding hot-path implementation for your review per the 2026-06-14 directive. **Phase 0
-(spike) is complete** — results above. The transport-independent phases 1–4 are ready to start the
-moment you confirm #2–#4.)*
+*(Status: **phase 0 complete; transport green-lit.** Implementation of the hot path is still gated on
+the owner's "Hold for review" of the phased plan itself — the spikes settle the transport question the
+hold was protecting. Recommended first step: **phase 1 (done-queue → bounded channel)**, the smallest,
+transport-independent, highest-clarity change. The torture spike already exercises the phase-1→3 shape
+(bounded sink→finalize channel + batched, latency-stalled finalize) end-to-end.)*

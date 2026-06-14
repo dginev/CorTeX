@@ -1334,3 +1334,21 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   all hold — test green (exit 0). Serves both directive thrusts: backend robustness (no orphans,
   crash-consistent) + a thorough Admin UX (complete service lifecycle: register → activate → retire →
   delete). KNOWN_ISSUES R-6 → 🟢.
+- **Dispatcher transport — caveat #3 resilience + 5-stressor torture PASSED → owner GREEN-LIT pure-Rust
+  zeromq:** the owner made the switch conditional on a resilience spike proving production-readiness,
+  then specified a realistic torture profile (flaky network, 500KB–200MB jobs median 800KB/mean 1.5MB,
+  hundreds of cross-talking consumers, timeout sleepers 10s–45min, and a DB batch-finalize stalling
+  ≤15s). Source check: zeromq ROUTER/PULL have disconnect-detection + auto-reconnect but **no ZMTP
+  heartbeat** — which does NOT threaten correctness because CorTeX recovers dead-worker tasks via the
+  **application-level lease-timeout reaper** (transport-agnostic). Built `examples/zmq_resilience.rs`
+  (ROUTER + reaper vs. churning libzmq workers → every task recovered, zero loss, even 80% flaky / 40
+  killed + 41 reconnects) and `examples/zmq_torture.rs` (all five stressors at once, calibrated
+  log-normal payloads + giant-injector for the 200MB tail, bounded sink→finalize channel + batched
+  latency-stalled finalize). **Full torture (250 consumers, 2000 tasks, DB ≤15s): 2000/2000 persisted
+  exactly once, ZERO integrity anomalies**, realized payloads min500KB·p50 867KB·max 150MB, under 5902
+  reconnects + 40 sleeper-misses (re-leased, late results deduped) + 40 reaper re-leases; the mock DB
+  is the bottleneck (51/s = the backpressure the rationalized pipeline must absorb); no hang/OOM/panic.
+  **Decision recorded** in `docs/DISPATCHER_RATIONALIZATION.md` (caveat #3 PASSED; transport = zeromq;
+  residual = a real-network soak before flipping prod traffic). The torture spike already exercises the
+  phase-1→3 design shape (bounded channel + batched finalize) end-to-end. Recommended next build step:
+  phase 1 (done-queue → bounded channel). Hot path still untouched (example/dev-deps only).

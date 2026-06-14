@@ -153,6 +153,20 @@ path = "examples/zmq_arxiv_workload.rs"
 name = "zmq_interop"
 path = "examples/zmq_interop.rs"
 
+# Caveat-#3 resilience gate: a zeromq ROUTER ventilator + application-level lease-timeout reaper vs.
+# worker churn (crashes, request-then-die, reconnects) — proves every task is recovered (no loss)
+# without relying on ZMTP heartbeats. `zmq_torture` is the realistic escalation: a calibrated
+# log-normal payload model (500 KB–200 MB, median 800 KB, mean 1.5 MB), flaky network (random
+# disconnects), timeout-flaky sleepers (miss the max reply time), and hundreds of cross-talking
+# consumers — the definitive pre-cutover stress test.
+[[example]]
+name = "zmq_resilience"
+path = "examples/zmq_resilience.rs"
+
+[[example]]
+name = "zmq_torture"
+path = "examples/zmq_torture.rs"
+
 [dev-dependencies]
 # Phase-0 dispatcher spike only (NOT a production dependency — the dispatcher hot path is untouched,
 # held for owner review). `zeromq` = pure-Rust async ZMQ under empirical evaluation vs. libzmq.
