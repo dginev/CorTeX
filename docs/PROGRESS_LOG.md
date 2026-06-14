@@ -1546,3 +1546,17 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   `importer_test` (4) + `echo_roundtrip` pass. Docs: KNOWN_ISSUES **I-1 → 🟢**, ARCHIVE_RATIONALIZATION
   marked **DONE (Path A shipped)**. Net: the libarchive C dependency is fully gone from the Rust build;
   the per-task result-scan hot path + the import path are both pure-Rust + streaming.
+- **Canonical long-term dispatcher quality bench (owner: "high quality bench... perf + robustness"):**
+  built `examples/dispatcher_bench.rs` + `docs/DISPATCHER_BENCH.md`. Drives the REAL TaskManager
+  (vent→sink→finalize) over a real pericortex EchoWorker fleet, **drains a fixed backlog to completion**
+  (deterministic, comparable "N tasks in T s"), with **correctness gates that fail the run** on a
+  regression: no loss (all N terminal, none TODO/Queued), parse correctness (exactly N×NoProblem via
+  valid result-zips carrying a controlled cortex.log), drains-within-deadline. Knobs:
+  BENCH_TASKS/WORKERS/PAYLOAD_KB/DEADLINE_S/JSON/LABEL. Per-task subdirs (arXiv topology) so each result
+  is distinct. Baselines captured: ~10.9k tasks/s @4 workers/8KB; ~1.77 GB/s @256KB fat payloads.
+  worker_metadata reported-not-asserted (best-effort/racy). **It already caught a real bug:** the
+  8-worker config loses exactly ONE task (19999/20000) — leased but never finalized, stuck Queued until
+  the ≥1h reaper (past the deadline); 4-worker is clean. Leading suspects: D-4 ventilator-restart
+  fragility, or a sink/worker multipart-envelope desync — the latter is being addressed by the
+  malformed-reply hardening + torture tests (owner's next ask). Documented as an open finding in
+  DISPATCHER_BENCH.md.
