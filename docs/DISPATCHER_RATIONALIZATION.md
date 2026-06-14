@@ -97,7 +97,7 @@ contract it must not regress (each is load-bearing and already exists):
 | --- | --- | --- |
 | **Durable source of truth** | leasing marks the DB task `Queued` (positive status); the in-flight map is only a *cache* | `ventilator.rs`, `helpers.rs::TaskStatus` |
 | **Crash recovery** | on startup, orphaned `Queued` tasks reset to `TODO` (except those currently in-flight) — a crash mid-batch loses no work | `tasks_aggregate.rs:44`, `ventilator.rs:57` |
-| **Visibility timeout** | a lease unreturned past `TaskProgress::expected_at` (**≥1 h**, so slow latexml conversions are never re-leased) is reaped → re-queued to *its own* service | `ventilator.rs:15`, `server.rs::timeout_progress_tasks` |
+| **Visibility timeout** | a lease unreturned past `TaskProgress::expected_at` (`(retries+1) × dispatcher.lease_timeout_seconds`, default **1 h** so slow latexml conversions are never re-leased) is reaped → re-queued to *its own* service. Timeout + sweep cadence (`reap_interval_seconds`, default 60 s) are now **runtime knobs** (2026-06-14), which also unlock the bench's `BENCH_CHAOS` recovery gate. | `helpers.rs::expected_at`, `server.rs::timeout_progress_tasks` |
 | **Dead-letter / poison-task bound** | re-queue carries a **retry budget**; an exhausted task is *not* re-queued — it dead-letters (`ExpiredOutcome::Fatal`), so one hostile arXiv paper can't cycle the fleet forever | `server.rs:300-333` |
 | **Idempotent persistence** | finalize is batched status `UPDATE`s + `on_conflict_do_nothing` for logs, so a re-leased/duplicate result persists cleanly (exactly-once *effect* from at-least-once delivery) | `mark.rs:25,81` |
 | **Backpressure (no unbounded growth)** | `max_in_flight` caps leasing; the bounded channel (replacing the `*_HARD_LIMIT` panics) blocks rather than drops | `server.rs`, `manager.rs` |
@@ -260,9 +260,14 @@ de-risk.
    and the refresh-on-drain/-at-least-daily cadence. Pure size-vs-time logic unit-tested. Green on
    `dispatcher_bench` (20000 tasks, no loss, all `NoProblem`). `finalize.rs`/`config.rs`.
 3. **Sink writer fan-out + async file I/O (closes D-7).** Receive loop + pool of async `/data` writers;
-   ventilator source reads go async too. Receiving no longer hostage to disk latency.
+   ventilator source reads go async too. Receiving no longer hostage to disk latency. **⏸ Architecture
+   fork open — OPEN_QUESTIONS #12:** tokio async core (plan default, flagged highest-risk) vs. a
+   lower-risk **std-thread writer pool** intermediate (closes D-7 without committing to tokio). Held for
+   an owner direction before the hot-path rewrite.
 4. **In-flight set → DashMap + AtomicUsize; service cache → DashMap/arc-swap.** Backpressure reads the
-   atomic; the reaper iterates the DashMap; dispatch lookups contention-free.
+   atomic; the reaper iterates the DashMap; dispatch lookups contention-free. **⏸ Gated — OPEN_QUESTIONS
+   #13:** needs the `dashmap` dep sign-off, and is best sequenced **after** phase 3 (the in-flight mutex
+   isn't a measured bottleneck until the disk ceiling is gone).
 5. **Transport swap → tokio + `zeromq`.** ROUTER/PULL as async tasks. Workers stay on libzmq
    (interop-proven); a later, optional phase migrates `worker.rs` + `pericortex` to finish removing the
    C dependency.

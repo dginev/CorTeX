@@ -1612,3 +1612,18 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   Ledger: KNOWN_ISSUES **D-10** 🟢; DISPATCHER_BENCH open-finding → resolved + 8-worker baseline. Also
   marked **W-1** ③ (oversized-result cap) 🟡→covered: the `max_result_bytes` 2 GiB cap + torture test
   close the only CorTeX-side residual (worker's own resource limits stay out-of-repo).
+- **Configurable lease/visibility timeout + reap interval; bench chaos/churn-recovery gate.** Made the
+  two recovery-timing constants runtime knobs: `dispatcher.lease_timeout_seconds` (default 3600 — base of
+  `TaskProgress::expected_at`, which keeps the `(retries+1)×` backoff) and `dispatcher.reap_interval_seconds`
+  (default 60 — the ventilator's reaper sweep cadence, formerly the hardcoded `REAP_INTERVAL_SECS`). This
+  was the bench doc's flagged "phase-2+ prerequisite" for a fast chaos test. Added `BENCH_CHAOS=<n>` to
+  `dispatcher_bench`: a raw-ZMQ `DEALER` saboteur leases `n` tasks then dies without returning them
+  (simulated crash); with the timing compressed to seconds the bench asserts the **reaper recovers every
+  stranded task** under the same no-loss/all-terminal/N×NoProblem gates. Validated: 50 stranded → 2000/2000
+  finalize, 0 lost. Normal 4-worker run unregressed (~9.8k tasks/s). **Found** a real tunability gap: the
+  `pericortex` worker throttles a hardcoded 60s on an empty reply (`worker.rs:216`), which dominates
+  tail-recovery once the queue empties — logged as OPEN_QUESTIONS #14 (make it a worker config knob;
+  cross-repo, deferred). **Teed up for owner review (OPEN_QUESTIONS):** #11 W-1 cap now marked implemented;
+  #12 the phase-3 architecture fork (tokio async core vs std-thread writer-pool intermediate, closes D-7);
+  #13 phase-4 `dashmap` dep + sequencing (4-after-3). Docs: config.rs knob docs, DISPATCHER_RATIONALIZATION
+  robustness-table + phases 3-4 marked ⏸ gated, DISPATCHER_BENCH chaos section + throttle caveat.

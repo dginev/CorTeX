@@ -18,7 +18,8 @@ BENCH_TASKS=50000 BENCH_WORKERS=8 BENCH_PAYLOAD_KB=64 \
 
 Exit code is **0 only if every correctness gate passes** (so it doubles as a heavy integration test).
 Knobs: `BENCH_TASKS`, `BENCH_WORKERS`, `BENCH_PAYLOAD_KB` (source/result archive size), `BENCH_DEADLINE_S`,
-`BENCH_JSON=1` (one-line JSON record for tracking over time), `BENCH_LABEL`.
+`BENCH_JSON=1` (one-line JSON record for tracking over time), `BENCH_LABEL`, `BENCH_CHAOS` (the
+churn-recovery gate — see below).
 
 ## What it asserts (robustness gates)
 
@@ -98,9 +99,36 @@ safe to raise, but past ~2048 the long transaction backs up the pipeline faster 
 (fixed-window, no correctness gates). `dispatcher_bench.rs` supersedes it for general perf + robustness
 regression tracking; keep `bench_pipeline` for that specific historical A/B.
 
+## Chaos / churn-recovery gate (`BENCH_CHAOS`)
+
+```bash
+BENCH_TASKS=2000 BENCH_CHAOS=50 BENCH_WORKERS=4 BENCH_DEADLINE_S=120 \
+  cargo run --release --example dispatcher_bench
+```
+
+With `BENCH_CHAOS=<n>`, before the real workers start, a **saboteur** (a raw ZMQ `DEALER`) leases `n`
+tasks from the ventilator and **dies without returning any result** — simulating workers that crash
+mid-task. Those `n` tasks are stranded in the dispatcher's in-flight set; only the **lease/visibility-
+timeout reaper** can recover them (re-lease → a live worker finishes them). The bench then asserts the
+**same no-loss / all-terminal / N×NoProblem gates** — so a regression in the reaper, the lease timeout,
+or the re-queue routing shows up as stranded `Queued` tasks at the deadline.
+
+This is the reaper-recovery path made a **standing gate** in the canonical bench (previously only the
+throwaway `zmq_resilience` spike covered churn). It unblocked once the lease/visibility timeout +
+reaper interval became `DispatcherConfig` knobs: `BENCH_CHAOS` auto-sets
+`CORTEX_DISPATCHER__LEASE_TIMEOUT_SECONDS=2` + `CORTEX_DISPATCHER__REAP_INTERVAL_SECONDS=2` (override
+either) to compress the hour-scale production timing into seconds. Validated: 50 stranded → **2000/2000
+finalize, 0 lost**.
+
+> **Timing caveat:** recovery wall-clock is dominated **not** by the (fast) dispatcher reap timing but
+> by the **worker's empty-queue throttle** — `pericortex` workers `sleep(60s)` on a mock/empty reply
+> (`worker.rs:216`). Once the non-stranded tasks drain and the queue empties, workers back off 60 s
+> before polling again, and the reaper only sweeps *on a request* — so a small chaos run takes ~60 s
+> even with a 2 s lease. The gate still proves **no loss**; making that throttle a `pericortex` config
+> knob (it's a hardcoded constant today) would let the gate run in seconds — tracked in OPEN_QUESTIONS.
+
 ## Extending (future)
 
-- **Chaos / churn recovery** needs a *configurable* visibility timeout (today ≥1 h, so reaper-based
-  recovery can't be exercised in a fast bench). When the lease timeout becomes a `DispatcherConfig`
-  knob (a phase-2+ item), add a mode that kills workers mid-drain and asserts every task still lands.
 - **Latency percentiles** (dispatch→finalize) would complement throughput.
+- **Throttled-disk mode** to surface the D-7 sink-write ceiling on fast loopback (today the NVMe test
+  DB + small payloads hide it; phase 3's fan-out needs a way to *show* its benefit here).

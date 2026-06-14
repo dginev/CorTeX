@@ -109,6 +109,26 @@ pub struct DispatcherConfig {
   /// ~200 tasks/s it coalesces ~60 tasks per write instead of one write per task, for a few
   /// hundred ms of staleness).
   pub finalize_flush_ms: u64,
+  /// **Lease / visibility timeout (seconds).** Base deadline for a dispatched (in-flight) task to
+  /// return a result before the reaper re-leases it. The effective per-task deadline backs off
+  /// with retries — `(retries + 1) × lease_timeout_seconds` from dispatch — so a task that keeps
+  /// timing out waits progressively longer rather than re-leasing ever-faster
+  /// ([`crate::helpers::TaskProgress::expected_at`]). This is the correctness net for a *silently
+  /// dead / half-open* worker (no ZMTP heartbeat needed): its task is recovered once the lease
+  /// lapses. Default **3600** (1 h) — deliberately generous, because a single hostile arXiv paper
+  /// can take many minutes under `latexml`, and re-leasing a still-running task wastes compute.
+  /// Shorten it only when worker runtimes are known-bounded (a fast `echo`/import service, or a
+  /// chaos test driving fast reaper-recovery). Paired with `reap_interval_seconds` (how often the
+  /// sweep runs).
+  pub lease_timeout_seconds: i64,
+  /// **Reaper sweep interval (seconds).** How often the ventilator scans the in-flight set for
+  /// tasks past their `lease_timeout_seconds` deadline and re-leases / dead-letters them.
+  /// Decoupled from the request path so the in-flight set drains even under sustained
+  /// backpressure (KNOWN_ISSUES D-6). Kept well below the lease timeout so an expired task is
+  /// recovered promptly without scanning the set on every request. Default **60** s. (Lowering
+  /// both this and `lease_timeout_seconds` is what lets a fast chaos test exercise reaper-based
+  /// recovery in seconds instead of the hour-scale production timing.)
+  pub reap_interval_seconds: i64,
 }
 impl Default for DispatcherConfig {
   fn default() -> Self {
@@ -122,6 +142,8 @@ impl Default for DispatcherConfig {
       max_result_bytes: 2 * 1024 * 1024 * 1024, // 2 GiB
       finalize_batch_size: 1024,
       finalize_flush_ms: 300,
+      lease_timeout_seconds: 3600,
+      reap_interval_seconds: 60,
     }
   }
 }

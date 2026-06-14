@@ -65,8 +65,14 @@ pub struct TaskProgress {
   pub retries: i64,
 }
 impl TaskProgress {
-  /// What is the latest admissible time for this task to be completed?
-  pub fn expected_at(&self) -> i64 { self.created_at + ((self.retries + 1) * 3600) }
+  /// What is the latest admissible time for this task to be completed? The base deadline is the
+  /// configured lease / visibility timeout (`dispatcher.lease_timeout_seconds`, default 1 h); each
+  /// retry extends it by another full timeout (`(retries + 1) × timeout`), so a task that keeps
+  /// timing out backs off rather than re-leasing ever-faster.
+  pub fn expected_at(&self) -> i64 {
+    self.created_at
+      + ((self.retries + 1) * crate::config::config().dispatcher.lease_timeout_seconds)
+  }
 }
 
 #[derive(Clone, Debug)]

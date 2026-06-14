@@ -78,15 +78,44 @@ wasn't blocked; each can be revised/refactored on return. Newest first.
     dispatcher threads. **Not urgent for production** — the perpetual dispatcher runs `job_limit = None`;
     this is benchmark/bounded-run-only. (`src/dispatcher/{ventilator,sink,finalize,manager}.rs`)
 
-11. **W-1 — oversized-result cap needs a value + behaviour (diagnosed, not patched).** The concrete
-    CorTeX-side residual of W-1 is the sink streaming a worker's result archive to `/data` with **no
-    size bound** (`sink.rs:121-136`) — a runaway/malicious worker or a decompression bomb can fill the
-    disk. I did **not** patch it because (a) the cap is a value you'd want to set (a safety backstop —
-    e.g. a few GB, clearly beyond any legitimate conversion result — but still your call, given how
-    particular you are about such numbers), and (b) the fix lives on the **ZMQ frame path**: on
-    overflow it must *drain the remaining frames* to keep the PULL socket aligned (a botched drain
-    desyncs every later result — the same fragility as D-4), then clean up the partial file and
-    finalize the task `Fatal`. That behaviour (reject vs. truncate; configurable vs. fixed default) +
-    the frame-drain are worth a review before I touch the sink hot path. *Direction:* approve a
-    `dispatcher.max_result_size_bytes` design (I can draft it). (`src/dispatcher/sink.rs`, KNOWN_ISSUES
-    W-1)
+11. **W-1 — oversized-result cap: IMPLEMENTED (2026-06-14), confirm the default.** Shipped as
+    `dispatcher.max_result_bytes` (default **2 GiB**): on overflow the sink stops writing, **drains the
+    remaining ZMQ frames frame-by-frame** to keep the PULL socket aligned, removes the partial file, and
+    finalizes the task **`Invalid`** (`result_too_large`) — chosen over `Fatal` because an unacceptably
+    large result is a rejected *input/output*, not a conversion failure. Torture-tested at real scale
+    (`tests/dispatcher_torture_test.rs`, `CORTEX_TORTURE_BIG=1`: 1.99 GB accepted, 3 GB rejected/cleaned,
+    alongside a 200k-malformed-reply barrage proving the frame-drain stays aligned). *Only open bit:*
+    confirm **2 GiB** is the cap you want (it's a runtime knob, so deployments can override) and that
+    `Invalid` (vs `Fatal`) is the right terminal status. (`src/dispatcher/sink.rs`, KNOWN_ISSUES W-1.)
+
+12. **Dispatcher phase 3 (sink fan-out, closes D-7): which architecture?** D-7 — the single sink thread
+    doing the blocking `/data` write serialises receive behind disk latency — is the biggest remaining
+    throughput ceiling. The rationalization plan's phase 3 says "async file I/O", implying the **tokio
+    async core** (the plan itself flags that core as *the single biggest risk* of the whole migration:
+    supervised-shutdown of async tasks is easy to get wrong). There is a **lower-risk intermediate**: a
+    **std-thread writer pool** fed by per-task bounded channels — the receive loop hands each task's
+    chunks to a writer and moves on, decoupling receive from disk **without** committing to tokio yet
+    (and without new deps). It closes D-7's essence and is reversible; the full tokio/`zeromq` core can
+    follow at phase 5 (transport swap) where `tokio::fs` is natural. *Direction:* (a) std thread-pool
+    intermediate now, tokio core later **[recommended — smaller, reversible, no new runtime]**; or
+    (b) go straight to the tokio async core. I held off implementing because it's a large hot-path
+    rewrite with a real fork — the bench (8-worker correctness) + torture (envelope/cap) gate it either
+    way. (`src/dispatcher/sink.rs`, `docs/DISPATCHER_RATIONALIZATION.md` phase 3.)
+
+13. **Dispatcher phase 4 (lock-free maps): `dashmap` dependency OK?** Phase 4 swaps the in-flight set +
+    service-cache `Arc<Mutex<HashMap>>` for `DashMap` + an `AtomicUsize` size counter (your "aspire for a
+    lock-free design" directive). It needs the **`dashmap`** crate (it's in the rationalization plan's
+    crate list; alternative is a hand-sharded `Mutex<HashMap>` — more code, no new dep). *Note on
+    sequencing:* the in-flight mutex is **not** a measured bottleneck at today's throughput (held for
+    microseconds; the DB + disk dominate), so phase 4's win only materialises **after** phase 3 removes
+    the disk ceiling — I'd sequence 4 after 3 rather than now (doing it now is near-zero measurable gain).
+    *Direction:* approve `dashmap`, and confirm 4-after-3 sequencing. (`src/dispatcher/server.rs`.)
+
+14. **`pericortex` worker empty-queue throttle is a hardcoded 60 s (`worker.rs:216`).** On a mock/empty
+    reply the worker `sleep(60s)` before polling again. In production (continuous work) this is fine, but
+    it (a) makes tail-recovery of a reaped task slow once the queue has otherwise emptied — recovery is
+    bounded by `max(lease+reap, 60s)`, not the fast dispatcher reap timing — and (b) makes the new
+    `BENCH_CHAOS` gate take ~60 s. You said `pericortex` is editable (`/home/deyan/git/cortex-peripherals`).
+    *Direction:* make the throttle a config knob (e.g. `CORTEX_WORKER_THROTTLE_SECS`, default 60) — a
+    small, non-breaking, cross-repo change (commit + version bump + Cargo.toml dep update). Deferred this
+    turn to keep scope inside the `cortex` repo. (`cortex-peripherals/src/worker.rs:216`.)

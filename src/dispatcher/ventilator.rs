@@ -12,11 +12,6 @@ use crate::models::{Service, WorkerMetadataSender};
 use std::error::Error;
 use zmq::SNDMORE;
 
-/// How often (seconds) the ventilator reaps timed-out in-flight tasks. Well below the per-task
-/// timeout (`TaskProgress::expected_at`, ≥1h), so expired tasks are recovered promptly without
-/// scanning the in-flight set on every request.
-const REAP_INTERVAL_SECS: i64 = 60;
-
 /// Specifies the binding and operation parameters for a ZMQ ventilator component
 pub struct Ventilator {
   /// port to listen on
@@ -77,7 +72,11 @@ impl Ventilator {
     ventilator.bind(&address).unwrap();
     let mut source_job_count: usize = 0;
     // Reap timed-out in-flight tasks on a cadence rather than only on refetch (KNOWN_ISSUES D-6),
-    // so the in-flight set drains even under sustained backpressure (when refetch never runs).
+    // so the in-flight set drains even under sustained backpressure (when refetch never runs). The
+    // cadence is runtime-configurable (`dispatcher.reap_interval_seconds`, default 60s — well below
+    // the lease timeout, so an expired task is recovered promptly without scanning on every
+    // request).
+    let reap_interval_secs = crate::config::config().dispatcher.reap_interval_seconds;
     let mut last_reap_sec = chrono::Utc::now().timestamp();
 
     loop {
@@ -106,7 +105,7 @@ impl Ventilator {
       // Reap timed-out in-flight tasks on a cadence (decoupled from refetch): routes each expired
       // task back to its own service's queue or reports it Fatal, so the in-flight set drains even
       // while saturated (backpressure) — closes the D-6 reaping-coupling residual.
-      if request_time.timestamp() - last_reap_sec >= REAP_INTERVAL_SECS {
+      if request_time.timestamp() - last_reap_sec >= reap_interval_secs {
         last_reap_sec = request_time.timestamp();
         server::reap_expired_into(&mut queues, progress_queue_arc, done_tx);
       }

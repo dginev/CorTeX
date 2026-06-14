@@ -16,9 +16,10 @@
 //                    status distribution matches the controlled payload (the parse path is
 // correct);                    worker_metadata recorded every dispatch + return.
 //
-// Env knobs:  BENCH_TASKS (default 20000), BENCH_WORKERS (default 4), BENCH_PAYLOAD_KB (default 8,
-//             the source/result archive size), BENCH_DEADLINE_S (default 180), BENCH_JSON=1 (emit a
-//             one-line JSON record for tracking), BENCH_LABEL (default "run").
+// Env knobs: BENCH_TASKS (default 20000), BENCH_WORKERS (default 4), BENCH_PAYLOAD_KB (default 8,
+// the source/result archive size), BENCH_DEADLINE_S (default 180), BENCH_JSON=1 (emit a one-line
+// JSON record for tracking), BENCH_LABEL (default "run"). BENCH_CHAOS (default 0): when >0, strand
+// that many tasks via a crash-after-lease saboteur and assert the reaper recovers them all.
 //
 // Baselines + interpretation: docs/DISPATCHER_BENCH.md.
 
@@ -87,6 +88,45 @@ fn completed_count(conn: &mut diesel::PgConnection, corpus_id: i32, service_id: 
     .unwrap_or(0)
 }
 
+/// A **saboteur**: a raw ZMQ `DEALER` that leases `strand` tasks from the ventilator and then dies
+/// WITHOUT returning any result — simulating workers that crash mid-task. Each
+/// leased-but-unreturned task is stranded in the dispatcher's in-flight set until the
+/// lease/visibility-timeout reaper re-leases it; recovering those is exactly what the chaos gate
+/// asserts. It fully receives each lease (so the ventilator's stream completes cleanly — a partial
+/// recv would error the ventilator into a restart), then drops the socket. Runs synchronously, so
+/// on return the tasks are stranded.
+fn strand_tasks(strand: usize) {
+  let ctx = zmq::Context::new();
+  let dealer = ctx.socket(zmq::DEALER).expect("saboteur dealer");
+  dealer.set_identity(b"chaos-saboteur").ok();
+  dealer
+    .connect(&format!("tcp://127.0.0.1:{SOURCE_PORT}"))
+    .expect("saboteur connect");
+  let mut leased = 0;
+  for _ in 0..strand {
+    if dealer.send(SERVICE_NAME, 0).is_err() {
+      break;
+    }
+    // Receive the whole lease envelope `[taskid, ...payload]` (drain every frame) so the
+    // ventilator's send completes without error, then simply never reply.
+    let mut frame = zmq::Message::new();
+    loop {
+      if dealer.recv(&mut frame, 0).is_err() {
+        break;
+      }
+      if !dealer.get_rcvmore().unwrap_or(false) {
+        break;
+      }
+    }
+    leased += 1;
+  }
+  println!(
+    "[chaos] saboteur leased + abandoned {leased} task(s); dropping socket (simulated crash)"
+  );
+  // Drop the socket → every leased task is now stranded; only the reaper can recover it.
+  drop(dealer);
+}
+
 fn status_count(
   conn: &mut diesel::PgConnection,
   corpus_id: i32,
@@ -109,6 +149,21 @@ fn main() {
   let deadline = Duration::from_secs(env_usize("BENCH_DEADLINE_S", 180) as u64);
   let json = env::var("BENCH_JSON").is_ok();
   let label = env::var("BENCH_LABEL").unwrap_or_else(|_| "run".to_string());
+
+  // Chaos / churn-recovery gate: strand this many tasks via a "saboteur" worker that leases then
+  // dies without returning a result, and assert the lease/visibility-timeout reaper still recovers
+  // every one (no loss). Off by default. It needs the recovery timing compressed from the 1h
+  // production default to seconds — set the lease + reap knobs (overridable) BEFORE anything reads
+  // `config()`.
+  let chaos = env_usize("BENCH_CHAOS", 0);
+  if chaos > 0 {
+    if env::var("CORTEX_DISPATCHER__LEASE_TIMEOUT_SECONDS").is_err() {
+      env::set_var("CORTEX_DISPATCHER__LEASE_TIMEOUT_SECONDS", "2");
+    }
+    if env::var("CORTEX_DISPATCHER__REAP_INTERVAL_SECONDS").is_err() {
+      env::set_var("CORTEX_DISPATCHER__REAP_INTERVAL_SECONDS", "2");
+    }
+  }
 
   let mut backend = backend::testdb();
 
@@ -187,6 +242,19 @@ fn main() {
     .start(None)
     .expect("manager start");
   });
+  // Chaos: strand `chaos` tasks up front (synchronously), so the drain below must rely on the
+  // reaper to recover them. Running before the real workers guarantees the saboteur wins those
+  // leases.
+  if chaos > 0 {
+    let lease = cortex::config::config().dispatcher.lease_timeout_seconds;
+    let reap = cortex::config::config().dispatcher.reap_interval_seconds;
+    println!(
+      "[chaos] stranding up to {chaos} task(s) via a crash-after-lease saboteur; recovery via reaper (lease {lease}s, reap every {reap}s)"
+    );
+    thread::spawn(move || strand_tasks(chaos))
+      .join()
+      .expect("saboteur thread");
+  }
   for w in 0..n_workers {
     thread::spawn(move || {
       let mut worker = EchoWorker {
@@ -253,6 +321,11 @@ fn main() {
 
   println!("\n========== dispatcher_bench [{label}] ==========");
   println!("workers {n_workers} · payload {payload_kb}KB · tasks {n_tasks}");
+  if chaos > 0 {
+    println!(
+      "chaos                   : up to {chaos} task(s) stranded via crash-after-lease; gate = reaper recovers all (no loss)"
+    );
+  }
   println!(
     "drained                 : {completed}/{n_tasks} in {secs:.2}s{}",
     if drained { "" } else { "  (TIMEOUT)" }
