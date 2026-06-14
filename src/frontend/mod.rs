@@ -16,4 +16,5 @@ pub mod reports;
 pub mod runs;
 pub mod server;
 pub mod services;
+pub mod sessions;
 pub mod webauthn;

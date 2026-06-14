@@ -1137,3 +1137,19 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   trip; the other gated-screen tests updated to expect `/admin/login?next=`. clippy -D warnings + the
   full auth/render test sweep green. **The owner's AAA + dialog + return-path requests are now all
   satisfied; CI check is next.**
+- **Admin UX — active sessions view + per-identity revoke (autonomous-day progress, completes the
+  session work):** the security-oversight UI for the session model built earlier (`Session::active`/
+  `revoke_all_for` were unused until now). New `frontend::sessions`: `GET /admin/sessions` (signed-in
+  admins see who is currently signed in — owner, method token/passkey, signed-in/expires, "this
+  device" marker) + `POST /admin/sessions/revoke?owner=` (sign-out-everywhere / lock out a compromised
+  account) + the agent twin `GET /api/sessions` (token-gated, in the OpenAPI spec). **Session ids are
+  never exposed** (the id IS the bearer credential): the surfaces show owner/method/times only, and
+  revocation is per-**owner** (the non-secret name); "current" is computed server-side by comparing
+  the row id to the request cookie without surfacing either. Gated + return-path + audited (the
+  fairing records the revoke). `templates/sessions.html.tera` linked from /admin. `tests/sessions_test`
+  (harness=false; uses the isolated token2/username2 fixture so a revoke can't disturb the parallel
+  username1 tests): anonymous→sign-in redirect, token-gated API, the screen lists + marks the current
+  session, revoke signs the identity out everywhere. clippy -D warnings + the full auth/render sweep
+  green. **Note (robustness ledger):** W-4's remaining auto-kill/statement-timeout work stays parked —
+  it needs an owner-set deadline (legit-long reindex/refresh must not be false-killed); not an
+  autonomous call.

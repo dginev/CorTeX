@@ -19,6 +19,7 @@
     <li><a href="/health"><i class="fa fa-heartbeat"></i>&nbsp; System health</a> — DB, migrations, pool, dispatcher, storage + maintenance</li>
     <li><a href="/settings"><i class="fa fa-sliders"></i>&nbsp; Settings</a> — dispatcher &amp; framework configuration</li>
     <li><a href="/admin/audit"><i class="fa fa-history"></i>&nbsp; Audit log</a> — who did what, when (every admin action, attributed)</li>
+    <li><a href="/admin/sessions"><i class="fa fa-users"></i>&nbsp; Active sessions</a> — who is signed in now; revoke an identity</li>
     <li><a href="/admin/passkeys"><i class="fa fa-key"></i>&nbsp; Your passkeys</a> — enroll a device to sign in without a token</li>
     <li><a href="/api/docs"><i class="fa fa-code"></i>&nbsp; Agent API docs</a> — the generated OpenAPI / RapiDoc reference</li>
   </ul>
