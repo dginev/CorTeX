@@ -16,10 +16,7 @@
           </p>
         </div>
         <div class="modal-footer">
-          <input id="savetasks-token" type="text" class="form-control" placeholder="Please enter your auth token"
-            name="token">
-          <br>
-          <button type="button" id="btn-savetasks" class="btn btn-primary disabled">Save historical record</buttont>
+          <button type="button" id="btn-savetasks" class="btn btn-primary">Save historical record</button>
         </div>
       </form>
     </div>
@@ -28,17 +25,11 @@
 
 
 <script>
+  // Auth is the signed-in admin session cookie (no token typed here); anonymous users are sent to
+  // sign-in.
   $("#modal-savetasks").on('shown.bs.modal', function () {
-    $("#savetasks-token").val("");
     $("#btn-savetasks").html('Save historical record');
-    $("#btn-savetasks").attr("class", "btn btn-primary disabled");
-  });
-  $("input#savetasks-token").on('input', function () {
-    if (($(this).val().length == 0)) {
-      $("#btn-savetasks").addClass("disabled");
-    } else {
-      $("#btn-savetasks").removeClass("disabled");
-    }
+    $("#btn-savetasks").attr("class", "btn btn-primary");
   });
 
   $("#btn-savetasks").click(function (e) {
@@ -48,10 +39,11 @@
     var xhr = new XMLHttpRequest();
     xhr.onreadystatechange = function () {
       if (this.readyState == 4) { // Only process when done.
-        if (this.status != 200 && this.status != 202) {
-          // Something went wrong, throw out the localStorage and re-auth (Redis could've fallen, etc)
+        if (this.status == 401) {
+          window.location = '/admin/login'; // not signed in -> sign in, then retry
+        } else if (this.status != 200 && this.status != 202) {
           $("#btn-savetasks").html('Failed, please retry.');
-          $("#btn-savetasks").attr("class", "btn btn-danger disabled");
+          $("#btn-savetasks").attr("class", "btn btn-danger");
         } else {
           $("#btn-savetasks").html('Marked!');
           $("#btn-savetasks").attr("class", "btn btn-success disabled");
@@ -59,10 +51,7 @@
       }
     };
     xhr.open('POST', action);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-
-    var data = {'token': $("input#savetasks-token").val(), 'description': ''};
-    xhr.send(JSON.stringify(data));
+    xhr.send();
     return false;
   });
 

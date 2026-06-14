@@ -19,9 +19,11 @@ use rocket_dyn_templates::Template;
 
 use cortex::backend::{DbPool, PooledConn};
 use cortex::config::config;
+use cortex::frontend::actor::AdminSession;
 use cortex::frontend::concerns::{serve_entry, serve_entry_preview, serve_rerun, serve_savetasks};
 use cortex::frontend::cors::CORS;
 use cortex::frontend::params::RerunRequestParams;
+use rocket::http::Status;
 
 /// Checks out a pooled connection for the legacy `concerns`-backed routes, mapping pool exhaustion
 /// to a `404` (their shared error type).
@@ -61,19 +63,23 @@ fn rerun_corpus(
   corpus_name: String,
   service_name: String,
   rr: Json<RerunRequestParams>,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
-) -> Result<Accepted<String>, NotFound<String>> {
-  let corpus_name = corpus_name.to_lowercase();
-  let mut conn = pooled(pool)?;
+) -> Result<Accepted<String>, Status> {
+  let Some(session) = session else {
+    return Err(Status::Unauthorized);
+  };
+  let mut conn = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   serve_rerun(
     &mut conn,
     pool.inner(),
-    corpus_name,
+    corpus_name.to_lowercase(),
     service_name,
     None,
     None,
     None,
-    rr,
+    &session.owner,
+    &rr.description,
   )
 }
 
@@ -87,9 +93,13 @@ fn rerun_severity(
   service_name: String,
   severity: String,
   rr: Json<RerunRequestParams>,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
-) -> Result<Accepted<String>, NotFound<String>> {
-  let mut conn = pooled(pool)?;
+) -> Result<Accepted<String>, Status> {
+  let Some(session) = session else {
+    return Err(Status::Unauthorized);
+  };
+  let mut conn = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   serve_rerun(
     &mut conn,
     pool.inner(),
@@ -98,7 +108,8 @@ fn rerun_severity(
     Some(severity),
     None,
     None,
-    rr,
+    &session.owner,
+    &rr.description,
   )
 }
 
@@ -114,9 +125,13 @@ fn rerun_category(
   severity: String,
   category: String,
   rr: Json<RerunRequestParams>,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
-) -> Result<Accepted<String>, NotFound<String>> {
-  let mut conn = pooled(pool)?;
+) -> Result<Accepted<String>, Status> {
+  let Some(session) = session else {
+    return Err(Status::Unauthorized);
+  };
+  let mut conn = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   serve_rerun(
     &mut conn,
     pool.inner(),
@@ -125,7 +140,8 @@ fn rerun_category(
     Some(severity),
     Some(category),
     None,
-    rr,
+    &session.owner,
+    &rr.description,
   )
 }
 
@@ -142,9 +158,13 @@ fn rerun_what(
   category: String,
   what: String,
   rr: Json<RerunRequestParams>,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
-) -> Result<Accepted<String>, NotFound<String>> {
-  let mut conn = pooled(pool)?;
+) -> Result<Accepted<String>, Status> {
+  let Some(session) = session else {
+    return Err(Status::Unauthorized);
+  };
+  let mut conn = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   serve_rerun(
     &mut conn,
     pool.inner(),
@@ -153,24 +173,23 @@ fn rerun_what(
     Some(severity),
     Some(category),
     Some(what),
-    rr,
+    &session.owner,
+    &rr.description,
   )
 }
 
-#[post(
-  "/savetasks/<corpus_name>/<service_name>",
-  format = "application/json",
-  data = "<rr>"
-)]
+#[post("/savetasks/<corpus_name>/<service_name>")]
 fn savetasks(
   corpus_name: String,
   service_name: String,
-  rr: Json<RerunRequestParams>,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
-) -> Result<Accepted<String>, NotFound<String>> {
-  let corpus_name = corpus_name.to_lowercase();
-  let mut conn = pooled(pool)?;
-  serve_savetasks(&mut conn, corpus_name, service_name, rr)
+) -> Result<Accepted<String>, Status> {
+  let Some(_session) = session else {
+    return Err(Status::Unauthorized);
+  };
+  let mut conn = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  serve_savetasks(&mut conn, corpus_name.to_lowercase(), service_name)
 }
 
 #[get("/favicon.ico")]

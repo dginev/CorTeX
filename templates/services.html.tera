@@ -39,7 +39,6 @@
               style="display:inline; margin-left:0.5rem;"
               onsubmit="return confirm('Deactivate {{service.name}} from {{global.corpus_name}}? This deletes its tasks and log messages for this corpus.');">
               <input type="hidden" name="confirm" value="{{service.name}}">
-              <input type="password" name="token" placeholder="token" size="8" required>
               <button type="submit" title="Retire this service from this corpus (delete its tasks + logs)">deactivate</button>
             </form>
             {% endif %}
@@ -62,7 +61,6 @@
         <option value="{{ service.name }}">{{ service.name }}</option>
         {% endfor %}
       </select>
-      <input type="password" name="token" placeholder="admin token" required>
       <button type="submit">Activate</button>
     </p>
   </form>
@@ -70,15 +68,13 @@
   <form method="post" action="/corpus/{{global.corpus_name_uri}}/extend"
     style="display:inline-block; margin:0 1.5rem; vertical-align:top;">
     <p>Re-scan the corpus path for newly-arrived entries:</p>
-    <p><input type="password" name="token" placeholder="admin token" required>
-      <button type="submit">Extend</button></p>
+    <p><button type="submit">Extend</button></p>
   </form>
   <form method="post" action="/corpus/{{global.corpus_name_uri}}/delete"
     style="display:inline-block; margin:0 1.5rem; vertical-align:top;">
     <p>Delete this corpus and all its tasks &amp; logs (irreversible):</p>
     <p><input type="text" name="confirm" placeholder="type «{{global.corpus_name}}» to confirm" size="28"
         required>
-      <input type="password" name="token" placeholder="admin token" required>
       <button type="submit">Delete corpus</button></p>
   </form>
 </div>

@@ -26,7 +26,7 @@ use uuid::Uuid;
 
 use crate::backend::{from_address, progress_report, DatabaseUrl, DbPool};
 use crate::concerns::CortexInsertable;
-use crate::frontend::actor::{owner_for_token, Actor};
+use crate::frontend::actor::{Actor, AdminSession};
 use crate::frontend::helpers::decorate_uri_encodings;
 use crate::frontend::jobs::JobDto;
 use crate::frontend::params::TemplateContext;
@@ -226,15 +226,7 @@ fn start_import(
   .map_err(|_| Status::InternalServerError)
 }
 
-/// The token field every human corpus-write form submits (the `Actor` guard can't read a form
-/// body).
-#[derive(FromForm)]
-pub struct TokenForm {
-  /// A rerun token, resolved to the acting owner.
-  pub token: String,
-}
-
-/// Fields of the human "Add a corpus" form on the overview screen.
+/// Fields of the human "Add a corpus" form on the admin dashboard.
 #[derive(FromForm)]
 pub struct ImportForm {
   /// Corpus name (external handle).
@@ -245,25 +237,27 @@ pub struct ImportForm {
   pub complex: bool,
   /// Optional description.
   pub description: Option<String>,
-  /// A rerun token, resolved to the acting owner.
-  pub token: String,
 }
 
-/// The human twin of [`import_corpus`]: the overview screen's "Add a corpus" form. Resolves the
-/// submitted token, registers + imports the corpus off the request path, and redirects to `/jobs`
-/// to watch the import job. `401` on a bad token, `409` if the name is taken.
+/// The human twin of [`import_corpus`]: the admin dashboard's "Add a corpus" form. **Gated by the
+/// signed-in [`AdminSession`] cookie** (no token typed in the form — an anonymous browser is
+/// redirected to sign-in); registers + imports the corpus off the request path and redirects to
+/// `/jobs`. `409` if the name is taken.
 #[post("/corpus/import", data = "<form>")]
 pub fn import_corpus_human(
   form: Form<ImportForm>,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
   database_url: &State<DatabaseUrl>,
 ) -> Result<Redirect, Status> {
-  let owner = owner_for_token(&form.token).ok_or(Status::Unauthorized)?;
+  let Some(session) = session else {
+    return Ok(Redirect::to("/admin/login"));
+  };
   let form = form.into_inner();
   start_import(
     pool,
     &database_url.0,
-    &owner,
+    &session.owner,
     form.name,
     form.path,
     form.complex,
@@ -342,17 +336,19 @@ fn start_extend(
 }
 
 /// The human twin of [`extend_corpus`]: the corpus screen's "Re-scan for new entries" button.
-/// Resolves the token, spawns the extend job, and redirects to `/jobs`. `401` on a bad token, `404`
-/// if the corpus is unknown.
-#[post("/corpus/<name>/extend", data = "<form>")]
+/// **Gated by the signed-in [`AdminSession`] cookie** (anonymous → sign-in); spawns the extend job
+/// and redirects to `/jobs`. `404` if the corpus is unknown.
+#[post("/corpus/<name>/extend")]
 pub fn extend_corpus_human(
   name: &str,
-  form: Form<TokenForm>,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
   database_url: &State<DatabaseUrl>,
 ) -> Result<Redirect, Status> {
-  let owner = owner_for_token(&form.token).ok_or(Status::Unauthorized)?;
-  start_extend(pool, &database_url.0, &owner, name)?;
+  let Some(session) = session else {
+    return Ok(Redirect::to("/admin/login"));
+  };
+  start_extend(pool, &database_url.0, &session.owner, name)?;
   Ok(Redirect::to("/jobs"))
 }
 
@@ -448,22 +444,23 @@ fn start_activate(
 pub struct ActivateForm {
   /// The registered service to activate on this corpus.
   pub service: String,
-  /// A rerun token, resolved to the acting owner.
-  pub token: String,
 }
 
-/// The human twin of [`activate_service`]: the corpus screen's "Activate a service" form. Resolves
-/// the token, spawns the activation job, and redirects to `/jobs`. `401` on a bad token, `404` on
-/// an unknown corpus/service.
+/// The human twin of [`activate_service`]: the corpus screen's "Activate a service" form. **Gated
+/// by the signed-in [`AdminSession`] cookie** (anonymous → sign-in); spawns the activation job and
+/// redirects to `/jobs`. `404` on an unknown corpus/service.
 #[post("/corpus/<corpus>/activate", data = "<form>")]
 pub fn activate_service_human(
   corpus: &str,
   form: Form<ActivateForm>,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
   database_url: &State<DatabaseUrl>,
 ) -> Result<Redirect, Status> {
-  let owner = owner_for_token(&form.token).ok_or(Status::Unauthorized)?;
-  start_activate(pool, &database_url.0, &owner, corpus, &form.service)?;
+  let Some(session) = session else {
+    return Ok(Redirect::to("/admin/login"));
+  };
+  start_activate(pool, &database_url.0, &session.owner, corpus, &form.service)?;
   Ok(Redirect::to("/jobs"))
 }
 
@@ -523,26 +520,26 @@ pub fn delete_corpus(
   }
 }
 
-/// Fields of the human "Delete corpus" form: the name echoed as confirmation, plus a token.
+/// Fields of the human "Delete corpus" form: the name echoed as confirmation.
 #[derive(FromForm)]
 pub struct DeleteForm {
   /// Must equal the corpus name to confirm the destructive action.
   pub confirm: String,
-  /// A rerun token, resolved to the acting owner.
-  pub token: String,
 }
 
-/// The human twin of [`delete_corpus`]: the corpus screen's "Delete corpus" form. Token-gated *and*
-/// confirmation-gated (the form echoes the corpus name), then redirects to the overview. `401` on a
-/// bad token, `400` if the confirmation doesn't match, `404` if unknown.
+/// The human twin of [`delete_corpus`]: the corpus screen's "Delete corpus" form. **Gated by the
+/// signed-in [`AdminSession`] cookie** (anonymous → sign-in) *and* confirmation-gated (the form
+/// echoes the corpus name), then redirects to the overview. `400` if the confirmation doesn't
+/// match, `404` if unknown.
 #[post("/corpus/<name>/delete", data = "<form>")]
 pub fn delete_corpus_human(
   name: &str,
   form: Form<DeleteForm>,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
 ) -> Result<Redirect, Status> {
-  if owner_for_token(&form.token).is_none() {
-    return Err(Status::Unauthorized);
+  if session.is_none() {
+    return Ok(Redirect::to("/admin/login"));
   }
   if form.confirm != name {
     return Err(Status::BadRequest);
@@ -593,27 +590,27 @@ pub fn deactivate_service(
   }
 }
 
-/// Fields of the human per-service "Deactivate" form: the service echoed as confirmation + a token.
+/// Fields of the human per-service "Deactivate" form: the service echoed as confirmation.
 #[derive(FromForm)]
 pub struct DeactivateForm {
   /// Must equal the service name to confirm the destructive action.
   pub confirm: String,
-  /// A rerun token, resolved to the acting owner.
-  pub token: String,
 }
 
 /// The human twin of [`deactivate_service`]: the corpus screen's per-service "Deactivate" form.
-/// Token-gated *and* confirmation-gated (echoes the service name), then redirects back to the
-/// corpus page. `401` on a bad token, `400` if the confirmation doesn't match, `404` if unknown.
+/// **Gated by the signed-in [`AdminSession`] cookie** (anonymous → sign-in) *and*
+/// confirmation-gated (echoes the service name), then redirects back to the corpus page. `400` if
+/// the confirmation doesn't match, `404` if unknown.
 #[post("/corpus/<corpus>/services/<service>/deactivate", data = "<form>")]
 pub fn deactivate_service_human(
   corpus: &str,
   service: &str,
   form: Form<DeactivateForm>,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
 ) -> Result<Redirect, Status> {
-  if owner_for_token(&form.token).is_none() {
-    return Err(Status::Unauthorized);
+  if session.is_none() {
+    return Ok(Redirect::to("/admin/login"));
   }
   if form.confirm != service {
     return Err(Status::BadRequest);

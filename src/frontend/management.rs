@@ -29,7 +29,7 @@ use serde::Serialize;
 
 use crate::backend::DbPool;
 use crate::config::{config, AssetsConfig, CortexConfig, DispatcherConfig};
-use crate::frontend::actor::{owner_for_token, require_admin, Actor, AdminReject, AdminSession};
+use crate::frontend::actor::{require_admin, Actor, AdminReject, AdminSession};
 
 /// Managed state: the path where the write path persists the configuration file.
 pub struct ConfigFile(pub PathBuf);
@@ -404,11 +404,16 @@ pub fn put_config(
 }
 
 /// Human write path: a native form POST from the Settings page; persists, then redirects back.
+/// **Gated by the signed-in [`AdminSession`] cookie** (the Settings screen is signed-in-only;
+/// anonymous → sign-in).
+#[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
 #[post("/settings", data = "<form>")]
 pub fn post_settings(
   form: Form<SettingsForm>,
+  session: Option<AdminSession>,
   config_file: &State<ConfigFile>,
-) -> Result<Redirect, Status> {
+) -> Result<Redirect, AdminReject> {
+  let _session = require_admin(session)?;
   let f = form.into_inner();
   let patch = serde_json::json!({
     "dispatcher": {
@@ -458,22 +463,17 @@ pub fn reindex(
   ))
 }
 
-/// The token field of the human "Reindex database" form on the health screen.
-#[derive(FromForm)]
-pub struct MaintenanceForm {
-  /// A rerun token, resolved to the acting owner.
-  pub token: String,
-}
-
-/// The human twin of [`reindex`]: the health screen's "Reindex database now" button. Spawns the
-/// same debounced reindex job and redirects to `/jobs` to watch it. `401` on a bad token.
-#[post("/maintenance/reindex", data = "<form>")]
+/// The human twin of [`reindex`]: the health screen's "Reindex database now" button. **Gated by the
+/// signed-in [`AdminSession`] cookie** (the health screen is itself signed-in-only; anonymous →
+/// sign-in). Spawns the same debounced reindex job and redirects to `/jobs`.
+#[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
+#[post("/maintenance/reindex")]
 pub fn reindex_human(
-  form: rocket::form::Form<MaintenanceForm>,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
-) -> Result<rocket::response::Redirect, Status> {
-  let owner = owner_for_token(&form.token).ok_or(Status::Unauthorized)?;
-  crate::jobs::spawn_reindex(pool.inner().clone(), &owner)
+) -> Result<rocket::response::Redirect, AdminReject> {
+  let session = require_admin(session)?;
+  crate::jobs::spawn_reindex(pool.inner().clone(), &session.owner)
     .map_err(|_| Status::InternalServerError)?;
   Ok(rocket::response::Redirect::to("/jobs"))
 }
@@ -501,15 +501,17 @@ pub fn analyze(
   ))
 }
 
-/// The human twin of [`analyze`]: the health screen's "Refresh planner statistics" button. Spawns
-/// the same debounced analyze job and redirects to `/jobs` to watch it. `401` on a bad token.
-#[post("/maintenance/analyze", data = "<form>")]
+/// The human twin of [`analyze`]: the health screen's "Refresh planner statistics" button. **Gated
+/// by the signed-in [`AdminSession`] cookie** (anonymous → sign-in). Spawns the same debounced
+/// analyze job and redirects to `/jobs`.
+#[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
+#[post("/maintenance/analyze")]
 pub fn analyze_human(
-  form: rocket::form::Form<MaintenanceForm>,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
-) -> Result<rocket::response::Redirect, Status> {
-  let owner = owner_for_token(&form.token).ok_or(Status::Unauthorized)?;
-  crate::jobs::spawn_analyze(pool.inner().clone(), &owner)
+) -> Result<rocket::response::Redirect, AdminReject> {
+  let session = require_admin(session)?;
+  crate::jobs::spawn_analyze(pool.inner().clone(), &session.owner)
     .map_err(|_| Status::InternalServerError)?;
   Ok(rocket::response::Redirect::to("/jobs"))
 }

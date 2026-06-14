@@ -619,9 +619,20 @@ fn post_corpora_extend_adds_new_entries() {
   let _ = std::fs::remove_dir_all(&root);
 }
 
-fn human_corpus_forms_are_token_and_confirm_gated() {
-  // The human screens' corpus-write forms (overview "Add a corpus", corpus-page extend/delete)
-  // carry a token field (the Actor guard can't read a form body), resolved like the API guard.
+/// Signs the tracked client in as an admin (the human write forms are now gated by the session
+/// cookie, not a token typed in the form).
+fn sign_in(client: &Client) {
+  client
+    .post("/admin/login")
+    .header(ContentType::Form)
+    .body("token=token1")
+    .dispatch();
+}
+
+fn human_corpus_forms_are_session_and_confirm_gated() {
+  // The human corpus-write forms (dashboard "Add a corpus", corpus-page extend/activate/delete) are
+  // gated by the signed-in AdminSession cookie -- an anonymous browser is redirected to sign-in (no
+  // token is typed into the form anymore) -- and the destructive ones also confirm-gate.
   let name = "human_corpus_forms";
   let mut db = backend::testdb();
   let _ = diesel::delete(corpora::table.filter(corpora::name.eq(name))).execute(&mut db.connection);
@@ -634,75 +645,53 @@ fn human_corpus_forms_are_token_and_confirm_gated() {
   .expect("corpus");
 
   let client = client();
-  // Add-a-corpus form with a bad token -> 401 (no unauthenticated corpus creation via the UI).
-  let r = client
-    .post("/corpus/import")
-    .header(ContentType::Form)
-    .body("name=x&path=/tmp/x&complex=false&token=bogus")
-    .dispatch();
-  assert_eq!(
-    r.status(),
-    Status::Unauthorized,
-    "human import bad token -> 401"
-  );
-
-  // Extend form with no valid token -> 401.
   let extend_path = format!("/corpus/{name}/extend");
-  let r = client
-    .post(extend_path.as_str())
-    .header(ContentType::Form)
-    .body("token=bogus")
-    .dispatch();
-  assert_eq!(
-    r.status(),
-    Status::Unauthorized,
-    "human extend bad token -> 401"
-  );
-
-  // Activate form with a bad token -> 401 (the guard runs before the corpus/service lookup).
   let activate_path = format!("/corpus/{name}/activate");
-  let r = client
-    .post(activate_path.as_str())
-    .header(ContentType::Form)
-    .body("service=whatever&token=bogus")
-    .dispatch();
-  assert_eq!(
-    r.status(),
-    Status::Unauthorized,
-    "human activate bad token -> 401"
-  );
-
-  // Delete form: bad token -> 401; valid token + wrong confirm -> 400; valid token + match -> 303.
   let delete_path = format!("/corpus/{name}/delete");
-  let bad = client
-    .post(delete_path.as_str())
-    .header(ContentType::Form)
-    .body(format!("confirm={name}&token=bogus"))
-    .dispatch();
-  assert_eq!(
-    bad.status(),
-    Status::Unauthorized,
-    "human delete bad token -> 401"
-  );
+
+  // Anonymous: every write form redirects to the sign-in page (no unauthenticated corpus writes).
+  for (path, body) in [
+    (
+      "/corpus/import",
+      "name=x&path=/tmp/x&complex=false".to_string(),
+    ),
+    (extend_path.as_str(), String::new()),
+    (activate_path.as_str(), "service=whatever".to_string()),
+    (delete_path.as_str(), format!("confirm={name}")),
+  ] {
+    let response = client
+      .post(path)
+      .header(ContentType::Form)
+      .body(body)
+      .dispatch();
+    assert_eq!(
+      response.headers().get_one("Location"),
+      Some("/admin/login"),
+      "anonymous {path} -> sign-in"
+    );
+  }
+
+  // Signed in, the destructive delete still confirm-gates, then succeeds.
+  sign_in(&client);
   let wrong = client
     .post(delete_path.as_str())
     .header(ContentType::Form)
-    .body("confirm=WRONG&token=token1")
+    .body("confirm=WRONG")
     .dispatch();
   assert_eq!(
     wrong.status(),
     Status::BadRequest,
-    "human delete wrong confirmation -> 400"
+    "signed-in delete wrong confirmation -> 400"
   );
   let ok = client
     .post(delete_path.as_str())
     .header(ContentType::Form)
-    .body(format!("confirm={name}&token=token1"))
+    .body(format!("confirm={name}"))
     .dispatch();
   assert_eq!(
     ok.status(),
     Status::SeeOther,
-    "human delete with token + matching confirm redirects (303)"
+    "signed-in delete + matching confirm redirects (303)"
   );
   assert!(
     Corpus::find_by_name(name, &mut db.connection).is_err(),
@@ -827,7 +816,7 @@ fn main() {
   delete_corpus_removes_corpus_tasks_and_logs();
   delete_corpus_is_404_for_unknown();
   post_corpora_extend_adds_new_entries();
-  human_corpus_forms_are_token_and_confirm_gated();
+  human_corpus_forms_are_session_and_confirm_gated();
   deactivate_service_removes_pair_tasks_and_logs();
   eprintln!("corpora_test: all cases passed");
   unsafe { libc::_exit(0) }

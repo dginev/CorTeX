@@ -14,11 +14,10 @@ pub struct ReportParams {
   pub page_size: Option<i64>,
 }
 
-/// Configuration in URL query parameter for rerun requests
+/// The JSON body of a human rerun request. Auth is the signed-in [`crate::frontend::actor::
+/// AdminSession`] cookie now — no token in the body — so only the free-text purpose remains.
 #[derive(Serialize, Deserialize)]
 pub struct RerunRequestParams {
-  /// a password-like rerun token
-  pub token: String,
   /// a plain text description for the purpose of the rerun
   pub description: String,
 }

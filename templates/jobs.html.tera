@@ -11,7 +11,6 @@
   </p>
   <form method="post" action="/reports/refresh" class="refresh-reports-form">
     <label>Force a report refresh (rebuilds the rollup behind every report; runs as a background job):</label>
-    <input type="password" name="token" placeholder="admin token" required />
     <button type="submit">Refresh reports now</button>
   </form>
   <br>

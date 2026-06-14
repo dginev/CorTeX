@@ -23,7 +23,7 @@ use crate::backend::{
   category_rollup, category_total, from_address, severity_total, what_rollup, DatabaseUrl, DbPool,
   ReportSummaryRow, RerunOptions,
 };
-use crate::frontend::actor::Actor;
+use crate::frontend::actor::{require_admin, Actor, AdminReject, AdminSession};
 use crate::frontend::concerns::serve_report;
 use crate::frontend::params::ReportParams;
 use crate::jobs;
@@ -295,29 +295,18 @@ pub fn refresh_reports(
   ))
 }
 
-/// The token field of the human "refresh reports" form on the jobs dashboard.
-#[derive(rocket::FromForm)]
-pub struct RefreshForm {
-  /// A rerun token (the same admin tokens that gate writes); resolved to the job's actor.
-  pub token: String,
-}
-
-/// The human twin of [`refresh_reports`]: the jobs-dashboard "Refresh reports now" button. Resolves
-/// the submitted token to an actor (the `Actor` guard reads header/query, not a form field, so we
-/// resolve it here), spawns the same debounced refresh job, and redirects to `/jobs` where the
-/// admin watches it run — the async UI pattern (no blocking, no JS). `401` on an unknown token.
-#[post("/reports/refresh", data = "<form>")]
+/// The human twin of [`refresh_reports`]: the jobs-dashboard "Refresh reports now" button. **Gated
+/// by the signed-in [`AdminSession`] cookie** (the jobs dashboard is signed-in-only; anonymous →
+/// sign-in), spawns the same debounced refresh job, and redirects to `/jobs` where the admin
+/// watches it run — the async UI pattern (no blocking, no JS).
+#[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
+#[post("/reports/refresh")]
 pub fn refresh_reports_human(
-  form: rocket::form::Form<RefreshForm>,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
-) -> Result<rocket::response::Redirect, Status> {
-  let owner = crate::config::config()
-    .auth
-    .rerun_tokens
-    .get(&form.token)
-    .cloned()
-    .ok_or(Status::Unauthorized)?;
-  jobs::spawn_report_refresh(pool.inner().clone(), &owner)
+) -> Result<rocket::response::Redirect, AdminReject> {
+  let session = require_admin(session)?;
+  jobs::spawn_report_refresh(pool.inner().clone(), &session.owner)
     .map_err(|_| Status::InternalServerError)?;
   Ok(rocket::response::Redirect::to("/jobs"))
 }

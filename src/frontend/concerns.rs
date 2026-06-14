@@ -5,14 +5,13 @@ use regex::Regex;
 use rocket::fs::NamedFile;
 use rocket::http::Status;
 use rocket::response::status::{Accepted, NotFound};
-use rocket::serde::json::Json;
 use rocket_dyn_templates::Template;
 use std::collections::HashMap;
 use std::str;
 
 use crate::backend::{mark_rerun, progress_report, save_historical_tasks, DbPool, RerunOptions};
 use crate::frontend::helpers::*;
-use crate::frontend::params::{ReportParams, RerunRequestParams, TemplateContext};
+use crate::frontend::params::{ReportParams, TemplateContext};
 use crate::frontend::render::task_report;
 use crate::models::{Corpus, HistoricalRun, Service, Task};
 
@@ -216,7 +215,9 @@ pub fn serve_report(
 }
 
 /// Rerun a filtered subset of tasks for a <corpus,service> pair, over the caller-supplied (pooled)
-/// `connection`.
+/// `connection`, attributed to the already-authenticated `owner` (the signed-in admin — the route
+/// gates on the [`crate::frontend::actor::AdminSession`] cookie, so there is no token here). `404`
+/// on an unknown corpus/service, `500` if the rerun marking fails.
 #[allow(clippy::too_many_arguments)]
 pub fn serve_rerun(
   connection: &mut PgConnection,
@@ -226,43 +227,16 @@ pub fn serve_rerun(
   severity: Option<String>,
   category: Option<String>,
   what: Option<String>,
-  rr: Json<RerunRequestParams>,
-) -> Result<Accepted<String>, NotFound<String>> {
-  let token = rr.token.clone();
-  let description = rr.description.clone();
-  let auth = &crate::config::config().auth;
+  owner: &str,
+  description: &str,
+) -> Result<Accepted<String>, Status> {
   let corpus_name = corpus_name.to_lowercase();
   let service_name = service_name.to_lowercase();
-
-  // Ensure we're given a valid rerun token to rerun, or anyone can wipe the cortex results
-  // let token = safe_data_to_string(data).unwrap_or_else(|_| UNKNOWN.to_string()); // reuse old
-  // code by setting data to the String
-  let user_opt = auth.rerun_tokens.get(&token);
-  let user = match user_opt {
-    None => return Err(NotFound("Access Denied".to_string())), /* TODO: response.
-                                                                 * error(Forbidden, */
-    // "Access denied"),
-    Some(user) => user,
-  };
   println!(
-    "-- User {user:?}: Mark for rerun on {corpus_name}/{service_name}/{severity:?}/{category:?}/{what:?}");
-
-  // Run (and measure) the three rerun queries
+    "-- User {owner:?}: Mark for rerun on {corpus_name}/{service_name}/{severity:?}/{category:?}/{what:?}");
+  let corpus = Corpus::find_by_name(&corpus_name, connection).map_err(|_| Status::NotFound)?;
+  let service = Service::find_by_name(&service_name, connection).map_err(|_| Status::NotFound)?;
   let report_start = chrono::Utc::now();
-  // Build corpus and service objects
-  let corpus = match Corpus::find_by_name(&corpus_name, connection) {
-    Err(_) => return Err(NotFound("Access Denied".to_string())), /* TODO: response.
-                                                                   * error(Forbidden, */
-    // "Access denied"),
-    Ok(corpus) => corpus,
-  };
-
-  let service = match Service::find_by_name(&service_name, connection) {
-    Err(_) => return Err(NotFound("Access Denied".to_string())), /* TODO: response.
-                                                                   * error(Forbidden, */
-    // "Access denied"),
-    Ok(service) => service,
-  };
   let rerun_result = mark_rerun(
     connection,
     RerunOptions {
@@ -271,58 +245,37 @@ pub fn serve_rerun(
       severity_opt: severity,
       category_opt: category,
       what_opt: what,
-      description_opt: Some(description),
-      owner_opt: Some(user.to_string()),
+      description_opt: Some(description.to_string()),
+      owner_opt: Some(owner.to_string()),
     },
   );
-  let report_end = chrono::Utc::now();
-  let report_duration = (report_end - report_start).num_milliseconds();
-  println!("-- User {user:?}: Mark for rerun took {report_duration:?}ms");
+  let report_duration = (chrono::Utc::now() - report_start).num_milliseconds();
+  println!("-- User {owner:?}: Mark for rerun took {report_duration:?}ms");
   match rerun_result {
-    Err(_) => Err(NotFound("Access Denied".to_string())), // TODO: better error message?
+    Err(_) => Err(Status::InternalServerError),
     Ok(_) => {
       // Reflect the rerun in reports without blocking this request: refresh the rollup off the
       // request path (debounced, observable via `/api/jobs`). Best-effort — the rerun committed.
-      let _ = crate::jobs::spawn_report_refresh(pool.clone(), user);
+      let _ = crate::jobs::spawn_report_refresh(pool.clone(), owner);
       Ok(Accepted(String::default()))
     },
   }
 }
 
-/// Save the historical tasks of a corpus run, for reference, for a <corpus,service> pair
+/// Save the historical tasks of a corpus run, for reference, for a <corpus,service> pair. Auth is
+/// the signed-in [`crate::frontend::actor::AdminSession`] cookie (gated at the route). `404` on an
+/// unknown corpus/service.
 pub fn serve_savetasks(
   connection: &mut PgConnection,
   corpus_name: String,
   service_name: String,
-  rr: Json<RerunRequestParams>,
-) -> Result<Accepted<String>, NotFound<String>> {
-  let token = rr.token.clone();
-  let auth = &crate::config::config().auth;
+) -> Result<Accepted<String>, Status> {
   let corpus_name = corpus_name.to_lowercase();
   let service_name = service_name.to_lowercase();
-
-  // Ensure we're given a valid rerun token to rerun, or anyone can wipe the cortex results
-  // let token = safe_data_to_string(data).unwrap_or_else(|_| UNKNOWN.to_string()); // reuse old
-  // code by setting data to the String
-  let user_opt = auth.rerun_tokens.get(&token);
-  let user = match user_opt {
-    None => return Err(NotFound("Access Denied".to_string())),
-    Some(user) => user,
-  };
-  println!("-- User {user:?}: Saving tasks on {corpus_name}/{service_name}");
-
-  // Build corpus and service objects
-  let corpus = match Corpus::find_by_name(&corpus_name, connection) {
-    Err(e) => return Err(NotFound(format!("{e}"))),
-    Ok(corpus) => corpus,
-  };
-
-  let service = match Service::find_by_name(&service_name, connection) {
-    Err(_) => return Err(NotFound("Access Denied".to_string())),
-    Ok(service) => service,
-  };
+  let corpus = Corpus::find_by_name(&corpus_name, connection).map_err(|_| Status::NotFound)?;
+  let service = Service::find_by_name(&service_name, connection).map_err(|_| Status::NotFound)?;
   match save_historical_tasks(connection, &corpus, &service) {
-    Err(e) => Err(NotFound(format!("{e}"))),
+    Err(_) => Err(Status::InternalServerError),
     Ok(count) => Ok(Accepted(format!("Saved {count} tasks"))),
   }
 }

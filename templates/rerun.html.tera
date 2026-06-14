@@ -23,13 +23,10 @@
           </p>
         </div>
         <div class="modal-footer">
-          <input id="rerun-description" type="text" class="form-control" placeholder="Description of rerun"
+          <input id="rerun-description" type="text" class="form-control" placeholder="Description of rerun (optional)"
             name="description">
           <br>
-          <input id="rerun-token" type="text" class="form-control" placeholder="Please enter your auth token"
-            name="token">
-          <br>
-          <button type="button" id="btn-rerun" class="btn btn-primary disabled">Mark for rerun</buttont>
+          <button type="button" id="btn-rerun" class="btn btn-primary">Mark for rerun</button>
         </div>
       </form>
     </div>
@@ -38,24 +35,11 @@
 
 
 <script>
+  // Auth is the signed-in admin session cookie (no token typed here). An anonymous user is sent to
+  // sign-in; the XHR carries the cookie automatically.
   $("#modal-rerun").on('shown.bs.modal', function () {
-    $("#rerun-token").val("");
     $("#btn-rerun").html('Mark for rerun');
-    $("#btn-rerun").attr("class", "btn btn-primary disabled");
-  });
-  $("input#rerun-token").on('input', function () {
-    if (($(this).val().length == 0) || ($("input#rerun-description").val().length == 0)) {
-      $("#btn-rerun").addClass("disabled");
-    } else {
-      $("#btn-rerun").removeClass("disabled");
-    }
-  });
-  $("input#rerun-description").on('input', function () {
-    if (($(this).val().length == 0) || ($("input#rerun-token").val().length == 0)) {
-      $("#btn-rerun").addClass("disabled");
-    } else {
-      $("#btn-rerun").removeClass("disabled");
-    }
+    $("#btn-rerun").attr("class", "btn btn-primary");
   });
 
   $("#btn-rerun").click(function (e) {
@@ -65,10 +49,11 @@
     var xhr = new XMLHttpRequest();
     xhr.onreadystatechange = function () {
       if (this.readyState == 4) { // Only process when done.
-        if (this.status != 200 && this.status != 202) {
-          // Something went wrong, throw out the localStorage and re-auth (Redis could've fallen, etc)
+        if (this.status == 401) {
+          window.location = '/admin/login'; // not signed in -> sign in, then retry
+        } else if (this.status != 200 && this.status != 202) {
           $("#btn-rerun").html('Failed, please retry.');
-          $("#btn-rerun").attr("class", "btn btn-danger disabled");
+          $("#btn-rerun").attr("class", "btn btn-danger");
         } else {
           $("#btn-rerun").html('Marked!');
           $("#btn-rerun").attr("class", "btn btn-success disabled");
@@ -77,10 +62,7 @@
     };
     xhr.open('POST', action);
     xhr.setRequestHeader('Content-Type', 'application/json');
-
-    var data = {};
-    data['token'] = $("input#rerun-token").val();
-    data['description'] = $("input#rerun-description").val();
+    var data = { 'description': $("input#rerun-description").val() };
     xhr.send(JSON.stringify(data));
     return false;
   });

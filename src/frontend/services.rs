@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::backend::DbPool;
 use crate::concerns::CortexInsertable;
-use crate::frontend::actor::{owner_for_token, require_admin, Actor, AdminReject, AdminSession};
+use crate::frontend::actor::{require_admin, Actor, AdminReject, AdminSession};
 use crate::frontend::helpers::decorate_uri_encodings;
 use crate::frontend::params::TemplateContext;
 use crate::models::{NewService, Service, WorkerMetadata};
@@ -212,19 +212,21 @@ pub struct RegisterServiceForm {
   pub complex: bool,
   /// Optional description.
   pub description: Option<String>,
-  /// A rerun token, resolved to the acting owner.
-  pub token: String,
 }
 
-/// The human twin of [`register_service`]: the registry screen's "Register a service" form.
-/// Resolves the token, inserts the service, and redirects back to `/services`. `401` on a bad
-/// token, `409` if the name is taken.
+/// The human twin of [`register_service`]: the registry screen's "Register a service" form. **Gated
+/// by the signed-in [`AdminSession`] cookie** (the registry screen is itself signed-in-only;
+/// anonymous → sign-in), inserts the service, and redirects back to `/services`. `409` if the name
+/// is taken.
 #[post("/services/register", data = "<form>")]
 pub fn register_service_human(
   form: Form<RegisterServiceForm>,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
 ) -> Result<Redirect, Status> {
-  owner_for_token(&form.token).ok_or(Status::Unauthorized)?;
+  if session.is_none() {
+    return Ok(Redirect::to("/admin/login"));
+  }
   let form = form.into_inner();
   insert_service(
     pool,

@@ -94,6 +94,8 @@ fn put_api_config_merges_and_persists() {
 fn post_settings_form_persists_and_redirects() {
   let path = temp_config_path("post");
   let client = client(path.clone());
+  // post_settings is now gated by the AdminSession cookie (the Settings screen is signed-in-only).
+  sign_in(&client);
   let form = "dispatcher_source_port=51695&dispatcher_result_port=51696\
               &dispatcher_queue_size=4242&dispatcher_message_size=100000\
               &dispatcher_max_in_flight=5000&dispatcher_report_refresh_interval_seconds=7200\

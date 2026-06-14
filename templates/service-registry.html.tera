@@ -53,7 +53,6 @@
       <p><label>Input converter (optional) <input type="text" name="inputconverter" placeholder="e.g. import"></label></p>
       <p><label>Description <input type="text" name="description" size="48"></label></p>
       <p><label><input type="checkbox" name="complex" value="true" checked> Complex (needs more than main text)</label></p>
-      <p><label>Admin token <input type="password" name="token" required></label></p>
       <button type="submit">Register service</button>
     </form>
   </details>
