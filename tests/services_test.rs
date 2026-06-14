@@ -139,4 +139,6 @@ fn worker_fleet_api_and_screen() {
   diesel::delete(services::table.filter(services::name.eq(SERVICE_NAME)))
     .execute(&mut db.connection)
     .ok();
+  // Exit before the racy libpq/OpenSSL atexit teardown of the still-live Client (KNOWN_ISSUES L-1).
+  unsafe { libc::_exit(0) }
 }

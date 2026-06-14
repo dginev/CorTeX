@@ -25,7 +25,6 @@ fn client() -> Client {
   .expect("a valid rocket instance")
 }
 
-#[test]
 fn get_api_config_returns_masked_contract() {
   let client = client();
   let response = client.get("/api/config").header(Accept::JSON).dispatch();
@@ -65,7 +64,6 @@ fn get_api_config_returns_masked_contract() {
   );
 }
 
-#[test]
 fn healthz_reports_ok_when_db_reachable() {
   let client = client();
   let response = client.get("/healthz").dispatch();
@@ -75,4 +73,13 @@ fn healthz_reports_ok_when_db_reachable() {
   assert_eq!(body["status"], "ok");
   assert_eq!(body["database"]["reachable"], true);
   assert_eq!(body["migrations"]["current"], true);
+}
+
+// Custom harness (Cargo.toml `harness = false`): run the cases then `_exit(0)`, skipping the racy
+// libpq/OpenSSL atexit teardown that SIGSEGVs after assertions pass (KNOWN_ISSUES L-1).
+fn main() {
+  get_api_config_returns_masked_contract();
+  healthz_reports_ok_when_db_reachable();
+  eprintln!("management_api_test: all cases passed");
+  unsafe { libc::_exit(0) }
 }

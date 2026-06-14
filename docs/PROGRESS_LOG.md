@@ -409,3 +409,14 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   🟡 with the diagnosis.
   *Next:* finish the SIGSEGV rollout + drop the wrapper tolerance; audit production thread/subprocess
   lifecycle (owner: long-lived frontend must not accumulate zombies → OOM); API-docs pick; load test.
+- **L-1 SIGSEGV rollout — eliminated in 6/7 Client-over-pool binaries:** converted `runs_test`,
+  `settings_test`, `management_api_test`, `jobs_api_test`, `corpora_test` to the custom harness
+  (`harness=false` + `main` runs the cases sequentially + `libc::_exit(0)`) and `services_test`/
+  `reports_api_test` to the single-test `_exit` form. Validated ~6 runs each: **0 SIGSEGV** for
+  runs/settings/management/jobs_api/services/reports_api. `corpora_test` has a **rare residual** (1/6 once,
+  then 0/12 on rescan) — likely its `import`/`extend` tests' **detached job threads** still in flight at
+  `_exit`; the `scripts/ci_test.sh` SIGSEGV-tolerance is **kept as a backstop for that one binary** (it
+  still fails CI on any real failure) until the residual is chased. Bonus: sequential case execution is more
+  deterministic than the parallel harness.
+  *Next:* chase the `corpora_test` residual (await its spawned jobs before exit) then drop the wrapper; the
+  **live-DB-dump load test is now unblocked** (dump provided) — restore + verify migrations + load test.

@@ -221,4 +221,6 @@ fn category_and_what_reports_match_seed() {
   // Unknown corpus -> 404 (the relocated serve_report now returns a Status, not a panic).
   let response = client.get("/corpus/no-such-xyz/no_svc/warning").dispatch();
   assert_eq!(response.status(), Status::NotFound, "unknown corpus -> 404");
+  // Exit before the racy libpq/OpenSSL atexit teardown of the still-live Client (KNOWN_ISSUES L-1).
+  unsafe { libc::_exit(0) }
 }

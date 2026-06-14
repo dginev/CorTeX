@@ -27,7 +27,6 @@ fn client() -> Client {
   .expect("a valid rocket instance")
 }
 
-#[test]
 fn api_corpora_lists_registered_corpora() {
   let name = "corpora_capability_test";
   let mut db = backend::testdb();
@@ -70,7 +69,6 @@ fn cleanup(db: &mut backend::Backend, corpus_name: &str, service_name: &str) {
     .execute(&mut db.connection);
 }
 
-#[test]
 fn api_corpus_detail_reports_services_and_counts() {
   let corpus_name = "corpus_detail_test";
   let service_name = "corpus_detail_svc";
@@ -122,7 +120,6 @@ fn api_corpus_detail_reports_services_and_counts() {
   cleanup(&mut db, corpus_name, service_name);
 }
 
-#[test]
 fn api_corpus_detail_is_404_for_unknown_corpus() {
   let client = client();
   let response = client.get("/api/corpora/no_such_corpus_xyz").dispatch();
@@ -132,7 +129,6 @@ fn api_corpus_detail_is_404_for_unknown_corpus() {
   assert_eq!(response.status(), Status::NotFound);
 }
 
-#[test]
 fn activate_service_requires_a_token() {
   // The activation route is a consequential write (starts processing): denied without a valid
   // rerun token (the Actor guard runs before any DB lookup, so even a bogus corpus is 401).
@@ -147,7 +143,6 @@ fn activate_service_requires_a_token() {
   );
 }
 
-#[test]
 fn register_service_creates_tasks_and_attributes_the_run() {
   let corpus_name = "activate_effect_corpus";
   let corpus_path = "/tmp/activate_effect_corpus";
@@ -235,7 +230,6 @@ fn register_service_creates_tasks_and_attributes_the_run() {
   cleanup(&mut db, corpus_name, target_svc);
 }
 
-#[test]
 fn overview_and_corpus_pages_render_server_side() {
   let corpus_name = "corpus_html_test";
   let service_name = "corpus_html_svc";
@@ -303,7 +297,6 @@ fn cleanup_corpus(db: &mut backend::Backend, corpus_name: &str) {
   }
 }
 
-#[test]
 fn post_corpora_registers_and_imports_via_a_job() {
   // A tiny non-complex corpus fixture: <root>/doc1/doc1.tex
   let root = std::env::temp_dir().join(format!("cortex_import_test_{}", std::process::id()));
@@ -374,7 +367,6 @@ fn post_corpora_registers_and_imports_via_a_job() {
   let _ = std::fs::remove_dir_all(&root);
 }
 
-#[test]
 fn delete_corpus_removes_corpus_tasks_and_logs() {
   let name = "delete_corpus_test";
   let mut db = backend::testdb();
@@ -435,7 +427,6 @@ fn delete_corpus_removes_corpus_tasks_and_logs() {
   assert_eq!(log_count, 0, "logs should be deleted (no orphans)");
 }
 
-#[test]
 fn delete_corpus_is_404_for_unknown() {
   let client = client();
   let response = client
@@ -444,7 +435,6 @@ fn delete_corpus_is_404_for_unknown() {
   assert_eq!(response.status(), Status::NotFound);
 }
 
-#[test]
 fn post_corpora_extend_adds_new_entries() {
   // Two entries on disk; the corpus initially knows only doc1.
   let root = std::env::temp_dir().join(format!("cortex_extend_test_{}", std::process::id()));
@@ -523,4 +513,20 @@ fn post_corpora_extend_adds_new_entries() {
 
   cleanup_corpus(&mut db, name);
   let _ = std::fs::remove_dir_all(&root);
+}
+
+// Custom harness (see KNOWN_ISSUES L-1): run the cases then `_exit(0)`.
+fn main() {
+  api_corpora_lists_registered_corpora();
+  api_corpus_detail_reports_services_and_counts();
+  api_corpus_detail_is_404_for_unknown_corpus();
+  activate_service_requires_a_token();
+  register_service_creates_tasks_and_attributes_the_run();
+  overview_and_corpus_pages_render_server_side();
+  post_corpora_registers_and_imports_via_a_job();
+  delete_corpus_removes_corpus_tasks_and_logs();
+  delete_corpus_is_404_for_unknown();
+  post_corpora_extend_adds_new_entries();
+  eprintln!("corpora_test: all cases passed");
+  unsafe { libc::_exit(0) }
 }

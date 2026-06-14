@@ -29,7 +29,6 @@ fn client(config_file: PathBuf) -> Client {
   Client::tracked(rocket).expect("a valid rocket instance")
 }
 
-#[test]
 fn settings_page_renders_masked_html() {
   let client = client(temp_config_path("read"));
   let response = client.get("/settings").dispatch();
@@ -47,7 +46,6 @@ fn settings_page_renders_masked_html() {
   );
 }
 
-#[test]
 fn put_api_config_merges_and_persists() {
   let path = temp_config_path("put");
   let client = client(path.clone());
@@ -72,7 +70,6 @@ fn put_api_config_merges_and_persists() {
   );
 }
 
-#[test]
 fn post_settings_form_persists_and_redirects() {
   let path = temp_config_path("post");
   let client = client(path.clone());
@@ -95,4 +92,15 @@ fn post_settings_form_persists_and_redirects() {
 
   let written = std::fs::read_to_string(&path).expect("config file written");
   assert!(written.contains("4242"));
+}
+
+// Custom harness (Cargo.toml `harness = false`): run the cases then `_exit(0)` to skip the racy
+// libpq/OpenSSL atexit teardown that SIGSEGVs after assertions pass (KNOWN_ISSUES L-1). A panic in
+// any case aborts non-zero, so real failures still fail CI.
+fn main() {
+  settings_page_renders_masked_html();
+  put_api_config_merges_and_persists();
+  post_settings_form_persists_and_redirects();
+  eprintln!("settings_test: all cases passed");
+  unsafe { libc::_exit(0) }
 }

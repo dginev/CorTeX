@@ -24,7 +24,6 @@ fn client() -> Client {
   .expect("a valid rocket instance")
 }
 
-#[test]
 fn api_job_polls_a_spawned_job() {
   let pool = build_pool(test_db_address(), 4);
   let uuid = jobs::spawn_job(
@@ -61,7 +60,6 @@ fn api_job_polls_a_spawned_job() {
   assert_eq!(body["result"], serde_json::json!({ "done": true }));
 }
 
-#[test]
 fn api_job_is_404_for_unknown_uuid() {
   let client = client();
   let response = client
@@ -70,7 +68,6 @@ fn api_job_is_404_for_unknown_uuid() {
   assert_eq!(response.status(), Status::NotFound);
 }
 
-#[test]
 fn job_progress_page_renders_html() {
   let client = client();
   let response = client
@@ -80,7 +77,6 @@ fn job_progress_page_renders_html() {
   assert_eq!(response.content_type(), Some(ContentType::HTML));
 }
 
-#[test]
 fn jobs_list_carries_health_and_duration_and_supports_pending() {
   // Spawn a job and let it finish, so the list has a known recent entry.
   let pool = build_pool(test_db_address(), 4);
@@ -145,4 +141,14 @@ fn jobs_list_carries_health_and_duration_and_supports_pending() {
       .any(|j| j["uuid"] == uuid.to_string()),
     "a finished job is not pending"
   );
+}
+
+// Custom harness (see KNOWN_ISSUES L-1): run the cases then `_exit(0)`.
+fn main() {
+  api_job_polls_a_spawned_job();
+  api_job_is_404_for_unknown_uuid();
+  job_progress_page_renders_html();
+  jobs_list_carries_health_and_duration_and_supports_pending();
+  eprintln!("jobs_api_test: all cases passed");
+  unsafe { libc::_exit(0) }
 }

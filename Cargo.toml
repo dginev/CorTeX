@@ -67,6 +67,26 @@ libc = "0.2"
 # (their own `main` + `process::exit(0)`) to ELIMINATE the L-1 diesel/libpq/Tokio teardown SIGSEGV
 # that fires after assertions pass — the racy global teardown is simply never run.
 [[test]]
+name = "management_api_test"
+path = "tests/management_api_test.rs"
+harness = false
+
+[[test]]
+name = "jobs_api_test"
+path = "tests/jobs_api_test.rs"
+harness = false
+
+[[test]]
+name = "corpora_test"
+path = "tests/corpora_test.rs"
+harness = false
+
+[[test]]
+name = "settings_test"
+path = "tests/settings_test.rs"
+harness = false
+
+[[test]]
 name = "runs_test"
 path = "tests/runs_test.rs"
 harness = false
