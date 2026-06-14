@@ -185,11 +185,13 @@ performance does not degrade as they grow into the tens/hundreds of millions of 
 
 **Server-level tuning** (`shared_buffers`, `work_mem`, `effective_cache_size`, …) is sized to the
 host's RAM/cores/storage — the PostgreSQL defaults are drastically undersized for a real CorTeX box.
-CorTeX is a **"Mixed" workload** (OLTP task/log writes + DW bulk-loads + reporting); generate a
-config with the pgtune service at <https://pgtune.leopard.in.ua/> (inputs: `mixed` / your RAM /
-physical cores / `300` connections / `nvme`), apply the `ALTER SYSTEM` block it prints, and restart
-PostgreSQL. A **verified example block** for a 256 GB / 64-core / NVMe box — plus the build caveats
-for `wal_compression=lz4` / `io_method=io_uring` — is in [`docs/DB_TUNING.md`](docs/DB_TUNING.md).
+CorTeX is a **"Mixed" workload** (OLTP task/log writes + DW bulk-loads + reporting). Run
+**`cortex tune-db`** to print the pgtune inputs pre-filled for *this* host, then generate the config
+with the pgtune service at <https://pgtune.leopard.in.ua/> (inputs: `mixed` / your RAM / physical
+cores / `300` connections / `nvme`), apply the `ALTER SYSTEM` block it prints, and restart
+PostgreSQL. (`cortex init` prints the same guidance as its last step.) A **verified example block**
+for a 256 GB / 64-core / NVMe box — plus the build caveats for `wal_compression=lz4` /
+`io_method=io_uring` — is in [`docs/DB_TUNING.md`](docs/DB_TUNING.md).
 
 **Index maintenance:** indexes on the high-churn tables bloat over time; periodically rebuild them
 online with `REINDEX (CONCURRENTLY) …` (see `docs/DB_TUNING.md` for the maintenance routine).

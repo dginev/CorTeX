@@ -58,3 +58,21 @@ fn init_is_idempotent_and_scaffolds_config() {
 
   let _ = std::fs::remove_file(&config_path);
 }
+
+#[test]
+fn db_tuning_guidance_points_at_pgtune_for_a_mixed_workload() {
+  let guidance = bootstrap::db_tuning_guidance();
+  // It guides + links (the owner decision) rather than reimplementing the heuristic.
+  assert!(
+    guidance.contains("pgtune.leopard.in.ua"),
+    "links the pgtune service"
+  );
+  assert!(
+    guidance.contains("mixed") || guidance.contains("Mixed"),
+    "names the Mixed workload type"
+  );
+  assert!(
+    guidance.contains("docs/DB_TUNING.md"),
+    "points at the verified example block"
+  );
+}

@@ -86,6 +86,52 @@ pub fn init(database_url: &str, config_path: &Path) -> Result<InitOutcome, Strin
   })
 }
 
+/// Operator guidance for tuning the PostgreSQL **server** (`shared_buffers`, `work_mem`, …),
+/// printed by `cortex tune-db` and at the end of `cortex init`. Per the owner decision (see
+/// `docs/DB_TUNING.md`), `cortex` does **not** reimplement the pgtune heuristic — it points at the
+/// upstream service and pre-fills the host's RAM / cores so the operator's inputs are ready. The
+/// per-table autovacuum is
+/// already automatic (a migration); this is the host-sized server config (see `docs/DB_TUNING.md`).
+pub fn db_tuning_guidance() -> String {
+  format!(
+    "PostgreSQL server tuning is recommended but not automated.\n\
+     CorTeX is a \"Mixed\" workload (OLTP task/log writes + DW bulk-loads + reporting); the stock\n\
+     defaults (shared_buffers=128MB, work_mem=4MB) are far too small for a real corpus.\n\n\
+     1. Generate a config at https://pgtune.leopard.in.ua/ with these inputs:\n\
+     \x20    DB Type = mixed   OS = linux   DB Version = <your PG major>\n\
+     \x20    Total RAM = {ram}   CPUs = {cores}   Connections = 300   Storage = nvme (or ssd)\n\
+     2. Apply the ALTER SYSTEM block it prints, then restart PostgreSQL.\n\
+     \x20  (build note: keep wal_compression=lz4 / io_method=io_uring only if your build supports them.)\n\n\
+     A verified example block (256 GB / 64 cores / nvme) is in docs/DB_TUNING.md.",
+    ram = total_ram_hint(),
+    cores = core_hint(),
+  )
+}
+
+/// Best-effort host RAM for the tuning guidance (Linux `/proc/meminfo`), or a placeholder.
+fn total_ram_hint() -> String {
+  std::fs::read_to_string("/proc/meminfo")
+    .ok()
+    .and_then(|meminfo| {
+      meminfo
+        .lines()
+        .find(|line| line.starts_with("MemTotal"))
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|kb| kb.parse::<u64>().ok())
+    })
+    .map(|kb| format!("{} GB", kb / 1024 / 1024))
+    .unwrap_or_else(|| "<your host RAM>".to_string())
+}
+
+/// Best-effort CPU hint for the tuning guidance (logical count, with a physical-cores reminder).
+fn core_hint() -> String {
+  std::thread::available_parallelism()
+    .map(|logical| {
+      format!("{logical} (use *physical* cores — often half this on hyperthreaded CPUs)")
+    })
+    .unwrap_or_else(|_| "<physical cores>".to_string())
+}
+
 /// Whether the built-in `init` and `import` services are present in the database.
 fn builtin_services_present(connection: &mut PgConnection) -> bool {
   use crate::schema::services::dsl::{name, services};

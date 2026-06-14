@@ -667,3 +667,13 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   deleted** (the case delete-batching could regress) — green. Kept the insert/update logic untouched (lowest
   risk). The remaining D-8 piece (a diff/upsert to skip genuinely-unchanged message reinserts) is the smaller
   follow-up. clippy/fmt clean.
+- **Installation: wire the decided pgtune guidance into `cortex init` / `cortex tune-db` (Arm 2;
+  autonomous-night progress):** the `cortex` CLI (`init`/`doctor`, backed by `cortex::bootstrap`) already
+  existed, but the **DB-tuning guide+link we decided** (`docs/DB_TUNING.md`) was never wired in — `init`
+  applied migrations + scaffolded config but said nothing about server tuning. Added
+  `bootstrap::db_tuning_guidance()` (host-aware: reads `/proc/meminfo` RAM + `available_parallelism`, with a
+  physical-cores reminder) that points at pgtune for the **Mixed** workload and references the verified
+  `DB_TUNING.md` block — printed by a new **`cortex tune-db`** subcommand *and* as the last step of
+  `cortex init`. Verified on the host (`Total RAM = 246 GB`, `CPUs = 128`). `bootstrap_test` asserts the
+  guidance links pgtune + names Mixed + points at DB_TUNING.md. INSTALL.md §8 references `cortex tune-db`.
+  clippy/fmt clean. (Closes the gap between the *decision* and the *tool*.)

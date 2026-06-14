@@ -31,12 +31,15 @@ enum Command {
     #[arg(long)]
     json: bool,
   },
+  /// Print PostgreSQL server-tuning guidance for this host (pgtune inputs; see docs/DB_TUNING.md).
+  TuneDb,
 }
 
 fn main() {
   match Cli::parse().command {
     Command::Init => run_init(),
     Command::Doctor { json } => run_doctor(json),
+    Command::TuneDb => println!("{}", bootstrap::db_tuning_guidance()),
   }
 }
 
@@ -57,6 +60,10 @@ fn run_init() {
       println!();
       let report = bootstrap::doctor(default_db_address());
       print_doctor_text(&report);
+      println!(
+        "\nNext step — tune PostgreSQL for this host:\n{}",
+        bootstrap::db_tuning_guidance()
+      );
       if !report.ok {
         std::process::exit(1);
       }
