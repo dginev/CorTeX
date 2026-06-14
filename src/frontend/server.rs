@@ -62,6 +62,10 @@ pub fn mount_api_with(
     .mount("/", services::routes())
     .register("/", crate::frontend::catchers::catchers())
     .attach(Template::fairing());
+  // Mount the generated OpenAPI spec (`/api/openapi.json`), the `#[openapi]`-documented agent
+  // routes, and the RapiDoc browser page (`/api/docs`) — built by rocket_okapi from the routes
+  // themselves.
+  let rocket = crate::frontend::apidoc::mount(rocket);
   // Snapshot the now-complete route table (legacy binary routes + all library routes) so the `/api`
   // discovery index introspects the real surface and can never drift.
   let route_table = management::RouteTable::snapshot(&rocket);

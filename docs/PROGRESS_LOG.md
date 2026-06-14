@@ -6,6 +6,22 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **API docs (Arm 9) — owner chose `rocket_okapi`; generated OpenAPI 3 spec + RapiDoc page landed
+  (foundation).** After the owner previewed both spikes side by side (the `docs/api-spike/index.html`
+  CSS bug was fixed so the comparison renders) and picked `rocket_okapi`, wired it in: `rocket_okapi`
+  + `schemars` moved to real deps; new `frontend::apidoc` mounts the **generated OpenAPI 3 document**
+  at `GET /api/openapi.json` and a **RapiDoc** browser page at `GET /api/docs`, both built by
+  rocket_okapi *from the `#[openapi]`-annotated routes themselves* — so the spec is the single source
+  of truth and can't drift (the symmetry contract extended to the docs). First vertical slice: the
+  corpora read routes (`GET /api/corpora`, `GET /api/corpora/{name}`) carry
+  `#[openapi(tag="Corpora")]`, their DTOs derive `JsonSchema`, and they're mounted via
+  `openapi_get_routes_spec!` (moved out of the plain route group). Tested
+  (`management_api_test::openapi_spec_and_rapidoc_are_served`: the spec is OpenAPI 3.x with
+  `/api/corpora` documented, the route still serves, RapiDoc renders). **Next:** annotate the
+  remaining `/api` routes module-by-module (the write endpoints' `(Status, Json<T>)` responders + the
+  `Actor` guard's `OpenApiFromRequest` are the open integration points), then prune utoipa.
+  OPEN_QUESTIONS #7 resolved. fmt + clippy clean; `corpora_test` + `management_api_test` green.
+
 - **Deactivate-service — guarded the magic `init`/`import` services (closed a footgun).** The corpus
   screen lists every service with tasks on the corpus, which **includes** the magic `init` (1) /
   `import` (2) infrastructure services — so the deactivate affordance I'd just added would have

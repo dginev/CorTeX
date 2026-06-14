@@ -1,0 +1,66 @@
+// Copyright 2015-2025 Deyan Ginev. See the LICENSE
+// file at the top-level directory of this distribution.
+//
+// Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
+// This file may not be copied, modified, or distributed
+// except according to those terms.
+
+//! API documentation: a generated **OpenAPI 3** spec plus a RapiDoc browser page, both built by
+//! `rocket_okapi` directly from the `#[openapi]`-annotated agent routes — the spec is generated
+//! from the single source of truth (the real Rocket route + its return type) and so can never drift
+//! from the served API. This is the symmetry contract extended to the docs (see
+//! `docs/api-spike/COMPARISON.md` + OPEN_QUESTIONS #7; rocket_okapi was chosen over utoipa).
+//!
+//! Adding an endpoint to the docs is two steps: put `#[openapi(tag = "…")]` above its
+//! `#[get/post/…]` attribute, and list its handler in the [`openapi_get_routes_spec!`] call in
+//! [`mount`]. The DTOs it returns must derive `schemars::JsonSchema`.
+
+use rocket::http::ContentType;
+use rocket::{Build, Rocket, State};
+use rocket_okapi::openapi_get_routes_spec;
+use rocket_okapi::rapidoc::{make_rapidoc, GeneralConfig, RapiDocConfig};
+use rocket_okapi::settings::{OpenApiSettings, UrlObject};
+
+// Glob import so the `#[openapi]`-generated `okapi_add_operation_for_*` helpers (emitted in the
+// handler's own module) are in scope for `openapi_get_routes_spec!` below, alongside the handlers.
+#[allow(unused_imports)]
+use crate::frontend::corpora::*;
+
+/// The generated OpenAPI document, serialized once at mount time and served verbatim.
+struct SpecJson(String);
+
+/// Serves the generated OpenAPI 3 document (the machine-readable API contract).
+#[get("/api/openapi.json")]
+fn openapi_json(spec: &State<SpecJson>) -> (ContentType, String) {
+  (ContentType::JSON, spec.0.clone())
+}
+
+/// Mounts the generated agent-API documentation onto `rocket`:
+/// - the `#[openapi]`-annotated agent routes (so they exist *and* are documented from one source),
+/// - the OpenAPI 3 spec at `GET /api/openapi.json`,
+/// - a RapiDoc browser page at `GET /api/docs`.
+///
+/// The annotated routes are mounted here (not in their modules' plain route groups) so
+/// `rocket_okapi` can attach their operation metadata.
+pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
+  let settings = OpenApiSettings::default();
+  // Every `#[openapi]` agent handler is listed here; the macro returns the routes + the spec built
+  // from them. (Expand this list as more endpoints are annotated.)
+  let (routes, spec) = openapi_get_routes_spec![settings: api_corpora, api_corpus];
+  let spec_json = serde_json::to_string_pretty(&spec).unwrap_or_default();
+  rocket
+    .manage(SpecJson(spec_json))
+    .mount("/", routes)
+    .mount("/", routes![openapi_json])
+    .mount(
+      "/api/docs",
+      make_rapidoc(&RapiDocConfig {
+        title: Some("CorTeX agent API".to_string()),
+        general: GeneralConfig {
+          spec_urls: vec![UrlObject::new("CorTeX API", "/api/openapi.json")],
+          ..Default::default()
+        },
+        ..Default::default()
+      }),
+    )
+}

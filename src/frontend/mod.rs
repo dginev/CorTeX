@@ -1,5 +1,6 @@
 //! CorTeX Frontend capabilities - reports, rendering, auth and more
 pub mod actor;
+pub mod apidoc;
 pub mod catchers;
 pub mod concerns;
 pub mod corpora;

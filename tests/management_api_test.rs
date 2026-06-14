@@ -222,6 +222,33 @@ fn analyze_is_token_gated() {
   );
 }
 
+fn openapi_spec_and_rapidoc_are_served() {
+  // The generated OpenAPI 3 document + the RapiDoc browser page (rocket_okapi, built from the
+  // `#[openapi]` agent routes). The documented route must still serve its data through the new
+  // mount.
+  let client = client();
+  let response = client.get("/api/openapi.json").dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  assert_eq!(response.content_type(), Some(ContentType::JSON));
+  let spec: serde_json::Value = response.into_json().expect("an OpenAPI JSON document");
+  assert!(
+    spec["openapi"]
+      .as_str()
+      .is_some_and(|v| v.starts_with("3.")),
+    "an OpenAPI 3.x document, got {:?}",
+    spec["openapi"]
+  );
+  assert!(
+    spec["paths"]["/api/corpora"]["get"].is_object(),
+    "the corpora-listing endpoint is documented in the spec"
+  );
+  // The documented route still serves (it is mounted via the openapi mechanism now).
+  assert_eq!(client.get("/api/corpora").dispatch().status(), Status::Ok);
+  // The RapiDoc browser page renders.
+  let docs = client.get("/api/docs/index.html").dispatch();
+  assert_eq!(docs.status(), Status::Ok, "the RapiDoc docs page renders");
+}
+
 // Custom harness (Cargo.toml `harness = false`): run the cases then `_exit(0)`, skipping the racy
 // libpq/OpenSSL atexit teardown that SIGSEGVs after assertions pass (KNOWN_ISSUES L-1).
 fn main() {
@@ -231,6 +258,7 @@ fn main() {
   reindex_is_token_gated();
   analyze_is_token_gated();
   healthz_flags_unreadable_corpus_storage();
+  openapi_spec_and_rapidoc_are_served();
   eprintln!("management_api_test: all cases passed");
   unsafe { libc::_exit(0) }
 }

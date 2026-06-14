@@ -33,6 +33,8 @@ use crate::frontend::params::TemplateContext;
 use crate::importer::Importer;
 use crate::jobs::{self, JobProgress};
 use crate::models::{Corpus, NewCorpus, Service};
+use rocket_okapi::openapi;
+use schemars::JsonSchema;
 
 /// The magic `import` service id. Service ids `1` (`init`) and `2` (`import`) are infrastructure
 /// (CLAUDE.md: real conversion services have id `> 2`); a service with id `≤` this is never
@@ -40,7 +42,7 @@ use crate::models::{Corpus, NewCorpus, Service};
 const IMPORT_SERVICE_ID: i32 = 2;
 
 /// A corpus as exposed over the API/UI. `name` is the stable external handle used by every route.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct CorpusDto {
   /// Human-readable corpus name (its external handle).
   pub name: String,
@@ -64,6 +66,7 @@ impl From<Corpus> for CorpusDto {
 }
 
 /// Lists all registered corpora (the agent twin of the overview screen).
+#[openapi(tag = "Corpora")]
 #[get("/api/corpora")]
 pub fn api_corpora(pool: &State<DbPool>) -> Json<Vec<CorpusDto>> {
   let corpora = match pool.get() {
@@ -74,7 +77,7 @@ pub fn api_corpora(pool: &State<DbPool>) -> Json<Vec<CorpusDto>> {
 }
 
 /// Per-service status counts within a corpus (mirrors the progress report).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct ServiceStatusDto {
   /// Service name.
   pub name: String,
@@ -97,7 +100,7 @@ pub struct ServiceStatusDto {
 }
 
 /// A corpus with its activated services and their status counts.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct CorpusDetailDto {
   /// Corpus name (external handle).
   pub name: String,
@@ -112,6 +115,7 @@ pub struct CorpusDetailDto {
 }
 
 /// Inspects a single corpus: its activated services and per-service status counts.
+#[openapi(tag = "Corpora")]
 #[get("/api/corpora/<name>")]
 pub fn api_corpus(name: &str, pool: &State<DbPool>) -> Result<Json<CorpusDetailDto>, Status> {
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
@@ -731,8 +735,8 @@ pub fn corpus_page(name: &str, pool: &State<DbPool>) -> Result<Template, Status>
 /// The route set for the corpus-management capability (API + human screens).
 pub fn routes() -> Vec<Route> {
   routes![
-    api_corpora,
-    api_corpus,
+    // NB: `api_corpora` + `api_corpus` are mounted via `frontend::apidoc` (rocket_okapi) so they
+    // land in the generated OpenAPI spec; they are deliberately not in this plain route group.
     import_corpus,
     extend_corpus,
     activate_service,
