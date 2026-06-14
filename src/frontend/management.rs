@@ -122,11 +122,35 @@ pub struct DispatcherHealth {
   pub result_port: usize,
 }
 
+/// A corpus whose configured source directory could not be read on disk (missing / unmounted /
+/// wrong permissions). Its conversions and re-imports will fail until the path is restored.
+#[derive(Debug, Serialize)]
+pub struct UnreadableCorpus {
+  /// Corpus name (its external handle).
+  pub name: String,
+  /// The configured source path that is missing or unreadable.
+  pub path: String,
+}
+
+/// Health of the shared document storage: every corpus's `path` is stat-checked on disk. Document
+/// bytes live on a shared filesystem (`tasks.entry` are absolute paths under each `corpus.path`),
+/// so a moved/unmounted data mount makes the whole conversion pipeline fail — surfaced here instead
+/// of only as mysterious cascading task failures. **Informational** (the frontend still serves
+/// reports from the DB), so it does not flip the overall `status`. Corpora with an empty path are
+/// skipped.
+#[derive(Debug, Serialize)]
+pub struct StorageHealth {
+  /// Number of corpora whose source path was checked (non-empty paths).
+  pub corpora_checked: usize,
+  /// Corpora whose source directory is missing or unreadable (empty = all good).
+  pub unreadable: Vec<UnreadableCorpus>,
+}
+
 /// Structured health report, identical for agents and human supervisors.
 #[derive(Debug, Serialize)]
 pub struct HealthDto {
   /// Overall status: `"ok"` when every *frontend* dependency (DB + migrations) is healthy, else
-  /// `"degraded"`. Pool/dispatcher fields are informational and do not flip this.
+  /// `"degraded"`. Pool/dispatcher/storage fields are informational and do not flip this.
   pub status: &'static str,
   /// Database dependency health.
   pub database: DbHealth,
@@ -136,6 +160,8 @@ pub struct HealthDto {
   pub pool: PoolHealth,
   /// Co-located dispatcher reachability (informational).
   pub dispatcher: DispatcherHealth,
+  /// Shared document-storage reachability per corpus (informational).
+  pub storage: StorageHealth,
 }
 
 /// The editable, non-secret fields of the Settings form (database/auth are edited out-of-band).
@@ -265,16 +291,34 @@ fn port_listening(port: usize) -> bool {
 /// same path requests use), samples pool utilization, and probes the co-located dispatcher's ports.
 /// Shared by the agent (`/healthz`) and human (`/health`) routes so both report identical state.
 fn health_report(pool: &DbPool) -> HealthDto {
-  let (reachable, migrations_current) = match pool.get() {
+  let (reachable, migrations_current, corpora_paths) = match pool.get() {
     Ok(mut connection) => {
+      use crate::schema::corpora;
       let reachable = diesel::sql_query("SELECT 1")
         .execute(&mut *connection)
         .is_ok();
       let migrations_current = !crate::migrations::has_pending_migrations(&mut connection);
-      (reachable, migrations_current)
+      // Gather the (name, path) pairs *inside* the checkout; the disk stat happens after the
+      // connection is returned, so we don't hold a pooled connection during filesystem I/O.
+      let corpora_paths: Vec<(String, String)> = corpora::table
+        .select((corpora::name, corpora::path))
+        .load(&mut connection)
+        .unwrap_or_default();
+      (reachable, migrations_current, corpora_paths)
     },
-    Err(_) => (false, false),
+    Err(_) => (false, false, Vec::new()),
   };
+  // Stat each corpus source path (local shared storage; a plain existence check, no read_dir). A
+  // corpus with an empty path has no configured location, so it is not a storage fault.
+  let corpora_checked = corpora_paths
+    .iter()
+    .filter(|(_, path)| !path.is_empty())
+    .count();
+  let unreadable: Vec<UnreadableCorpus> = corpora_paths
+    .into_iter()
+    .filter(|(_, path)| !path.is_empty() && !Path::new(path).is_dir())
+    .map(|(name, path)| UnreadableCorpus { name, path })
+    .collect();
   // Sample utilization after the probe connection is returned, so it reflects concurrent load.
   let state = pool.state();
   let status = if reachable && migrations_current {
@@ -301,6 +345,10 @@ fn health_report(pool: &DbPool) -> HealthDto {
         source_port: dispatcher.source_port,
         result_port: dispatcher.result_port,
       }
+    },
+    storage: StorageHealth {
+      corpora_checked,
+      unreadable,
     },
   }
 }

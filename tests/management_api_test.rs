@@ -98,6 +98,17 @@ fn healthz_reports_ok_when_db_reachable() {
     "dispatcher ports are reported"
   );
 
+  // Shared document-storage reachability is reported (informational — does not flip `status`).
+  let storage = &body["storage"];
+  assert!(
+    storage["corpora_checked"].is_u64(),
+    "storage corpora_checked is reported"
+  );
+  assert!(
+    storage["unreadable"].is_array(),
+    "storage unreadable list is reported"
+  );
+
   // The human twin renders the same report as an HTML screen (shared HealthDto).
   let response = client.get("/health").dispatch();
   assert_eq!(response.status(), Status::Ok);
@@ -153,6 +164,52 @@ fn reindex_is_token_gated() {
   );
 }
 
+fn healthz_flags_unreadable_corpus_storage() {
+  // A corpus whose configured source directory is missing on disk (a moved/unmounted /data mount)
+  // is surfaced in the storage-health section — informational, so it does not flip the status.
+  use cortex::models::NewCorpus;
+  use cortex::schema::corpora;
+  use diesel::prelude::*;
+  const PROBE_NAME: &str = "storage_health_probe_corpus";
+  const BAD_PATH: &str = "/nonexistent/cortex/storage-health-probe";
+
+  let mut db = cortex::backend::testdb();
+  diesel::delete(corpora::table.filter(corpora::name.eq(PROBE_NAME)))
+    .execute(&mut db.connection)
+    .ok();
+  db.add(&NewCorpus {
+    name: PROBE_NAME.to_string(),
+    path: BAD_PATH.to_string(),
+    complex: false,
+    description: String::new(),
+  })
+  .expect("seed a corpus with a missing source path");
+
+  let client = client();
+  let body: serde_json::Value = client
+    .get("/healthz")
+    .dispatch()
+    .into_json()
+    .expect("a JSON body");
+  assert_eq!(
+    body["status"], "ok",
+    "a missing corpus path is informational, not a frontend-liveness failure"
+  );
+  let unreadable = body["storage"]["unreadable"]
+    .as_array()
+    .expect("unreadable array");
+  assert!(
+    unreadable
+      .iter()
+      .any(|c| c["name"] == PROBE_NAME && c["path"] == BAD_PATH),
+    "the corpus with a missing source directory is flagged unreadable"
+  );
+
+  diesel::delete(corpora::table.filter(corpora::name.eq(PROBE_NAME)))
+    .execute(&mut db.connection)
+    .ok();
+}
+
 fn analyze_is_token_gated() {
   // The planner-statistics refresh is the same token-gated maintenance write as reindex; assert the
   // 401 path (its 202 + job-handle path is structurally identical to the tested reindex endpoint).
@@ -173,6 +230,7 @@ fn main() {
   api_index_lists_the_agent_surface();
   reindex_is_token_gated();
   analyze_is_token_gated();
+  healthz_flags_unreadable_corpus_storage();
   eprintln!("management_api_test: all cases passed");
   unsafe { libc::_exit(0) }
 }

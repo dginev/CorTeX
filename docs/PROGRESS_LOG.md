@@ -6,6 +6,21 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **Health — corpus storage reachability check (catches a broken /data mount).** Document bytes live
+  on a shared filesystem (`tasks.entry` are absolute paths under each `corpus.path`), so a
+  moved/unmounted data directory makes the whole conversion pipeline fail — previously visible only
+  as mysterious cascading task failures. `HealthDto` now carries a `storage` section: `health_report`
+  stat-checks every corpus's `path` (`Path::is_dir`) and lists any that are missing/unreadable
+  (`StorageHealth { corpora_checked, unreadable: [{name, path}] }`), surfaced on `/healthz`
+  (agent), `/health` (a new row + an explicit list when any are broken), with `cortex doctor`-style
+  transparency. Corpora with an empty path are skipped (no configured location). **Informational**
+  (the frontend serves reports from the DB regardless), so it does not flip the overall `status` —
+  consistent with the dispatcher-reachability precedent. The disk stats run **after** the pooled
+  connection is returned (the corpus list is gathered inside the checkout), so no connection is held
+  during filesystem I/O. Tested: `healthz_flags_unreadable_corpus_storage` seeds a corpus with a
+  missing path and asserts it's flagged (status stays `ok`); the healthz contract test asserts the
+  storage fields. fmt + clippy clean; `management_api_test` green.
+
 - **DB-health maintenance — on-demand `ANALYZE` (planner-statistics refresh) job.** Completes the
   ongoing-maintenance Admin UX the owner flagged as "very important": alongside the existing online
   reindex, added an `ANALYZE`-over-the-high-churn-tables job. **Why it matters now:** a bulk import

@@ -24,8 +24,23 @@
         <td class="left">Dispatcher reachable (ports {{ health.dispatcher.source_port }}/{{ health.dispatcher.result_port }})</td>
         <td class="right">{% if health.dispatcher.reachable %}yes{% else %}<strong>no</strong>{% endif %}</td>
       </tr>
+      <tr>
+        <td class="left">Corpus storage readable ({{ health.storage.corpora_checked }} checked)</td>
+        <td class="right">{% if health.storage.unreadable | length == 0 %}yes{% else %}<strong>{{ health.storage.unreadable | length }} unreadable</strong>{% endif %}</td>
+      </tr>
     </tbody>
   </table>
+  {% if health.storage.unreadable | length > 0 %}
+  <div class="row" style="max-width: 34rem; margin: 0 auto;">
+    <p><strong>Unreadable corpus source directories</strong> (missing / unmounted / wrong permissions —
+      conversions and re-imports for these corpora will fail until restored):</p>
+    <ul class="left">
+      {% for corpus in health.storage.unreadable %}
+      <li><strong>{{ corpus.name }}</strong> — <code>{{ corpus.path }}</code></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
   <p>&nbsp;·&nbsp; <a href="/healthz">JSON</a> &nbsp;·&nbsp; <a href="/settings">Settings</a></p>
 
   <hr>
