@@ -244,6 +244,52 @@ fn stalled_running_job_reports_a_large_heartbeat_age() {
     .ok();
 }
 
+fn stale_running_job_is_reaped_but_fresh_one_survives() {
+  use diesel::prelude::*;
+  let mut db = cortex::backend::testdb();
+  // A hung job: running, no heartbeat for 3h (past the 2h reap threshold).
+  diesel::sql_query(
+    "INSERT INTO jobs (kind, actor, status, params, created_at, updated_at) \
+     VALUES ('reap_stale_test', 'tester', 'running', '{}'::jsonb, \
+             LOCALTIMESTAMP - interval '3 hours', LOCALTIMESTAMP - interval '3 hours')",
+  )
+  .execute(&mut db.connection)
+  .expect("seed a hung job");
+  // A healthy job: running with a fresh heartbeat — must NOT be reaped.
+  diesel::sql_query(
+    "INSERT INTO jobs (kind, actor, status, params) \
+     VALUES ('reap_fresh_test', 'tester', 'running', '{}'::jsonb)",
+  )
+  .execute(&mut db.connection)
+  .expect("seed a fresh job");
+
+  // Any jobs listing runs the W-4 runtime reaper first (here via the agent API).
+  let client = client();
+  client.get("/api/jobs?limit=200").dispatch();
+
+  let status_of = |kind: &str, db: &mut cortex::backend::Backend| -> String {
+    cortex::schema::jobs::table
+      .filter(cortex::schema::jobs::kind.eq(kind))
+      .select(cortex::schema::jobs::status)
+      .first::<String>(&mut db.connection)
+      .expect("job present")
+  };
+  assert_eq!(
+    status_of("reap_stale_test", &mut db),
+    "interrupted",
+    "a 3h-silent running job is reaped to interrupted (W-4 runtime reaper)"
+  );
+  assert_eq!(
+    status_of("reap_fresh_test", &mut db),
+    "running",
+    "a running job with a fresh heartbeat is NOT reaped"
+  );
+
+  diesel::sql_query("DELETE FROM jobs WHERE kind IN ('reap_stale_test', 'reap_fresh_test')")
+    .execute(&mut db.connection)
+    .ok();
+}
+
 // Custom harness (see KNOWN_ISSUES L-1): run the cases then `_exit(0)`.
 fn main() {
   api_job_polls_a_spawned_job();
@@ -252,6 +298,7 @@ fn main() {
   jobs_list_carries_health_and_duration_and_supports_pending();
   jobs_dashboard_auto_refreshes_while_a_job_is_active();
   stalled_running_job_reports_a_large_heartbeat_age();
+  stale_running_job_is_reaped_but_fresh_one_survives();
   eprintln!("jobs_api_test: all cases passed");
   unsafe { libc::_exit(0) }
 }

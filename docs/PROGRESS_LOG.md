@@ -1433,3 +1433,19 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   drops the C dep. All compression delegated to maintained crates, all detection to infer — the
   "delegate fully to crates" ask. Doc updated (per-task hot-path section, infer detection,
   recommendation re-leaned to A, open questions). Implementation still awaits the owner's lever call.
+- **W-4 runtime stale-job reaper (robustness; frontend jobs, unblocked — no overlap with the held
+  dispatcher/archive decisions):** closed the W-4 zombie gap — a background job whose body *hangs*
+  while a long-lived frontend keeps running used to sit `running` forever (leaking a thread, lying to
+  every pending-check, and deadlocking the report-refresh debounce). Added `jobs::reap_stale` (called
+  by `list_recent`, so every jobs listing / pending-check / debounce runs it first): flips any
+  non-terminal job whose progress **heartbeat** (`updated_at`) has been silent past
+  `STALE_JOB_HEARTBEAT_TIMEOUT_SECS` (2h) to `interrupted` — the runtime complement to the startup
+  `interrupt_orphans`. Keys off heartbeat staleness (NOT total duration), which moots the earlier
+  deferral's false-kill blocker — a progressing op stays live no matter how long it runs; only a
+  silent/hung body is reaped — and is self-correcting (a slow job reaped then finishing has its status
+  overwritten by `finish()`). Skew-free (uses `db_now`). Tested:
+  `jobs_api_test::stale_running_job_is_reaped_but_fresh_one_survives` (3h-silent → interrupted; fresh
+  → survives). KNOWN_ISSUES W-4 updated (observable-zombie + debounce-deadlock closed; the unkillable
+  hung-thread/connection leak remains a Rust limitation, mitigated by the pool bound + restart). Note
+  for owner: this is the conservative subset of the deferred auto-interrupt watchdog (job-row honesty,
+  not thread force-kill); the 2h threshold is a constant, configurable later.
