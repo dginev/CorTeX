@@ -11,6 +11,7 @@
           <th>From</th>
           <th>To</th>
           <th>Description</th>
+          <th>Run history</th>
         </tr>
       </thead>
       <tbody>
@@ -23,6 +24,11 @@
           <td class="left">{{service.inputformat}}</td>
           <td class="left">{{service.outputformat}}</td>
           <td class="left">{{service.description}}</td>
+          <td class="left">
+            <a href="/runs/{{global.corpus_name_uri}}/{{service.name_uri}}">runs</a> &middot;
+            <a href="/runs/{{global.corpus_name_uri}}/{{service.name_uri}}/diff">diff</a> &middot;
+            <a href="/history/{{global.corpus_name_uri}}/{{service.name_uri}}">chart</a>
+          </td>
         </tr>
         {% endfor %}
       </tbody>

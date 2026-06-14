@@ -494,3 +494,15 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   *Run-management UX note:* the screens are solid (shared-DTO twins) but **under-linked** — `/runs/<c>/<s>`
   (the run-history table) is orphaned (report page links only `/history` chart + `/runs/.../diff`), and
   corpus/landing don't link run history. Discoverability is the next run-management increment.
+- **Run-management discoverability closed (the increment above):** the previously-orphaned run-history
+  table (`/runs/<c>/<s>`) is now reachable from the main browse flow. (1) The **corpus page**
+  (`services.html.tera`) gained a "Run history" column linking each service to `runs · diff · chart`, so
+  run management is reachable without first opening a report. (2) The **report page** (`report.html.tera`)
+  now links the run-history *table* (was only the `/history` chart + `/runs/.../diff`); the two history
+  views are relabelled "Run history (table)" / "Run history (chart)" to disambiguate. (3) The run-history
+  table (`runs.html.tera`) gained a `← Report` back-link (the diff/tasks screens already had `← Run
+  history`), so the run-management cluster is now navigable both ways. Verified on the live dump (links
+  render + resolve `200`; `name_uri` percent-encodes the `_` as `%5F`, the pre-existing convention, and
+  Rocket decodes it). Regression: `corpora_test::overview_and_corpus_pages_render_server_side` now asserts
+  the corpus screen exposes a per-service run-history link. *Next:* the symmetry convergence (parallel
+  `/api/*` → `Accept`-negotiation) and/or the matview REFRESH timing on real data.

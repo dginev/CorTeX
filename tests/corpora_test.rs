@@ -284,6 +284,12 @@ fn overview_and_corpus_pages_render_server_side() {
     body.contains(service_name),
     "corpus screen lists the activated service server-side"
   );
+  // Discoverability: the corpus screen links each service to its run-management screens, so the
+  // run-history table is reachable without first drilling into a report (it was orphaned before).
+  assert!(
+    body.contains("Run history") && body.contains("/runs/"),
+    "corpus screen exposes a run-history link per service"
+  );
 
   cleanup(&mut db, corpus_name, service_name);
 }

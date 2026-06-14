@@ -72,7 +72,8 @@
       <div class="main-report-bottom"><a
           href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/info">Explore Info-level
           messages</a><br>
-        <a href="/history/{{global.corpus_name_uri}}/{{global.service_name_uri}}">Explore History</a><br>
+        <a href="/runs/{{global.corpus_name_uri}}/{{global.service_name_uri}}">Run history (table)</a><br>
+        <a href="/history/{{global.corpus_name_uri}}/{{global.service_name_uri}}">Run history (chart)</a><br>
         <a href="/runs/{{global.corpus_name_uri}}/{{global.service_name_uri}}/diff">Diff previous runs</a><br>
       </div>
     </div>

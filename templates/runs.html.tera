@@ -3,6 +3,8 @@
   <h1>Run history</h1>
   <h5>{{service}} over {{corpus}}</h5>
   <p>
+    <a href="/corpus/{{corpus}}/{{service}}">&larr; Report</a>
+    &nbsp;·&nbsp;
     <a href="/runs/{{corpus}}/{{service}}/diff">Run differences</a>
     &nbsp;·&nbsp;
     <a href="/runs/{{corpus}}/{{service}}/tasks">Task severity changes</a>
