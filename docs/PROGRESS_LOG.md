@@ -6,6 +6,20 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **I-1 — importer walk hardened against hostile data (corpus-import Admin UX path).** `walk_import`
+  (reached from the Admin UX corpus-import action via `corpora.rs` → `process()`, and the `init`
+  worker) aborted the *whole* import on the first filesystem hiccup — `fs::metadata(..)?` /
+  `read_dir(..)?` killed the walk on a broken symlink or a permission-denied/vanished subdir, a
+  non-UTF-8 path **panicked** via `.to_str().unwrap()`, and `mark_imported(..).unwrap()` panicked on
+  a DB error (the acknowledged "TODO: Proper Error-handling"). Now every per-path step **skips +
+  logs** and continues (blast-radius isolation + transparent failure, docs/DESIGN_PRINCIPLES.md);
+  only the backend write is fatal and it propagates as a `Result` (`?`). Regression:
+  `importer_test::import_skips_unreadable_paths_instead_of_aborting` imports a valid entry beside a
+  broken symlink and asserts the valid one still lands; the existing simple/complex imports still
+  pass (behavior preserved). Recorded the remaining gap — the complex-corpus `unpack`/arXiv-tarball
+  path's pervasive unwraps — as KNOWN_ISSUES I-1 🟡 (larger, owner-reviewed hardening). fmt + clippy
+  clean; `importer_test` 3/3.
+
 - **Health — corpus storage reachability check (catches a broken /data mount).** Document bytes live
   on a shared filesystem (`tasks.entry` are absolute paths under each `corpus.path`), so a
   moved/unmounted data directory makes the whole conversion pipeline fail — previously visible only

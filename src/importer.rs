@@ -286,56 +286,88 @@ impl Importer {
     let mut import_q: Vec<NewTask> = Vec::new();
     let mut import_counter = 0;
     while let Some(current_path) = walk_q.pop() {
-      let current_metadata = fs::metadata(current_path.clone())?;
-      if current_metadata.is_dir() {
-        let current_path_str = current_path.to_str().unwrap().to_string();
-        let rel_path = current_path_str.replace(&self.corpus.path, "");
-        let mut slash_iter = rel_path.split('/');
-        if rel_path.starts_with('/') {
-          // drop the corpus root piece.
-          slash_iter.next();
+      // arXiv data is hostile: one unreadable path (a broken symlink, a vanished or
+      // permission-denied entry) or a non-UTF-8 name must **skip**, not abort the whole import —
+      // blast-radius isolation + transparent (logged) failure (docs/DESIGN_PRINCIPLES.md). Only a
+      // backend write error is fatal (the DB is essential), and it now propagates as a `Result`
+      // rather than `.unwrap()`-panicking.
+      let current_metadata = match fs::metadata(&current_path) {
+        Ok(meta) => meta,
+        Err(e) => {
+          eprintln!("-- import: skipping unreadable path {current_path:?}: {e}");
+          continue;
+        },
+      };
+      if !current_metadata.is_dir() {
+        continue;
+      }
+      let current_path_str = match current_path.to_str() {
+        Some(path_str) => path_str.to_string(),
+        None => {
+          eprintln!("-- import: skipping non-UTF-8 path {current_path:?}");
+          continue;
+        },
+      };
+      let rel_path = current_path_str.replace(&self.corpus.path, "");
+      let mut slash_iter = rel_path.split('/');
+      if rel_path.starts_with('/') {
+        // drop the corpus root piece.
+        slash_iter.next();
+      }
+      if let Some(base) = slash_iter.next() {
+        // if we have an "active_prefixes" filter, comply with it
+        if !base.is_empty()
+          && !self.active_prefixes.is_empty()
+          && !self.active_prefixes.contains(base)
+        {
+          continue;
         }
-        if let Some(base) = slash_iter.next() {
-          // if we have an "active_prefixes" filter, comply with it
-          if !base.is_empty()
-            && !self.active_prefixes.is_empty()
-            && !self.active_prefixes.contains(base)
-          {
-            continue;
+      }
+      // First, test if we just found an entry:
+      let current_entry = match current_path.file_name().and_then(|name| name.to_str()) {
+        Some(local_dir) => local_dir.to_string() + "." + import_extension,
+        None => {
+          eprintln!("-- import: skipping path with no usable file name {current_path:?}");
+          continue;
+        },
+      };
+      let current_entry_path = current_path_str + "/" + &current_entry;
+      match fs::metadata(&current_entry_path) {
+        Ok(_) => {
+          // Found the expected file, import this entry:
+          println!("Found entry: {current_entry_path:?}");
+          import_counter += 1;
+          import_q.push(self.new_task(&current_entry_path));
+          if import_q.len() >= 1000 {
+            // Flush the import queue to backend:
+            println!("Checkpoint backend writer: job {import_counter:?}");
+            self.backend.mark_imported(&import_q)?;
+            import_q.clear();
           }
-        }
-        // First, test if we just found an entry:
-        let current_local_dir = current_path.file_name().unwrap();
-        let current_entry =
-          current_local_dir.to_str().unwrap().to_string() + "." + import_extension;
-        let current_entry_path = current_path_str + "/" + &current_entry;
-        match fs::metadata(&current_entry_path) {
-          Ok(_) => {
-            // Found the expected file, import this entry:
-            println!("Found entry: {current_entry_path:?}");
-            import_counter += 1;
-            import_q.push(self.new_task(&current_entry_path));
-            if import_q.len() >= 1000 {
-              // Flush the import queue to backend:
-              println!("Checkpoint backend writer: job {import_counter:?}");
-              self.backend.mark_imported(&import_q).unwrap(); // TODO: Proper Error-handling
-              import_q.clear();
-            }
-          },
-          Err(_) => {
-            // No such entry found, traversing into the directory:
-            for subentry in fs::read_dir(current_path.clone())? {
-              let subentry = subentry?;
-              walk_q.push(subentry.path());
-            }
-          },
-        }
+        },
+        Err(_) => {
+          // No such entry found, traverse into the directory — skipping (not aborting) an
+          // unreadable directory or directory entry.
+          match fs::read_dir(&current_path) {
+            Ok(entries) => {
+              for subentry in entries {
+                match subentry {
+                  Ok(subentry) => walk_q.push(subentry.path()),
+                  Err(e) => {
+                    eprintln!("-- import: skipping unreadable entry under {current_path:?}: {e}")
+                  },
+                }
+              }
+            },
+            Err(e) => eprintln!("-- import: skipping unreadable directory {current_path:?}: {e}"),
+          }
+        },
       }
     }
     if !import_q.is_empty() {
       println!("Checkpoint backend writer: job {:?}", import_q.len());
-      self.backend.mark_imported(&import_q).unwrap();
-    } // TODO: Proper Error-handling
+      self.backend.mark_imported(&import_q)?;
+    }
     println!("--- Imported {import_counter:?} entries.");
     Ok(import_counter)
   }
