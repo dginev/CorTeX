@@ -6,10 +6,11 @@ use diesel::*;
 
 use super::RerunOptions;
 use crate::concerns::{CortexInsertable, MarkRerun};
-use crate::helpers::{random_mark, TaskReport, TaskStatus};
+use crate::helpers::{random_mark, NewTaskMessage, TaskReport, TaskStatus};
 use crate::models::{
   Corpus, HistoricalRun, LogError, LogFatal, LogInfo, LogInvalid, LogRecord, LogWarning,
-  NewHistoricalRun, NewTask, Service,
+  NewHistoricalRun, NewLogError, NewLogFatal, NewLogInfo, NewLogInvalid, NewLogWarning, NewTask,
+  Service,
 };
 
 pub(crate) fn mark_imported(
@@ -45,18 +46,59 @@ pub(crate) fn mark_done(
       .execute(t_connection)?;
     delete(log_invalids::table.filter(log_invalids::task_id.eq_any(&task_ids)))
       .execute(t_connection)?;
+    // Apply the per-task status updates and partition the new messages by severity table, so each
+    // table is filled with a single batched INSERT below (instead of one INSERT per message — the
+    // other half of the D-8 write-amplification on the hot finalize path).
+    let mut new_infos: Vec<NewLogInfo> = Vec::new();
+    let mut new_warnings: Vec<NewLogWarning> = Vec::new();
+    let mut new_errors: Vec<NewLogError> = Vec::new();
+    let mut new_fatals: Vec<NewLogFatal> = Vec::new();
+    let mut new_invalids: Vec<NewLogInvalid> = Vec::new();
     for report in reports.iter() {
-      // Update the status, then add the new messages onto the now-clean slate.
       update(tasks::table)
         .filter(id.eq(report.task.id))
         .set(status.eq(report.status.raw()))
         .execute(t_connection)?;
       for message in &report.messages {
-        if message.severity() != "status" {
-          message.create(t_connection)?;
+        // The synthetic conversion-status message is not a real log entry (kept out of the tables).
+        if message.severity() == "status" {
+          continue;
+        }
+        match message {
+          NewTaskMessage::Info(record) => new_infos.push(record.clone()),
+          NewTaskMessage::Warning(record) => new_warnings.push(record.clone()),
+          NewTaskMessage::Error(record) => new_errors.push(record.clone()),
+          NewTaskMessage::Fatal(record) => new_fatals.push(record.clone()),
+          NewTaskMessage::Invalid(record) => new_invalids.push(record.clone()),
         }
       }
       // TODO: Update dependenct services, when integrated in DB
+    }
+    // One batched INSERT per non-empty severity table.
+    if !new_infos.is_empty() {
+      insert_into(log_infos::table)
+        .values(&new_infos)
+        .execute(t_connection)?;
+    }
+    if !new_warnings.is_empty() {
+      insert_into(log_warnings::table)
+        .values(&new_warnings)
+        .execute(t_connection)?;
+    }
+    if !new_errors.is_empty() {
+      insert_into(log_errors::table)
+        .values(&new_errors)
+        .execute(t_connection)?;
+    }
+    if !new_fatals.is_empty() {
+      insert_into(log_fatals::table)
+        .values(&new_fatals)
+        .execute(t_connection)?;
+    }
+    if !new_invalids.is_empty() {
+      insert_into(log_invalids::table)
+        .values(&new_invalids)
+        .execute(t_connection)?;
     }
     Ok(())
   })?;

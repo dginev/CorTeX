@@ -278,3 +278,93 @@ fn batch_ops_test() {
 
   assert_eq!(post_cleanup, Ok(mock_task_count));
 }
+
+#[test]
+fn mark_done_routes_messages_to_severity_tables() {
+  // The batched per-table inserts must route each message to its own `log_*` table by severity.
+  use cortex::models::{NewLogError, NewLogFatal, NewLogWarning};
+  use cortex::schema::{log_errors, log_fatals, log_warnings};
+  let mut backend = backend::testdb();
+  let mock_service_id = random_mark();
+  let mock_corpus_id = random_mark();
+  let mock_task = NewTask {
+    entry: String::from("sev_route_task"),
+    service_id: mock_service_id,
+    corpus_id: mock_corpus_id,
+    status: TaskStatus::TODO.raw(),
+  };
+  let _ = backend.delete_by(&mock_task, "service_id");
+  for index in 1..=2 {
+    let indexed = NewTask {
+      entry: format!("sev_route_task{index}"),
+      ..mock_task.clone()
+    };
+    backend.add(&indexed).expect("add task");
+  }
+  let tasks: Vec<Task> = tasks::table
+    .filter(service_id.eq(mock_service_id))
+    .get_results(&mut backend.connection)
+    .expect("fetch tasks");
+  assert_eq!(tasks.len(), 2);
+  let (id_a, id_b) = (tasks[0].id, tasks[1].id);
+  let reports = vec![
+    TaskReport {
+      status: TaskStatus::Error,
+      messages: vec![
+        NewTaskMessage::Warning(NewLogWarning {
+          task_id: id_a,
+          category: String::from("cat"),
+          what: String::from("what"),
+          details: String::new(),
+        }),
+        NewTaskMessage::Error(NewLogError {
+          task_id: id_a,
+          category: String::from("cat"),
+          what: String::from("what"),
+          details: String::new(),
+        }),
+      ],
+      task: tasks[0].clone(),
+    },
+    TaskReport {
+      status: TaskStatus::Fatal,
+      messages: vec![NewTaskMessage::Fatal(NewLogFatal {
+        task_id: id_b,
+        category: String::from("cat"),
+        what: String::from("what"),
+        details: String::new(),
+      })],
+      task: tasks[1].clone(),
+    },
+  ];
+  backend.mark_done(&reports).expect("mark_done");
+
+  let ids = vec![id_a, id_b];
+  let warns: i64 = log_warnings::table
+    .filter(log_warnings::task_id.eq_any(&ids))
+    .count()
+    .get_result(&mut backend.connection)
+    .unwrap();
+  let errs: i64 = log_errors::table
+    .filter(log_errors::task_id.eq_any(&ids))
+    .count()
+    .get_result(&mut backend.connection)
+    .unwrap();
+  let fatals: i64 = log_fatals::table
+    .filter(log_fatals::task_id.eq_any(&ids))
+    .count()
+    .get_result(&mut backend.connection)
+    .unwrap();
+  assert_eq!(warns, 1, "the warning routed to log_warnings");
+  assert_eq!(errs, 1, "the error routed to log_errors");
+  assert_eq!(fatals, 1, "the fatal routed to log_fatals");
+
+  // Cleanup (log_* have no FK cascade, so remove them explicitly, then the tasks).
+  let _ = diesel::delete(log_warnings::table.filter(log_warnings::task_id.eq_any(&ids)))
+    .execute(&mut backend.connection);
+  let _ = diesel::delete(log_errors::table.filter(log_errors::task_id.eq_any(&ids)))
+    .execute(&mut backend.connection);
+  let _ = diesel::delete(log_fatals::table.filter(log_fatals::task_id.eq_any(&ids)))
+    .execute(&mut backend.connection);
+  let _ = backend.delete_by(&mock_task, "service_id");
+}

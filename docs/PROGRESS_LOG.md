@@ -4,6 +4,19 @@ Append-only, dated log of increments (one entry per working session/loop iterati
 current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the resilience ledger in
 [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md). This file is the lightweight "what changed, in order" trail.
 
+## 2026-06-14
+
+- **D-8 closed — `mark_done` message inserts now batched (finalize hot path).** The deletes were
+  already collapsed to one `task_id = ANY(...)` per `log_*` table; the per-message `INSERT` loop is
+  now gone too. `mark_done` partitions the batch's new messages by severity into five `Vec<NewLog*>`
+  (the `NewLog*` structs already derive `Clone`/`Insertable`), then issues **one batched multi-row
+  `INSERT` per non-empty table** — at most 5 inserts regardless of how many messages a finalize batch
+  carries (was one round-trip *per message*). The synthetic `status` message is still skipped, and
+  the per-task status `UPDATE` stays in the loop. Test-first: new `backend_test`
+  `mark_done_routes_messages_to_severity_tables` finalizes a mixed-severity batch and asserts each
+  message lands in its own `log_*` table (routing correctness for the partition). `cargo test
+  --test backend_test` green (4/4); fmt + clippy clean. KNOWN_ISSUES D-8 🟡 → 🟢.
+
 ## 2026-06-13
 
 - **Arm 14 #6.2 — reports served from the `report_summary` rollup; Redis removed** (commit `b5509b5`).
