@@ -128,3 +128,22 @@ harness = false
 [[example]]
 name = "api_doc_spike_okapi"
 path = "examples/api_doc_spike_okapi.rs"
+
+# Dispatcher-rationalization phase-0 spikes (throwaway; docs/DISPATCHER_RATIONALIZATION.md). An A/B of
+# the current libzmq `zmq` crate vs. the pure-Rust async `zeromq` crate on large-multipart integrity +
+# throughput under concurrent senders. Parameterized by env (MSG_COUNT/SENDERS/FRAMES/FRAME_BYTES/
+# LARGE_EVERY). Auto-discovered, but listed for documentation parity with the okapi spike.
+[[example]]
+name = "zmq_payload_zeromq"
+path = "examples/zmq_payload_zeromq.rs"
+
+[[example]]
+name = "zmq_payload_libzmq"
+path = "examples/zmq_payload_libzmq.rs"
+
+[dev-dependencies]
+# Phase-0 dispatcher spike only (NOT a production dependency — the dispatcher hot path is untouched,
+# held for owner review). `zeromq` = pure-Rust async ZMQ under empirical evaluation vs. libzmq.
+bytes = "1.11.1"
+tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "fs", "time", "sync"] }
+zeromq = "0.6.0"

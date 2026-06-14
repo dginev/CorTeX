@@ -1277,3 +1277,23 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   batching; sink writer fan-out + async I/O; DashMap in-flight/services) ship regardless. Open
   questions narrowed to: green-light the spike, dashmap OK, the config knobs. Still **holding all
   hot-path implementation for owner review** per the directive.
+- **Dispatcher rationalization — phase-0 SPIKE built + run (empirical A/B):** the owner green-lit
+  throwaway spike prototypes in `examples/` for empirical large-payload testing. Built two
+  payload-parameterizable spikes running the **same** workload (concurrent PUSH senders → one PULL
+  receiver that verifies every frame's `(seq, frame_index)` header, so any interleaving/reordering is
+  caught): `examples/zmq_payload_zeromq.rs` (pure-Rust async **`zeromq`** + `tokio::fs`) vs.
+  `examples/zmq_payload_libzmq.rs` (current libzmq **`zmq`** + threads/`recv_multipart`). Env knobs:
+  `MSG_COUNT/SENDERS/FRAMES/FRAME_BYTES/LARGE_EVERY`. **Results (release, loopback, heavy = 3000 msgs ·
+  8 senders · every-2nd = 60×128 KB ≈ 7.7 MB):** libzmq 1245 msg/s · 4745 MB/s ✓clean; zeromq
+  1121 msg/s · 4275 MB/s ✓clean. **Findings:** (1) the owner's large-multipart interleaving bug does
+  **NOT** reproduce on *either* crate under heavy concurrency → it's application-framing (`RCVMORE`
+  reassembly) or a real-network/version edge, **not** a crate limitation; pure-Rust `zeromq` is **not
+  disqualified**. (2) Throughput is **not** a deciding factor — both are GB/s on loopback (vastly over
+  the production ~100–200 tasks/s, which is network+disk bound); `zeromq` runs at ~90% of libzmq. (3)
+  `zeromq` is async-native — `tokio::fs` archive write dropped straight in; libzmq needed sync fs.
+  **Honest caveat:** loopback ≠ the ~200-worker real deployment, so the spike proves the pure-Rust impl
+  is *viable + correct in principle* but does **not** prove the production bug is gone (that's phase-3
+  reassembly hardening + a real-network soak, crate-independent). Recorded full results + a transport-
+  decision matrix in `docs/DISPATCHER_RATIONALIZATION.md` (phase-0 marked DONE; open questions narrowed
+  to the owner's transport call + dashmap/config knobs). Dev-deps `zeromq`/`tokio`/`bytes` are
+  **example-only** (production dispatcher hot path **untouched** — still held for owner review).

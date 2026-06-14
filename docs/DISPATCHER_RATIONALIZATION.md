@@ -119,6 +119,60 @@ first**:
 Either way, the **lock-free / fan-out / batching** work below is shared — only the socket layer
 differs (async `zeromq` tasks vs. channel-pipelined sync threads).
 
+## Phase-0 spike — empirical results (2026-06-14)
+
+Built two throwaway, payload-parameterizable spikes (env knobs `MSG_COUNT`/`SENDERS`/`FRAMES`/
+`FRAME_BYTES`/`LARGE_EVERY`) running the **same** workload over each transport — a mix of large
+multi-frame messages + small ones, sent by N **concurrent** PUSH senders into one PULL receiver that
+verifies every frame of every message carries the right `(seq, frame_index)` header (so any
+cross-message contamination = interleaving, any out-of-order frame = reordering is caught):
+
+- `examples/zmq_payload_zeromq.rs` — pure-Rust async **`zeromq`** crate, `tokio` runtime, `tokio::fs`
+  archive write.
+- `examples/zmq_payload_libzmq.rs` — the current libzmq **`zmq`** crate, threads, `send_multipart`/
+  `recv_multipart`.
+
+**Headline (release build, loopback, heavy stress = 3000 msgs · 8 senders · every 2nd msg = 60×128 KB
+≈ 7.7 MB, rest 1-frame):**
+
+| Transport | Throughput | Integrity |
+| --- | --- | --- |
+| libzmq (`zmq`, sync + threads) | 1245 msg/s · **4745 MB/s** | ✓ no interleaving/reordering/corruption over 3000 msgs |
+| **`zeromq`** (pure-Rust, tokio async) | 1121 msg/s · **4275 MB/s** | ✓ no interleaving/reordering/corruption over 3000 msgs |
+
+(Dev builds, default + heavy payloads, were likewise clean on both; libzmq ~10–20 % faster on
+loopback.)
+
+**What the spike establishes:**
+
+1. **Correctness — the owner's large-multipart bug does NOT reproduce on *either* crate** under heavy
+   concurrent senders. Both reassemble 7.7 MB / 60-frame messages atomically with zero interleaving
+   across thousands of messages. So the flakiness is **not** a fundamental "this crate can't stream
+   large multipart" limit — it points at **application-level framing** (the sink's `RCVMORE`
+   reassembly) or a **real-network / libzmq-version edge**, and the reassembly must be made
+   bullet-proof *regardless of which crate we pick*. Crucially, the pure-Rust crate is **not
+   disqualified** on this axis.
+2. **Throughput — not a deciding factor.** Pure-Rust `zeromq` runs at **~90 % of libzmq** (4275 vs
+   4745 MB/s). Both are **GB/s on loopback** — wildly over-provisioned vs. the production ~100–200
+   tasks/s (≈ a few MB each ⇒ low-single-digit GB/s *peak*, and production is bound by the real
+   network + the `/data` disk, not the socket crate). A 10 % crate delta is invisible against that.
+3. **Async-nativeness — real, in `zeromq`'s favor.** The `tokio::fs` async archive write dropped
+   straight into the `zeromq` receive loop; the libzmq baseline had to use sync `std::fs` (async would
+   need the FD-readiness bridging that `async-zmq`/`tmq` add).
+
+**Honest limitation:** loopback ≠ the real deployment. The reported bug was on ~200 real workers over
+TCP (segmentation, congestion, many peers) — conditions the in-process spike does not recreate. So the
+spike proves the crate framing is **correct in principle** and the pure-Rust impl is **viable**, but
+it does **not** prove the production bug is gone. That requires the application-level reassembly
+hardening (phase 3) and/or a real-network soak — both independent of the crate choice.
+
+**Conclusion / recommendation:** the spike **clears the pure-Rust `zeromq` crate** (correct under
+stress, ~90 % throughput, async-native), so the decision reduces to *maintenance-escape + async-native
+(`zeromq`)* vs. *maximum battle-tested-ness (libzmq)* — a judgement call for the owner, not a
+correctness blocker. Either way, **transport-independent phases 1–4 (channel hand-off, DB batching,
+sink fan-out + async I/O, lock-free maps) deliver most of the win and should proceed first**; the
+transport swap is a separable, reversible layer that the spikes de-risk.
+
 ## Incremental migration plan (each phase = one reviewable PR, green on echo_roundtrip + bench)
 
 The **transport-independent** phases (1–4) deliver lock-free + fan-out + batching and ship first; the
@@ -168,17 +222,20 @@ only changes the socket layer.
 
 ## Open questions for the owner (please confirm before implementing)
 
-1. **Green-light the phase-0 spike** of the pure-Rust async **`zeromq`** crate (throwaway, in
-   `examples/`)? It settles the transport: does it reassemble large multi-frame results without the
-   interleaving bug, and is its throughput acceptable vs. libzmq? (`tmq`/`async-zmq` are off the table —
-   they wrap the same libzmq binding, so they don't address your maintenance concern.)
-2. **If the spike holds → go async core (tokio + `zeromq` + `tokio::fs`)**; if not → channel-pipelined
-   threads over the existing sync `zmq`. Agree with letting the spike decide?
+1. **Phase-0 spike — DONE** (`examples/zmq_payload_{zeromq,libzmq}.rs`, see results above). It cleared
+   the pure-Rust `zeromq` crate: correct under heavy concurrent large-multipart stress, ~90 % of
+   libzmq throughput, async-native. **No action needed except your read of the results.**
+2. **Transport decision (your call):** given the spike, go **async core (tokio + `zeromq` +
+   `tokio::fs`)** for the maintenance-escape + async-nativeness, **or** keep battle-proven libzmq and
+   take approach A (channel-pipelined sync threads)? Both reach the same lock-free/fan-out/batching end
+   state; the spike shows `zeromq` is viable but loopback can't prove the production interleaving bug is
+   gone (that's phase-3 reassembly hardening + a real-network soak, crate-independent).
 3. **`dashmap`** for the in-flight set + service cache — acceptable new dependency? (Alternative: a
    hand-sharded `Mutex<HashMap>` — more code, no new dep.)
 4. **Config knobs**: `finalize_batch` (DB batch size) and the sink writer-pool size as
    `DispatcherConfig` knobs (defaulting batch ~ a few hundred, writers ~ host cores)? Consistent with
    the existing dispatcher knobs.
 
-*(Status: holding implementation for your review per the 2026-06-14 directive. The transport-
-independent phases 1–4 are ready to start the moment you confirm; phase 0 is the spike.)*
+*(Status: holding hot-path implementation for your review per the 2026-06-14 directive. **Phase 0
+(spike) is complete** — results above. The transport-independent phases 1–4 are ready to start the
+moment you confirm #2–#4.)*
