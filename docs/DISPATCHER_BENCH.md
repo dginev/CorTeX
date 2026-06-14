@@ -57,9 +57,13 @@ is clean, so this surfaces only under higher concurrency. Leading suspects:
 2. A **sink/worker envelope desync** — a short/malformed multipart reply desyncing the sink's
    `[identity, service, taskid, …data]` framing, mis-attributing or dropping a result.
 
-(2) is being addressed directly by the malformed-reply / envelope hardening + the new torture tests
-(barrage of empty / id-only / malformed replies). If that closes the 8-worker loss, this finding
-resolves; otherwise the residual is D-4. **Tracked here so it isn't lost.**
+**Update (2026-06-14):** the sink **envelope hardening** landed — every result is now `RCVMORE`-checked
+`[identity, service, taskid, …data]`, so a short/empty/malformed reply is skipped without desyncing the
+*next* reply's framing (this is real, and is the fix for case (2)). It **helps but does not fully
+close** the 8-worker loss: re-runs are now intermittent (~1 in 2 at 8 workers passes/fails), where
+before it failed consistently. So a **deeper, racy single-task-loss remains** — leading suspect **D-4**
+(the ventilator-restart boundary stranding one in-flight task). Still open; needs a dedicated repro
+(the bench is the repro harness — run the 8-worker config in a loop). **Tracked here so it isn't lost.**
 
 ## Relationship to `bench_pipeline.rs`
 

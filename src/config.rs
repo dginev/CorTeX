@@ -80,6 +80,13 @@ pub struct DispatcherConfig {
   /// The cost is one rebuild's DB load per interval (a few minutes at production scale). Default
   /// 1h.
   pub report_refresh_interval_seconds: u64,
+  /// **Hard cap** on the byte size of a single worker result the sink will write to `/data`. A
+  /// reply that exceeds it is **rejected** (the partial file is removed, the rest of the
+  /// multipart message is drained frame-by-frame to keep the socket in sync, and the task is
+  /// marked `Invalid`) rather than allowed to fill the disk — protecting the shared filesystem
+  /// from a runaway worker. We accept genuinely large jobs but draw the line here. Default 2
+  /// GiB.
+  pub max_result_bytes: usize,
 }
 impl Default for DispatcherConfig {
   fn default() -> Self {
@@ -90,6 +97,7 @@ impl Default for DispatcherConfig {
       message_size: 100_000,
       max_in_flight: 5000,
       report_refresh_interval_seconds: 3600,
+      max_result_bytes: 2 * 1024 * 1024 * 1024, // 2 GiB
     }
   }
 }

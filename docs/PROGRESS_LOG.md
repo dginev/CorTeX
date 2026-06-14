@@ -1560,3 +1560,17 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   fragility, or a sink/worker multipart-envelope desync — the latter is being addressed by the
   malformed-reply hardening + torture tests (owner's next ask). Documented as an open finding in
   DISPATCHER_BENCH.md.
+- **Sink robustness: malformed-reply envelope hardening + 2 GiB result cap (owner: torture tests + a
+  hard 2 GB cap):** the sink read the result envelope `[identity, service, taskid, ...data]` without
+  checking ZMQ multipart boundaries, so a short/empty/malformed reply (worker crash mid-send, or a
+  hostile post: no frames / id-only / truncated) **desynced** the framing of the NEXT reply — the
+  likely cause of the bench's intermittent 8-worker single-task-loss. Now each header frame is
+  `RCVMORE`-checked: an incomplete envelope is fully consumed + skipped, leaving the next reply to
+  parse cleanly. Added a **hard size cap** (`dispatcher.max_result_bytes`, default 2 GiB): the sink
+  streams the result frame-by-frame to disk (bounded memory), and a reply exceeding the cap is
+  rejected — partial file removed, the rest of the message drained to resync, task marked `Invalid`
+  (`result_too_large`) — so a runaway worker can't fill `/data`. Builds clean; `echo_roundtrip`
+  passes; the bench's 8-worker loss went from consistent → intermittent (the hardening fixes the
+  desync; a deeper D-4-suspect race remains, tracked in DISPATCHER_BENCH.md). **Still to add:** the
+  dedicated torture tests (the bad-reply barrage + a 2 GB-accepted / 10 GB-rejected oversized test with
+  cleanup) and the residual-race repro.

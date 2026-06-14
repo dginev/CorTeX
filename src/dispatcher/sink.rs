@@ -11,7 +11,7 @@ use std::sync::Mutex;
 
 use crate::dispatcher::server;
 use crate::helpers;
-use crate::helpers::{TaskProgress, TaskReport, TaskStatus};
+use crate::helpers::{NewTaskMessage, TaskProgress, TaskReport, TaskStatus};
 use crate::models::{Service, WorkerMetadataSender};
 
 /// Specifies the binding and operation parameters for a ZMQ sink component
@@ -48,6 +48,10 @@ impl Sink {
     let address = format!("tcp://*:{}", self.port);
     sink.bind(&address).unwrap();
 
+    // Hard cap on a single result's on-disk size (config `dispatcher.max_result_bytes`, default
+    // 2 GiB): a runaway worker must not fill `/data`.
+    let max_result_bytes = crate::config::config().dispatcher.max_result_bytes;
+
     let mut sink_job_count: usize = 0;
 
     loop {
@@ -56,12 +60,25 @@ impl Sink {
       let mut taskid_msg = zmq::Message::new();
       let mut service_msg = zmq::Message::new();
 
+      // Read the reply envelope `[identity, service, taskid, ...data]`. A malformed / empty /
+      // truncated reply (a worker crash mid-send, or a hostile post: no frames, id-only, etc.)
+      // would otherwise desync the multipart framing of the *next* reply — the sink would
+      // read the next reply's frames as this one's. So require `RCVMORE` after each header
+      // frame: if the message ends early its frames are already fully consumed, and skipping
+      // it leaves the next reply to parse cleanly. (Envelope robustness — torture-tested by
+      // the bad-reply barrage.)
       sink.recv(&mut identity_msg, 0)?;
       let identity = identity_msg.as_str().unwrap_or("_worker_");
-
+      if !sink.get_rcvmore().unwrap_or(false) {
+        eprintln!("-- sink: malformed reply (truncated after identity {identity:?}) — skipped");
+        continue;
+      }
       sink.recv(&mut service_msg, 0)?;
       let service_name = service_msg.as_str().unwrap_or("_unknown_");
-
+      if !sink.get_rcvmore().unwrap_or(false) {
+        eprintln!("-- sink: malformed reply (no taskid, worker {identity:?}) — skipped");
+        continue;
+      }
       sink.recv(&mut taskid_msg, 0)?;
       let taskid_str = taskid_msg.as_str().unwrap_or("-1");
       let taskid = taskid_str.parse::<i64>().unwrap_or(-1);
@@ -109,6 +126,7 @@ impl Sink {
                         let recv_pathname = recv_dir_string + "/" + &service.name + ".zip";
                         let recv_path = Path::new(&recv_pathname);
                         // println!("Will write to {:?}", recv_path);
+                        let mut oversized = false;
                         {
                           // Explicitly scope file, so that we drop it the moment we are done
                           // writing.
@@ -120,6 +138,18 @@ impl Sink {
                             },
                           };
                           while sink.recv(&mut recv_msg, 0).is_ok() {
+                            // Hard cap: a result over `max_result_bytes` must not be written (disk
+                            // protection). Stop writing, drain the rest of the message
+                            // frame-by-frame (bounded memory — never
+                            // the whole reply resident) to resync the socket,
+                            // and reject the task below.
+                            if total_incoming + recv_msg.len() > max_result_bytes {
+                              oversized = true;
+                              while sink.get_rcvmore().unwrap_or(false) {
+                                let _ = sink.recv(&mut recv_msg, 0);
+                              }
+                              break;
+                            }
                             match file.write(recv_msg.deref()) {
                               Ok(written_bytes) => total_incoming += written_bytes,
                               Err(e) => {
@@ -137,8 +167,30 @@ impl Sink {
                           }
                           drop(file);
                         }
-                        // Then mark the task done. This can be in a new thread later on
-                        let done_report = helpers::generate_report(task, recv_path);
+                        // Then mark the task done. This can be in a new thread later on.
+                        let done_report = if oversized {
+                          // Reject an over-cap result: remove the partial file + mark Invalid, so a
+                          // runaway worker can't fill /data and the task is transparently failed.
+                          std::fs::remove_file(recv_path).ok();
+                          eprintln!(
+                            "-- sink: result for task {taskid} exceeded the {max_result_bytes}-byte cap — rejected (Invalid)"
+                          );
+                          TaskReport {
+                            task,
+                            status: TaskStatus::Invalid,
+                            messages: vec![NewTaskMessage::new(
+                              taskid,
+                              "invalid",
+                              "cortex".to_string(),
+                              "result_too_large".to_string(),
+                              format!(
+                                "worker result exceeded the {max_result_bytes}-byte hard cap"
+                              ),
+                            )],
+                          }
+                        } else {
+                          helpers::generate_report(task, recv_path)
+                        };
                         server::send_done(done_tx, done_report);
                       },
                     }
