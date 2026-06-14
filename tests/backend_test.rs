@@ -391,3 +391,62 @@ fn mark_done_routes_messages_to_severity_tables() {
     .execute(&mut backend.connection);
   let _ = backend.delete_by(&mock_task, "service_id");
 }
+
+#[test]
+fn clear_limbo_except_preserves_in_flight_tasks() {
+  // A ventilator restart re-runs limbo-clearing while the sink is still processing in-flight tasks;
+  // those (held in `progress_queue`) must NOT be reset to TODO, or they get re-leased while their
+  // original result is still pending (a double-dispatch). The excluded ids are preserved.
+  let mut backend = backend::testdb();
+  let mock_service_id = random_mark();
+  let mock_corpus_id = random_mark();
+  let mock_task = NewTask {
+    entry: String::from("limbo_except_task"),
+    service_id: mock_service_id,
+    corpus_id: mock_corpus_id,
+    status: TaskStatus::TODO.raw(),
+  };
+  let _ = backend.delete_by(&mock_task, "service_id");
+  // Three tasks all marked Queued (a positive lease mark, > TODO).
+  let queued_mark: i32 = 4321;
+  for index in 1..=3 {
+    let indexed = NewTask {
+      entry: format!("limbo_except_task{index}"),
+      status: queued_mark,
+      ..mock_task.clone()
+    };
+    backend.add(&indexed).expect("add queued task");
+  }
+  let queued: Vec<Task> = tasks::table
+    .filter(service_id.eq(mock_service_id))
+    .get_results(&mut backend.connection)
+    .expect("fetch queued tasks");
+  assert_eq!(queued.len(), 3);
+  let in_flight = vec![queued[0].id]; // pretend the first is in-flight (in progress_queue)
+  backend
+    .clear_limbo_tasks_except(&in_flight)
+    .expect("clear limbo except in-flight");
+
+  // The in-flight task is preserved (still Queued); the other two reset to TODO.
+  let first_status: i32 = tasks::table
+    .find(queued[0].id)
+    .select(status)
+    .first(&mut backend.connection)
+    .unwrap();
+  assert_eq!(
+    first_status, queued_mark,
+    "the in-flight task is NOT reset (no double-dispatch)"
+  );
+  let todo_count: i64 = tasks::table
+    .filter(service_id.eq(mock_service_id))
+    .filter(status.eq(TaskStatus::TODO.raw()))
+    .count()
+    .get_result(&mut backend.connection)
+    .unwrap();
+  assert_eq!(
+    todo_count, 2,
+    "the other two Queued tasks were recovered to TODO"
+  );
+
+  let _ = backend.delete_by(&mock_task, "service_id");
+}

@@ -6,6 +6,22 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **D-4 (partial) — fixed the restart band-aid's limbo-clearing double-dispatch.** Reading the
+  ventilator to characterize D-4 surfaced a concrete correctness bug: `Ventilator::start` calls
+  `clear_limbo_tasks` on **every (re)start** (`ventilator.rs:59`), bluntly resetting **all** `status>0`
+  (Queued) tasks → TODO. Correct at process start (crash recovery), but on a *mid-operation* ventilator
+  restart (the D-4 band-aid) the sink is still processing **in-flight** tasks (in `progress_queue`,
+  `status=Queued`) — resetting those re-leased them while the original results were pending, a
+  **double-dispatch** (wasted compute; the duplicate result later discarded). Fix: exclude the live
+  `progress_queue` ids — new `Backend::clear_limbo_tasks_except(&in_flight)`
+  (`tasks_aggregate::clear_limbo_tasks_except`, `id <> ALL(in_flight)`), with the ventilator passing
+  its `progress_queue` snapshot. An empty slice is the old blunt reset, so process-start is byte-for-
+  byte unchanged. Tested: `backend_test::clear_limbo_except_preserves_in_flight_tasks` (in-flight
+  preserved, others recovered); `task_lifecycle` + `echo_roundtrip` confirm process-start/full-
+  dispatcher behaviour unchanged. KNOWN_ISSUES D-4 🔴 → 🟡 (the ROUTER-framing root cause that would
+  remove the restart entirely remains open; a microsecond snapshot race is the noted residual). fmt +
+  clippy clean.
+
 - **D-9 — dispatcher now supervises the sink/finalize threads (fixes a silent production stall).**
   Reading the manager + sink to diagnose D-7 surfaced a sharper robustness bug: the manager
   restart-loops only the **ventilator**; the **sink** and **finalize** threads are spawned once, and

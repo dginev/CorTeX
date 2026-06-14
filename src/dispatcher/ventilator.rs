@@ -54,9 +54,19 @@ impl Ventilator {
     // so a reaped task is always re-queued to its own service (not whichever service is
     // requesting).
     let mut queues: HashMap<i32, Vec<TaskProgress>> = HashMap::new();
-    // Assuming this is the only And tidy up the postgres tasks:
+    // Recover leftover Queued tasks from a previously-crashed run — but NOT the ones currently in
+    // flight. On a ventilator *restart* (KNOWN_ISSUES D-4) the sink is still processing dispatched
+    // tasks held in `progress_queue`; resetting those to TODO would re-lease them while their
+    // original results are still pending (a double-dispatch). On first start `progress_queue` is
+    // empty, so this recovers all leftover Queued tasks exactly as before.
     let mut backend = backend::from_address(&self.backend_address);
-    backend.clear_limbo_tasks()?;
+    let in_flight_ids: Vec<i64> = progress_queue_arc
+      .lock()
+      .expect("progress_queue mutex poisoned")
+      .keys()
+      .copied()
+      .collect();
+    backend.clear_limbo_tasks_except(&in_flight_ids)?;
     // Ok, let's bind to a port and start broadcasting
     let context = zmq::Context::new();
     let ventilator = context.socket(zmq::ROUTER)?;

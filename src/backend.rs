@@ -194,6 +194,13 @@ impl Backend {
     tasks_aggregate::clear_limbo_tasks(&mut self.connection)
   }
 
+  /// Like [`Self::clear_limbo_tasks`], but preserves the given in-flight task ids (the live
+  /// `progress_queue` on a ventilator restart) so tasks a worker is actively processing are not
+  /// reset to `TODO` and double-dispatched. See `tasks_aggregate::clear_limbo_tasks_except`.
+  pub fn clear_limbo_tasks_except(&mut self, in_flight: &[i64]) -> Result<usize, Error> {
+    tasks_aggregate::clear_limbo_tasks_except(&mut self.connection, in_flight)
+  }
+
   /// Activates an existing service on a given corpus (via PATH)
   /// if the service has previously been registered, this call will `RESET` the service into a mint
   /// state also removing any related log messages. The new run is attributed to `owner` with
