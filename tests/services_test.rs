@@ -131,6 +131,83 @@ fn worker_fleet_api_and_screen() {
   let response = client.get("/workers/no_such_svc_xyz").dispatch();
   assert_eq!(response.status(), Status::NotFound);
 
+  // --- Register a service: token-gated; creates a registry entry; 409 on a duplicate -----------
+  const NEW_SVC: &str = "registered_via_api_svc";
+  const FORM_SVC: &str = "registered_via_form_svc";
+  {
+    let mut db = backend::testdb();
+    for n in [NEW_SVC, FORM_SVC] {
+      diesel::delete(services::table.filter(services::name.eq(n)))
+        .execute(&mut db.connection)
+        .ok();
+    }
+  }
+  let body = serde_json::json!({
+    "name": NEW_SVC, "version": 0.2, "inputformat": "tex", "outputformat": "html",
+    "inputconverter": "import", "complex": true, "description": "registered in a test",
+  });
+  // No token -> 401.
+  let denied = client
+    .post("/api/services")
+    .header(ContentType::JSON)
+    .body(body.to_string())
+    .dispatch();
+  assert_eq!(
+    denied.status(),
+    Status::Unauthorized,
+    "register without a token is 401"
+  );
+  // Valid token -> 201 + the service DTO.
+  let created = client
+    .post("/api/services?token=token1")
+    .header(ContentType::JSON)
+    .body(body.to_string())
+    .dispatch();
+  assert_eq!(
+    created.status(),
+    Status::Created,
+    "register with a token is 201"
+  );
+  let svc: Value = created.into_json().expect("service json");
+  assert_eq!(svc["name"], NEW_SVC);
+  assert_eq!(svc["inputconverter"], "import");
+  // Duplicate name -> 409.
+  let dup = client
+    .post("/api/services?token=token1")
+    .header(ContentType::JSON)
+    .body(body.to_string())
+    .dispatch();
+  assert_eq!(
+    dup.status(),
+    Status::Conflict,
+    "a duplicate service name is 409"
+  );
+  // Human form -> 303 redirect to /services; the service is registered.
+  let redirected = client
+    .post("/services/register")
+    .header(ContentType::Form)
+    .body(format!(
+      "name={FORM_SVC}&version=0.1&inputformat=tex&outputformat=html&complex=true&token=token1"
+    ))
+    .dispatch();
+  assert_eq!(
+    redirected.status(),
+    Status::SeeOther,
+    "the human register form redirects (303)"
+  );
+  {
+    let mut db = backend::testdb();
+    assert!(
+      Service::find_by_name(FORM_SVC, &mut db.connection).is_ok(),
+      "service registered via the human form"
+    );
+    for n in [NEW_SVC, FORM_SVC] {
+      diesel::delete(services::table.filter(services::name.eq(n)))
+        .execute(&mut db.connection)
+        .ok();
+    }
+  }
+
   // cleanup
   let mut db = backend::testdb();
   diesel::delete(worker_metadata::table.filter(worker_metadata::service_id.eq(service_id)))

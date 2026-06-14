@@ -41,5 +41,21 @@
     <div class="col-md-1"></div>
   </div>
   {% endif %}
+
+  <hr>
+  <details class="register-service">
+    <summary><strong>+ Register a service</strong></summary>
+    <form method="post" action="/services/register">
+      <p><label>Name <input type="text" name="name" required></label>
+        &nbsp; <label>Version <input type="number" step="0.01" name="version" value="0.1" required></label></p>
+      <p><label>Input format <input type="text" name="inputformat" value="tex" required></label>
+        &nbsp; <label>Output format <input type="text" name="outputformat" value="html" required></label></p>
+      <p><label>Input converter (optional) <input type="text" name="inputconverter" placeholder="e.g. import"></label></p>
+      <p><label>Description <input type="text" name="description" size="48"></label></p>
+      <p><label><input type="checkbox" name="complex" value="true" checked> Complex (needs more than main text)</label></p>
+      <p><label>Admin token <input type="password" name="token" required></label></p>
+      <button type="submit">Register service</button>
+    </form>
+  </details>
 </div>
 {% endblock content %}

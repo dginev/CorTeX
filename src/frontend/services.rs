@@ -15,16 +15,20 @@
 
 use std::collections::HashMap;
 
+use rocket::form::Form;
 use rocket::http::Status;
+use rocket::response::Redirect;
 use rocket::serde::json::Json;
 use rocket::{Route, State};
 use rocket_dyn_templates::Template;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::backend::DbPool;
+use crate::concerns::CortexInsertable;
+use crate::frontend::actor::{owner_for_token, Actor};
 use crate::frontend::helpers::decorate_uri_encodings;
 use crate::frontend::params::TemplateContext;
-use crate::models::{Service, WorkerMetadata};
+use crate::models::{NewService, Service, WorkerMetadata};
 
 /// A registered service as exposed over the API/UI — the service-registry view. `name` is the
 /// stable external handle used by every service route.
@@ -105,6 +109,115 @@ pub fn api_services(pool: &State<DbPool>) -> Result<Json<Vec<ServiceDto>>, Statu
   Ok(Json(services.into_iter().map(ServiceDto::from).collect()))
 }
 
+/// Inserts a new service definition (`409` if the name is taken). Shared by the agent endpoint and
+/// the human form. Normalizes an empty `inputconverter` to `None` (no prerequisite).
+fn insert_service(pool: &DbPool, mut service: NewService) -> Result<(), Status> {
+  service.inputconverter = service.inputconverter.filter(|s| !s.is_empty());
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  if Service::find_by_name(&service.name, &mut connection).is_ok() {
+    return Err(Status::Conflict);
+  }
+  service
+    .create(&mut connection)
+    .map_err(|_| Status::InternalServerError)?;
+  Ok(())
+}
+
+/// Request body for registering (defining) a new service.
+#[derive(Debug, Deserialize)]
+pub struct ServiceRegisterRequest {
+  /// Service name (external handle).
+  pub name: String,
+  /// Service version (e.g. `0.1`).
+  pub version: f32,
+  /// Expected input format (e.g. `tex`).
+  pub inputformat: String,
+  /// Produced output format (e.g. `html`).
+  pub outputformat: String,
+  /// Prerequisite input-conversion service, if any (empty = none).
+  pub inputconverter: Option<String>,
+  /// Whether the service needs more than a document's main textual content.
+  pub complex: bool,
+  /// Optional human-readable description.
+  pub description: Option<String>,
+}
+
+/// Registers (defines) a new service in the registry — the agent twin of the registry screen's
+/// "Register a service" form. **Token-gated** via the [`Actor`] guard; `401` without a valid token,
+/// `409` if the service name already exists, `201` with the service on success. (This *defines* a
+/// service; activating it on a corpus — creating tasks — is `POST /api/corpora/<c>/services/<s>`.)
+#[post("/api/services", format = "json", data = "<request>")]
+pub fn register_service(
+  request: Json<ServiceRegisterRequest>,
+  _actor: Actor,
+  pool: &State<DbPool>,
+) -> Result<(Status, Json<ServiceDto>), Status> {
+  let request = request.into_inner();
+  let name = request.name.clone();
+  insert_service(
+    pool,
+    NewService {
+      name: request.name,
+      version: request.version,
+      inputformat: request.inputformat,
+      outputformat: request.outputformat,
+      inputconverter: request.inputconverter,
+      complex: request.complex,
+      description: request.description.unwrap_or_default(),
+    },
+  )?;
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let service =
+    Service::find_by_name(&name, &mut connection).map_err(|_| Status::InternalServerError)?;
+  Ok((Status::Created, Json(ServiceDto::from(service))))
+}
+
+/// Fields of the human "Register a service" form on the service-registry screen.
+#[derive(FromForm)]
+pub struct RegisterServiceForm {
+  /// Service name (external handle).
+  pub name: String,
+  /// Service version.
+  pub version: f32,
+  /// Expected input format.
+  pub inputformat: String,
+  /// Produced output format.
+  pub outputformat: String,
+  /// Prerequisite input-conversion service, if any.
+  pub inputconverter: Option<String>,
+  /// Whether the service is complex.
+  pub complex: bool,
+  /// Optional description.
+  pub description: Option<String>,
+  /// A rerun token, resolved to the acting owner.
+  pub token: String,
+}
+
+/// The human twin of [`register_service`]: the registry screen's "Register a service" form.
+/// Resolves the token, inserts the service, and redirects back to `/services`. `401` on a bad
+/// token, `409` if the name is taken.
+#[post("/services/register", data = "<form>")]
+pub fn register_service_human(
+  form: Form<RegisterServiceForm>,
+  pool: &State<DbPool>,
+) -> Result<Redirect, Status> {
+  owner_for_token(&form.token).ok_or(Status::Unauthorized)?;
+  let form = form.into_inner();
+  insert_service(
+    pool,
+    NewService {
+      name: form.name,
+      version: form.version,
+      inputformat: form.inputformat,
+      outputformat: form.outputformat,
+      inputconverter: form.inputconverter,
+      complex: form.complex,
+      description: form.description.unwrap_or_default(),
+    },
+  )?;
+  Ok(Redirect::to("/services"))
+}
+
 /// The service-registry screen (HTML twin of [`api_services`]): the table of registered services,
 /// each linking to its worker-fleet view. `503` if the pool is exhausted.
 #[get("/services")]
@@ -183,6 +296,8 @@ pub fn worker_report_page(service: &str, pool: &State<DbPool>) -> Result<Templat
 pub fn routes() -> Vec<Route> {
   routes![
     api_services,
+    register_service,
+    register_service_human,
     services_page,
     api_service_workers,
     worker_report_page

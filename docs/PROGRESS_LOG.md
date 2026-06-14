@@ -639,3 +639,12 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   dropdown lists `tex_to_html`); `corpora_test` asserts the activate form is token-gated (bad token → 401).
   **The corpus lifecycle now has matched, secured human + agent surfaces end to end** (create · activate ·
   extend · delete). clippy/fmt clean.
+- **Service registry: register a service from API + UI (Arm 6; autonomous-night progress):** registering
+  (defining) a service was **CLI-only** (`examples/register_service.rs`) — no API, no screen, only read
+  views existed. Added `POST /api/services` (token-gated, `201` + `ServiceDto`, `409` on a duplicate name)
+  and its human twin `POST /services/register` (a "+ Register a service" form on the registry screen,
+  redirecting back to `/services`), sharing one `insert_service` helper that normalizes an empty
+  `inputconverter` to `None`. Clarified the naming overload in the docs: this *defines* a service vs.
+  `POST /api/corpora/<c>/services/<s>` which *activates* it on a corpus. Verified the form renders;
+  `services_test` asserts 401-without-token, 201-with-token + DTO, 409-on-duplicate, and the human form's
+  303 redirect + persisted row. clippy/fmt clean.
