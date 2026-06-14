@@ -1189,3 +1189,16 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   text field, pre-selected to the active filter, with a clear link. `runs_test` extends the overview
   case (corpus filter keeps/excludes; owner filter keeps tester's / excludes a stranger's).
   clippy -D warnings + fmt + the runs/admin sweep green.
+- **Performance — composite index for the hot per-(corpus,service) run query (autonomous-day
+  progress):** `historical_runs` only had a single-column `corpus_id` index, but the public hot path
+  is `HistoricalRun::find_by` (`WHERE corpus_id=? AND service_id=? ORDER BY start_time DESC` — every
+  runs/history/diff page) + `find_current` (same filter + `end_time IS NULL` — every report page),
+  which therefore filtered on corpus then filtered service + **sorted start_time in memory**.
+  Migration `…120000_historical_runs_pair_index` adds `(corpus_id, service_id, start_time)` (keys both
+  equality filters AND the ordering → a direct ordered index scan, no in-memory sort, also serves the
+  overview's corpus+service-filtered reads) and **drops the now-redundant** `historical_runs_corpus_idx`
+  (corpus_id is a strict prefix of the composite → one fewer index to maintain on every run write —
+  rationalization). `service_idx` kept (service_id-only filters). Reversible; schema.rs unchanged
+  (indexes aren't in the diesel `table!` macro). The win materializes at production scale (the tiny
+  test DB still seq-scans). Also corrected a stale memory note (the `make_history.rs`/`metadata.rs`
+  "dead files" are already gone; the `dependencies` table was dropped). runs_test green.
