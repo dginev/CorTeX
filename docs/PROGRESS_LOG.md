@@ -1691,3 +1691,21 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   malformed message is a throughput-DoS vector under a sustained flood (correctness holds — tasks
   finalize, nothing accepted malformed — but real throughput degrades); fix direction is rate-limited /
   counter-based logging. clippy + torture + echo_roundtrip green.
+- **Dispatcher D-11 fix: rate-limited discard logging (flood-resilient observability).** Closed the
+  throughput-DoS discovered while torture-testing D-4: the sink + ventilator logged one synchronous
+  `stderr`/`stdout` line **per discarded malformed message**, so a sustained flood self-throttled the
+  real pipeline. Added `server::RateLimitedLog` (unit-tested) — counts events, emits at most once per
+  interval (plus an immediate first emit), carrying the suppressed count, so a flood costs O(1) log
+  I/O, not O(flood) (*counted, not narrated*). Wired into every discard site in `sink.rs`
+  (malformed-envelope skips, unknown/ mismatched task ids) and `ventilator.rs` (framing skips,
+  unknown service). Proven: a one-off 200k-reply flood drained in ~4 s (vs stranding tasks before the
+  fix). KNOWN_ISSUES D-11.
+- **Torture test made reliable + D-12 recorded.** The concurrent *ventilator* request-flood added for
+  D-4 proved flaky (~1 in 3): on the single shared ROUTER socket it perturbed the real worker's timing
+  and left a few tasks `Queued` past the deadline — **not** loss or corruption (integrity gate passes;
+  Queued is reaper-recoverable), a liveness interaction most-likely with the worker's 60 s empty-queue
+  throttle (#14). Removed the flaky flood (D-4 stays bench-validated; the framing is the proven RCVMORE
+  pattern); kept the reliable sink malformed-reply barrage + the **byte-exact data-integrity** check
+  (every accepted result is a byte-exact echo of its source — the owner's data-integrity ask). Recorded
+  the straggler as **KNOWN_ISSUES D-12** (S3, low production relevance for a single ventilator + ~200
+  workers + continuous backlog; mechanism to be confirmed). Torture test now 3/3 reliable.

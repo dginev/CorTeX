@@ -8,6 +8,7 @@ use std::path::Path;
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use crate::dispatcher::server;
 use crate::helpers;
@@ -53,6 +54,10 @@ impl Sink {
     let max_result_bytes = crate::config::config().dispatcher.max_result_bytes;
 
     let mut sink_job_count: usize = 0;
+    // Rate-limited logging for discarded replies (malformed envelopes, unknown task ids). A
+    // sustained bad-reply flood must not turn per-message `stderr` writes into a throughput-DoS
+    // (KNOWN_ISSUES D-11) — count, don't narrate.
+    let mut discard_log = server::RateLimitedLog::new(Duration::from_secs(5));
 
     loop {
       let mut recv_msg = zmq::Message::new();
@@ -70,13 +75,21 @@ impl Sink {
       sink.recv(&mut identity_msg, 0)?;
       let identity = identity_msg.as_str().unwrap_or("_worker_");
       if !sink.get_rcvmore().unwrap_or(false) {
-        eprintln!("-- sink: malformed reply (truncated after identity {identity:?}) — skipped");
+        if let Some(n) = discard_log.record() {
+          eprintln!(
+            "-- sink: discarded {n} malformed reply(ies) [latest: truncated after identity {identity:?}] (rate-limited)"
+          );
+        }
         continue;
       }
       sink.recv(&mut service_msg, 0)?;
       let service_name = service_msg.as_str().unwrap_or("_unknown_");
       if !sink.get_rcvmore().unwrap_or(false) {
-        eprintln!("-- sink: malformed reply (no taskid, worker {identity:?}) — skipped");
+        if let Some(n) = discard_log.record() {
+          eprintln!(
+            "-- sink: discarded {n} malformed reply(ies) [latest: no taskid, worker {identity:?}] (rate-limited)"
+          );
+        }
         continue;
       }
       sink.recv(&mut taskid_msg, 0)?;
@@ -203,10 +216,12 @@ impl Sink {
                 .received(identity.to_string(), service.id, taskid);
             } else {
               // Otherwise just discard the rest of the message
-              println!(
-                "-- Mismatch between requested service id {:?} and task's service id {:?} for task {:?}, discarding response",
-                service.id, task.service_id, taskid
-              );
+              if let Some(n) = discard_log.record() {
+                println!(
+                  "-- sink: discarded {n} reply(ies) [latest: service-id mismatch — requested {:?}, task is {:?}, task {taskid:?}] (rate-limited)",
+                  service.id, task.service_id
+                );
+              }
               while sink.recv(&mut recv_msg, 0).is_ok() {
                 if !sink.get_rcvmore()? {
                   break;
@@ -217,7 +232,11 @@ impl Sink {
         };
       } else {
         // No such task, just discard the next message from the sink
-        println!("-- No such task id found in dispatcher queue: {taskid:?}");
+        if let Some(n) = discard_log.record() {
+          println!(
+            "-- sink: discarded {n} reply(ies) for unknown task id(s) [latest: {taskid:?}] (rate-limited)"
+          );
+        }
         while sink.recv(&mut recv_msg, 0).is_ok() {
           if !sink.get_rcvmore()? {
             break;

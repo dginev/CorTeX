@@ -3,11 +3,57 @@ use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::backend::Backend;
 use crate::helpers::{NewTaskMessage, TaskProgress, TaskReport, TaskStatus};
 use crate::models::Service;
+
+/// Rate-limited logging for high-frequency, low-value events — the dispatcher's *discarded*
+/// messages (malformed replies/requests, unknown service names, unknown task ids). The dispatcher's
+/// request and sink loops `eprintln!`/`println!` one line per skipped message; under a **sustained
+/// flood** (a hostile or buggy peer spamming bad frames) those synchronous, locked
+/// `stderr`/`stdout` writes serialise and *slow the real pipeline* — a self-inflicted
+/// throughput-DoS (KNOWN_ISSUES D-11). This aggregates instead: it counts events and signals an
+/// emit at most once per `interval` (plus the very first event, so a problem is visible
+/// immediately), carrying the suppressed count. So a flood of any size costs **O(1) log I/O per
+/// interval**, not O(flood) — *counted, not narrated* — while a genuine trickle is still surfaced.
+/// Per-thread (no sharing/locking); the clock read per event is a cheap monotonic `Instant::now()`.
+pub struct RateLimitedLog {
+  events_since_emit: u64,
+  last_emit: Option<Instant>,
+  interval: Duration,
+}
+
+impl RateLimitedLog {
+  /// A new aggregator that emits at most once per `interval` (after an immediate first emit).
+  pub fn new(interval: Duration) -> Self {
+    RateLimitedLog {
+      events_since_emit: 0,
+      last_emit: None,
+      interval,
+    }
+  }
+
+  /// Records one event. Returns `Some(count)` — the number of events since the last emit, inclusive
+  /// — when a summary line is due (the first event always, then at most once per `interval`),
+  /// resetting the counter; otherwise `None` (suppress; just counted).
+  pub fn record(&mut self) -> Option<u64> {
+    self.events_since_emit += 1;
+    let due = match self.last_emit {
+      None => true,
+      Some(at) => at.elapsed() >= self.interval,
+    };
+    if due {
+      let count = self.events_since_emit;
+      self.events_since_emit = 0;
+      self.last_emit = Some(Instant::now());
+      Some(count)
+    } else {
+      None
+    }
+  }
+}
 
 /// Hard ceiling on the in-flight (progress) set. Reaching it means backpressure
 /// ([`crate::config::DispatcherConfig::max_in_flight`]) failed to hold the line, so we fail fast
@@ -314,6 +360,22 @@ mod tests {
       ExpiredOutcome::Fatal(report) => assert_eq!(report.task.id, 2),
       ExpiredOutcome::Requeue(_) => panic!("retry budget exhausted -> should be Fatal"),
     }
+  }
+
+  #[test]
+  fn rate_limited_log_emits_first_then_throttles_then_summarizes() {
+    let mut log = RateLimitedLog::new(Duration::from_millis(40));
+    // The first event always emits, so a problem is visible immediately.
+    assert_eq!(log.record(), Some(1));
+    // Subsequent events within the interval are suppressed (counted, not narrated).
+    assert_eq!(log.record(), None);
+    assert_eq!(log.record(), None);
+    // After the interval, the next event emits a summary carrying the suppressed count
+    // (the two suppressed above + this one).
+    std::thread::sleep(Duration::from_millis(50));
+    assert_eq!(log.record(), Some(3));
+    // ...and the counter resets for the next window.
+    assert_eq!(log.record(), None);
   }
 
   #[test]

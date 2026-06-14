@@ -3,6 +3,7 @@ use std::io::Read;
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use crate::backend;
 use crate::dispatcher::server;
@@ -78,6 +79,10 @@ impl Ventilator {
     // request).
     let reap_interval_secs = crate::config::config().dispatcher.reap_interval_seconds;
     let mut last_reap_sec = chrono::Utc::now().timestamp();
+    // Rate-limited logging for discarded requests (malformed framing, unknown service names). A
+    // sustained malformed-request flood must not turn per-message `stderr` writes into a
+    // throughput-DoS (KNOWN_ISSUES D-11) — count, don't narrate.
+    let mut discard_log = server::RateLimitedLog::new(Duration::from_secs(5));
 
     loop {
       let mut identity = zmq::Message::new();
@@ -98,7 +103,9 @@ impl Ventilator {
       if !ventilator.get_rcvmore().unwrap_or(false) {
         // `[identity]` with no service frame — truncated. Skipping consumes nothing further, so the
         // next request's frames are left intact (no desync).
-        eprintln!("-- ventilator: truncated request (no service frame) — skipped");
+        if let Some(n) = discard_log.record() {
+          eprintln!("-- ventilator: discarded {n} malformed request(s) [latest: truncated, no service frame] (rate-limited)");
+        }
         continue;
       }
       ventilator.recv(&mut msg, 0)?;
@@ -115,7 +122,9 @@ impl Ventilator {
       let service_name = msg.as_str().unwrap_or_default().to_string();
       if service_name.is_empty() {
         // Empty service request (e.g. the "3 adjacent empty messages") — skip without desyncing.
-        eprintln!("-- ventilator: empty service request from worker {identity_str:?} — skipped");
+        if let Some(n) = discard_log.record() {
+          eprintln!("-- ventilator: discarded {n} malformed request(s) [latest: empty service from {identity_str:?}] (rate-limited)");
+        }
         continue;
       }
 
@@ -132,9 +141,12 @@ impl Ventilator {
       let service_opt = match server::get_sync_service(&service_name, services_arc, &mut backend) {
         Some(s) => Some(s),
         None => {
-          // As it happens, we can never survive this mistake with our current zmq code. We need a
-          // full reboot to regain sanity.
-          eprintln!("-- FAILURE: unknown service name {service_name:?} requested by worker {identity_str:?}. Mock response sent.");
+          // An unknown service name is now handled gracefully — mock-reply so the (mis)configured
+          // worker backs off — rather than the old fatal desync (the request framing is robust now,
+          // D-4). Rate-limit the log so a flood of bad-service requests can't DoS us (D-11).
+          if let Some(n) = discard_log.record() {
+            eprintln!("-- ventilator: discarded {n} request(s) [latest: unknown service {service_name:?} from {identity_str:?}, mock-replied] (rate-limited)");
+          }
           ventilator.send(identity, SNDMORE)?;
           ventilator.send("0", SNDMORE)?;
           ventilator.send(Vec::new(), 0)?;
