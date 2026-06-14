@@ -188,6 +188,19 @@ impl HistoricalRun {
     Ok(runs)
   }
 
+  /// The most recent historical runs across **all** corpora/services, newest first — the
+  /// system-wide run-management overview. Capped at `limit`.
+  pub fn recent_all(
+    connection: &mut PgConnection,
+    limit: i64,
+  ) -> Result<Vec<HistoricalRun>, Error> {
+    use crate::schema::historical_runs::dsl::start_time;
+    historical_runs::table
+      .order(start_time.desc())
+      .limit(limit)
+      .get_results(connection)
+  }
+
   /// Obtain a currently ongoing run entry for a  `(Corpus, Service)` pair, if any
   pub fn find_current(
     corpus: &Corpus,

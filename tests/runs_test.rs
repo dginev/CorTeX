@@ -93,10 +93,56 @@ fn main() {
   api_lists_runs_and_reports_current(&client);
   api_task_diff_over_real_snapshots(&client);
   api_runs_is_404_for_unknown_corpus(&client);
+  overview_lists_runs_system_wide(&client);
   eprintln!("runs_test: all cases passed");
   // `_exit` (not `process::exit`): skip C atexit handlers — libpq/OpenSSL global cleanup races with
   // the still-live Tokio/r2d2 threads and SIGSEGVs (L-1). The OS reclaims everything cleanly.
   unsafe { libc::_exit(0) }
+}
+
+// The system-wide run-management overview (`/admin/runs` + `GET /api/runs`). Runs after the seed.
+fn overview_lists_runs_system_wide(client: &Client) {
+  // The management screen is signed-in-only (with a return path).
+  let response = client.get("/admin/runs").dispatch();
+  assert!(
+    response
+      .headers()
+      .get_one("Location")
+      .unwrap_or("")
+      .starts_with("/admin/login?next="),
+    "the historical-runs overview requires sign-in"
+  );
+
+  // The agent twin lists runs across all corpora/services and includes the seeded one.
+  let response = client.get("/api/runs").dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Ok,
+    "GET /api/runs lists runs system-wide"
+  );
+  let body = response.into_string().expect("a JSON body");
+  assert!(
+    body.contains(CORPUS_NAME),
+    "the system-wide run list includes the seeded corpus"
+  );
+
+  // Signed in, the human screen renders with the seeded run.
+  client
+    .post("/admin/login")
+    .header(ContentType::Form)
+    .body("token=token1")
+    .dispatch();
+  let response = client.get("/admin/runs").dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Ok,
+    "signed-in /admin/runs renders"
+  );
+  let html = response.into_string().expect("an html body");
+  assert!(
+    html.contains("Historical runs") && html.contains(CORPUS_NAME),
+    "the overview lists the seeded run"
+  );
 }
 
 // Both assertions live in one case so the shared seed isn't raced by parallel threads.

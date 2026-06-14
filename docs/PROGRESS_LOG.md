@@ -1153,3 +1153,17 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   green. **Note (robustness ledger):** W-4's remaining auto-kill/statement-timeout work stays parked —
   it needs an owner-set deadline (legit-long reindex/refresh must not be false-killed); not an
   autonomous call.
+- **Admin UX — system-wide historical-runs overview (autonomous-day progress, "managing historical
+  runs"):** runs were only viewable per-`(corpus, service)`; there was no place to see recent
+  conversion activity across the whole system. New `HistoricalRun::recent_all(limit)` +
+  `frontend::runs` `RunOverviewDto` (per-run row + corpus/service names, batched name lookups — no
+  N+1) behind `GET /admin/runs` (signed-in management screen; each row links into the existing
+  per-service history / diff / drill-down) and the agent twin `GET /api/runs?<limit>` (in the OpenAPI
+  spec; sits beside the existing `/api/runs/<corpus>/<service>` without colliding). Gated + return-path
+  for the human page; `limit` clamped [1,500]. `templates/admin-runs.html.tera`, linked from /admin.
+  `tests/runs_test` gains an overview case (anonymous→sign-in redirect, `/api/runs` lists the seeded
+  run system-wide, signed-in screen renders it). This is the **inspection-first** completion the owner
+  steered ("run-management is filter-driven; prioritize inspection over mutation") — destructive
+  retention/prune of `historical_tasks`/`historical_runs` (unbounded growth) is deliberately deferred
+  for explicit owner sign-off (policy + irreversibility), noted in the ledger. clippy -D warnings +
+  the auth/runs test sweep green.

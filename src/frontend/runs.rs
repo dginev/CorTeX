@@ -24,6 +24,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 
 use crate::backend::{list_task_diffs, summary_task_diffs, DbPool};
+use crate::frontend::actor::{require_admin_to, AdminReject, AdminSession, ReturnTo};
 use crate::frontend::helpers::decorate_uri_encodings;
 use crate::frontend::params::TemplateContext;
 use crate::helpers::TaskStatus;
@@ -84,6 +85,140 @@ impl From<HistoricalRun> for RunDto {
       in_progress: run.in_progress,
     }
   }
+}
+
+/// A historical run as exposed in the **system-wide** overview: the per-`(corpus, service)`
+/// [`RunDto`] fields plus the corpus + service names (the overview spans every pair, so the names
+/// are part of the row). The read model for `GET /api/runs` and the `/admin/runs` management
+/// screen.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct RunOverviewDto {
+  /// The corpus the run targeted.
+  pub corpus: String,
+  /// The service the run targeted.
+  pub service: String,
+  /// Who initiated the run.
+  pub owner: String,
+  /// Why the run was initiated.
+  pub description: String,
+  /// Run start, ISO-8601.
+  pub start_time: String,
+  /// Run end, ISO-8601; `None` while still open.
+  pub end_time: Option<String>,
+  /// Whether the run has completed.
+  pub completed: bool,
+  /// Total tasks in the run.
+  pub total: i32,
+  /// Tasks with no notable problems.
+  pub no_problem: i32,
+  /// Tasks with warnings.
+  pub warning: i32,
+  /// Tasks with errors.
+  pub error: i32,
+  /// Fatally-failed tasks.
+  pub fatal: i32,
+  /// Invalid tasks.
+  pub invalid: i32,
+  /// Tasks still in progress when the run closed.
+  pub in_progress: i32,
+}
+
+impl RunOverviewDto {
+  /// Builds the overview row from a run + the corpus/service name lookups (unknown ids render as
+  /// their numeric id rather than failing the whole listing).
+  fn build(
+    run: HistoricalRun,
+    corpora: &HashMap<i32, String>,
+    services: &HashMap<i32, String>,
+  ) -> RunOverviewDto {
+    RunOverviewDto {
+      corpus: corpora
+        .get(&run.corpus_id)
+        .cloned()
+        .unwrap_or_else(|| format!("#{}", run.corpus_id)),
+      service: services
+        .get(&run.service_id)
+        .cloned()
+        .unwrap_or_else(|| format!("#{}", run.service_id)),
+      owner: run.owner,
+      description: run.description,
+      start_time: run.start_time.format("%Y-%m-%dT%H:%M:%S").to_string(),
+      end_time: run
+        .end_time
+        .map(|end| end.format("%Y-%m-%dT%H:%M:%S").to_string()),
+      completed: run.end_time.is_some(),
+      total: run.total,
+      no_problem: run.no_problem,
+      warning: run.warning,
+      error: run.error,
+      fatal: run.fatal,
+      invalid: run.invalid,
+      in_progress: run.in_progress,
+    }
+  }
+}
+
+/// Loads the most-recent historical runs across **all** corpora/services as overview rows (the
+/// shared core of `GET /api/runs` and the `/admin/runs` screen). `limit` is clamped by the caller.
+fn load_recent_runs(pool: &DbPool, limit: i64) -> Result<Vec<RunOverviewDto>, Status> {
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let runs =
+    HistoricalRun::recent_all(&mut connection, limit).map_err(|_| Status::InternalServerError)?;
+  // The corpora/services tables are small; one batched read each beats N+1 per-run lookups.
+  let corpora: HashMap<i32, String> = Corpus::all(&mut connection)
+    .unwrap_or_default()
+    .into_iter()
+    .map(|corpus| (corpus.id, corpus.name))
+    .collect();
+  let services: HashMap<i32, String> = Service::all(&mut connection)
+    .unwrap_or_default()
+    .into_iter()
+    .map(|service| (service.id, service.name))
+    .collect();
+  Ok(
+    runs
+      .into_iter()
+      .map(|run| RunOverviewDto::build(run, &corpora, &services))
+      .collect(),
+  )
+}
+
+/// The system-wide run history (agent twin of the `/admin/runs` screen): the most recent runs
+/// across every corpus/service, newest first, capped at `limit` (default 100, max 500). `503` if
+/// the pool is exhausted.
+#[rocket_okapi::openapi(tag = "Runs")]
+#[get("/api/runs?<limit>")]
+pub fn api_all_runs(
+  limit: Option<i64>,
+  pool: &State<DbPool>,
+) -> Result<Json<Vec<RunOverviewDto>>, Status> {
+  let limit = limit.unwrap_or(100).clamp(1, 500);
+  Ok(Json(load_recent_runs(pool, limit)?))
+}
+
+/// The system-wide run-management overview (`GET /admin/runs`): the most recent runs across every
+/// corpus/service, each linking into its per-service history + diff drill-downs. Signed-in admins
+/// only (unauthenticated → sign-in, returning here).
+#[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
+#[get("/admin/runs?<limit>")]
+pub fn all_runs_page(
+  limit: Option<i64>,
+  session: Option<AdminSession>,
+  return_to: ReturnTo,
+  pool: &State<DbPool>,
+) -> Result<Template, AdminReject> {
+  let admin = require_admin_to(session, &return_to)?;
+  let limit = limit.unwrap_or(100).clamp(1, 500);
+  // Best-effort, like the other admin screens: a db hiccup renders an empty table, never a 500.
+  let runs = load_recent_runs(pool, limit).unwrap_or_default();
+  let global = serde_json::json!({
+    "title": "Historical runs",
+    "description": "Recent conversion runs across every corpus and service",
+  });
+  Ok(Template::render(
+    "admin-runs",
+    context! { global, owner: admin.owner, runs },
+  ))
 }
 
 /// Resolves a `(corpus, service)` name pair to its records, mapping each miss to `404`.
@@ -484,6 +619,13 @@ pub fn history_page(corpus: &str, service: &str, pool: &State<DbPool>) -> Result
 
 /// The route set for the historical-runs capability.
 pub fn routes() -> Vec<Route> {
-  // NB: the `api_run*` routes are mounted via `frontend::apidoc` (rocket_okapi).
-  routes![runs_tasks_page, runs_diff_page, runs_page, history_page]
+  // NB: the `api_run*` routes (incl. `api_all_runs`) are mounted via `frontend::apidoc`
+  // (rocket_okapi).
+  routes![
+    all_runs_page,
+    runs_tasks_page,
+    runs_diff_page,
+    runs_page,
+    history_page
+  ]
 }

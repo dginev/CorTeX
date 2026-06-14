@@ -48,9 +48,10 @@ use crate::frontend::reports::{
   okapi_add_operation_for_rerun_report_, refresh_reports, rerun_report,
 };
 use crate::frontend::runs::{
-  api_run_current, api_run_diff, api_run_task_diffs, api_runs,
-  okapi_add_operation_for_api_run_current_, okapi_add_operation_for_api_run_diff_,
-  okapi_add_operation_for_api_run_task_diffs_, okapi_add_operation_for_api_runs_,
+  api_all_runs, api_run_current, api_run_diff, api_run_task_diffs, api_runs,
+  okapi_add_operation_for_api_all_runs_, okapi_add_operation_for_api_run_current_,
+  okapi_add_operation_for_api_run_diff_, okapi_add_operation_for_api_run_task_diffs_,
+  okapi_add_operation_for_api_runs_,
 };
 use crate::frontend::services::{
   api_service_workers, api_services, okapi_add_operation_for_api_service_workers_,
@@ -87,6 +88,7 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
     api_service_workers,
     api_jobs,
     api_job,
+    api_all_runs,
     api_runs,
     api_run_current,
     api_run_diff,
