@@ -6,6 +6,20 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **Worker-fleet liveness: F-4 panic fixed + agent-twin parity.** Two issues in the worker-fleet
+  surface (the ~200-worker production fleet's observability). **(1) F-4 panic:** the `/workers/<svc>`
+  HTML screen rendered workers via `From<WorkerMetadata> for HashMap`, whose `since_string` did
+  `duration_since(then).unwrap()` — a *future* worker timestamp (clock skew across fleet hosts, or a
+  DB clock ahead) errored and **panicked the whole screen** for one skewed row. Softened to
+  `unwrap_or_default()` (→ "0 seconds ago" + fresh). **(2) Symmetry gap:** the human screen showed
+  worker liveness ("N ago" + fresh/stale) but the agent twin `WorkerDto`
+  (`GET /api/services/<svc>/workers`) exposed none — an agent couldn't spot a dead worker. Added
+  `seconds_since_last_active` (liveness age = now − most-recent dispatch/return, skew-clamped to 0)
+  + `fresh` to `WorkerDto`, bringing the agent twin to parity (symmetry contract). Mirrors the W-4
+  job heartbeat-age signal. Regression (`services_test`): a `now() + 1h` worker keeps `/workers/<svc>`
+  at `200` and the agent twin clamps its age to `0`; liveness fields asserted on the fresh worker.
+  KNOWN_ISSUES F-4 🟢. fmt + clippy clean; `services_test` + `worker_metadata` units green.
+
 - **Finalize hot path fully batched — per-task status `UPDATE` collapsed (completes D-8).** The
   finalize loop still issued one `UPDATE tasks SET status=… WHERE id=…` per task. Terminal statuses
   are a tiny fixed set (`NoProblem/Warning/Error/Fatal/Invalid`), so `mark_done` now groups the

@@ -127,7 +127,12 @@ impl From<WorkerMetadata> for HashMap<String, String> {
 
 fn since_string(then: SystemTime, is_fresh: &mut bool) -> String {
   let now = SystemTime::now();
-  let since_duration = now.duration_since(then).unwrap();
+  // `duration_since` errors when `then` is in the *future* (clock skew across the worker fleet's
+  // hosts, or a DB host whose clock runs ahead). Treat that as "just now" (zero elapsed) rather
+  // than `.unwrap()`-panicking — this runs on the `/workers/<service>` request path, where a
+  // panic would crash the screen for one skewed row (no-panic-on-request-path mandate; cf.
+  // KNOWN_ISSUES F-4).
+  let since_duration = now.duration_since(then).unwrap_or_default();
   let secs = since_duration.as_secs();
   if secs < 60 {
     *is_fresh = true;

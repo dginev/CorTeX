@@ -87,6 +87,14 @@ fn worker_fleet_api_and_screen() {
   assert_eq!(worker["total_returned"], 7);
   assert_eq!(worker["in_flight"], 3, "in_flight = dispatched - returned");
   assert_eq!(worker["last_dispatched_task_id"], 42);
+  assert!(
+    worker["seconds_since_last_active"].is_number(),
+    "the agent twin carries the worker liveness age (parity with the human screen)"
+  );
+  assert_eq!(
+    worker["fresh"], true,
+    "a worker last active at now() is fresh"
+  );
 
   // --- HTML twin: the worker-fleet screen renders the worker server-side ----------------------
   let response = client.get(format!("/workers/{SERVICE_NAME}")).dispatch();
@@ -207,6 +215,42 @@ fn worker_fleet_api_and_screen() {
         .ok();
     }
   }
+
+  // --- Regression: a clock-skewed (future) worker timestamp must not panic the screen (F-4) ------
+  const SKEWED_WORKER: &str = "fleet-test-worker-future:1";
+  {
+    let mut db = backend::testdb();
+    diesel::sql_query(format!(
+      "INSERT INTO worker_metadata \
+       (service_id, last_dispatched_task_id, total_dispatched, total_returned, first_seen, \
+        time_last_dispatch, name) \
+       VALUES ({service_id}, 7, 1, 0, now(), now() + interval '1 hour', '{SKEWED_WORKER}')"
+    ))
+    .execute(&mut db.connection)
+    .expect("seed a future-timestamped worker");
+  }
+  // The HTML screen used to `.unwrap()`-panic on the future timestamp; now it renders.
+  let response = client.get(format!("/workers/{SERVICE_NAME}")).dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Ok,
+    "a future-timestamped worker no longer crashes the fleet screen"
+  );
+  // The agent twin clamps the skewed liveness age to 0 (never negative, never a panic).
+  let response = client
+    .get(format!("/api/services/{SERVICE_NAME}/workers"))
+    .dispatch();
+  let workers: Value = response.into_json().expect("workers json");
+  let skewed = workers
+    .as_array()
+    .expect("array")
+    .iter()
+    .find(|w| w["name"] == SKEWED_WORKER)
+    .expect("the skewed worker is listed");
+  assert_eq!(
+    skewed["seconds_since_last_active"], 0,
+    "a future timestamp clamps to 0"
+  );
 
   // cleanup
   let mut db = backend::testdb();

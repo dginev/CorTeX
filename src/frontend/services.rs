@@ -80,10 +80,29 @@ pub struct WorkerDto {
   pub last_dispatched_task_id: i64,
   /// The id of the most recent task this worker returned (`None` if it never has).
   pub last_returned_task_id: Option<i64>,
+  /// Seconds since this worker was last active (the more recent of its last dispatch / last
+  /// return) — its **liveness age**. Across a large fleet, a value that keeps climbing flags a
+  /// worker gone silent (crashed / disconnected); this is the agent-twin parity of the human
+  /// screen's "N ago" + fresh/stale display. `0` if the timestamp is in the future (clock skew),
+  /// never negative.
+  pub seconds_since_last_active: i64,
+  /// Whether the worker has been active within the last minute — the at-a-glance liveness flag
+  /// (matches the human screen's `fresh`/`stale` threshold).
+  pub fresh: bool,
 }
 
 impl From<WorkerMetadata> for WorkerDto {
   fn from(worker: WorkerMetadata) -> WorkerDto {
+    // Liveness = time since the most recent activity (a dispatch *or* a return). Skew-safe: a
+    // future timestamp yields 0 rather than panicking (cf. `since_string`).
+    let last_active = match worker.time_last_return {
+      Some(returned) => returned.max(worker.time_last_dispatch),
+      None => worker.time_last_dispatch,
+    };
+    let seconds_since_last_active = std::time::SystemTime::now()
+      .duration_since(last_active)
+      .map(|elapsed| elapsed.as_secs() as i64)
+      .unwrap_or(0);
     WorkerDto {
       in_flight: worker.total_dispatched - worker.total_returned,
       name: worker.name,
@@ -91,6 +110,8 @@ impl From<WorkerMetadata> for WorkerDto {
       total_returned: worker.total_returned,
       last_dispatched_task_id: worker.last_dispatched_task_id,
       last_returned_task_id: worker.last_returned_task_id,
+      seconds_since_last_active,
+      fresh: seconds_since_last_active < 60,
     }
   }
 }
