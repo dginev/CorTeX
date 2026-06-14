@@ -50,6 +50,22 @@ unique-constraint / varchar-widen work) and may carry **manual drift** the migra
    *"… MISSING from SOURCE"* = the live DB is simply behind. Exit 0 = clean, 1 = drift. **Validated
    against the live-equivalent `cortex` DB (reports OK) and a synthetic drift (correctly flagged).**
 
+## Phase 2 — RESULT (2026-06-14, dump `cortex_20260614_023225.dump`, 5.8 GB `-Fc`)
+
+Restored **schema-only** into `cortex_load` and ran `scripts/verify_migrations.sh`. **Our embedded
+migrations structurally reproduce the live schema** — the live DB is at migration `20250625185146`
+and simply *behind* our 2026-06-13 set (`jobs` table, `report_summary` matview, `worker_metadata`
+UNIQUE, `tasks.entry` widen → all correctly "missing from source", applied by `cortex init`). The
+**only genuine "source has, migrations don't reproduce"** is:
+1. the **manual autovacuum tuning** (`WITH (autovacuum_enabled='true', autovacuum_vacuum_scale_factor
+   ='0.0002', …)`) — *intentionally* operator-applied per §8, not a structural migration; **decision
+   for the owner:** bake it into a migration vs keep it operator-documented;
+2. `tasks.entry varchar(200)` — just the live DB being behind the widen (becomes 4096 on migrate).
+
+So: **no missing tables/columns/constraints.** Next: full data restore → apply our migrations on
+real data (verify the `worker_metadata` UNIQUE dedupe survives real dup rows, the `entry` widen on a
+big `tasks`, and the `report_summary` matview build time) → load test.
+
 ## Phase 3 — Load testing (real volume)
 
 Point the stack at `cortex_load` and measure under the documented target (~2 admins, ~20 users,
