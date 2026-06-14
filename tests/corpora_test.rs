@@ -325,14 +325,30 @@ fn post_corpora_registers_and_imports_via_a_job() {
     "complex": false,
     "description": "imported in a test",
   });
-  let response = client
+  // Token-gated: an untokened import is denied (no unauthenticated corpus creation + filesystem
+  // job).
+  let denied = client
     .post("/api/corpora")
+    .header(ContentType::JSON)
+    .body(body.to_string())
+    .dispatch();
+  assert_eq!(
+    denied.status(),
+    Status::Unauthorized,
+    "import without a token is 401"
+  );
+  let response = client
+    .post("/api/corpora?token=token1")
     .header(ContentType::JSON)
     .body(body.to_string())
     .dispatch();
   assert_eq!(response.status(), Status::Accepted);
   let job: serde_json::Value = response.into_json().expect("a job handle");
   assert_eq!(job["kind"], "corpus_import");
+  assert_eq!(
+    job["actor"], "username1",
+    "the import job is attributed to the token owner"
+  );
   let uuid = job["uuid"].as_str().expect("a uuid").to_string();
 
   // Poll the import job to a terminal state.
@@ -405,12 +421,20 @@ fn delete_corpus_removes_corpus_tasks_and_logs() {
   .expect("insert log");
 
   let client = client();
-  // Missing confirmation -> 400.
-  let unconfirmed_path = format!("/api/corpora/{name}");
+  // Token-gated: an untokened delete is denied before anything else (no unauthenticated wipe).
+  let untokened_path = format!("/api/corpora/{name}?confirm={name}");
+  let untokened = client.delete(untokened_path.as_str()).dispatch();
+  assert_eq!(
+    untokened.status(),
+    Status::Unauthorized,
+    "delete without a token is 401 (no unauthenticated corpus wipe)"
+  );
+  // Missing confirmation (with a valid token, so the guard passes to the confirm check) -> 400.
+  let unconfirmed_path = format!("/api/corpora/{name}?token=token1");
   let unconfirmed = client.delete(unconfirmed_path.as_str()).dispatch();
   assert_eq!(unconfirmed.status(), Status::BadRequest);
-  // Name echoed as confirmation -> 204.
-  let confirmed_path = format!("/api/corpora/{name}?confirm={name}");
+  // Name echoed as confirmation + a valid token -> 204.
+  let confirmed_path = format!("/api/corpora/{name}?confirm={name}&token=token1");
   let confirmed = client.delete(confirmed_path.as_str()).dispatch();
   assert_eq!(confirmed.status(), Status::NoContent);
 
@@ -436,7 +460,7 @@ fn delete_corpus_removes_corpus_tasks_and_logs() {
 fn delete_corpus_is_404_for_unknown() {
   let client = client();
   let response = client
-    .delete("/api/corpora/no_such_corpus?confirm=no_such_corpus")
+    .delete("/api/corpora/no_such_corpus?confirm=no_such_corpus&token=token1")
     .dispatch();
   assert_eq!(response.status(), Status::NotFound);
 }
@@ -481,7 +505,15 @@ fn post_corpora_extend_adds_new_entries() {
   .expect("seed doc1 task");
 
   let client = client();
-  let extend_path = format!("/api/corpora/{name}/extend");
+  // Token-gated: an untokened extend is denied.
+  let denied_path = format!("/api/corpora/{name}/extend");
+  let denied = client.post(denied_path.as_str()).dispatch();
+  assert_eq!(
+    denied.status(),
+    Status::Unauthorized,
+    "extend without a token is 401"
+  );
+  let extend_path = format!("/api/corpora/{name}/extend?token=token1");
   let response = client.post(extend_path.as_str()).dispatch();
   assert_eq!(response.status(), Status::Accepted);
   let job: serde_json::Value = response.into_json().expect("a job handle");

@@ -149,9 +149,12 @@ pub struct ImportRequest {
 
 /// Registers a corpus and starts an in-process import job; returns `202 Accepted` + the job handle.
 /// Agents and humans poll `GET /api/jobs/<uuid>` (or the progress page) for completion.
+/// **Token-gated** via the [`Actor`] guard (creating a corpus + a filesystem import job is a
+/// consequential write); `401` without a valid token, `409` if the corpus name already exists.
 #[post("/api/corpora", format = "json", data = "<request>")]
 pub fn import_corpus(
   request: Json<ImportRequest>,
+  actor: Actor,
   pool: &State<DbPool>,
   database_url: &State<DatabaseUrl>,
 ) -> Result<(Status, Json<JobDto>), Status> {
@@ -177,7 +180,7 @@ pub fn import_corpus(
   let job_uuid = jobs::spawn_job(
     pool.inner().clone(),
     "corpus_import",
-    "admin",
+    &actor.owner,
     params,
     move |progress| run_import(&database_url, corpus, progress),
   )
@@ -218,10 +221,12 @@ fn count_service_tasks(connection: &mut PgConnection, corpus: i32, service: i32)
 }
 
 /// Extends an existing corpus with newly-arrived entries; starts an in-process job and returns
-/// `202 Accepted` + the job handle (404 if the corpus is unknown).
+/// `202 Accepted` + the job handle. **Token-gated** via the [`Actor`] guard; `401` without a valid
+/// token, `404` if the corpus is unknown.
 #[post("/api/corpora/<name>/extend")]
 pub fn extend_corpus(
   name: &str,
+  actor: Actor,
   pool: &State<DbPool>,
   database_url: &State<DatabaseUrl>,
 ) -> Result<(Status, Json<JobDto>), Status> {
@@ -234,7 +239,7 @@ pub fn extend_corpus(
   let job_uuid = jobs::spawn_job(
     pool.inner().clone(),
     "corpus_extend",
-    "admin",
+    &actor.owner,
     params,
     move |progress| run_extend(&database_url, corpus, progress),
   )
@@ -347,11 +352,18 @@ fn run_activate(
   Ok(serde_json::json!({ "tasks": activated }))
 }
 
-/// Deletes a corpus and all of its tasks and log messages. **Guarded:** the caller must echo the
-/// corpus name via `?confirm=<name>` to proceed (prevents accidental wipes; the UI confirms the
-/// same way). Returns 204 on success, 400 if the confirmation does not match, 404 if unknown.
+/// Deletes a corpus and all of its tasks and log messages. **Token-gated** via the [`Actor`] guard
+/// (an unauthenticated wipe of a corpus must not be possible — `401` without a valid token) and
+/// double-guarded: the caller must also echo the corpus name via `?confirm=<name>` to proceed
+/// (prevents accidental wipes; the UI confirms the same way). Returns 204 on success, 400 if the
+/// confirmation does not match, 404 if unknown.
 #[delete("/api/corpora/<name>?<confirm>")]
-pub fn delete_corpus(name: &str, confirm: Option<&str>, pool: &State<DbPool>) -> Status {
+pub fn delete_corpus(
+  name: &str,
+  confirm: Option<&str>,
+  _actor: Actor,
+  pool: &State<DbPool>,
+) -> Status {
   if confirm != Some(name) {
     return Status::BadRequest;
   }

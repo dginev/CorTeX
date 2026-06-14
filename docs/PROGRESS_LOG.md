@@ -609,3 +609,13 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   transparently. DB-free unit tests (`helpers::log_decode_tests`): clean UTF-8 untouched; a `0xFF` log keeps
   its real status + parses into multiple real messages instead of collapsing to one fatal. clippy/fmt clean.
   Open 🔴 count: 9 → 8.
+- **Security: token-gate the corpus-write endpoints (the "writes denied by default" mandate;
+  autonomous-night progress):** found an inconsistency — `activate_service` (and rerun) were `Actor`-gated,
+  but **`import_corpus`, `extend_corpus`, and `delete_corpus` were ungated**, including an
+  **unauthenticated `DELETE /api/corpora/<name>`** (anyone could wipe a corpus + its tasks/logs) and
+  unauthenticated corpus creation + filesystem import/extend jobs. Added the `Actor` guard to all three
+  (`401` without a valid token, consistent with activate/rerun) and **attributed the import/extend jobs to
+  the real actor** (was a hardcoded `"admin"`) — the Arm 9 "thread an actor through every write" mandate.
+  Tests updated (`corpora_test`): untokened import/extend/delete now assert `401`; the successful paths pass
+  `?token=` and assert the job `actor` is the token owner. The whole corpus-write surface now matches the
+  rest (rerun/activate). clippy/fmt clean.
