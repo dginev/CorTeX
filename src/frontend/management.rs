@@ -107,10 +107,25 @@ pub struct PoolHealth {
   pub in_use: u32,
 }
 
+/// Reachability of the ZeroMQ dispatcher, probed by a short TCP connect to its bound ports. The
+/// frontend doesn't otherwise speak to the dispatcher (workers do), so this is a pure liveness
+/// probe of the **co-located** dispatcher (localhost) — informational, it does not flip the overall
+/// `status` (a read-only/report-only frontend deployment legitimately runs without a dispatcher).
+#[derive(Debug, Serialize)]
+pub struct DispatcherHealth {
+  /// Whether both the ventilator and sink ports accept a TCP connection on localhost.
+  pub reachable: bool,
+  /// Ventilator (worker task-request) port.
+  pub source_port: usize,
+  /// Sink (worker result) port.
+  pub result_port: usize,
+}
+
 /// Structured health report, identical for agents and human supervisors.
 #[derive(Debug, Serialize)]
 pub struct HealthDto {
-  /// Overall status: `"ok"` when every dependency is healthy, else `"degraded"`.
+  /// Overall status: `"ok"` when every *frontend* dependency (DB + migrations) is healthy, else
+  /// `"degraded"`. Pool/dispatcher fields are informational and do not flip this.
   pub status: &'static str,
   /// Database dependency health.
   pub database: DbHealth,
@@ -118,6 +133,8 @@ pub struct HealthDto {
   pub migrations: MigrationsHealth,
   /// Connection-pool utilization.
   pub pool: PoolHealth,
+  /// Co-located dispatcher reachability (informational).
+  pub dispatcher: DispatcherHealth,
 }
 
 /// The editable, non-secret fields of the Settings form (database/auth are edited out-of-band).
@@ -168,9 +185,24 @@ fn merge_and_persist(patch: &serde_json::Value, path: &Path) -> Result<CortexCon
 #[get("/api/config")]
 pub fn api_config() -> Json<ConfigDto> { Json(ConfigDto::from_config(config())) }
 
+/// Whether a TCP connection to `127.0.0.1:port` succeeds within a short timeout — a liveness probe
+/// of a ZeroMQ socket bound by the dispatcher (ZMQ `tcp://` sockets are TCP listeners). A closed
+/// port returns "connection refused" immediately; the timeout only bounds the rare filtered-port
+/// hang, so this stays fast on the common (co-located) path.
+fn port_listening(port: usize) -> bool {
+  use std::net::{TcpStream, ToSocketAddrs};
+  ("127.0.0.1", port as u16)
+    .to_socket_addrs()
+    .ok()
+    .and_then(|mut addrs| addrs.next())
+    .is_some_and(|addr| {
+      TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(200)).is_ok()
+    })
+}
+
 /// Builds the health report: probes the database through the pool (so reachability reflects the
-/// same path requests use) and samples pool utilization. Shared by the agent (`/healthz`) and human
-/// (`/health`) routes so both report identical state.
+/// same path requests use), samples pool utilization, and probes the co-located dispatcher's ports.
+/// Shared by the agent (`/healthz`) and human (`/health`) routes so both report identical state.
 fn health_report(pool: &DbPool) -> HealthDto {
   let (reachable, migrations_current) = match pool.get() {
     Ok(mut connection) => {
@@ -200,6 +232,14 @@ fn health_report(pool: &DbPool) -> HealthDto {
       connections: state.connections,
       idle: state.idle_connections,
       in_use: state.connections.saturating_sub(state.idle_connections),
+    },
+    dispatcher: {
+      let dispatcher = &config().dispatcher;
+      DispatcherHealth {
+        reachable: port_listening(dispatcher.source_port) && port_listening(dispatcher.result_port),
+        source_port: dispatcher.source_port,
+        result_port: dispatcher.result_port,
+      }
     },
   }
 }

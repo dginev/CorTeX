@@ -20,6 +20,10 @@
         <td class="left">Connection pool — idle / established</td>
         <td class="right">{{ health.pool.idle }} / {{ health.pool.connections }}</td>
       </tr>
+      <tr>
+        <td class="left">Dispatcher reachable (ports {{ health.dispatcher.source_port }}/{{ health.dispatcher.result_port }})</td>
+        <td class="right">{% if health.dispatcher.reachable %}yes{% else %}<strong>no</strong>{% endif %}</td>
+      </tr>
     </tbody>
   </table>
   <p>&nbsp;·&nbsp; <a href="/healthz">JSON</a> &nbsp;·&nbsp; <a href="/settings">Settings</a></p>

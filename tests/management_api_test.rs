@@ -85,6 +85,19 @@ fn healthz_reports_ok_when_db_reachable() {
     "in_use never exceeds max"
   );
 
+  // Dispatcher reachability is probed and reported (informational — does not flip `status`, which
+  // is still `ok` here even though no dispatcher runs in the test).
+  let dispatcher = &body["dispatcher"];
+  assert!(
+    dispatcher["reachable"].is_boolean(),
+    "dispatcher reachability is reported"
+  );
+  assert!(
+    dispatcher["source_port"].as_u64().expect("source_port") >= 1
+      && dispatcher["result_port"].as_u64().expect("result_port") >= 1,
+    "dispatcher ports are reported"
+  );
+
   // The human twin renders the same report as an HTML screen (shared HealthDto).
   let response = client.get("/health").dispatch();
   assert_eq!(response.status(), Status::Ok);

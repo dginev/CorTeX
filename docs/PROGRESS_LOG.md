@@ -581,3 +581,12 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   green (the HTML report screens exercise `render::task_report`). Updated CLAUDE.md (the load-bearing note +
   the Map) and closed OPEN_QUESTIONS #8. No behavior change; removes a stale name that implied caching where
   there is none.
+- **Health surface completed with dispatcher reachability (Arm 2 doctor; autonomous-night progress):** the
+  health report now also probes the **co-located dispatcher** — a short TCP connect to its ventilator +
+  sink ports (`config.dispatcher.{source,result}_port`); ZMQ `tcp://` sockets are TCP listeners, so a
+  successful connect = the dispatcher is bound. `HealthDto.dispatcher = {reachable, source_port, result_port}`
+  on both `/healthz` (JSON) and `/health` (HTML row). **Informational only** — it does not flip the overall
+  `status` (a read-only/report-only frontend legitimately runs without a dispatcher). Fast even when down
+  (connection-refused is immediate; the 200 ms timeout only bounds a rare filtered-port hang — verified
+  2.3 ms with no dispatcher). Regression in `management_api_test`. Completes the Arm 2 doctor checklist
+  (DB · migrations · pool · dispatcher); clippy/fmt clean.
