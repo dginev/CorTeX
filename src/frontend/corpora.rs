@@ -14,16 +14,19 @@
 use std::collections::{HashMap, HashSet};
 
 use diesel::pg::PgConnection;
+use rocket::form::Form;
 use rocket::http::Status;
+use rocket::response::Redirect;
 use rocket::serde::json::Json;
 use rocket::{Route, State};
 use rocket_dyn_templates::Template;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use uuid::Uuid;
 
 use crate::backend::{from_address, progress_report, DatabaseUrl, DbPool};
 use crate::concerns::CortexInsertable;
-use crate::frontend::actor::Actor;
+use crate::frontend::actor::{owner_for_token, Actor};
 use crate::frontend::helpers::decorate_uri_encodings;
 use crate::frontend::jobs::JobDto;
 use crate::frontend::params::TemplateContext;
@@ -159,36 +162,104 @@ pub fn import_corpus(
   database_url: &State<DatabaseUrl>,
 ) -> Result<(Status, Json<JobDto>), Status> {
   let request = request.into_inner();
-  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
-  if Corpus::find_by_name(&request.name, &mut connection).is_ok() {
-    return Err(Status::Conflict);
-  }
-  NewCorpus {
-    name: request.name.clone(),
-    path: request.path.clone(),
-    complex: request.complex,
-    description: request.description.clone().unwrap_or_default(),
-  }
-  .create(&mut connection)
-  .map_err(|_| Status::InternalServerError)?;
-  let corpus = Corpus::find_by_name(&request.name, &mut connection)
-    .map_err(|_| Status::InternalServerError)?;
-  drop(connection);
-
-  let database_url = database_url.0.clone();
-  let params = serde_json::json!({ "name": request.name, "path": request.path });
-  let job_uuid = jobs::spawn_job(
-    pool.inner().clone(),
-    "corpus_import",
+  let job_uuid = start_import(
+    pool,
+    &database_url.0,
     &actor.owner,
-    params,
-    move |progress| run_import(&database_url, corpus, progress),
-  )
-  .map_err(|_| Status::InternalServerError)?;
-
+    request.name,
+    request.path,
+    request.complex,
+    request.description.unwrap_or_default(),
+  )?;
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let job = jobs::find_job(&mut connection, job_uuid).ok_or(Status::InternalServerError)?;
   Ok((Status::Accepted, Json(JobDto::from(job))))
+}
+
+/// Registers a corpus (`409` if the name already exists) and spawns its import job, returning the
+/// job uuid. The shared core of the agent endpoint and the human form.
+#[allow(clippy::too_many_arguments)]
+fn start_import(
+  pool: &DbPool,
+  database_url: &str,
+  actor: &str,
+  name: String,
+  path: String,
+  complex: bool,
+  description: String,
+) -> Result<Uuid, Status> {
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  if Corpus::find_by_name(&name, &mut connection).is_ok() {
+    return Err(Status::Conflict);
+  }
+  NewCorpus {
+    name: name.clone(),
+    path: path.clone(),
+    complex,
+    description,
+  }
+  .create(&mut connection)
+  .map_err(|_| Status::InternalServerError)?;
+  let corpus =
+    Corpus::find_by_name(&name, &mut connection).map_err(|_| Status::InternalServerError)?;
+  drop(connection);
+
+  let database_url = database_url.to_string();
+  let params = serde_json::json!({ "name": name, "path": path });
+  jobs::spawn_job(
+    pool.clone(),
+    "corpus_import",
+    actor,
+    params,
+    move |progress| run_import(&database_url, corpus, progress),
+  )
+  .map_err(|_| Status::InternalServerError)
+}
+
+/// The token field every human corpus-write form submits (the `Actor` guard can't read a form
+/// body).
+#[derive(FromForm)]
+pub struct TokenForm {
+  /// A rerun token, resolved to the acting owner.
+  pub token: String,
+}
+
+/// Fields of the human "Add a corpus" form on the overview screen.
+#[derive(FromForm)]
+pub struct ImportForm {
+  /// Corpus name (external handle).
+  pub name: String,
+  /// Filesystem path to the corpus root (server-side).
+  pub path: String,
+  /// Whether documents are multi-file (complex).
+  pub complex: bool,
+  /// Optional description.
+  pub description: Option<String>,
+  /// A rerun token, resolved to the acting owner.
+  pub token: String,
+}
+
+/// The human twin of [`import_corpus`]: the overview screen's "Add a corpus" form. Resolves the
+/// submitted token, registers + imports the corpus off the request path, and redirects to `/jobs`
+/// to watch the import job. `401` on a bad token, `409` if the name is taken.
+#[post("/corpus/import", data = "<form>")]
+pub fn import_corpus_human(
+  form: Form<ImportForm>,
+  pool: &State<DbPool>,
+  database_url: &State<DatabaseUrl>,
+) -> Result<Redirect, Status> {
+  let owner = owner_for_token(&form.token).ok_or(Status::Unauthorized)?;
+  let form = form.into_inner();
+  start_import(
+    pool,
+    &database_url.0,
+    &owner,
+    form.name,
+    form.path,
+    form.complex,
+    form.description.unwrap_or_default(),
+  )?;
+  Ok(Redirect::to("/jobs"))
 }
 
 /// The body of a `corpus_import` job: run the importer in-process against `corpus`, reporting
@@ -230,24 +301,48 @@ pub fn extend_corpus(
   pool: &State<DbPool>,
   database_url: &State<DatabaseUrl>,
 ) -> Result<(Status, Json<JobDto>), Status> {
-  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
-  let corpus = Corpus::find_by_name(name, &mut connection).map_err(|_| Status::NotFound)?;
-  drop(connection);
-
-  let database_url = database_url.0.clone();
-  let params = serde_json::json!({ "name": name });
-  let job_uuid = jobs::spawn_job(
-    pool.inner().clone(),
-    "corpus_extend",
-    &actor.owner,
-    params,
-    move |progress| run_extend(&database_url, corpus, progress),
-  )
-  .map_err(|_| Status::InternalServerError)?;
-
+  let job_uuid = start_extend(pool, &database_url.0, &actor.owner, name)?;
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let job = jobs::find_job(&mut connection, job_uuid).ok_or(Status::InternalServerError)?;
   Ok((Status::Accepted, Json(JobDto::from(job))))
+}
+
+/// Spawns a corpus-extend job for an existing corpus (`404` if unknown), returning the job uuid.
+/// Shared by the agent endpoint and the human form.
+fn start_extend(
+  pool: &DbPool,
+  database_url: &str,
+  actor: &str,
+  name: &str,
+) -> Result<Uuid, Status> {
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let corpus = Corpus::find_by_name(name, &mut connection).map_err(|_| Status::NotFound)?;
+  drop(connection);
+  let database_url = database_url.to_string();
+  let params = serde_json::json!({ "name": name });
+  jobs::spawn_job(
+    pool.clone(),
+    "corpus_extend",
+    actor,
+    params,
+    move |progress| run_extend(&database_url, corpus, progress),
+  )
+  .map_err(|_| Status::InternalServerError)
+}
+
+/// The human twin of [`extend_corpus`]: the corpus screen's "Re-scan for new entries" button.
+/// Resolves the token, spawns the extend job, and redirects to `/jobs`. `401` on a bad token, `404`
+/// if the corpus is unknown.
+#[post("/corpus/<name>/extend", data = "<form>")]
+pub fn extend_corpus_human(
+  name: &str,
+  form: Form<TokenForm>,
+  pool: &State<DbPool>,
+  database_url: &State<DatabaseUrl>,
+) -> Result<Redirect, Status> {
+  let owner = owner_for_token(&form.token).ok_or(Status::Unauthorized)?;
+  start_extend(pool, &database_url.0, &owner, name)?;
+  Ok(Redirect::to("/jobs"))
 }
 
 /// The body of a `corpus_extend` job: import newly-arrived entries and propagate them to the real
@@ -381,6 +476,36 @@ pub fn delete_corpus(
   }
 }
 
+/// Fields of the human "Delete corpus" form: the name echoed as confirmation, plus a token.
+#[derive(FromForm)]
+pub struct DeleteForm {
+  /// Must equal the corpus name to confirm the destructive action.
+  pub confirm: String,
+  /// A rerun token, resolved to the acting owner.
+  pub token: String,
+}
+
+/// The human twin of [`delete_corpus`]: the corpus screen's "Delete corpus" form. Token-gated *and*
+/// confirmation-gated (the form echoes the corpus name), then redirects to the overview. `401` on a
+/// bad token, `400` if the confirmation doesn't match, `404` if unknown.
+#[post("/corpus/<name>/delete", data = "<form>")]
+pub fn delete_corpus_human(
+  name: &str,
+  form: Form<DeleteForm>,
+  pool: &State<DbPool>,
+) -> Result<Redirect, Status> {
+  if owner_for_token(&form.token).is_none() {
+    return Err(Status::Unauthorized);
+  }
+  if form.confirm != name {
+    return Err(Status::BadRequest);
+  }
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let corpus = Corpus::find_by_name(name, &mut connection).map_err(|_| Status::NotFound)?;
+  delete_corpus_cascade(&mut connection, corpus)?;
+  Ok(Redirect::to("/"))
+}
+
 /// Removes a corpus's log messages (the `log_*` tables have no FK cascade), then its tasks and the
 /// corpus row itself.
 fn delete_corpus_cascade(connection: &mut PgConnection, corpus: Corpus) -> Result<(), Status> {
@@ -489,6 +614,9 @@ pub fn routes() -> Vec<Route> {
     extend_corpus,
     activate_service,
     delete_corpus,
+    import_corpus_human,
+    extend_corpus_human,
+    delete_corpus_human,
     overview_page,
     corpus_page
   ]

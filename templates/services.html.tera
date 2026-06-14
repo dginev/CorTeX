@@ -34,5 +34,22 @@
       </tbody>
     </table>
   </div>
+
+  <hr>
+  <h3>Corpus actions</h3>
+  <form method="post" action="/corpus/{{global.corpus_name_uri}}/extend"
+    style="display:inline-block; margin:0 1.5rem; vertical-align:top;">
+    <p>Re-scan the corpus path for newly-arrived entries:</p>
+    <p><input type="password" name="token" placeholder="admin token" required>
+      <button type="submit">Extend</button></p>
+  </form>
+  <form method="post" action="/corpus/{{global.corpus_name_uri}}/delete"
+    style="display:inline-block; margin:0 1.5rem; vertical-align:top;">
+    <p>Delete this corpus and all its tasks &amp; logs (irreversible):</p>
+    <p><input type="text" name="confirm" placeholder="type «{{global.corpus_name}}» to confirm" size="28"
+        required>
+      <input type="password" name="token" placeholder="admin token" required>
+      <button type="submit">Delete corpus</button></p>
+  </form>
 </div>
 {% endblock content %}

@@ -619,3 +619,15 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   Tests updated (`corpora_test`): untokened import/extend/delete now assert `401`; the successful paths pass
   `?token=` and assert the job `actor` is the token owner. The whole corpus-write surface now matches the
   rest (rerun/activate). clippy/fmt clean.
+- **Human corpus-management UI — the lifecycle was API-only (Admin UX; autonomous-night progress):**
+  create/extend/delete a corpus had no human screens (a symmetry + UX gap, "from the installation of
+  cortex"). Added human twins sharing the same logic as the agent endpoints (extracted `start_import` /
+  `start_extend` helpers): **"Add a corpus"** form on the overview (`POST /corpus/import`), and
+  **"Re-scan for new entries"** + **"Delete corpus"** forms on the corpus page (`POST /corpus/<name>/extend`,
+  `POST /corpus/<name>/delete`). All token-gated (a `token` form field resolved via the new shared
+  `actor::owner_for_token`, since the `Actor` guard can't read a form body) and the job-spawning ones
+  **redirect to `/jobs`** (the async-watch pattern); delete is double-gated (token + type-the-name confirm)
+  and redirects to the overview. Verified: forms render on both pages; `corpora_test` asserts the
+  auth/confirm/redirect contract (bad token → 401, wrong confirm → 400, valid → 303 + corpus gone).
+  clippy/fmt clean. (Activate-service from the UI — needs a service picker — is the remaining corpus-UI
+  follow-up.)

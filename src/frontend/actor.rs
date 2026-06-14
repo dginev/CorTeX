@@ -25,6 +25,13 @@ pub struct Actor {
   pub owner: String,
 }
 
+/// Resolves a rerun token to its owner, mirroring the [`Actor`] guard's lookup. For **form-based**
+/// human submissions (a `<form method=post>` token field), where the guard — which only reads the
+/// `X-Cortex-Token` header or `?token=` query — can't see a token in the request body.
+pub fn owner_for_token(token: &str) -> Option<String> {
+  config().auth.rerun_tokens.get(token).cloned()
+}
+
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for Actor {
   type Error = ();
