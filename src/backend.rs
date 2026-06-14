@@ -175,9 +175,22 @@ impl Backend {
 
   /// Activates an existing service on a given corpus (via PATH)
   /// if the service has previously been registered, this call will `RESET` the service into a mint
-  /// state also removing any related log messages.
-  pub fn register_service(&mut self, service: &Service, corpus_path: &str) -> Result<(), Error> {
-    services_aggregate::register_service(&mut self.connection, service, corpus_path)
+  /// state also removing any related log messages. The new run is attributed to `owner` with
+  /// `description` (the UI/API thread the actor; the CLI passes a default).
+  pub fn register_service(
+    &mut self,
+    service: &Service,
+    corpus_path: &str,
+    owner: String,
+    description: String,
+  ) -> Result<(), Error> {
+    services_aggregate::register_service(
+      &mut self.connection,
+      service,
+      corpus_path,
+      owner,
+      description,
+    )
   }
 
   /// Extends an existing service on a given corpus (via PATH)

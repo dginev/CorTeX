@@ -10,6 +10,8 @@ pub(crate) fn register_service(
   connection: &mut PgConnection,
   service: &Service,
   corpus_path: &str,
+  owner: String,
+  description: String,
 ) -> Result<(), Error> {
   use crate::schema::tasks::dsl::*;
   let corpus = Corpus::find_by_path(corpus_path, connection)?;
@@ -42,16 +44,10 @@ pub(crate) fn register_service(
     }
     Ok(())
   })?;
-  // Finally, register a new run, completing potentially open ones for this pair
-  // TODO: When we add register service capacity for the UI, extend this with owner+description
-  // information
-  mark::mark_new_run(
-    connection,
-    &corpus,
-    service,
-    "cli-admin".to_string(),
-    "Newly registered service, initial run.".to_string(),
-  )
+  // Finally, register a new run, completing potentially open ones for this pair, attributed to the
+  // actor who activated the service (threaded from the UI/API; the CLI passes a `cli-admin`
+  // default).
+  mark::mark_new_run(connection, &corpus, service, owner, description)
 }
 
 pub(crate) fn extend_service(

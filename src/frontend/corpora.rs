@@ -23,6 +23,7 @@ use serde_json::Value;
 
 use crate::backend::{from_address, progress_report, DatabaseUrl, DbPool};
 use crate::concerns::CortexInsertable;
+use crate::frontend::actor::Actor;
 use crate::frontend::helpers::decorate_uri_encodings;
 use crate::frontend::jobs::JobDto;
 use crate::frontend::params::TemplateContext;
@@ -199,18 +200,18 @@ fn run_import(database_url: &str, corpus: Corpus, progress: &JobProgress) -> Res
   };
   progress.step(0, None, "importing corpus");
   importer.process().map_err(|error| error.to_string())?;
-  let imported = count_import_tasks(&mut importer.backend.connection, corpus_id);
+  let imported = count_service_tasks(&mut importer.backend.connection, corpus_id, 2);
   progress.step(imported, Some(imported), "import complete");
   Ok(serde_json::json!({ "imported": imported }))
 }
 
-/// Counts the import-service tasks (service id 2) registered for a corpus.
-fn count_import_tasks(connection: &mut PgConnection, corpus: i32) -> i32 {
+/// Counts the tasks registered for a `(corpus, service)` pair.
+fn count_service_tasks(connection: &mut PgConnection, corpus: i32, service: i32) -> i32 {
   use crate::schema::tasks::dsl::{corpus_id, service_id, tasks};
   use diesel::prelude::*;
   tasks
     .filter(corpus_id.eq(corpus))
-    .filter(service_id.eq(2))
+    .filter(service_id.eq(service))
     .count()
     .get_result::<i64>(connection)
     .unwrap_or(0) as i32
@@ -269,9 +270,81 @@ fn run_extend(database_url: &str, corpus: Corpus, progress: &JobProgress) -> Res
       .extend_service(service, &corpus_path)
       .map_err(|error| error.to_string())?;
   }
-  let imported = count_import_tasks(&mut importer.backend.connection, corpus_id);
+  let imported = count_service_tasks(&mut importer.backend.connection, corpus_id, 2);
   progress.step(imported, Some(imported), "extend complete");
   Ok(serde_json::json!({ "import_tasks": imported }))
+}
+
+/// Activates a registered `service` on a `corpus`: creates a TODO task per imported document so the
+/// workers begin converting it. **Token-gated** via the [`Actor`] guard (the run is attributed to
+/// the authenticated actor); the work runs as a background job — poll `GET /api/jobs/<uuid>` for
+/// the pending/done status. `401` without a valid token, `404` on an unknown corpus/service, `202`
+/// with the job handle on success.
+#[post("/api/corpora/<corpus>/services/<service>")]
+pub fn activate_service(
+  corpus: &str,
+  service: &str,
+  actor: Actor,
+  pool: &State<DbPool>,
+  database_url: &State<DatabaseUrl>,
+) -> Result<(Status, Json<JobDto>), Status> {
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let corpus_record =
+    Corpus::find_by_name(corpus, &mut connection).map_err(|_| Status::NotFound)?;
+  let service_record =
+    Service::find_by_name(service, &mut connection).map_err(|_| Status::NotFound)?;
+  drop(connection);
+
+  let database_url = database_url.0.clone();
+  let owner = actor.owner.clone();
+  let job_owner = owner.clone();
+  let params = serde_json::json!({ "corpus": corpus, "service": service });
+  let job_uuid = jobs::spawn_job(
+    pool.inner().clone(),
+    "service_activate",
+    &owner,
+    params,
+    move |progress| {
+      run_activate(
+        &database_url,
+        corpus_record,
+        service_record,
+        job_owner,
+        progress,
+      )
+    },
+  )
+  .map_err(|_| Status::InternalServerError)?;
+
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let job = jobs::find_job(&mut connection, job_uuid).ok_or(Status::InternalServerError)?;
+  Ok((Status::Accepted, Json(JobDto::from(job))))
+}
+
+/// The body of a `service_activate` job: register `service` on `corpus` (creating a TODO task per
+/// imported document), attributing the new run to `owner`, and return the task count created.
+fn run_activate(
+  database_url: &str,
+  corpus: Corpus,
+  service: Service,
+  owner: String,
+  progress: &JobProgress,
+) -> Result<Value, String> {
+  let (corpus_id, service_id) = (corpus.id, service.id);
+  let corpus_path = corpus.path.clone();
+  let mut backend = from_address(database_url);
+  progress.step(0, None, "activating service");
+  backend
+    .register_service(
+      &service,
+      &corpus_path,
+      owner,
+      format!("Activated service {} via API", service.name),
+    )
+    .map_err(|error| error.to_string())?;
+  let activated = count_service_tasks(&mut backend.connection, corpus_id, service_id);
+  progress.step(activated, Some(activated), "activation complete");
+  Ok(serde_json::json!({ "tasks": activated }))
 }
 
 /// Deletes a corpus and all of its tasks and log messages. **Guarded:** the caller must echo the
@@ -402,6 +475,7 @@ pub fn routes() -> Vec<Route> {
     api_corpus,
     import_corpus,
     extend_corpus,
+    activate_service,
     delete_corpus,
     overview_page,
     corpus_page

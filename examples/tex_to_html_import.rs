@@ -100,6 +100,11 @@ fn main() {
   };
 
   assert!(backend
-    .register_service(&service_registered, &corpus_path)
+    .register_service(
+      &service_registered,
+      &corpus_path,
+      "cli-admin".to_string(),
+      "Newly registered service, initial run.".to_string(),
+    )
     .is_ok());
 }

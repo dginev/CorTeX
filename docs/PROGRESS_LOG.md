@@ -304,3 +304,16 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   APIs. `clippy --all-targets -D warnings` clean.
   *Next:* service *activation* UX (Arm 6 — register/extend a service on a corpus as a background job, the
   remaining service-management write gap); pool the 4 `concerns` helpers; or (on backup) the load test.
+- **Service activation (Arm 6 — the write side, the last service-management gap):** `register_service`'s own
+  TODO ("when we add register service capacity for the UI, extend this with owner+description") is resolved —
+  threaded `owner`/`description` through `services_aggregate::register_service` → `Backend::register_service`
+  → `mark_new_run` (was hardcoded `cli-admin`), updating the 2 CLI example callers. New **Actor-guarded**
+  job API `POST /api/corpora/<corpus>/services/<service>` (`activate_service`): creates a TODO task per
+  imported document so workers begin converting, attributing the run to the authenticated actor, as a
+  background job (`run_activate`) — `202` + the job handle, pollable via `GET /api/jobs/<uuid>`; `401`
+  without a token, `404` on unknown corpus/service. Generalized `count_import_tasks` → `count_service_tasks`
+  (corpus, service). Tests: the route is `401` without a token; the `register_service` effect creates a TODO
+  task per imported doc + records the run attributed to the actor (`activator-bob`). `clippy --all-targets
+  -D warnings` clean. **Service-management is now complete: registry + fleet + activation, screens + APIs.**
+  *Next:* jobs-observability uplift (owner directive — a pending/list endpoint + duration/health metadata
+  for every background-task capability); pool the 4 `concerns` helpers; or (on backup) the load test.

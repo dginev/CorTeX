@@ -9,8 +9,9 @@
 
 use cortex::backend::{self, test_db_address};
 use cortex::frontend::server::mount_api_with;
+use cortex::helpers::TaskStatus;
 use cortex::models::{Corpus, NewCorpus, NewLogWarning, NewService, NewTask, Service, Task};
-use cortex::schema::{corpora, log_warnings, services, tasks};
+use cortex::schema::{corpora, historical_runs, log_warnings, services, tasks};
 use diesel::prelude::*;
 use rocket::http::{ContentType, Status};
 use rocket::local::blocking::Client;
@@ -129,6 +130,109 @@ fn api_corpus_detail_is_404_for_unknown_corpus() {
   // The HTML twin 404s on an unknown corpus too.
   let response = client.get("/corpus/no_such_corpus_xyz").dispatch();
   assert_eq!(response.status(), Status::NotFound);
+}
+
+#[test]
+fn activate_service_requires_a_token() {
+  // The activation route is a consequential write (starts processing): denied without a valid
+  // rerun token (the Actor guard runs before any DB lookup, so even a bogus corpus is 401).
+  let client = client();
+  let response = client
+    .post("/api/corpora/whatever/services/whatever")
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Unauthorized,
+    "activation without a token is 401"
+  );
+}
+
+#[test]
+fn register_service_creates_tasks_and_attributes_the_run() {
+  let corpus_name = "activate_effect_corpus";
+  let corpus_path = "/tmp/activate_effect_corpus";
+  let target_svc = "activate_target_svc";
+  let mut db = backend::testdb();
+  cleanup(&mut db, corpus_name, target_svc);
+
+  db.add(&NewCorpus {
+    name: corpus_name.to_string(),
+    path: corpus_path.to_string(),
+    complex: true,
+    description: "d".to_string(),
+  })
+  .expect("corpus");
+  let corpus = Corpus::find_by_name(corpus_name, &mut db.connection).unwrap();
+  // The magic `import` service must exist (register_service reads its entries); reuse or create it.
+  let import = match Service::find_by_name("import", &mut db.connection) {
+    Ok(service) => service,
+    Err(_) => {
+      db.add(&NewService {
+        name: "import".to_string(),
+        version: 0.1,
+        inputformat: "tex".to_string(),
+        outputformat: "tex".to_string(),
+        inputconverter: None,
+        complex: true,
+        description: "import".to_string(),
+      })
+      .expect("import service");
+      Service::find_by_name("import", &mut db.connection).unwrap()
+    },
+  };
+  db.add(&NewService {
+    name: target_svc.to_string(),
+    version: 0.1,
+    inputformat: "tex".to_string(),
+    outputformat: "html".to_string(),
+    inputconverter: Some("import".to_string()),
+    complex: true,
+    description: "target".to_string(),
+  })
+  .expect("target service");
+  let target = Service::find_by_name(target_svc, &mut db.connection).unwrap();
+  // Two imported documents to activate the target service over.
+  for entry in [
+    "/tmp/activate_effect_corpus/1/1.zip",
+    "/tmp/activate_effect_corpus/2/2.zip",
+  ] {
+    db.add(&NewTask {
+      service_id: import.id,
+      corpus_id: corpus.id,
+      status: TaskStatus::NoProblem.raw(),
+      entry: entry.to_string(),
+    })
+    .expect("import task");
+  }
+
+  db.register_service(
+    &target,
+    corpus_path,
+    "activator-bob".to_string(),
+    "test activation".to_string(),
+  )
+  .expect("register_service");
+
+  // A TODO task now exists for the target service over each imported document.
+  let target_todo: i64 = tasks::table
+    .filter(tasks::corpus_id.eq(corpus.id))
+    .filter(tasks::service_id.eq(target.id))
+    .filter(tasks::status.eq(TaskStatus::TODO.raw()))
+    .count()
+    .get_result(&mut db.connection)
+    .unwrap();
+  assert_eq!(target_todo, 2, "a TODO task per imported document");
+  // The run is attributed to the activating actor (the owner+description threading).
+  let owner: String = historical_runs::table
+    .filter(historical_runs::corpus_id.eq(corpus.id))
+    .filter(historical_runs::service_id.eq(target.id))
+    .order(historical_runs::id.desc())
+    .select(historical_runs::owner)
+    .first(&mut db.connection)
+    .expect("a run was recorded");
+  assert_eq!(owner, "activator-bob", "run attributed to the actor");
+
+  cleanup(&mut db, corpus_name, target_svc);
 }
 
 #[test]
