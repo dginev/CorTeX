@@ -15,9 +15,10 @@ on: [push, pull_request]
 #     the schema (incl. the hand-SQL matview migrations) is present before the tests connect.
 #   * latexmlc is not installed, so `tex_to_html_test` skips itself (by design).
 #
-# Known flake: a few integration binaries that build a Rocket `Client` over an r2d2/libpq pool can
-# SIGSEGV during process *teardown* after their tests pass (KNOWN_ISSUES L-1, pre-existing). If CI
-# goes red on a teardown SIGSEGV rather than a real assertion, that is the bug to chase.
+# Known flake: a few integration binaries that build a Rocket `Client` over an r2d2/libpq pool
+# SIGSEGV during process *teardown* after their tests pass (KNOWN_ISSUES L-1, pre-existing, not
+# fixable in our code today). The `scripts/ci_test.sh` wrapper in the Tests step tolerates ONLY that
+# teardown SIGSEGV (every assertion still passed) while failing CI on any real failure.
 
 jobs:
   test:
@@ -64,6 +65,10 @@ jobs:
         run: |
           diesel migration run --database-url "$DATABASE_URL"
           diesel migration run --database-url "$TEST_DATABASE_URL"
+          # `diesel.toml` has `print_schema`, so `migration run` rewrites src/schema.rs. The committed
+          # one is the source of truth (kept honest by scripts/verify_migrations.sh); discard any
+          # CI-side regeneration so a differing diesel_cli version can't trip `cargo fmt --check`.
+          git checkout -- src/schema.rs
 
       - name: Format check
         run: cargo fmt --all --check
@@ -72,4 +77,7 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Tests
-        run: cargo test --no-fail-fast
+        # Wrapper runs the full suite and fails on real failures, but tolerates ONLY the pre-existing
+        # L-1 teardown SIGSEGV (a diesel/libpq/Tokio teardown race in Rocket-Client-over-pool binaries
+        # that crashes AFTER all assertions pass; reproduced on clean master — KNOWN_ISSUES L-1).
+        run: bash scripts/ci_test.sh

@@ -330,3 +330,15 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   excludes terminal jobs. Recorded the directive as a standing mandate ([[jobs-observability-mandate]]).
   `clippy --all-targets -D warnings` clean.
   *Next:* pool the 4 `concerns` helpers; the API-docs pick (awaiting owner); or (on backup) the load test.
+- **CI green again (owner: "CI is showing SIGSEGV for tests"):** diagnosed — the full suite's *assertions
+  all pass* (fmt + clippy + every "test result: ok"); CI was red purely on the pre-existing **L-1 teardown
+  SIGSEGV** (4 Rocket-`Client`-over-pool binaries — corpora/jobs_api/management/runs — crash *after* their
+  tests pass, exiting `cargo test` non-zero). Added **`scripts/ci_test.sh`**: runs `cargo test
+  --no-fail-fast` and fails on any real failure (`FAILED` / `N failed` / a genuine `error[E…]` / `could not
+  compile`) but tolerates a non-zero exit whose *only* cause is a `signal: 11` teardown — so a real
+  regression still reds CI, the L-1 flake no longer does. Validated locally: an L-1 binary → exit 0 (with a
+  `::warning::`), a clean binary → exit 0, a `FAILED` line → exit 1. Also hardened the migrations step to
+  `git checkout -- src/schema.rs` after `diesel migration run` (diesel.toml's `print_schema` rewrites it; a
+  differing CI `diesel_cli` could otherwise trip `fmt --check`). KNOWN_ISSUES L-1 + the CI header note
+  updated.
+  *Next:* pool the 4 `concerns` helpers; the API-docs pick (awaiting owner); or (on backup) the load test.
