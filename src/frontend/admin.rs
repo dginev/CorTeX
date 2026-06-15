@@ -54,7 +54,7 @@ pub fn admin_page(
         // progress so the card shows real task counts, not a misleading zero.
         let run = run.with_live_tallies(&mut connection);
         serde_json::json!({
-          "when": run.start_time.format("%Y-%m-%d %H:%M").to_string(),
+          "when": crate::frontend::helpers::iso_utc(run.start_time),
           "owner": run.owner,
           "description": run.description,
           "total": run.total,

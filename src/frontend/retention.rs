@@ -34,10 +34,7 @@ fn parse_cutoff(date: &str) -> Option<NaiveDateTime> {
 
 /// Formats an optional snapshot timestamp for display.
 fn fmt_oldest(oldest: Option<NaiveDateTime>) -> String {
-  oldest.map_or_else(
-    || "none".to_string(),
-    |when| when.format("%Y-%m-%d %H:%M").to_string(),
-  )
+  oldest.map_or_else(|| "none".to_string(), crate::frontend::helpers::iso_utc)
 }
 
 /// Per-task snapshot retention stats, as exposed over the API/UI.

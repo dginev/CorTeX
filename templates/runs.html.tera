@@ -35,8 +35,8 @@
         <tbody>
           {% for run in runs %}
           <tr>
-            <td class="left">{{run.start_time}}</td>
-            <td class="left">{% if run.completed %}{{run.end_time}}{% else %}<em>ongoing</em>{% if run.in_progress > 0 %} &middot; {{run.in_progress}} in&nbsp;progress{% endif %}{% endif %}</td>
+            <td class="left"><time datetime="{{run.start_time}}">{{run.start_time}}</time></td>
+            <td class="left">{% if run.completed %}<time datetime="{{run.end_time}}">{{run.end_time}}</time>{% else %}<em>ongoing</em>{% if run.in_progress > 0 %} &middot; {{run.in_progress}} in&nbsp;progress{% endif %}{% endif %}</td>
             <td class="left">{{run.owner}}</td>
             <td class="left">{{run.description}}</td>
             <td class="right">{{run.total}}</td>

@@ -73,10 +73,8 @@ impl From<HistoricalRun> for RunDto {
       id: run.id,
       owner: run.owner,
       description: run.description,
-      start_time: run.start_time.format("%Y-%m-%dT%H:%M:%S").to_string(),
-      end_time: run
-        .end_time
-        .map(|end| end.format("%Y-%m-%dT%H:%M:%S").to_string()),
+      start_time: crate::frontend::helpers::iso_utc(run.start_time),
+      end_time: run.end_time.map(crate::frontend::helpers::iso_utc),
       completed: run.end_time.is_some(),
       total: run.total,
       no_problem: run.no_problem,
@@ -144,10 +142,8 @@ impl RunOverviewDto {
         .unwrap_or_else(|| format!("#{}", run.service_id)),
       owner: run.owner,
       description: run.description,
-      start_time: run.start_time.format("%Y-%m-%dT%H:%M:%S").to_string(),
-      end_time: run
-        .end_time
-        .map(|end| end.format("%Y-%m-%dT%H:%M:%S").to_string()),
+      start_time: crate::frontend::helpers::iso_utc(run.start_time),
+      end_time: run.end_time.map(crate::frontend::helpers::iso_utc),
       completed: run.end_time.is_some(),
       total: run.total,
       no_problem: run.no_problem,

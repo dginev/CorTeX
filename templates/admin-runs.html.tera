@@ -53,7 +53,7 @@
       <tr>
         <td class="left">{{ run.corpus }}</td>
         <td class="left">{{ run.service }}</td>
-        <td class="left">{{ run.start_time | replace(from="T", to=" ") }}</td>
+        <td class="left"><time datetime="{{ run.start_time }}">{{ run.start_time }}</time></td>
         <td class="left">{{ run.owner }}</td>
         <td class="right">{{ run.total }}</td>
         <td class="right">{{ run.no_problem }}</td>

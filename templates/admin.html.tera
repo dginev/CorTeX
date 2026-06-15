@@ -27,7 +27,7 @@
     <div class="admin-card" style="flex:2; min-width:12rem;">
       <div class="muted">Last run &nbsp;<a href="/admin/runs">(all runs)</a></div>
       {% if last_run %}
-      <div><strong>{{ last_run.when }}</strong>{% if last_run.open %} <span style="color:var(--ok);">· open{% if last_run.in_progress > 0 %} · {{ last_run.in_progress }} in&nbsp;progress{% endif %}</span>{% endif %}
+      <div><strong><time datetime="{{ last_run.when }}">{{ last_run.when }}</time></strong>{% if last_run.open %} <span style="color:var(--ok);">· open{% if last_run.in_progress > 0 %} · {{ last_run.in_progress }} in&nbsp;progress{% endif %}</span>{% endif %}
         &nbsp;by {{ last_run.owner }}</div>
       <div class="muted" style="font-size:0.9em;">{{ last_run.total }} tasks — {{ last_run.description }}</div>
       {% else %}

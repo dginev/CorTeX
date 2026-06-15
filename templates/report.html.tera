@@ -3,7 +3,7 @@
   <header class="report-header">
     <h1 class="report-title">{{global.corpus_name}} <span class="report-sep">/</span> {{global.service_name}}</h1>
     <p class="report-sub">{{global.inputformat}} &rarr; {{global.outputformat}} conversion{% if global.run_owner %}
-      <span class="report-sep">·</span> latest run by {{global.run_owner}}{% if global.run_start_time %}, {{global.run_start_time}}{% endif %}{% endif %}</p>
+      <span class="report-sep">·</span> latest run by {{global.run_owner}}{% if global.run_start_time %}, <time datetime="{{global.run_start_time}}">{{global.run_start_time}}</time>{% endif %}{% endif %}</p>
   </header>
 
   <div id="report-div">

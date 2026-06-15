@@ -75,10 +75,7 @@ pub fn serve_report(
       if let Ok(Some(historical_run)) = HistoricalRun::find_current(&corpus, &service, connection) {
         global.insert(
           "run_start_time".to_string(),
-          historical_run
-            .start_time
-            .format("%Y-%m-%d %H:%M:%S%.f")
-            .to_string(),
+          crate::frontend::helpers::iso_utc(historical_run.start_time),
         );
         global.insert("run_owner".to_string(), historical_run.owner);
         global.insert("run_description".to_string(), historical_run.description);
