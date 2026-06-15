@@ -5,11 +5,11 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! The **accounting** pillar (AAA — `docs/AAA_DESIGN.md`): a Rocket fairing that records every
-//! mutating admin request to the `audit_log`, so "who did what, when, to what, with what outcome"
-//! is observable. Centralizing it in one fairing (rather than a call in each write handler) means
-//! no endpoint can forget to log and new endpoints are audited automatically — drift-proof, in the
-//! spirit of the symmetry contract.
+//! The **accounting** pillar (AAA — `docs/archive/AAA_DESIGN.md`): a Rocket fairing that records
+//! every mutating admin request to the `audit_log`, so "who did what, when, to what, with what
+//! outcome" is observable. Centralizing it in one fairing (rather than a call in each write
+//! handler) means no endpoint can forget to log and new endpoints are audited automatically —
+//! drift-proof, in the spirit of the symmetry contract.
 
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::{Method, Status};

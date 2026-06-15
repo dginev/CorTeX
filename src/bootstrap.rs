@@ -158,7 +158,8 @@ pub struct SetTokenOutcome {
 
 /// Generates a fresh random admin/API token: 32 URL-safe alphanumeric characters (~190 bits). Used
 /// by `cortex set-admin-token --generate`. The token is a plaintext bearer credential (the
-/// lightweight scheme — see `docs/AAA_DESIGN.md`); hashing-at-rest is a documented later step.
+/// lightweight scheme — see `docs/archive/AAA_DESIGN.md`); hashing-at-rest is a documented later
+/// step.
 pub fn generate_token() -> String {
   thread_rng()
     .sample_iter(&Alphanumeric)
@@ -174,7 +175,7 @@ pub fn generate_token() -> String {
 /// If the file is missing it is first scaffolded from the defaults (a complete config, like `cortex
 /// init`) so the result is always valid. Because `to_persisted_toml` never writes secrets, this
 /// merges at the raw-TOML level rather than re-serializing a `CortexConfig`. Mapping the token to a
-/// per-person `owner` is what gives the audit log its actor (`docs/AAA_DESIGN.md`).
+/// per-person `owner` is what gives the audit log its actor (`docs/archive/AAA_DESIGN.md`).
 pub fn set_admin_token(
   config_path: &Path,
   token: &str,

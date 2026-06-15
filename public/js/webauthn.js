@@ -1,5 +1,5 @@
 // Copyright 2015-2025 Deyan Ginev. MIT license. Vanilla WebAuthn helpers for the CorTeX admin UI
-// (docs/WEBAUTHN_DESIGN.md) — no framework. Converts the base64url JSON the server speaks to/from the
+// (docs/archive/WEBAUTHN_DESIGN.md) — no framework. Converts the base64url JSON the server speaks to/from the
 // ArrayBuffers the browser's navigator.credentials API requires, and drives the enrollment ceremony.
 
 (function () {

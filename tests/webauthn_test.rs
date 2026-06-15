@@ -5,7 +5,7 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Contract test for passkey **enrollment** (`docs/WEBAUTHN_DESIGN.md`): the registration
+//! Contract test for passkey **enrollment** (`docs/archive/WEBAUTHN_DESIGN.md`): the registration
 //! ceremony's `begin` endpoint is gated to a signed-in admin and, when passkeys are enabled,
 //! returns a WebAuthn creation challenge; the "Your passkeys" page is signed-in-only and offers
 //! enrollment. The full biometric round-trip needs a real authenticator (manual / virtual), so the

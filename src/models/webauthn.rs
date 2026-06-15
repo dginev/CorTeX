@@ -5,11 +5,11 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Persistence for passkey (**WebAuthn**) sign-in (`docs/WEBAUTHN_DESIGN.md`): the per-owner
-//! WebAuthn user handle and the enrolled public-key credentials. **Only public keys are stored** —
-//! the `credential` column holds a serialized `webauthn_rs::prelude::Passkey` (public key +
-//! counter), kept as opaque JSON here so the persistence layer does not depend on the WebAuthn
-//! crate.
+//! Persistence for passkey (**WebAuthn**) sign-in (`docs/archive/WEBAUTHN_DESIGN.md`): the
+//! per-owner WebAuthn user handle and the enrolled public-key credentials. **Only public keys are
+//! stored** — the `credential` column holds a serialized `webauthn_rs::prelude::Passkey` (public
+//! key + counter), kept as opaque JSON here so the persistence layer does not depend on the
+//! WebAuthn crate.
 
 use chrono::NaiveDateTime;
 use diesel::prelude::*;

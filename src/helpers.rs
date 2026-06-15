@@ -495,8 +495,8 @@ fn decode_worker_log(raw: &[u8]) -> String {
 /// Reads + decodes the `cortex.log` entry out of a result `.zip`. Uses the pure-Rust `zip` crate's
 /// **random-access `by_name`** — it seeks straight to `cortex.log` via the archive's central
 /// directory, never decompressing the (potentially large) converted output (the per-task hot path;
-/// ~1.4× libarchive on this op, see `docs/ARCHIVE_RATIONALIZATION.md`). Returns the decoded log
-/// text, or an `Err` describing why it couldn't (a non-zip / corrupt archive, or a missing
+/// ~1.4× libarchive on this op, see `docs/archive/ARCHIVE_RATIONALIZATION.md`). Returns the decoded
+/// log text, or an `Err` describing why it couldn't (a non-zip / corrupt archive, or a missing
 /// `cortex.log` → the task is left `Fatal`), rather than `.expect()`-panicking the dispatch path as
 /// the old libarchive reader did.
 fn read_cortex_log(result: &Path) -> Result<String, String> {

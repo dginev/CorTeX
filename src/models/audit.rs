@@ -5,9 +5,10 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! The **accounting** pillar (AAA — `docs/AAA_DESIGN.md`): a persistent record of admin actions and
-//! who took them ("observability of actions taken"). Auth-agnostic — `actor` is whatever the auth
-//! layer resolved (today an admin token's `owner`), so this survives any future auth upgrade.
+//! The **accounting** pillar (AAA — `docs/archive/AAA_DESIGN.md`): a persistent record of admin
+//! actions and who took them ("observability of actions taken"). Auth-agnostic — `actor` is
+//! whatever the auth layer resolved (today an admin token's `owner`), so this survives any future
+//! auth upgrade.
 
 use chrono::NaiveDateTime;
 use diesel::prelude::*;

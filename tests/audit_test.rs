@@ -5,11 +5,11 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Contract test for the **accounting** pillar (AAA — `docs/AAA_DESIGN.md`): the audit fairing
-//! (`frontend::audit`) records every mutating admin request to the `audit_log`, attributed to the
-//! authenticated actor. An authenticated agent mutation leaves a row naming the action, target,
-//! actor and outcome; an unauthenticated attempt is *also* recorded — with an empty actor — so a
-//! denied write is observable, not silent.
+//! Contract test for the **accounting** pillar (AAA — `docs/archive/AAA_DESIGN.md`): the audit
+//! fairing (`frontend::audit`) records every mutating admin request to the `audit_log`, attributed
+//! to the authenticated actor. An authenticated agent mutation leaves a row naming the action,
+//! target, actor and outcome; an unauthenticated attempt is *also* recorded — with an empty actor —
+//! so a denied write is observable, not silent.
 
 use cortex::backend::{self, test_db_address};
 use cortex::frontend::actor::owner_for_token;

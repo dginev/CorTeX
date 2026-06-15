@@ -103,7 +103,7 @@ Owner (2026-06-14): the prototype's `captcha_secret` is **removed**; bot/scraper
 public read surface is handled by an **[Anubis](https://github.com/TecharoHQ/anubis) reverse proxy**
 in front of the deployment — a **one-time deployment measure for the `corpora.latexml.rs` preview**,
 **not** a framework feature (it isn't needed for CorTeX in general). See
-[`DEPLOYMENT.md`](DEPLOYMENT.md). CorTeX adds no in-code captcha/bot guard.
+[`DEPLOYMENT.md`](../DEPLOYMENT.md). CorTeX adds no in-code captcha/bot guard.
 
 ## Increment status
 

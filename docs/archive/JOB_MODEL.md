@@ -3,7 +3,7 @@
 > Status: **design for sign-off**, not yet implemented. The shared mechanism behind every
 > long-running administrative write. Consumed by Arm 5 (corpus import/extend), Arm 6 (service
 > activation), Arm 7 (service runs), and Arm 10 (dataset export). Cross-ref:
-> [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md).
+> [`PRODUCTIZING_PLAN.md`](../PRODUCTIZING_PLAN.md).
 
 ## The problem
 

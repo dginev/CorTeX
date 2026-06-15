@@ -179,14 +179,14 @@ impl Default for DispatcherConfig {
 pub struct AuthConfig {
   /// Password-like tokens mapped to a human-readable owner. The bootstrap / break-glass + agent
   /// credential that gates every write action and the `/admin` sign-in, alongside passkeys (see
-  /// [`WebauthnConfig`] and `docs/AAA_DESIGN.md`). Set via `cortex set-admin-token`.
+  /// [`WebauthnConfig`] and `docs/archive/AAA_DESIGN.md`). Set via `cortex set-admin-token`.
   pub rerun_tokens: HashMap<String, String>,
 }
 
-/// Passkey (**WebAuthn**) sign-in settings for the human admin UI (`docs/WEBAUTHN_DESIGN.md`). The
-/// relying party is the CorTeX server itself — no external IdP, no per-deploy app registration. The
-/// admin token (see [`AuthConfig`]) remains the bootstrap / break-glass path; passkeys are the
-/// convenient day-to-day human sign-in once enrolled.
+/// Passkey (**WebAuthn**) sign-in settings for the human admin UI
+/// (`docs/archive/WEBAUTHN_DESIGN.md`). The relying party is the CorTeX server itself — no external
+/// IdP, no per-deploy app registration. The admin token (see [`AuthConfig`]) remains the bootstrap
+/// / break-glass path; passkeys are the convenient day-to-day human sign-in once enrolled.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WebauthnConfig {
   /// Whether passkey sign-in is offered. Off until a deployment configures `rp_id`/`rp_origin` and

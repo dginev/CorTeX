@@ -5,8 +5,8 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Contract test for the background-job mechanism (see docs/JOB_MODEL.md): a job runs to a terminal
-//! state on a background thread, persisting its progress and result.
+//! Contract test for the background-job mechanism (see docs/archive/JOB_MODEL.md): a job runs to a
+//! terminal state on a background thread, persisting its progress and result.
 
 use cortex::backend::{build_pool, test_db_address};
 use cortex::jobs;

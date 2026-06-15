@@ -1,4 +1,4 @@
--- Server-side admin sessions (docs/WEBAUTHN_DESIGN.md). The browser cookie now carries only a random
+-- Server-side admin sessions (docs/archive/WEBAUTHN_DESIGN.md). The browser cookie now carries only a random
 -- opaque session id; the owner + expiry live here, server-side. This unifies the two human sign-in
 -- paths — the admin **token** and a **passkey** both create a session row — so the cookie no longer
 -- carries a credential (a forged/stolen cookie is a useless random id unless it matches a live row).

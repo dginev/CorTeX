@@ -1,4 +1,4 @@
--- Accounting pillar (AAA — docs/AAA_DESIGN.md): a persistent, queryable record of every admin action
+-- Accounting pillar (AAA — docs/archive/AAA_DESIGN.md): a persistent, queryable record of every admin action
 -- with the **actor** who took it, so "who did what, when" is observable in the admin UI. This is the
 -- piece the owner asked for ("observability of actions taken"). It is **auth-agnostic** — `actor` is
 -- just whatever the auth layer resolved (today the admin token's `owner`), so the table survives any

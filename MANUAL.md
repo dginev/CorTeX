@@ -68,7 +68,7 @@ Two ways to authenticate as an admin; both resolve to a **server-side session** 
 
 - **Passkeys (WebAuthn)** — the primary, local, no-external-dependency method. Enroll at
   **`/admin/passkeys`** once signed in; thereafter sign in with your device authenticator. See
-  [`docs/WEBAUTHN_DESIGN.md`](docs/WEBAUTHN_DESIGN.md).
+  [`docs/archive/WEBAUTHN_DESIGN.md`](docs/archive/WEBAUTHN_DESIGN.md).
 - **Admin token** — the bootstrap / break-glass path (and the credential agents use). Created by
   `set-admin-token`; presented as a `?token=…` query param or `Authorization` header. Each token maps
   to an **owner** that is threaded into the audit log as the actor.
@@ -134,7 +134,7 @@ run as **persisted background jobs** so the request returns immediately. Watch t
 and `seconds_since_update` (the **heartbeat age** — a climbing value on a `running` job flags a stall).
 `GET /api/jobs?active=true` is the fleet-wide **pending check**. A job whose heartbeat goes silent past
 the threshold is auto-reaped to `interrupted`; one that dies with the process is cleaned at restart.
-See [`docs/JOB_MODEL.md`](docs/JOB_MODEL.md).
+See [`docs/archive/JOB_MODEL.md`](docs/archive/JOB_MODEL.md).
 
 ## 9. Monitoring & health
 
@@ -176,7 +176,7 @@ Run as background jobs (debounced; safe online):
 
 - **Refresh reports** — rebuilds the `report_summary` rollup that backs every report page (also runs
   automatically on run completion; `POST /api/reports/refresh`; see
-  [`docs/REPORT_FRESHNESS.md`](docs/REPORT_FRESHNESS.md)).
+  [`docs/archive/REPORT_FRESHNESS.md`](docs/archive/REPORT_FRESHNESS.md)).
 - **Reindex / analyze** — `REINDEX (CONCURRENTLY)` + `ANALYZE` on the high-churn tables (no exclusive
   lock). See [`docs/DB_TUNING.md`](docs/DB_TUNING.md).
 

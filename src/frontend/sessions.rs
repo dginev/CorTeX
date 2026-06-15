@@ -6,7 +6,7 @@
 // except according to those terms.
 
 //! Active admin **sessions** management — the security-oversight completion of the session model
-//! (`models::session`, `docs/WEBAUTHN_DESIGN.md`): see who is currently signed in (token or
+//! (`models::session`, `docs/archive/WEBAUTHN_DESIGN.md`): see who is currently signed in (token or
 //! passkey) and revoke a compromised identity's sessions. Uniform authz — any signed-in admin may
 //! view + revoke.
 //!

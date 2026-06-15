@@ -12,7 +12,7 @@
   <p><button type="button" id="enroll-passkey" class="btn btn-primary"><i class="fa fa-plus"></i>&nbsp; Enroll a passkey</button></p>
   {% else %}
   <p class="muted"><i class="fa fa-exclamation-triangle"></i>&nbsp; Passkey sign-in is not enabled on this
-    deployment (set <code>[webauthn]</code> in <code>cortex.toml</code> — see docs/WEBAUTHN_DESIGN.md). The
+    deployment (set <code>[webauthn]</code> in <code>cortex.toml</code> — see docs/archive/WEBAUTHN_DESIGN.md). The
     admin token still signs you in.</p>
   {% endif %}
 

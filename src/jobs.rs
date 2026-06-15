@@ -7,7 +7,7 @@
 
 //! Background jobs: one persisted row per long-running administrative operation, run on an
 //! in-process thread with progress persisted to the database. The shared mechanism behind corpus
-//! import/extend, service activation, runs, and dataset export. See `docs/JOB_MODEL.md`.
+//! import/extend, service activation, runs, and dataset export. See `docs/archive/JOB_MODEL.md`.
 
 use std::thread;
 
@@ -133,8 +133,9 @@ where
 pub const REFRESH_REPORTS_KIND: &str = "refresh_reports";
 
 /// Spawns a background job that rebuilds the `report_summary` rollup — a multi-minute
-/// `REFRESH ... CONCURRENTLY` at production scale (see `docs/REPORT_FRESHNESS.md`) — **off** the
-/// request path, so the caller (a force-refresh endpoint, or the rerun path) returns immediately.
+/// `REFRESH ... CONCURRENTLY` at production scale (see `docs/archive/REPORT_FRESHNESS.md`) —
+/// **off** the request path, so the caller (a force-refresh endpoint, or the rerun path) returns
+/// immediately.
 ///
 /// **Debounced:** a single global refresh already updates the data behind *every* report page, so
 /// if one is already queued or running its uuid is returned instead of spawning another (concurrent

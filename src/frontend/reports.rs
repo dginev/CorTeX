@@ -273,10 +273,10 @@ pub struct RefreshAckDto {
 
 /// Forces a rebuild of the `report_summary` rollup that backs **every** report page, as a
 /// background job — the rebuild is multi-minute at production scale, so it must not block the
-/// request (see `docs/REPORT_FRESHNESS.md`). Returns the job handle immediately (`202 Accepted`);
-/// poll `GET /api/jobs/<job>` for status/health. **Debounced:** a refresh already in flight is
-/// reused rather than piled on. **Token-gated** via the [`Actor`] guard (`X-Cortex-Token` /
-/// `?token=`); `401` without a valid token.
+/// request (see `docs/archive/REPORT_FRESHNESS.md`). Returns the job handle immediately (`202
+/// Accepted`); poll `GET /api/jobs/<job>` for status/health. **Debounced:** a refresh already in
+/// flight is reused rather than piled on. **Token-gated** via the [`Actor`] guard (`X-Cortex-Token`
+/// / `?token=`); `401` without a valid token.
 #[rocket_okapi::openapi(tag = "Reports")]
 #[post("/api/reports/refresh")]
 pub fn refresh_reports(

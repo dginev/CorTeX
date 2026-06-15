@@ -1,4 +1,4 @@
--- Passkey (WebAuthn) sign-in (docs/WEBAUTHN_DESIGN.md). The relying party is the CorTeX server
+-- Passkey (WebAuthn) sign-in (docs/archive/WEBAUTHN_DESIGN.md). The relying party is the CorTeX server
 -- itself — no external IdP. These tables hold the per-owner WebAuthn user handle and the enrolled
 -- public-key credentials (passkeys). **Only PUBLIC keys are stored** — there is no secret here to
 -- leak, hash or rotate (strictly more robust than the plaintext token posture).

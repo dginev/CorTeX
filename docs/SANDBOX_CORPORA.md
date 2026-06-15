@@ -3,7 +3,7 @@
 > Status: **design note / future task**, not yet implemented. Captures the owner's target agentic
 > workflow for *sandbox corpora derived from a message-condition filter*. Relates to Arm 5 (corpus
 > management), Arm 7 (runs), and Arm 10 (data management); builds directly on the background-job
-> mechanism ([`JOB_MODEL.md`](JOB_MODEL.md)). Cross-ref: [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md).
+> mechanism ([`JOB_MODEL.md`](archive/JOB_MODEL.md)). Cross-ref: [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md).
 
 ## The target workflow
 

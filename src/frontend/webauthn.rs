@@ -6,7 +6,7 @@
 // except according to those terms.
 
 //! Passkey (**WebAuthn**) sign-in — the relying-party instance built from config
-//! (`docs/WEBAUTHN_DESIGN.md`). This is the **foundation**: the configured
+//! (`docs/archive/WEBAUTHN_DESIGN.md`). This is the **foundation**: the configured
 //! [`webauthn_rs::prelude::Webauthn`] relying party as Rocket managed state. The
 //! registration/authentication ceremonies and the sign-in UI build on this in the following
 //! increments.

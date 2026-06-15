@@ -5,10 +5,10 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Server-side admin sessions (`docs/WEBAUTHN_DESIGN.md`). The browser cookie carries only a random
-//! opaque session id; this table holds the owner + absolute expiry. **Both** human sign-in paths —
-//! the admin **token** and a **passkey** — open a session, so the model is unified and the cookie
-//! no longer carries a credential. Sign-out deletes the row (real revocation).
+//! Server-side admin sessions (`docs/archive/WEBAUTHN_DESIGN.md`). The browser cookie carries only
+//! a random opaque session id; this table holds the owner + absolute expiry. **Both** human sign-in
+//! paths — the admin **token** and a **passkey** — open a session, so the model is unified and the
+//! cookie no longer carries a credential. Sign-out deletes the row (real revocation).
 
 use chrono::{Duration, NaiveDateTime, Utc};
 use diesel::prelude::*;

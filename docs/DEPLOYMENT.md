@@ -75,7 +75,7 @@ proxy; CorTeX is unaware of it.
 
 ## Human sign-in: passkeys (WebAuthn)
 
-The admin UI uses passkeys for human sign-in (see [`WEBAUTHN_DESIGN.md`](WEBAUTHN_DESIGN.md)). For the
+The admin UI uses passkeys for human sign-in (see [`WEBAUTHN_DESIGN.md`](archive/WEBAUTHN_DESIGN.md)). For the
 preview, set in `cortex.toml`:
 
 ```toml
