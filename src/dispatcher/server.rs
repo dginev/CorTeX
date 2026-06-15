@@ -10,6 +10,32 @@ use crate::backend::Backend;
 use crate::helpers::{NewTaskMessage, TaskProgress, TaskReport, TaskStatus};
 use crate::models::Service;
 
+/// Probe interval (seconds) between TCP keepalive probes once the idle threshold is crossed, and
+/// the number of unanswered probes before the OS declares the peer dead — fixed sane values so only
+/// the idle threshold needs to be a config knob (see [`crate::config::DispatcherConfig`]). With the
+/// defaults a dead worker is detected in roughly `idle + 4×30 s` ≈ a few minutes — far faster than
+/// the 1 h lease, while keeping NAT mappings warm.
+const KEEPALIVE_PROBE_INTERVAL_SECS: i32 = 30;
+/// See [`KEEPALIVE_PROBE_INTERVAL_SECS`].
+const KEEPALIVE_PROBE_COUNT: i32 = 4;
+
+/// Applies TCP keepalive to a worker-facing ZMQ socket (the ventilator's ROUTER, the sink's PULL),
+/// the "stable" half of a remote worker interface: keepalive keeps idle worker connections alive
+/// across NAT/firewall idle-timeouts (an idle mapping is otherwise silently dropped, dropping the
+/// worker from the fleet until it reconnects) and lets the OS reap a dead peer's route. It does
+/// **not** affect task-recovery correctness — the lease reaper is that net — so `idle_seconds <= 0`
+/// safely disables it (OS default). **Set before `bind`** so accepted connections inherit it.
+pub fn apply_tcp_keepalive(socket: &zmq::Socket, idle_seconds: i32) -> zmq::Result<()> {
+  if idle_seconds <= 0 {
+    return Ok(());
+  }
+  socket.set_tcp_keepalive(1)?;
+  socket.set_tcp_keepalive_idle(idle_seconds)?;
+  socket.set_tcp_keepalive_intvl(KEEPALIVE_PROBE_INTERVAL_SECS)?;
+  socket.set_tcp_keepalive_cnt(KEEPALIVE_PROBE_COUNT)?;
+  Ok(())
+}
+
 /// The dispatcher's **service cache**: a `service_name → Option<Service>` memo shared by the
 /// ventilator (populated on a cache miss) and the sink (read on every result), so a `Service` row
 /// is looked up from the DB at most once per name. Phase 4 of the dispatcher rationalization

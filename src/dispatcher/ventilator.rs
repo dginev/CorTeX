@@ -62,6 +62,14 @@ impl Ventilator {
     let context = zmq::Context::new();
     let ventilator = context.socket(zmq::ROUTER)?;
     ventilator.set_router_handover(true)?;
+    // Keep idle remote-worker connections alive across NAT/firewall idle-timeouts (set before bind
+    // so accepted connections inherit it). Correctness is the reaper's job, not keepalive's.
+    server::apply_tcp_keepalive(
+      &ventilator,
+      crate::config::config()
+        .dispatcher
+        .tcp_keepalive_idle_seconds,
+    )?;
 
     let address = format!("tcp://*:{}", self.port);
     ventilator.bind(&address).unwrap();

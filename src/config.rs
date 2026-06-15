@@ -141,6 +141,18 @@ pub struct DispatcherConfig {
   /// both this and `lease_timeout_seconds` is what lets a fast chaos test exercise reaper-based
   /// recovery in seconds instead of the hour-scale production timing.)
   pub reap_interval_seconds: i64,
+  /// **TCP keepalive idle (seconds) on the worker-facing ZMQ sockets** (ventilator + sink). After
+  /// this many idle seconds the OS begins probing the peer; this both keeps idle worker
+  /// connections alive across NAT/firewall idle-timeouts — essential when the ~200 remote
+  /// workers reach the dispatcher over an overlay/VPN or any NAT'd path, where an idle mapping
+  /// is otherwise silently dropped and the worker falls out of the fleet until it reconnects —
+  /// and lets the OS reap a genuinely dead peer so the ROUTER doesn't accumulate stale routes.
+  /// Task-recovery *correctness* does **not** depend on this (the lease reaper is that net, see
+  /// `lease_timeout_seconds`); it keeps the *fleet connected*. `<= 0` leaves the OS keepalive
+  /// default (effectively off). Default **120**, well under the common 5-minute NAT idle window.
+  /// (Probe interval/count are fixed sane
+  /// values in [`crate::dispatcher::server::apply_tcp_keepalive`].)
+  pub tcp_keepalive_idle_seconds: i32,
 }
 impl Default for DispatcherConfig {
   fn default() -> Self {
@@ -157,6 +169,7 @@ impl Default for DispatcherConfig {
       finalize_flush_ms: 300,
       lease_timeout_seconds: 3600,
       reap_interval_seconds: 60,
+      tcp_keepalive_idle_seconds: 120,
     }
   }
 }

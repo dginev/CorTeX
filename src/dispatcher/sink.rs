@@ -169,6 +169,9 @@ impl Sink {
     // Ok, let's bind to a port and start broadcasting
     let context = zmq::Context::new();
     let sink = context.socket(zmq::PULL)?;
+    // Keep idle remote-worker result connections alive across NAT/firewall idle-timeouts (set
+    // before bind so accepted connections inherit it). See `server::apply_tcp_keepalive`.
+    server::apply_tcp_keepalive(&sink, config().dispatcher.tcp_keepalive_idle_seconds)?;
     let address = format!("tcp://*:{}", self.port);
     sink.bind(&address).unwrap();
 
