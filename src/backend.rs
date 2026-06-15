@@ -9,12 +9,14 @@
 //! a `Backend` object.
 
 mod corpora_aggregate;
+mod export;
 mod mark;
 mod reports;
 mod rollup;
 mod sandbox;
 mod services_aggregate;
 mod tasks_aggregate;
+pub use export::{export_html_dataset, DatasetExportOutcome, GroupBy};
 pub(crate) use mark::{mark_rerun, save_historical_tasks};
 pub(crate) use reports::list_task_diffs;
 pub(crate) use reports::progress_report;

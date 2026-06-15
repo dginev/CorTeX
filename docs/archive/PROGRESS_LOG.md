@@ -11,6 +11,22 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](../PRODUCTIZING_PLAN.md); the
 
 ## 2026-06-15
 
+- **Arm 10 (CLI step, D1): `cortex export-dataset` — the two `bundle-html-dataset*.sh` scripts
+  retired.** Collapsed the per-month script and the per-severity script (which differed only in the
+  grouping dimension, and disagreed on `no_problem` vs `no-problem`) into one parameterized
+  subcommand over `backend::export_html_dataset` (`src/backend/export.rs`): `--group-by
+  month|severity`, `--severity no_problem,warning,error`, `--out <dir>`. **Pure-Rust `zip` only** — no
+  `psql`/`unzip`/`zip`/`egrep` shell-outs, no `libarchive` C dep (a productizing win: a fresh box
+  needs nothing extra). Reads existing result archives off `/data` (sandbox-aware via
+  `helpers::result_archive_path`), bundles each paper's main HTML, names severities by the canonical
+  `TaskStatus::to_key` spelling (reconciling the scripts' inconsistency). Resumable (an existing
+  archive is skipped) and isolates blast radius (a missing/HTML-less result is counted-and-skipped,
+  never fatal). Provenance ships as a sidecar `<corpus>-manifest.json` (corpus/service/severities/
+  group-by/per-archive counts/`generated_at`/`cortex_version`) — the lightweight stand-in until the
+  full Arm-10 `exports` table + web/job API + exact toolchain/worker-digest provenance land. Tests:
+  `export_test` (end-to-end DB→bundle, both groupings, resume, canonical naming) + two DB-free unit
+  tests (`extract_main_html` selection, `GroupBy::from_key`); clippy clean. RAM ceiling (the in-RAM
+  work-list) recorded as KNOWN_ISSUES E-3. The two scripts are `git rm`-ed; plan + MANUAL updated.
 - **Sandbox rerun-output isolation landed — KNOWN_ISSUES F-6 resolved + a DRY pass on result-archive
   paths.** A sandbox (Arm 5) references the parent's source `entry` paths in place, so the sink's
   entry-derived output path (`<entry-dir>/<service>.zip`) would have let a sandbox rerun overwrite the

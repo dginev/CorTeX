@@ -8,11 +8,17 @@
 //! `cortex` — the administration CLI. A thin renderer over [`cortex::bootstrap`]: self-install
 //! (`init`) and diagnostics (`doctor`).
 
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 
-use cortex::backend::default_db_address;
+use cortex::backend::{
+  self, default_db_address, export_html_dataset, DatasetExportOutcome, GroupBy,
+};
 use cortex::bootstrap::{self, DoctorReport};
 use cortex::config::config_file_path;
+use cortex::helpers::TaskStatus;
+use cortex::models::{Corpus, Service};
 
 #[derive(Parser)]
 #[command(name = "cortex", version, about = "CorTeX administration CLI")]
@@ -44,6 +50,27 @@ enum Command {
     #[arg(long, default_value = "admin")]
     owner: String,
   },
+  /// Bundle a corpus/service's converted HTML into ZIP datasets (replaces the
+  /// bundle-html-dataset*.sh scripts). Reads existing result archives off the filesystem.
+  ExportDataset {
+    /// Corpus name to export.
+    corpus: String,
+    /// Service name whose HTML output is bundled (e.g. tex_to_html).
+    service: String,
+    /// Output directory for the archives + manifest (created if missing).
+    #[arg(long)]
+    out: PathBuf,
+    /// Bucket archives by `month` (one zip per year-month) or `severity` (one zip per severity).
+    #[arg(long, default_value = "month")]
+    group_by: String,
+    /// Comma-separated severities to include.
+    #[arg(
+      long,
+      value_delimiter = ',',
+      default_value = "no_problem,warning,error"
+    )]
+    severity: Vec<String>,
+  },
 }
 
 fn main() {
@@ -56,7 +83,96 @@ fn main() {
       generate,
       owner,
     } => run_set_admin_token(token, generate, owner),
+    Command::ExportDataset {
+      corpus,
+      service,
+      out,
+      group_by,
+      severity,
+    } => run_export_dataset(corpus, service, out, group_by, severity),
   }
+}
+
+fn run_export_dataset(
+  corpus_name: String,
+  service_name: String,
+  out: PathBuf,
+  group_by: String,
+  severity: Vec<String>,
+) {
+  let group_by = match GroupBy::from_key(&group_by) {
+    Some(group_by) => group_by,
+    None => {
+      eprintln!("error: --group-by must be 'month' or 'severity' (got {group_by:?})");
+      std::process::exit(2);
+    },
+  };
+  let severities: Vec<TaskStatus> = match severity
+    .iter()
+    .map(|key| TaskStatus::from_key(key).ok_or_else(|| key.clone()))
+    .collect()
+  {
+    Ok(severities) => severities,
+    Err(bad) => {
+      eprintln!("error: unknown severity {bad:?} (use no_problem, warning, error, fatal, invalid)");
+      std::process::exit(2);
+    },
+  };
+
+  let mut backend = backend::from_address(default_db_address());
+  let corpus = match Corpus::find_by_name(&corpus_name.to_lowercase(), &mut backend.connection) {
+    Ok(corpus) => corpus,
+    Err(error) => {
+      eprintln!("error: corpus {corpus_name:?} not found: {error}");
+      std::process::exit(1);
+    },
+  };
+  let service = match Service::find_by_name(&service_name.to_lowercase(), &mut backend.connection) {
+    Ok(service) => service,
+    Err(error) => {
+      eprintln!("error: service {service_name:?} not found: {error}");
+      std::process::exit(1);
+    },
+  };
+
+  println!(
+    "Exporting {} / {} → {} (by {})",
+    corpus.name,
+    service.name,
+    out.display(),
+    group_by_label(group_by),
+  );
+  match export_html_dataset(
+    &mut backend.connection,
+    &corpus,
+    &service,
+    &severities,
+    group_by,
+    &out,
+    |line| println!("{line}"),
+  ) {
+    Ok(outcome) => print_export_summary(&outcome),
+    Err(error) => {
+      eprintln!("cortex export-dataset failed: {error}");
+      std::process::exit(1);
+    },
+  }
+}
+
+fn group_by_label(group_by: GroupBy) -> &'static str {
+  match group_by {
+    GroupBy::Month => "month",
+    GroupBy::Severity => "severity",
+  }
+}
+
+fn print_export_summary(outcome: &DatasetExportOutcome) {
+  println!(
+    "\nDone: {} archive(s), {} document(s) bundled, {} skipped.",
+    outcome.archives.len(),
+    outcome.total_entries,
+    outcome.skipped,
+  );
 }
 
 fn run_set_admin_token(token: Option<String>, generate: bool, owner: String) {

@@ -180,6 +180,20 @@ Run as background jobs (debounced; safe online):
 - **Reindex / analyze** — `REINDEX (CONCURRENTLY)` + `ANALYZE` on the high-churn tables (no exclusive
   lock). See [`docs/DB_TUNING.md`](docs/DB_TUNING.md).
 
+**Export an HTML dataset** — bundle a corpus/service's converted HTML into ZIP archives (the
+replacement for the old `bundle-html-dataset*.sh` scripts):
+
+```bash
+# one archive per year-month (default); or --group-by severity for one archive per severity
+cargo run --bin cortex -- export-dataset arxmliv tex_to_html --out /data/datasets/arxmliv-2024 \
+  --group-by month --severity no_problem,warning,error
+```
+
+Reads existing result archives off `/data` (no conversion); resumable (an existing archive is
+skipped); writes a `<corpus>-manifest.json` provenance sidecar (corpus/service/severities/grouping/
+counts/version). Severity keys are the canonical `no_problem` / `warning` / `error` / `fatal` /
+`invalid`.
+
 Back up the **Postgres** database (metadata) and the **`/data`** filesystem (document bytes)
 separately; delete a corpus only through the app (orphan-free cascade), never a raw `DELETE`.
 

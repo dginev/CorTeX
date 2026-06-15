@@ -133,7 +133,7 @@ manager. This is a key hardening surface.
 | Re-index info logs | `examples/record_loading_info.rs` | example bin |
 | Disaster-recover statuses from on-disk logs | `examples/recover_log_reports.rs` → `mark_done` | example bin |
 | Build a sandbox archive from an ID list | `examples/sandbox_arxiv.rs` | example bin |
-| Export an HTML dataset (per month / per severity) | `scripts/bundle-html-dataset*.sh` (raw `psql`, magic status ints, `/data` paths) | shell |
+| Export an HTML dataset (per month / per severity) | ~~`scripts/bundle-html-dataset*.sh`~~ → `cortex export-dataset` (`backend::export_html_dataset`) | **CLI (landed)** |
 | Tune Postgres for scale | hand-run `ALTER TABLE … autovacuum …` from `INSTALL.md` | manual SQL |
 | Configure everything | hand-edit `config.default.json`, `.env`, `Rocket.toml` | manual |
 
@@ -485,6 +485,17 @@ screen. Status fields are point-in-time as of this draft.
   `bundle-html-dataset-by-severity.sh` per-severity) using raw `psql`, magic status ints, `/data`
   paths, and `tex_to_html.zip` assumptions; `sandbox_arxiv.rs` for source subsets;
   `libarchive-sys` (C dep) for archive I/O.
+- **Landed (CLI step, D1 — 2026-06-15):** both scripts are **retired**, collapsed into the
+  parameterized `cortex export-dataset <corpus> <service> --out <dir> --group-by month|severity
+  [--severity no_problem,warning,error]` subcommand (`backend::export_html_dataset`,
+  `src/backend/export.rs`). Pure-Rust `zip` only — **no `psql`/`unzip`/`zip`/`egrep`** shell-outs and
+  no `libarchive` C dep; reads existing result archives off the filesystem (sandbox-aware via
+  `helpers::result_archive_path`). The `no_problem`/`no-problem` naming is reconciled to the canonical
+  `TaskStatus::to_key` spelling. Resumable (an existing archive is skipped). Provenance ships as a
+  sidecar `<corpus>-manifest.json` (corpus/service/severities/group-by/per-archive counts/
+  `generated_at`/`cortex_version`). **Still outstanding for the full arm:** the web **Datasets**
+  screen + `POST /api/corpora/{c}/services/{s}/exports` background-job API + an `exports` DB table +
+  exact toolchain/worker-image-digest provenance (the manifest is the lightweight stand-in for now).
 - **Screen:** **Datasets** — define an export (corpus, service, severity filter, partition
   by month|severity), run it (background job with progress), browse/download produced archives,
   see each export's provenance (toolchain/service version/worker-image digest, row counts, date).
@@ -503,6 +514,9 @@ screen. Status fields are point-in-time as of this draft.
   pure-Rust archive migration must preserve downstream consumers' expectations.
 - **Acceptance:** a dataset can be defined, exported (either partitioning), versioned, and downloaded
   from UI + API, each carrying exact toolchain/worker provenance; the shell scripts are retired.
+  *(Partial: shell scripts retired + export runnable via the CLI with both partitionings and a
+  provenance manifest; the UI/API + versioned `exports` table + exact toolchain/worker provenance
+  remain.)*
 
 ### Arm 11 — Caching & scale hardening
 - **Goal:** Make the report cache a help, not a hidden hard dependency; share one cached source
