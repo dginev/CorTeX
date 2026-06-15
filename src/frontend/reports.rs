@@ -311,6 +311,32 @@ pub fn refresh_reports_human(
   Ok(rocket::response::Redirect::to("/jobs"))
 }
 
+/// Acknowledgement for the report-footer "Force refresh": the spawned rebuild job's uuid, for the
+/// page to poll `GET /api/jobs/<job>` and reload itself once the rollup is fresh.
+#[derive(Serialize)]
+pub struct ForceRefreshAck {
+  /// The spawned (or debounced-reused) refresh job's external uuid.
+  pub job: String,
+}
+
+/// Report-footer **"Force refresh"**: rebuild the `report_summary` rollup *now* and return the job
+/// uuid as JSON so the page can poll it and reload with fresh numbers (the matview's normal cadence
+/// is finalize-drain + at-least-daily). **Gated by the signed-in [`AdminSession`] cookie** — the
+/// footer only shows the button to admins, and a missing session is a clean `401` for the XHR
+/// rather than an HTML redirect. Debounced: a refresh already in flight is reused, not piled on.
+#[post("/reports/refresh/now")]
+pub fn force_refresh_reports(
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+) -> Result<Json<ForceRefreshAck>, Status> {
+  let session = session.ok_or(Status::Unauthorized)?;
+  let job = jobs::spawn_report_refresh(pool.inner().clone(), &session.owner)
+    .map_err(|_| Status::InternalServerError)?;
+  Ok(Json(ForceRefreshAck {
+    job: job.to_string(),
+  }))
+}
+
 // --- The human report screens (HTML twins of the typed report API above) -----------------------
 //
 // These render the corpus/service report hierarchy (top → severity → category → `what` → task
@@ -493,6 +519,7 @@ pub fn routes() -> Vec<Route> {
   // `refresh_reports`) are mounted via `frontend::apidoc` (rocket_okapi).
   routes![
     refresh_reports_human,
+    force_refresh_reports,
     top_service_report,
     severity_service_report,
     severity_service_report_all,

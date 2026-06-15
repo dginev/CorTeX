@@ -126,6 +126,8 @@
                         title="Re-queue the reported tasks for conversion"><i class="fa fa-refresh"></i>&nbsp;Rerun</a>
                     <a class="footer-action" href="#modal-savetasks" data-toggle="modal" data-target="#modal-savetasks"
                         title="Save the current task statuses as a historical snapshot"><i class="fa fa-save"></i>&nbsp;Save&nbsp;snapshot</a>
+                    <a class="footer-action" href="#" id="footer-force-refresh"
+                        title="Rebuild the report data (materialized rollup) now, then reload this page"><i class="fa fa-database"></i>&nbsp;Force&nbsp;refresh</a>
                     {% else %}
                     <a class="footer-action" href="/admin/login"
                         title="Sign in to rerun tasks or save a snapshot"><i class="fa fa-lock"></i>&nbsp;Admin&nbsp;login</a>
@@ -187,6 +189,44 @@
         }
         update();
         setInterval(update, 30000);
+      })();
+    </script>
+    <script>
+      // Footer "Force refresh": rebuild the report rollup now, then reload with fresh numbers. The
+      // rebuild is a background job (multi-minute at scale), so POST it, poll the open job endpoint
+      // until it finishes, and only then reload — no JS framework (cf. the job-progress page, D11).
+      (function () {
+        var btn = document.getElementById('footer-force-refresh');
+        if (!btn) return;
+        var original = btn.innerHTML;
+        function fail(msg) {
+          btn.innerHTML = '<i class="fa fa-exclamation-triangle"></i>&nbsp;' + msg;
+          setTimeout(function () { btn.innerHTML = original; btn.style.pointerEvents = ''; }, 3000);
+        }
+        btn.addEventListener('click', function (e) {
+          e.preventDefault();
+          btn.style.pointerEvents = 'none';
+          btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i>&nbsp;Refreshing…';
+          fetch('/reports/refresh/now', { method: 'POST' })
+            .then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); })
+            .then(function (data) {
+              var job = data.job, tries = 0;
+              var timer = setInterval(function () {
+                tries++;
+                fetch('/api/jobs/' + job)
+                  .then(function (r) { return r.json(); })
+                  .then(function (j) {
+                    if (j.status === 'succeeded' || j.status === 'failed'
+                      || j.status === 'interrupted' || tries > 120) {
+                      clearInterval(timer);
+                      location.reload();
+                    }
+                  })
+                  .catch(function () { /* transient; keep polling */ });
+              }, 1500);
+            })
+            .catch(function () { fail('Refresh failed'); });
+        });
       })();
     </script>
     <script src='/public/js/theme.js'></script>
