@@ -37,10 +37,10 @@ use crate::frontend::jobs::{
   api_job, api_jobs, okapi_add_operation_for_api_job_, okapi_add_operation_for_api_jobs_,
 };
 use crate::frontend::management::{
-  analyze, api_config, api_index, healthz, okapi_add_operation_for_analyze_,
-  okapi_add_operation_for_api_config_, okapi_add_operation_for_api_index_,
-  okapi_add_operation_for_healthz_, okapi_add_operation_for_put_config_,
-  okapi_add_operation_for_reindex_, put_config, reindex,
+  analyze, api_config, api_health, api_index, healthz, okapi_add_operation_for_analyze_,
+  okapi_add_operation_for_api_config_, okapi_add_operation_for_api_health_,
+  okapi_add_operation_for_api_index_, okapi_add_operation_for_healthz_,
+  okapi_add_operation_for_put_config_, okapi_add_operation_for_reindex_, put_config, reindex,
 };
 use crate::frontend::reports::{
   api_category_report, api_what_report, okapi_add_operation_for_api_category_report_,
@@ -101,6 +101,7 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
     api_index,
     api_config,
     healthz,
+    api_health,
     register_service,
     delete_service,
     import_corpus,

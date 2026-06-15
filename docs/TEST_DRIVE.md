@@ -61,7 +61,8 @@ curl -s 'http://127.0.0.1:8044/api/reports/<corpus>/<service>/<severity>?offset=
 curl -s http://127.0.0.1:8044/api/runs/<corpus>/<service> | jq .       # historical runs
 curl -s 'http://127.0.0.1:8044/api/runs/<corpus>/<service>/diff?previous=<ISO>&current=<ISO>' | jq .
 curl -s http://127.0.0.1:8044/api/jobs | jq .                          # background jobs (+ health, heartbeat age)
-curl -s http://127.0.0.1:8044/healthz | jq .                           # DB / migrations / pool / dispatcher / storage
+curl -s http://127.0.0.1:8044/healthz | jq .                           # PUBLIC liveness: {status, database.reachable}
+curl -s -H 'X-Cortex-Token: <token>' http://127.0.0.1:8044/api/health | jq .  # token-gated detail: migrations/pool/dispatcher/storage
 curl -s http://127.0.0.1:8044/api/config | jq .                        # masked effective config
 ```
 

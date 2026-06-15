@@ -171,6 +171,19 @@ pub struct HealthDto {
   pub remediations: Vec<String>,
 }
 
+/// Minimal, **public** liveness projection — the open `GET /healthz`. Just whether the service is
+/// up and its database reachable; deliberately omits the internal topology (corpus paths, pool
+/// sizing, dispatcher ports, remediations) that [`HealthDto`] exposes. The detailed report is
+/// admin-only: the `/health` screen and its token-gated agent twin `GET /api/health` (KNOWN_ISSUES
+/// X-1).
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct LivenessDto {
+  /// `"ok"` when the database is reachable, else `"degraded"`.
+  pub status: &'static str,
+  /// Database dependency health.
+  pub database: DbHealth,
+}
+
 impl HealthDto {
   /// Builds the actionable remediation hints from the report's signals (reads every field *except*
   /// `remediations` itself, so it can populate that field). Fix-this-first ordered: a down database
@@ -350,7 +363,7 @@ fn port_listening(port: usize) -> bool {
 
 /// Builds the health report: probes the database through the pool (so reachability reflects the
 /// same path requests use), samples pool utilization, and probes the co-located dispatcher's ports.
-/// Shared by the agent (`/healthz`) and human (`/health`) routes so both report identical state.
+/// Shared by the agent (`/api/health`) and human (`/health`) routes so both report identical state.
 fn health_report(pool: &DbPool) -> HealthDto {
   let (reachable, migrations_current, corpora_paths) = match pool.get() {
     Ok(mut connection) => {
@@ -418,16 +431,45 @@ fn health_report(pool: &DbPool) -> HealthDto {
   report
 }
 
-/// A structured, pollable health report for agents (probes through the pool, samples pool
-/// utilization). The JSON twin of the human [`health_page`] screen.
+/// A cheap liveness probe: a single pooled `SELECT 1`, nothing else (no corpus stat / port probes),
+/// so the **public** endpoint stays O(1) and leaks no internal structure.
+fn liveness_report(pool: &DbPool) -> LivenessDto {
+  let reachable = pool
+    .get()
+    .map(|mut connection| {
+      diesel::sql_query("SELECT 1")
+        .execute(&mut *connection)
+        .is_ok()
+    })
+    .unwrap_or(false);
+  LivenessDto {
+    status: if reachable { "ok" } else { "degraded" },
+    database: DbHealth { reachable },
+  }
+}
+
+/// Public liveness probe — minimal by design (KNOWN_ISSUES X-1): `{status, database.reachable}`
+/// only, safe to expose unauthenticated at the edge for load balancers and agents. The *detailed*
+/// report (pool, dispatcher ports, corpus storage, remediations) is admin-only: the `/health`
+/// screen and its token-gated agent twin [`api_health`] (`GET /api/health`).
 #[rocket_okapi::openapi(tag = "Management")]
 #[get("/healthz")]
-pub fn healthz(pool: &State<DbPool>) -> Json<HealthDto> { Json(health_report(pool)) }
+pub fn healthz(pool: &State<DbPool>) -> Json<LivenessDto> { Json(liveness_report(pool)) }
 
-/// The human health screen: the HTML twin of `GET /healthz`, sharing [`HealthDto`] — database
+/// Detailed health report for agents — the **token-gated** JSON twin of the admin [`health_page`]
+/// screen (sharing [`HealthDto`]). Gated by the [`Actor`] guard (clean `401` without a token) so
+/// the internal topology it exposes (corpus paths, pool sizing, dispatcher ports) isn't
+/// world-readable like the open `/healthz` once was (KNOWN_ISSUES X-1).
+#[rocket_okapi::openapi(tag = "Management")]
+#[get("/api/health")]
+pub fn api_health(_caller: Actor, pool: &State<DbPool>) -> Json<HealthDto> {
+  Json(health_report(pool))
+}
+
+/// The human health screen: the HTML twin of `GET /api/health`, sharing [`HealthDto`] — database
 /// reachability, migration currency, and live connection-pool utilization at a glance. **Signed-in
-/// admins only** (unauthenticated → sign-in page); the `/healthz` JSON twin stays open for liveness
-/// probes.
+/// admins only** (unauthenticated → sign-in page); the public `/healthz` JSON probe stays open for
+/// liveness, but the detailed view is admin/token-gated.
 #[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
 #[get("/health")]
 pub fn health_page(

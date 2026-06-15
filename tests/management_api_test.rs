@@ -79,10 +79,40 @@ fn get_api_config_returns_masked_contract() {
 
 fn healthz_reports_ok_when_db_reachable() {
   let client = client();
+  // The PUBLIC liveness probe (KNOWN_ISSUES X-1): minimal `{status, database.reachable}` only, no
+  // token. It must NOT leak the internal topology that the detailed report carries.
   let response = client.get("/healthz").dispatch();
   assert_eq!(response.status(), Status::Ok);
-
   let body: serde_json::Value = response.into_json().expect("a JSON body");
+  assert_eq!(body["status"], "ok");
+  assert_eq!(body["database"]["reachable"], true);
+  for leaked in [
+    "pool",
+    "dispatcher",
+    "storage",
+    "migrations",
+    "remediations",
+  ] {
+    assert!(
+      body.get(leaked).is_none(),
+      "the public liveness probe must not expose `{leaked}` (X-1)"
+    );
+  }
+
+  // The detailed report is the TOKEN-GATED agent twin `/api/health` — no token is a clean 401.
+  assert_eq!(
+    client.get("/api/health").dispatch().status(),
+    Status::Unauthorized,
+    "the detailed health report requires a token (X-1)"
+  );
+
+  // With a token it serves the full report (the agent twin of the admin `/health` screen).
+  let body: serde_json::Value = client
+    .get("/api/health")
+    .header(rocket::http::Header::new("X-Cortex-Token", "token1"))
+    .dispatch()
+    .into_json()
+    .expect("a JSON body");
   assert_eq!(body["status"], "ok");
   assert_eq!(body["database"]["reachable"], true);
   assert_eq!(body["migrations"]["current"], true);
@@ -135,8 +165,8 @@ fn healthz_reports_ok_when_db_reachable() {
     "an unreachable dispatcher yields an actionable remediation in the JSON twin"
   );
 
-  // The human twin renders the same report as an HTML screen (shared HealthDto). Unlike the open
-  // `/healthz` liveness probe above, the `/health` screen is admin-only: unauthenticated → sign-in.
+  // The human twin renders the same report as an HTML screen (shared HealthDto). Like the gated
+  // `/api/health` above, the `/health` screen is admin-only: unauthenticated → sign-in.
   let unauth = client.get("/health").dispatch();
   assert!(
     unauth
@@ -227,8 +257,10 @@ fn healthz_flags_unreadable_corpus_storage() {
   .expect("seed a corpus with a missing source path");
 
   let client = client();
+  // Storage detail lives on the token-gated `/api/health` (X-1), not the public liveness probe.
   let body: serde_json::Value = client
-    .get("/healthz")
+    .get("/api/health")
+    .header(rocket::http::Header::new("X-Cortex-Token", "token1"))
     .dispatch()
     .into_json()
     .expect("a JSON body");
@@ -287,6 +319,7 @@ fn openapi_spec_and_rapidoc_are_served() {
     "/api/reports/{corpus}/{service}/{severity}",
     "/api/config",
     "/healthz",
+    "/api/health",
   ] {
     assert!(
       spec["paths"][path]["get"].is_object(),
