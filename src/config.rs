@@ -87,6 +87,18 @@ pub struct DispatcherConfig {
   /// from a runaway worker. We accept genuinely large jobs but draw the line here. Default 2
   /// GiB.
   pub max_result_bytes: usize,
+  /// **Sink archive-writer pool size.** Number of background threads the sink fans the blocking
+  /// `/data` result-archive writes out to (dispatcher rationalization phase 3, closes D-7). The
+  /// sink's single ZMQ-PULL receive loop reads each result's frames and hands them — task, then
+  /// streamed chunks, then a commit — to one of these writers, so *receiving* the next result is
+  /// no longer hostage to the current one's slow QLC-RAID6 write + `cortex.log` parse. Per-task
+  /// ordering is preserved (a task's frames go contiguously to one writer); fan-out is across
+  /// *different* tasks. Memory stays O(chunk) per writer (chunks are streamed and dropped, never
+  /// the whole archive resident) bounded by a small per-writer channel. Default **4** — a modest
+  /// decoupling that suits a box co-resident with ~200 workers; raise toward host cores if the
+  /// disk can absorb more concurrent writes. (1 is the floor; a single writer ≈ the legacy
+  /// inline behavior but still off the receive loop.)
+  pub sink_writers: usize,
   /// **Finalize batch coalescing — size threshold (N).** The finalize thread accumulates returned
   /// task reports and persists them to Postgres in **one** transaction per batch
   /// ([`crate::backend::Backend::mark_done`]), flushing when the batch reaches this many reports —
@@ -140,6 +152,7 @@ impl Default for DispatcherConfig {
       max_in_flight: 5000,
       report_refresh_interval_seconds: 3600,
       max_result_bytes: 2 * 1024 * 1024 * 1024, // 2 GiB
+      sink_writers: 4,
       finalize_batch_size: 1024,
       finalize_flush_ms: 300,
       lease_timeout_seconds: 3600,

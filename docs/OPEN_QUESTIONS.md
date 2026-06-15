@@ -98,19 +98,21 @@ wasn't blocked; each can be revised/refactored on return. Newest first.
     confirm **2 GiB** is the cap you want (it's a runtime knob, so deployments can override) and that
     `Invalid` (vs `Fatal`) is the right terminal status. (`src/dispatcher/sink.rs`, KNOWN_ISSUES W-1.)
 
-12. **Dispatcher phase 3 (sink fan-out, closes D-7): which architecture?** D-7 — the single sink thread
-    doing the blocking `/data` write serialises receive behind disk latency — is the biggest remaining
-    throughput ceiling. The rationalization plan's phase 3 says "async file I/O", implying the **tokio
-    async core** (the plan itself flags that core as *the single biggest risk* of the whole migration:
-    supervised-shutdown of async tasks is easy to get wrong). There is a **lower-risk intermediate**: a
-    **std-thread writer pool** fed by per-task bounded channels — the receive loop hands each task's
-    chunks to a writer and moves on, decoupling receive from disk **without** committing to tokio yet
-    (and without new deps). It closes D-7's essence and is reversible; the full tokio/`zeromq` core can
-    follow at phase 5 (transport swap) where `tokio::fs` is natural. *Direction:* (a) std thread-pool
-    intermediate now, tokio core later **[recommended — smaller, reversible, no new runtime]**; or
-    (b) go straight to the tokio async core. I held off implementing because it's a large hot-path
-    rewrite with a real fork — the bench (8-worker correctness) + torture (envelope/cap) gate it either
-    way. (`src/dispatcher/sink.rs`, `docs/DISPATCHER_RATIONALIZATION.md` phase 3.)
+12. **Dispatcher phase 3 (sink fan-out, closes D-7): RESOLVED (2026-06-14) — std-thread writer pool
+    (option a).** Owner chose the lower-risk intermediate. **Landed:** the sink is now a receive loop +
+    a pool of `dispatcher.sink_writers` (default 4) std-thread archive-writers, each fed a bounded
+    per-writer command channel; the receive loop owns the socket and streams each result
+    (`Begin → Chunk* → Commit|Reject`) to one writer round-robin, so receiving is no longer hostage to
+    the `/data` write + `cortex.log` parse. Per-task ordering preserved (contiguous FIFO per task),
+    fan-out across tasks, memory O(chunk) (streamed, never the whole archive). Every receive-side
+    invariant (RCVMORE envelope hardening, size cap + frame-drain, rate-limited discard, metadata
+    enqueue) unchanged; fail-fast preserved (writer death → receive-loop detection → manager abort).
+    **Gated green:** `dispatcher_torture_test` (byte-exact integrity + cap), `echo_roundtrip`,
+    `dispatcher_bench` (8-worker, 20000 tasks, no loss, throughput-neutral vs the inline baseline on
+    loopback — the win is on the slow production disk loopback can't exercise). The tokio async core +
+    `tokio::fs` *async* file I/O the plan's default envisioned is deferred to phase 5 (transport swap),
+    where it's natural; the std-thread pool already closes D-7's blocking-serialization essence.
+    (`src/dispatcher/sink.rs`, `src/config.rs`, KNOWN_ISSUES D-7 🟢.)
 
 13. **Dispatcher phase 4 (lock-free maps): `dashmap` dependency OK?** Phase 4 swaps the in-flight set +
     service-cache `Arc<Mutex<HashMap>>` for `DashMap` + an `AtomicUsize` size counter (your "aspire for a

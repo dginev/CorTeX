@@ -19,8 +19,16 @@ design and fearless concurrency."*
   channel **blocks** the producers (backpressure) instead of OOM-then-panic; nothing is dropped. The
   fail-fast on a DB runaway is preserved (`mark_done_batch` → `Err` → finalize panics → manager
   aborts), as is the `job_limit` semantics (counts drains). **Green:** `echo_roundtrip` passes;
-  `bench_pipeline` runs clean at ~8 k tasks/s (1 worker, unsaturated, no hang/panic). Phases 2–4 (DB
-  batch tuning, sink fan-out + async I/O, lock-free maps) and the transport swap remain.
+  `bench_pipeline` runs clean at ~8 k tasks/s (1 worker, unsaturated, no hang/panic).
+- **Phase 2 LANDED** (2026-06-14): DB finalize **batching** (`finalize_batch_size` N /
+  `finalize_flush_ms` T — one `mark_done` transaction per coalesced batch).
+- **Phase 3 LANDED** (2026-06-14, owner: std-thread writer pool — OPEN_QUESTIONS #12 option a):
+  **sink writer fan-out**, closing **D-7**. The blocking `/data` write + `cortex.log` parse moved off
+  the receive loop to a pool of `dispatcher.sink_writers` (default 4) std-thread writers. Gated green on
+  `dispatcher_torture_test` (byte-exact integrity + cap), `echo_roundtrip`, and the 8-worker bench (no
+  loss, throughput-neutral on loopback). See phase 3 in the migration plan below.
+- **Remaining:** phase 4 (lock-free in-flight/service maps — gated on OPEN_QUESTIONS #13 `dashmap`) and
+  phase 5 (tokio + pure-Rust `zeromq` transport, carrying the deferred `tokio::fs` async file I/O).
 - **Residual gate before flipping production traffic:** a **real multi-host network soak** — the one
   property a loopback harness cannot prove. Not a blocker for starting the build.
 
@@ -51,8 +59,10 @@ Three long-lived threads spawned by `dispatcher::manager`, sharing state through
 
 ## Where it is "not asynchronous / not fanned out / not lock-free"
 
-1. **The sink serializes receive + slow *blocking* disk write + DB-queueing on one thread** (D-7). The
-   `/data` write is synchronous; ZMQ PULL backs up behind disk latency. *The single biggest ceiling.*
+1. **The sink serializes receive + slow *blocking* disk write + DB-queueing on one thread** (D-7).
+   ✅ **FIXED — phase 3 (2026-06-14):** a std-thread writer pool now does the `/data` write + parse off
+   the receive loop, so ZMQ PULL no longer backs up behind disk latency. *(Was: the single biggest
+   ceiling.)*
 2. **`Mutex<Vec>` done queue** between sink and finalize: a lock per result + per drain, plus the
    `DONE_QUEUE_HARD_LIMIT` panic backstop standing in for real backpressure. A **bounded channel** *is*
    this hand-off, without the lock or the panic.
@@ -259,11 +269,28 @@ de-risk.
    Keeps `Queued`-until-flush + `on_conflict` (crash-safe + idempotent), `job_limit` (counts batches),
    and the refresh-on-drain/-at-least-daily cadence. Pure size-vs-time logic unit-tested. Green on
    `dispatcher_bench` (20000 tasks, no loss, all `NoProblem`). `finalize.rs`/`config.rs`.
-3. **Sink writer fan-out + async file I/O (closes D-7).** Receive loop + pool of async `/data` writers;
-   ventilator source reads go async too. Receiving no longer hostage to disk latency. **⏸ Architecture
-   fork open — OPEN_QUESTIONS #12:** tokio async core (plan default, flagged highest-risk) vs. a
-   lower-risk **std-thread writer pool** intermediate (closes D-7 without committing to tokio). Held for
-   an owner direction before the hot-path rewrite.
+3. **Sink writer fan-out (closes D-7). ✅ DONE (2026-06-14, owner chose the std-thread pool —
+   OPEN_QUESTIONS #12 option a).** The sink is now a receive loop + a pool of `dispatcher.sink_writers`
+   (default **4**) std-thread archive-writers, each fed a bounded per-writer command channel. The
+   receive loop owns the ZMQ-PULL socket and streams each result to one writer round-robin
+   (`Begin{task,path} → Chunk* → Commit|Reject`); the writer does the blocking `/data` write +
+   `generate_report` + finalize hand-off — so receiving is no longer hostage to disk latency. Per-task
+   ordering holds (a task's frames go contiguously to one writer's FIFO); fan-out is across *different*
+   tasks; memory stays O(chunk) (chunks streamed + dropped, never the whole archive resident, bounded by
+   the per-writer channel). Every receive-side invariant is preserved — the `[identity, service, taskid,
+   …data]` RCVMORE envelope hardening (D-4/D-12), the `max_result_bytes` cap + frame-drain (W-1③), the
+   rate-limited discard logging (D-11), the metadata enqueue. Fail-fast preserved: a writer death is
+   caught by the receive loop (per-iteration `is_finished` sweep + send error) → `Err` → manager abort →
+   supervised restart; a crash mid-write leaves the task `Queued` for the reaper (no loss). Also fixed
+   two latent socket-desync bugs of the old inline path (an early `continue` on `File::create` failure /
+   a path-derivation failure used to skip draining the data frames). **Green:** `dispatcher_torture_test`
+   (byte-exact integrity + cap accept/reject under the concurrent malformed sink+vent floods),
+   `echo_roundtrip`, `dispatcher_bench` (8-worker / 20000 tasks: no loss, all terminal, throughput-
+   neutral vs the inline baseline on loopback — 8940 vs 8932 tasks/s; the disk-decoupling win is on the
+   *slow* `/data`, which loopback's page-cache writes can't show). `sink.rs`/`config.rs`. **Deferred to
+   phase 5:** the `tokio::fs` *async* file I/O the plan's default envisioned + the ventilator's async
+   source reads — natural alongside the tokio core; the std-thread pool already closes D-7's
+   blocking-serialization essence without committing to tokio.
 4. **In-flight set → DashMap + AtomicUsize; service cache → DashMap/arc-swap.** Backpressure reads the
    atomic; the reaper iterates the DashMap; dispatch lookups contention-free. **⏸ Gated — OPEN_QUESTIONS
    #13:** needs the `dashmap` dep sign-off, and is best sequenced **after** phase 3 (the in-flight mutex
@@ -289,7 +316,7 @@ is the bottleneck *before* it backs up (and feed the `/metrics` endpoint already
 | Quality | How the (decided) design achieves it | Status |
 | --- | --- | --- |
 | Fearless concurrency | ownership transfer via channels; lock-free DashMap/atomics only where shared | ✅ planned |
-| Async, non-blocking I/O | tokio core, `tokio::fs` for `/data`, async ZMQ | ✅ planned (phase 3,5) |
+| Async, non-blocking I/O | sink fan-out via std-thread writer pool (✅ phase 3, closes D-7); `tokio::fs` for `/data` + async ZMQ deferred to the tokio core | 🟡 fan-out done; async I/O phase 5 |
 | Backpressure, bounded resources | `max_in_flight` + bounded channels (block, never drop); no unbounded per-event acquisition | ✅ (today + plan) |
 | At-least-once + idempotent ⇒ exactly-once effect | `Queued` durable mark + `on_conflict` finalize + dedup | ✅ today |
 | Crash consistency | startup `Queued`→`TODO` reset; batch flush is the commit point | ✅ today |
