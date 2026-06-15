@@ -17,6 +17,7 @@ mod tasks_aggregate;
 pub(crate) use mark::{mark_rerun, save_historical_tasks};
 pub(crate) use reports::list_task_diffs;
 pub(crate) use reports::progress_report;
+pub(crate) use reports::report_uses_rollup;
 pub(crate) use reports::summary_task_diffs;
 pub(crate) use reports::task_report;
 pub use reports::TaskReportOptions;

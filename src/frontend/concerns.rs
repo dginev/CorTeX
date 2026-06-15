@@ -90,6 +90,16 @@ pub fn serve_report(
         // presence. So...
         global.insert("all_messages_true".to_string(), all_messages.to_string());
       }
+      // Whether THIS report's data is matview-backed (the report_summary rollup) or live-computed —
+      // the same oracle that gates the serving path. Captured here, before severity/category/what
+      // are moved into `task_report` below, so the freshness footer stamps the matview time
+      // *iff* the matview was actually used (else the data is current — "just now").
+      let used_rollup = crate::backend::report_uses_rollup(
+        severity.as_deref(),
+        category.as_deref(),
+        what.as_deref(),
+        all_messages,
+      );
       match service.inputconverter {
         Some(ref ic_service_name) => {
           global.insert("inputconverter".to_string(), ic_service_name.clone())
@@ -209,15 +219,29 @@ pub fn serve_report(
       context
         .global
         .insert("report_duration".to_string(), report_duration.to_string());
-      // Report freshness = the **data's** age: when the `report_summary` rollup was last refreshed
-      // (a report is only as current as its matview), NOT the per-request render time (always
-      // "now"). The footer renders a live, colour-coded "data refreshed N ago" from this
-      // epoch; if the stamp is missing we omit it (no freshness dot).
-      if let Some((epoch_ms, human)) = crate::backend::report_summary_refreshed_at(connection) {
-        context.global.insert("report_time".to_string(), human);
-        context
-          .global
-          .insert("report_time_epoch".to_string(), epoch_ms.to_string());
+      // Report freshness = the **data's** age, and it must match where the data actually came from
+      // (KNOWN_ISSUES): a matview-backed report is only as current as its last `report_summary`
+      // refresh, but a live-computed one (all-severities `all=true`, per-task lists, the top-level
+      // overview) is current as of *now*. Stamping a live report with the stale matview time lies
+      // about freshness — so branch on `used_rollup`. The footer renders a colour-coded "data
+      // refreshed N ago" from this epoch (localized to the viewer's zone).
+      if used_rollup {
+        if let Some((epoch_ms, human)) = crate::backend::report_summary_refreshed_at(connection) {
+          context.global.insert("report_time".to_string(), human);
+          context
+            .global
+            .insert("report_time_epoch".to_string(), epoch_ms.to_string());
+        }
+      } else {
+        // Live data: current as of this request — "just now".
+        context.global.insert(
+          "report_time".to_string(),
+          crate::frontend::helpers::report_timestamp(),
+        );
+        context.global.insert(
+          "report_time_epoch".to_string(),
+          chrono::Utc::now().timestamp_millis().to_string(),
+        );
       }
       Ok(Template::render(template, context))
     } else {

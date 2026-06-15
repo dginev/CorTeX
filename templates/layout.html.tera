@@ -131,7 +131,7 @@
                         title="Sign in to rerun tasks or save a snapshot"><i class="fa fa-lock"></i>&nbsp;Admin&nbsp;login</a>
                     {% endif %}
                     {% if not global.severity %}
-                    <span class="footer-autorefresh"><label class="switch"><input type="checkbox" name="refresh" value="false"><span class="slider round"></span></label>Auto-refresh</span>
+                    <span class="footer-autorefresh"><label class="switch"><input type="checkbox" name="refresh" value="false"><span class="slider round"></span></label>Auto reload</span>
                     {% endif %}
                 </div>
             </div>

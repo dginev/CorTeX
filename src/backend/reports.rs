@@ -91,45 +91,85 @@ pub(crate) fn task_report(
   connection: &mut PgConnection,
   options: TaskReportOptions,
 ) -> Vec<HashMap<String, String>> {
-  if !options.all_messages {
-    if let Some(task_status) = options
+  // The gate and the freshness stamp share ONE oracle ([`report_uses_rollup`]) so the footer can
+  // never claim matview-freshness for a live-computed report (and vice-versa).
+  if report_uses_rollup(
+    options.severity_opt.as_deref(),
+    options.category_opt.as_deref(),
+    options.what_opt.as_deref(),
+    options.all_messages,
+  ) {
+    let task_status = options
       .severity_opt
       .as_deref()
-      .and_then(TaskStatus::from_key)
-    {
-      if let Some(severity) = rollup_severity_key(task_status) {
-        match (options.category_opt.as_deref(), options.what_opt.as_deref()) {
-          // Category report: one row per category, plus the severity totals.
-          (None, None) => {
-            return category_grain_from_rollup(
-              connection,
-              options.corpus,
-              options.service,
-              severity,
-              task_status,
-              options.page_size,
-              options.offset,
-            );
-          },
-          // `what` drill-down within a category. `no_messages` is a per-task entry list, not an
-          // aggregate grain — leave it (and the `what`-detail list) to the live path.
-          (Some(category), None) if category != "no_messages" => {
-            return what_grain_from_rollup(
-              connection,
-              options.corpus,
-              options.service,
-              severity,
-              category,
-              options.page_size,
-              options.offset,
-            );
-          },
-          _ => {},
-        }
+      .and_then(TaskStatus::from_key);
+    let severity = task_status.and_then(rollup_severity_key);
+    // The oracle guarantees both are `Some` and that the grain is a category/`what` aggregate; the
+    // `if let` + fall-through keeps this panic-free on the request path regardless.
+    if let (Some(task_status), Some(severity)) = (task_status, severity) {
+      match (options.category_opt.as_deref(), options.what_opt.as_deref()) {
+        // Category report: one row per category, plus the severity totals.
+        (None, None) => {
+          return category_grain_from_rollup(
+            connection,
+            options.corpus,
+            options.service,
+            severity,
+            task_status,
+            options.page_size,
+            options.offset,
+          );
+        },
+        // `what` drill-down within a category.
+        (Some(category), None) => {
+          return what_grain_from_rollup(
+            connection,
+            options.corpus,
+            options.service,
+            severity,
+            category,
+            options.page_size,
+            options.offset,
+          );
+        },
+        _ => {},
       }
     }
   }
   task_report_live(connection, options)
+}
+
+/// Whether a report request is served from the **`report_summary` rollup** (a fast, matview-backed
+/// indexed lookup) rather than the live `log_*` aggregation in [`task_report_live`]. The matview
+/// covers only the category and `what`-drill-down **aggregate grains** of the four rollup
+/// severities; the top-level overview (`progress_report`, a live `tasks` count), the all-severities
+/// `all=true` view, the `no_messages` row, and every per-task entry list are computed live.
+///
+/// This is the single source of truth for both the serving branch ([`task_report`]) **and** the
+/// report-freshness footer: the "data refreshed …" matview timestamp must be shown **iff** this is
+/// `true` — otherwise the data is live ("just now"), and stamping it with the matview's age lies
+/// about freshness (the bug fixed alongside this oracle).
+pub fn report_uses_rollup(
+  severity_opt: Option<&str>,
+  category_opt: Option<&str>,
+  what_opt: Option<&str>,
+  all_messages: bool,
+) -> bool {
+  if all_messages {
+    return false;
+  }
+  let Some(task_status) = severity_opt.and_then(TaskStatus::from_key) else {
+    return false;
+  };
+  if rollup_severity_key(task_status).is_none() {
+    return false;
+  }
+  match (category_opt, what_opt) {
+    (None, None) => true,
+    // `no_messages` is a per-task entry list, not an aggregate grain → live path.
+    (Some(category), None) => category != "no_messages",
+    _ => false,
+  }
 }
 
 /// Maps a task status to its `report_summary` severity key, or `None` for statuses the rollup does
