@@ -14,8 +14,10 @@ use crate::helpers::TaskStatus;
 use crate::models::{Corpus, Service};
 use crate::schema::historical_runs;
 
-#[derive(Identifiable, Queryable, Clone, Debug, PartialEq, Eq, QueryableByName)]
+#[derive(Identifiable, Queryable, Associations, Clone, Debug, PartialEq, Eq, QueryableByName)]
 #[diesel(table_name = historical_runs)]
+#[diesel(belongs_to(Corpus, foreign_key = corpus_id))]
+#[diesel(belongs_to(Service, foreign_key = service_id))]
 /// Historical `(Corpus, Service)` run records
 pub struct HistoricalRun {
   /// id of the historical run

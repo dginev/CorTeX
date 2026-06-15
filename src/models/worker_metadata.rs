@@ -10,6 +10,7 @@ use diesel::*;
 use serde::Serialize;
 
 use crate::backend::DbPool;
+use crate::models::Service;
 use crate::schema::worker_metadata;
 
 #[derive(Insertable, Debug)]
@@ -38,8 +39,9 @@ pub struct NewWorkerMetadata {
   pub name: String,
 }
 
-#[derive(Identifiable, Queryable, Clone, Debug, Serialize)]
+#[derive(Identifiable, Queryable, Associations, Clone, Debug, Serialize)]
 #[diesel(table_name = worker_metadata)]
+#[diesel(belongs_to(Service, foreign_key = service_id))]
 /// Metadata collection for workers, updated by the dispatcher upon zmq transactions
 pub struct WorkerMetadata {
   /// task primary key, auto-incremented by postgresql

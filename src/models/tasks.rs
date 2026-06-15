@@ -8,8 +8,12 @@ use crate::schema::tasks;
 
 // Tasks
 
-#[derive(Identifiable, Queryable, AsChangeset, Clone, Debug, PartialEq, Eq, QueryableByName)]
+#[derive(
+  Identifiable, Queryable, Associations, AsChangeset, Clone, Debug, PartialEq, Eq, QueryableByName,
+)]
 #[diesel(table_name = tasks)]
+#[diesel(belongs_to(Corpus, foreign_key = corpus_id))]
+#[diesel(belongs_to(Service, foreign_key = service_id))]
 /// A `CorTeX` task, for a given corpus-service pair
 pub struct Task {
   /// task primary key, auto-incremented by postgresql
