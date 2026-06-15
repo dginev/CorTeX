@@ -246,6 +246,13 @@ release-build, loopback.
 | `zmq_faults` | catastrophic deaths (DB-dead, disk-full, one-way transport block) | transient faults **recover**; persistent faults **halt every arm** with one reason + **consistent durable state** (no task acked-but-unpersisted) |
 | `dispatcher_memory` | RAM footprint at 300 jobs (whole-archive vs chunked) | whole-archive **8 GB under a 40-giant burst → OOM**; chunked streaming **~1 GB even with 300×200 MB jobs** (flat, independent of size) |
 
+**Re-validated 2026-06-15** (release, loopback, current tree — confirming the transport choice still
+holds before authorizing phase 5): the three decisive spikes reproduce. `zmq_payload_zeromq`
+**1000/1000 byte-clean, 3951 MB/s, async-`tokio::fs` write ok**; `zmq_payload_libzmq` **1000/1000
+clean, 4689 MB/s** (so `zeromq` ≈ **84 %** of libzmq, both ~4 GB/s ≫ the ~100–200 tasks/s prod rate);
+`zmq_interop` (zeromq ROUTER/PULL ↔ 20 libzmq DEALER/PUSH workers) **2000/2000 clean, 2996 tasks/s, no
+interleaving/reorder/misrouting/loss** — confirming the swap is dispatcher-first + reversible.
+
 **Feature coverage — complete for our usage.** Confirmed from `src/`: we use `ROUTER` (ventilator),
 `DEALER` (worker source), `PUSH` (worker sink), `PULL` (dispatcher sink) over TCP, multi-frame. The
 `zeromq` 0.6 source implements all four + TCP/IPC + multipart. What it omits (PAIR, `inproc`, CURVE) we
