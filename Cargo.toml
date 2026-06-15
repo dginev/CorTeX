@@ -51,6 +51,11 @@ dashmap = "6.1"
 # (KNOWN_ISSUES D-11). Verbosity is runtime-controlled via RUST_LOG; see `cortex::observability`.
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Async runtime for the dispatcher rationalization phase 5 (docs/DISPATCHER_RATIONALIZATION.md).
+# Graduated from a phase-0 spike dev-dependency to a real one now that the transport swap is
+# owner-authorized: the fail-fast supervision substrate (`dispatcher::supervisor`) is the first
+# landed piece; the async sink/ventilator (`zeromq`, `tokio::fs`) follow.
+tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "fs", "time", "sync"] }
 dotenvy = "0.15.7"
 figment = { version = "0.10", features = ["toml", "env"] }
 toml = "0.8"
@@ -222,8 +227,8 @@ path = "examples/dispatcher_memory.rs"
 # its findings live in docs/archive/ARCHIVE_RATIONALIZATION.md.)
 
 [dev-dependencies]
-# Phase-0 dispatcher spike only (NOT a production dependency — the dispatcher hot path is untouched,
-# held for owner review). `zeromq` = pure-Rust async ZMQ under empirical evaluation vs. libzmq.
+# Phase-0 dispatcher spike only (NOT yet wired into the running dispatcher). `zeromq` = pure-Rust
+# async ZMQ; it graduates to a real dependency when the async sink (phase 5a) uses it in lib code.
+# `tokio` already graduated to `[dependencies]` (the supervision substrate uses it).
 bytes = "1.11.1"
-tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "fs", "time", "sync"] }
 zeromq = "0.6.0"
