@@ -267,16 +267,20 @@ impl CortexConfig {
     if let Ok(url) = std::env::var("TEST_DATABASE_URL") {
       config.database.test_url = url;
     }
-    // Back-compat: the legacy frontend `config.json` (rerun_tokens), if present in the working
-    // directory, remains authoritative for the auth section so running deployments keep working.
-    // The new home for these values is the `[auth]` section of `cortex.toml` / `CORTEX_AUTH__*`
-    // (written by `cortex set-admin-token`). The prototype's `captcha_secret` is gone — bot
-    // protection is a deployment concern (an Anubis reverse proxy), not framework code
-    // (docs/DEPLOYMENT.md).
-    if let Ok(text) = std::fs::read_to_string("config.json") {
+    // Back-compat: the legacy frontend `config.json` (rerun_tokens) remains authoritative for the
+    // auth section so running deployments keep working. The path defaults to `config.json` in the
+    // working directory but is **overridable via `CORTEX_AUTH_FILE`** ([`auth_file_path`]) — so a
+    // deployment keeps its live admin token in a file *outside the repo* (e.g.
+    // `/etc/cortex/config.json`, root-owned), while the repo's `config.json` stays the demo/test
+    // fixture and the real token is never checked into git. The new home for these values is the
+    // `[auth]` section of `cortex.toml` / `CORTEX_AUTH__*` (written by `cortex set-admin-token`);
+    // the prototype's `captcha_secret` is gone — bot protection is a deployment concern (an
+    // Anubis reverse proxy), not framework code (docs/DEPLOYMENT.md).
+    let auth_file = auth_file_path();
+    if let Ok(text) = std::fs::read_to_string(&auth_file) {
       match serde_json::from_str::<LegacyFrontendConfig>(&text) {
         Ok(legacy) => config.auth.rerun_tokens = legacy.rerun_tokens,
-        Err(e) => eprintln!("-- ignoring malformed config.json: {e}"),
+        Err(e) => eprintln!("-- ignoring malformed {}: {e}", auth_file.display()),
       }
     }
     config
@@ -315,6 +319,18 @@ pub fn config_file_path() -> std::path::PathBuf {
   std::env::var("CORTEX_CONFIG_FILE")
     .map(std::path::PathBuf::from)
     .unwrap_or_else(|_| std::path::PathBuf::from("cortex.toml"))
+}
+
+/// The path of the **token file** — the JSON holding `rerun_tokens` (admin/agent credentials). It
+/// is **gitignored** and scaffolded by `cortex init`; the tracked `config.default.json` is only a
+/// template. Defaults to `config.json` in the working directory, **overridable via
+/// `CORTEX_AUTH_FILE`** so a deployment keeps its live token *outside the repo* (e.g.
+/// `/etc/cortex/config.json`, root-owned) and the repo copy stays the demo/test fixture — the live
+/// secret is never checked in.
+pub fn auth_file_path() -> std::path::PathBuf {
+  std::env::var("CORTEX_AUTH_FILE")
+    .map(std::path::PathBuf::from)
+    .unwrap_or_else(|_| std::path::PathBuf::from("config.json"))
 }
 
 /// Returns the process-wide, lazily-loaded configuration.

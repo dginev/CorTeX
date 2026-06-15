@@ -36,6 +36,22 @@ cargo run --bin cortex -- doctor                                # verify: => hea
 cargo run --bin frontend                                        # serves http://127.0.0.1:8000
 ```
 
+**Admin token & secrets**: writes and the `/admin` sign-in are gated by a bearer token mapped to an
+owner (`rerun_tokens`). Tokens live in a **gitignored token file** — the default is `config.json` in
+the working directory (the tracked `config.default.json` is a *demo template only*, never your real
+token), scaffolded/managed by `cortex set-admin-token`. To keep a **production** token out of the
+repository entirely, put it in a JSON file outside the tree and point `CORTEX_AUTH_FILE` at it (it
+overrides the in-repo config):
+
+```bash
+# /etc/cortex/config.json  (chmod 600, owned by the service user — never in git)
+{ "rerun_tokens": { "<your-token>": "<owner>" } }
+# then, in the service environment (e.g. /etc/cortex/frontend.env):
+CORTEX_AUTH_FILE=/etc/cortex/config.json
+```
+
+Humans can also sign in with passkeys (WebAuthn); the token is the agent + break-glass credential.
+
 **History**:
  * Originally motivated by the desire to process any **Cor**-pus of **TeX** documents.
  * Rust reimplementation of the original Perl [CorTeX](https://github.com/dginev/deprecated-CorTeX) stack.
