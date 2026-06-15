@@ -114,7 +114,12 @@
         <nav class="navbar navbar-default navbar-fixed-bottom" role="navigation">
             {% if global.report_duration %}
             <div class="pull-right footer-meta">
+                {# Freshness pill only on rollup-backed report pages (which set report_time_epoch);
+                   other pages that time their render — e.g. the document preview — set report_duration
+                   but have no rollup timestamp, so omit it rather than 500 on a missing variable. #}
+                {% if global.report_time_epoch %}
                 <div class="report-duration fresh-green" data-report-duration="{{global.report_duration}}" data-report-epoch="{{global.report_time_epoch}}" title="Report rendered in {{global.report_duration}} ms · rollup data refreshed {{global.report_time}}"><span class="freshness-dot"></span><span class="freshness-text">data refreshed <span class="freshness-rel"></span><span class="freshness-abs">{{global.report_time}}</span></span></div>
+                {% endif %}
                 <div class="footer-actions">
                     {% if is_admin %}
                     <a class="footer-action" href="#modal-rerun" data-toggle="modal" data-target="#modal-rerun"
