@@ -1,0 +1,55 @@
+# cargo-deny configuration — dependency security + license discipline (Arm 12).
+# https://embarkstudios.github.io/cargo-deny/
+#
+# Run locally:  cargo deny check
+# CI's `supply-chain` job runs this on every push/PR. cargo-deny's `advisories`
+# check scans the RustSec DB, so it SUBSUMES cargo-audit — one tool, not two.
+#
+# Rationale (docs/PRODUCTIZING_PLAN.md Arm 12): CorTeX is being productized into a
+# self-installing, redistributable application, so every transitive dependency's
+# license must be one we have vetted, and RUSTSEC advisories must fail the build
+# rather than ship silently.
+
+[advisories]
+version = 2
+# Fail on a yanked crate in the lockfile. Active vulnerabilities / unmaintained
+# crates are denied by default under advisories schema v2.
+yanked = "deny"
+# Add `"RUSTSEC-YYYY-NNNN"` here (with a comment justifying it) only when an
+# advisory is reviewed and accepted as not-applicable. Currently none.
+ignore = []
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+# Known benign warning: `pericortex` (our own git dep) ships no `license` field, so
+# cargo-deny emits `no-license-field` for it. It's a warning (CI stays green); the
+# real fix is to add `license = "MIT"` upstream in cortex-peripherals.
+# Permissive set. A dependency whose license is NOT listed here fails the check,
+# forcing an explicit review before it enters the shipped binary.
+allow = [
+  "MIT",            # CorTeX itself + most of the tree
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "Unicode-3.0",
+  "CC0-1.0",
+  "Unlicense",      # public-domain dedication; only `win_uds` (Windows-only dep of zeromq) uses it
+  "MPL-2.0",        # weak (per-file) copyleft — safe to depend on
+]
+
+[bans]
+# Surface (don't fail on) duplicate versions + wildcard reqs — a Rocket/diesel/zmq
+# tree carries unavoidable duplicate majors; we watch the trend without blocking CI.
+multiple-versions = "warn"
+wildcards = "warn"
+
+[sources]
+unknown-registry = "deny"
+# `pericortex` (the worker peripherals crate) is a git dependency
+# (github.com/dginev/cortex-peripherals, pinned in Cargo.toml), so git sources
+# are expected.
+unknown-git = "allow"

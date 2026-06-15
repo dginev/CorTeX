@@ -98,3 +98,16 @@ jobs:
         # L-1 teardown SIGSEGV (a diesel/libpq/Tokio teardown race in Rocket-Client-over-pool binaries
         # that crashes AFTER all assertions pass; reproduced on clean master — KNOWN_ISSUES L-1).
         run: bash scripts/ci_test.sh
+
+  # Supply-chain gate (Arm 12): RUSTSEC advisories + license discipline over the dependency graph.
+  # Reads only Cargo.lock + deny.toml, so it needs no system C libs or database — fast and independent
+  # of the build+test job. Policy lives in `deny.toml`; cargo-deny's advisories check subsumes
+  # cargo-audit (same RustSec DB).
+  supply-chain:
+    name: cargo-deny (advisories + licenses)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories licenses sources

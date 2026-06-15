@@ -1,9 +1,10 @@
-# docs/archive — frozen records of completed work
+# docs/archive — relocated records (mostly completed-work history)
 
-These documents describe work that has **landed**; they are kept for history, not active tracking.
-Live state lives one level up: the plan + current-state map in
-[`../PRODUCTIZING_PLAN.md`](../PRODUCTIZING_PLAN.md) and the resilience ledger in
-[`../KNOWN_ISSUES.md`](../KNOWN_ISSUES.md).
+Most of these describe work that has **landed**; they are kept here to keep the top-level `docs/` tidy.
+The one exception is [`PROGRESS_LOG.md`](PROGRESS_LOG.md) — it lives here for tidiness but is **still
+the live, append-only trail** (new increments are appended to it). Live *state* lives one level up:
+the plan + current-state map in [`../PRODUCTIZING_PLAN.md`](../PRODUCTIZING_PLAN.md) and the resilience
+ledger in [`../KNOWN_ISSUES.md`](../KNOWN_ISSUES.md).
 
 | Item | What it is |
 |---|---|

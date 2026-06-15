@@ -4,9 +4,28 @@ Append-only, dated log of increments (one entry per working session/loop iterati
 current-state map live in [`PRODUCTIZING_PLAN.md`](../PRODUCTIZING_PLAN.md); the resilience ledger in
 [`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md). This file is the lightweight "what changed, in order" trail.
 
-> **Archived 2026-06-15** — moved to `docs/archive/` (with the decided `api-spike/`) as a frozen record
-> of completed work. Live tracking continues in [`../PRODUCTIZING_PLAN.md`](../PRODUCTIZING_PLAN.md) and
-> [`../KNOWN_ISSUES.md`](../KNOWN_ISSUES.md).
+> **Relocated to `docs/archive/` 2026-06-15** (with the decided `api-spike/`) to keep the top-level
+> `docs/` tidy. This log is **still the live, append-only trail** — not frozen; new increments are
+> appended here. The plan + current-state map live in [`../PRODUCTIZING_PLAN.md`](../PRODUCTIZING_PLAN.md)
+> and the resilience ledger in [`../KNOWN_ISSUES.md`](../KNOWN_ISSUES.md).
+
+## 2026-06-15
+
+- **Arm 12 — supply-chain gate landed: `deny.toml` + a CI `cargo-deny` job.** Closed the named Arm-12
+  acceptance gap (`cargo-audit`/`cargo-deny` gating). New `deny.toml` (mirrors latexml-oxide's policy,
+  adapted: MIT project, `pericortex` git dep): **advisories** schema v2 (yanked = deny, RUSTSEC
+  failures fail the build — subsumes `cargo-audit`, same DB), a vetted permissive **license** allow-list,
+  duplicate-majors/wildcards surfaced as `warn` (a Rocket/diesel/zmq tree carries unavoidable dup
+  majors), and `unknown-git = allow` for `pericortex`. CI gains a separate **`supply-chain` job**
+  (`EmbarkStudios/cargo-deny-action@v2`, `check advisories licenses sources`) that reads only
+  `Cargo.lock` + `deny.toml` → no system C libs / DB, fast, independent of build+test. **Validated
+  locally** (`cargo deny check` → `advisories ok, licenses ok, sources ok`, exit 0): the run surfaced
+  `win_uds` (a Windows-only transitive of `zeromq`) under `Unlicense` → added to the allow-list
+  (public-domain, OSI-approved). Residual benign warning: `pericortex` ships no `license` field
+  (warning only, CI green; real fix is upstream in cortex-peripherals). *Audit en route:* confirmed
+  several stale "outstanding" notes are actually **done** — `time 0.1` is fully gone (`Cargo.lock` has
+  only `time 0.3.49`) and `MANUAL.md` is a real operator manual (not the old `### TODO`); the plan's
+  §1.7 / Arm-13 text describing those is what's stale, not the work.
 
 ## 2026-06-14
 
