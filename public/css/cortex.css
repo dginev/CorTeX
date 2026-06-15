@@ -142,6 +142,11 @@ a:focus {
 .table {
   color: var(--ink);
 }
+/* Localized timestamps (<time>, see public/js/localtime.js) stay on one line — a date like
+   "Jun 15, 2026, 5:46 AM EDT" should never reflow mid-value in a table cell. */
+time {
+  white-space: nowrap;
+}
 .table > thead > tr > th {
   border-bottom-color: var(--rule);
 }

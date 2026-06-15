@@ -1,6 +1,6 @@
 {% extends "layout" %} {% block content %}
-<div class="col-md-2"></div>
-<div class="col-md-8">
+<div class="col-md-1"></div>
+<div class="col-md-10">
   <div class="center">
     <h1>Historical data retention</h1>
     <p>Signed in as <strong>{{ owner }}</strong> &nbsp;·&nbsp; <a href="/admin">back to dashboard</a></p>
@@ -42,5 +42,5 @@
   </p>
   {% endif %}
 </div>
-<div class="col-md-2"></div>
+<div class="col-md-1"></div>
 {% endblock content %}
