@@ -349,6 +349,72 @@ backlog is already always-on at `/metrics` (`cortex_workers_in_flight_total`, DB
 do under the tokio core: a finalize-latency histogram + bringing these onto the `metrics` crate if we
 adopt it.
 
+## Phase 5 — detailed sub-plan (transport swap → tokio + `zeromq`)
+
+> **Status: planned, awaiting owner sign-off before any hot-path code.** Phases 1–4 + the
+> transport-independent observability signals have landed; the spikes (re-validated 2026-06-15) say
+> GO. This decomposes the swap into independently-shippable, reversible sub-steps. **Workers stay on
+> libzmq throughout** (ZMTP interop proven by `zmq_interop`), so each step is dispatcher-only and a
+> bad step reverts by swapping that one socket back — external workers never notice.
+
+**Key simplification the swap *buys* us.** libzmq's `zmq` crate delivers a multipart message
+**frame-by-frame** (`recv()` + `get_rcvmore()`), which is the root of the entire D-4/D-12
+desync-bug family (recv-then-check reads into the *next* message on an already-complete one). The
+pure-Rust `zeromq` crate delivers **a whole `ZmqMessage` (all frames) per `recv()`** — so envelope
+parsing becomes "iterate the frames of one message," and the recv-then-check hazard **cannot occur
+by construction**. The swap is not just a maintenance/async win; it *retires a bug class*. The
+existing RCVMORE-hardening invariants (D-4 request `[identity, service]`, D-12 reply `[identity,
+service, taskid, …data]`, W-1③ size-cap frame-drain) become straight-line frame-count checks on the
+message's frame vector — keep their **tests** (`dispatcher_torture_test`) as the regression net.
+
+**5a — Async sink (PULL).** Smallest, most isolated; do first. Replace the sink's sync `zmq` PULL
+receive loop with a `zeromq::PullSocket` driven on a tokio runtime owned by the sink thread. **Keep
+the phase-3 std-thread writer pool unchanged** (the receive loop still hands each parsed result to a
+writer over the existing bounded channel) — so this step swaps *only* the socket + frame parsing, not
+the `/data` write path. `tokio::fs` async writers are deferred to 5c (smallest possible diff first).
+Preserve: the `[identity, service, taskid, …data]` envelope check, `max_result_bytes` cap + (now
+trivial) frame-skip, rate-limited discard logging, metadata enqueue, per-task FIFO to one writer.
+*Gate:* `dispatcher_torture_test` (byte-exact + cap accept/reject + malformed sink/vent floods),
+`echo_roundtrip`, `dispatcher_bench` 8-worker. *Revert:* swap the PULL socket back to `zmq`.
+
+**5b — Async ventilator (ROUTER) + async source reads.** Replace the sync ROUTER recv/send and the
+source-archive streaming with `zeromq` ROUTER + `tokio::fs` reads of the source archive. The
+lease / backpressure / reap logic is **unchanged** — it operates on the shared `InFlightSet` +
+`queues`, which are already lock-free (phase 4) and runtime-agnostic. Preserve: the `[identity,
+service]` request framing (now a frame-count check), `max_in_flight` backpressure mock-reply, the
+60 s reap cadence + `ReapSummary` health log, `clear_limbo_tasks_except(in_flight)` on start. *Gate:*
+same + the ventilator request-flood torture gate. *Revert:* swap the ROUTER socket back.
+
+**5c — Unify runtime, async writers, drop the dispatcher's `zmq` use.** Once both sockets are
+`zeromq`: run vent + sink as tasks on one tokio runtime (or keep a runtime per component — see open
+Q), move the phase-3 writers to `tokio::fs` (closes the last sync I/O), and remove the `zmq`
+dependency from the dispatcher path (`worker.rs` may still use it → keep the crate, just unused by
+the dispatcher, or feature-gate). Wire the finalize-latency histogram here.
+
+**5d — (optional, later) migrate `worker.rs` + `pericortex` off libzmq** to delete the C dependency
+entirely. Not required for the dispatcher win; sequenced after the dispatcher is stable on `zeromq`.
+
+**The one genuinely-new risk: supervision under tokio.** Today the manager (`manager.rs`) `join()`s
+the ventilator thread and polls `sink/finalize.is_finished()` every 1 s → on any component death it
+aborts with `ETERM` → external restart (fail-fast, D-3/D-9). Tokio tasks aren't `std::thread`
+`JoinHandle`s, so this supervision must be re-expressed: each async component gets a `JoinHandle`
+whose completion (or a shared `watch`/`Notify` shutdown signal) trips the same abort. **This is the
+part to design carefully and test first** (a deliberately-panicking sink task must still abort the
+process), because it's the invariant that turns a dead pipeline into a restart rather than a silent
+stall.
+
+**Invariants every sub-step must hold (unchanged from the robustness table):** at-least-once +
+idempotent finalize (`Queued` mark + `on_conflict`), crash-consistent restart (`clear_limbo`),
+backpressure (`max_in_flight` + bounded channels block-not-drop), `max_result_bytes` cap, envelope
+integrity, poison-task dead-lettering, **fail-fast supervision** (the new-risk item above).
+
+**Open decisions for sign-off (recommendations in parens):** (1) start at **5a/async sink**
+(*recommended* — smallest, most reversible)? (2) one shared tokio runtime vs a runtime per component
+(*recommended: per-component first* — minimises shared-state churn, unify later if it pays)? (3)
+keep std-thread writers through 5a/5b and switch to `tokio::fs` only in 5c (*recommended* — smallest
+diffs)? (4) confirm the supervision-under-tokio approach (JoinHandle-completion vs shared shutdown
+signal) before 5a, since both sockets will eventually depend on it.
+
 ## Crates ("prefer the foundations")
 
 - **Transport:** `zeromq` 0.6 (pure-Rust async; escapes libzmq). `tmq`/`async-zmq` rejected (wrap
