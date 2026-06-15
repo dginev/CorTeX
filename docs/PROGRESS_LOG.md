@@ -17,6 +17,14 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
   aging the stamp to 3 h showed "data refreshed 3 hours ago" in deep-orange. (Bug en route: PG 14+
   `extract()` returns `numeric` not `double` — cast `::bigint`.) `reports_api_test` / `report_rollup_test`
   green; fmt + clippy clean.
+  - **Then modeled the meta table in the diesel ORM** (owner preference for ORM over raw where the
+    builder *can* express it): `diesel migration run` auto-regenerated `schema.rs` with
+    `report_summary_meta`; the upsert is now `insert_into(...).on_conflict(singleton).do_update()` and
+    the read is `select(refreshed_at).first::<DateTime<Utc>>()` (epoch/format computed in Rust). The
+    column is `Timestamptz` (deliberately, unlike the legacy local-wall-clock `Timestamp` columns) so
+    the instant is absolute and the epoch is timezone-correct. The matview `REFRESH` + rollup reads
+    stay raw `sql_query` (no diesel equivalent — matviews aren't `table!`). Re-verified (90-min stamp →
+    age 90.0 m); tests green.
 
 - **UI — design-system sweep of the remaining screens (finishing the UI pass).**
   - **Severity row tints** (task-list / fatal etc.): `tr.{success,warning,error,danger,info}` now blend

@@ -67,13 +67,17 @@ pub(crate) fn refresh_report_summary(connection: &mut PgConnection) -> QueryResu
       sql_query("REFRESH MATERIALIZED VIEW report_summary").execute(connection)?;
     },
   }
-  // Stamp the refresh time so report pages can show the data's true freshness (matview age). Best
-  // effort — the rollup itself already updated; a missing stamp just shows stale-unknown.
-  let _ = sql_query(
-    "INSERT INTO report_summary_meta (singleton, refreshed_at) VALUES (true, now()) \
-     ON CONFLICT (singleton) DO UPDATE SET refreshed_at = now()",
-  )
-  .execute(connection);
+  // Stamp the refresh time (diesel upsert) so report pages can show the data's true freshness
+  // (matview age). Best effort — the rollup itself already updated; a missing stamp just shows
+  // stale-unknown.
+  use crate::schema::report_summary_meta::dsl as meta;
+  let now = chrono::Utc::now();
+  let _ = diesel::insert_into(meta::report_summary_meta)
+    .values((meta::singleton.eq(true), meta::refreshed_at.eq(now)))
+    .on_conflict(meta::singleton)
+    .do_update()
+    .set(meta::refreshed_at.eq(now))
+    .execute(connection);
   Ok(())
 }
 
@@ -82,22 +86,20 @@ pub(crate) fn refresh_report_summary(connection: &mut PgConnection) -> QueryResu
 /// `None` if the meta row is missing. Read as epoch-ms + a preformatted UTC string to avoid any
 /// timezone/`chrono` round-trip.
 pub(crate) fn report_summary_refreshed_at(connection: &mut PgConnection) -> Option<(i64, String)> {
-  #[derive(diesel::QueryableByName)]
-  struct Row {
-    // Cast to bigint: Postgres 14+ `extract()` returns `numeric`, not `double precision`.
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    epoch_ms: i64,
-    #[diesel(sql_type = diesel::sql_types::Text)]
-    human: String,
-  }
-  sql_query(
-    "SELECT (extract(epoch from refreshed_at) * 1000)::bigint AS epoch_ms, \
-     to_char(refreshed_at AT TIME ZONE 'UTC', 'Dy, DD Mon YYYY HH24:MI \"UTC\"') AS human \
-     FROM report_summary_meta LIMIT 1",
-  )
-  .get_result::<Row>(connection)
-  .ok()
-  .map(|r| (r.epoch_ms, r.human))
+  use crate::schema::report_summary_meta::dsl as meta;
+  // `Timestamptz -> DateTime<Utc>` (diesel's chrono feature) keeps this an absolute instant, so the
+  // epoch is timezone-correct regardless of the server/session zone; format the human label in
+  // Rust.
+  meta::report_summary_meta
+    .select(meta::refreshed_at)
+    .first::<chrono::DateTime<chrono::Utc>>(connection)
+    .ok()
+    .map(|ts| {
+      (
+        ts.timestamp_millis(),
+        ts.format("%a, %d %b %Y %H:%M UTC").to_string(),
+      )
+    })
 }
 
 /// Category-grain report for a `(corpus, service, severity)`: one row per category with its
