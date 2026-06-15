@@ -10,9 +10,14 @@
     var d = new Date(iso);
     if (isNaN(d.getTime())) return; // leave unparseable values as-is
     try {
+      // NB: timeZoneName must be combined with explicit component options, NOT dateStyle/timeStyle
+      // (combining the two throws a TypeError) — so we spell out the components.
       el.textContent = new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
         timeZoneName: 'short'
       }).format(d);
       // Keep the precise UTC value reachable on hover.

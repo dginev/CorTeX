@@ -179,7 +179,7 @@
       })();
     </script>
     <script src='/public/js/theme.js'></script>
-    <script src='/public/js/localtime.js'></script>
+    <script src='/public/js/localtime.js?v=2'></script>
 </body>
 
 </html>

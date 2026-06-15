@@ -49,7 +49,13 @@ fn local_tz_abbrev() -> String {
 /// attributes: the browser ([`public/js/localtime.js`]) rewrites it to the viewer's local time
 /// *with the zone code* (EST/EDT/…), and agents get a directly parseable timestamp. Replaces the
 /// old zone-ambiguous `%Y-%m-%d %H:%M` rendering, which silently displayed UTC as if it were local.
-pub fn iso_utc(time: chrono::NaiveDateTime) -> String { time.and_utc().to_rfc3339() }
+pub fn iso_utc(time: chrono::NaiveDateTime) -> String {
+  // Seconds precision (no sub-second microseconds) — cleaner in the datetime attribute and as the
+  // JS-off fallback text, still a valid RFC 3339 timestamp.
+  time
+    .and_utc()
+    .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
 
 /// Maps a cortex message severity into a bootstrap class for color highlight
 pub fn severity_highlight(severity: &str) -> &str {
