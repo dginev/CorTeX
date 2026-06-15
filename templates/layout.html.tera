@@ -179,6 +179,7 @@
       })();
     </script>
     <script src='/public/js/theme.js'></script>
+    <script src='/public/js/localtime.js'></script>
 </body>
 
 </html>

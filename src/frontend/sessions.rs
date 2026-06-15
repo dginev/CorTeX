@@ -36,9 +36,11 @@ pub struct SessionDto {
   pub owner: String,
   /// How the session was established: `token` or `passkey`.
   pub method: String,
-  /// When the session was opened, formatted `YYYY-MM-DD HH:MM`.
+  /// When the session was opened, as an RFC 3339 UTC timestamp (localized to the viewer's zone in
+  /// the UI; directly parseable over the agent API).
   pub created_at: String,
-  /// When the session expires, formatted `YYYY-MM-DD HH:MM`.
+  /// When the session expires, as an RFC 3339 UTC timestamp (localized to the viewer's zone in the
+  /// UI; directly parseable over the agent API).
   pub expires_at: String,
   /// Whether this row is the requesting browser's own current session (UI only; always `false`
   /// over the agent API, which has no browser cookie).
@@ -57,8 +59,8 @@ fn load_sessions(pool: &DbPool, current_id: Option<&str>) -> Result<Vec<SessionD
         current: current_id == Some(session.id.as_str()),
         owner: session.owner,
         method: session.method,
-        created_at: session.created_at.format("%Y-%m-%d %H:%M").to_string(),
-        expires_at: session.expires_at.format("%Y-%m-%d %H:%M").to_string(),
+        created_at: crate::frontend::helpers::iso_utc(session.created_at),
+        expires_at: crate::frontend::helpers::iso_utc(session.expires_at),
       })
       .collect(),
   )

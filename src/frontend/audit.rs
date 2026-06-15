@@ -119,7 +119,7 @@ impl From<AuditEntry> for AuditDto {
       target: entry.target,
       outcome: entry.outcome,
       details: entry.details,
-      at: entry.at.format("%Y-%m-%d %H:%M:%S").to_string(),
+      at: crate::frontend::helpers::iso_utc(entry.at),
     }
   }
 }

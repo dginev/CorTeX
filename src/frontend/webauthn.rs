@@ -374,10 +374,10 @@ pub fn passkeys_page(
     .map(|row| PasskeyDto {
       id: row.id,
       label: row.label,
-      created_at: row.created_at.format("%Y-%m-%d %H:%M").to_string(),
+      created_at: crate::frontend::helpers::iso_utc(row.created_at),
       last_used: row
         .last_used
-        .map(|when| when.format("%Y-%m-%d %H:%M").to_string())
+        .map(crate::frontend::helpers::iso_utc)
         .unwrap_or_else(|| "never".to_string()),
     })
     .collect();

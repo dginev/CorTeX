@@ -43,8 +43,8 @@
             <td class="left">{{job.health}}</td>
             <td class="right">{{job.progress_current}}{% if job.progress_total %}/{{job.progress_total}}{% endif %}</td>
             <td class="right">{{job.duration_seconds}}</td>
-            <td class="left">{{job.created_at}}</td>
-            <td class="left">{{job.updated_at}}</td>
+            <td class="left"><time datetime="{{job.created_at}}">{{job.created_at}}</time></td>
+            <td class="left"><time datetime="{{job.updated_at}}">{{job.updated_at}}</time></td>
             <td class="right">{% if job.health == "running" or job.health == "pending" %}{{job.seconds_since_update}}{% else %}—{% endif %}</td>
             <td class="left">{{job.message}}</td>
             <td class="left"><a href="/jobs/{{job.uuid}}">view</a></td>

@@ -43,6 +43,14 @@ fn local_tz_abbrev() -> String {
   }
 }
 
+/// Formats a UTC [`chrono::NaiveDateTime`] (how CorTeX stores every timestamp) as an RFC 3339 /
+/// ISO 8601 string with an explicit `+00:00` offset, e.g. `2026-06-15T05:52:00+00:00`. This is the
+/// machine-readable, zone-unambiguous form emitted in DTO time fields and `<time datetime="…">`
+/// attributes: the browser ([`public/js/localtime.js`]) rewrites it to the viewer's local time
+/// *with the zone code* (EST/EDT/…), and agents get a directly parseable timestamp. Replaces the
+/// old zone-ambiguous `%Y-%m-%d %H:%M` rendering, which silently displayed UTC as if it were local.
+pub fn iso_utc(time: chrono::NaiveDateTime) -> String { time.and_utc().to_rfc3339() }
+
 /// Maps a cortex message severity into a bootstrap class for color highlight
 pub fn severity_highlight(severity: &str) -> &str {
   match severity {

@@ -92,8 +92,8 @@ impl JobDto {
       message: job.message,
       actor: job.actor,
       result: job.result,
-      created_at: job.created_at.format("%Y-%m-%d %H:%M:%S").to_string(),
-      updated_at: job.updated_at.format("%Y-%m-%d %H:%M:%S").to_string(),
+      created_at: crate::frontend::helpers::iso_utc(job.created_at),
+      updated_at: crate::frontend::helpers::iso_utc(job.updated_at),
     }
   }
 }

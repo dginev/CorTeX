@@ -28,7 +28,7 @@
     <tbody>
       {% for row in rows %}
       <tr>
-        <td class="left"><span title="#{{ row.id }}">{{ row.at }}</span></td>
+        <td class="left"><span title="#{{ row.id }}"><time datetime="{{ row.at }}">{{ row.at }}</time></span></td>
         <td class="left">{% if row.actor %}<a href="/admin/audit?actor={{ row.actor }}">{{ row.actor }}</a>{% else %}<em>—</em>{% endif %}</td>
         <td class="left">{{ row.action }}</td>
         <td class="left"><code>{{ row.target }}</code></td>
