@@ -79,10 +79,10 @@
     </table>
 
     <nav class="report-links">
-      <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/info">Info-level messages</a>
-      <a href="/runs/{{global.corpus_name_uri}}/{{global.service_name_uri}}">Run history</a>
-      <a href="/history/{{global.corpus_name_uri}}/{{global.service_name_uri}}">History chart</a>
-      <a href="/runs/{{global.corpus_name_uri}}/{{global.service_name_uri}}/diff">Diff previous runs</a>
+      <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/info"><i class="fa fa-info-circle"></i>Info-level messages</a>
+      <a href="/runs/{{global.corpus_name_uri}}/{{global.service_name_uri}}"><i class="fa fa-history"></i>Run history</a>
+      <a href="/history/{{global.corpus_name_uri}}/{{global.service_name_uri}}"><i class="fa fa-line-chart"></i>History chart</a>
+      <a href="/runs/{{global.corpus_name_uri}}/{{global.service_name_uri}}/diff"><i class="fa fa-exchange"></i>Diff previous runs</a>
     </nav>
   </div>
 </div>

@@ -113,27 +113,17 @@
     <footer>
         <nav class="navbar navbar-default navbar-fixed-bottom" role="navigation">
             {% if global.report_duration %}
-            <div class="pull-right">
-                <span class="report-duration" data-report-duration="{{global.report_duration}}">Report generated in
-                    {{global.report_duration}}ms,
-                    on {{global.report_time}}
-                    <a href="#modal-rerun" data-toggle="modal" data-target="#modal-rerun"
-                        title="Mark reported tasks for rerun">
-                        <i class="fa fa-refresh"></i>
-                    </a>
-                    <a href="#modal-savetasks" data-toggle="modal" data-target="#modal-savetasks"
-                        title="Save reported tasks for the historical record">
-                        <i class="fa fa-save"></i>
-                    </a><br>
-                </span>
-                {% if not global.severity %}
-                <span class="auto-refresh">auto refresh:
-                    <label class="switch">
-                        <input type="checkbox" name="refresh" value="false">
-                        <span class="slider round"></span>
-                    </label>
-                </span>
-                <br> {% endif %}
+            <div class="pull-right footer-meta">
+                <div class="report-duration" data-report-duration="{{global.report_duration}}">Report generated in {{global.report_duration}} ms &middot; {{global.report_time}}</div>
+                <div class="footer-actions">
+                    <a class="footer-action" href="#modal-rerun" data-toggle="modal" data-target="#modal-rerun"
+                        title="Re-queue the reported tasks for conversion"><i class="fa fa-refresh"></i>&nbsp;Rerun</a>
+                    <a class="footer-action" href="#modal-savetasks" data-toggle="modal" data-target="#modal-savetasks"
+                        title="Save the current task statuses as a historical snapshot"><i class="fa fa-save"></i>&nbsp;Save&nbsp;snapshot</a>
+                    {% if not global.severity %}
+                    <span class="footer-autorefresh"><label class="switch"><input type="checkbox" name="refresh" value="false"><span class="slider round"></span></label>Auto-refresh</span>
+                    {% endif %}
+                </div>
             </div>
             {% elif not history %}
             <div class="center arxmliv-kwarc-footer">
@@ -145,7 +135,6 @@
             {% endif %} {%block footer_extra %}{% endblock footer_extra %}
         </nav>
     </footer>
-    <script async src='//privacy.kwarc.info/policy.js'></script>
     <script src='/public/js/theme.js'></script>
 </body>
 

@@ -6,6 +6,20 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **UI — report affordances: clickable-row chevrons, pill link toolbar, labeled footer actions; KWARC
+  cookie banner removed.** Follow-ups after review:
+  - **Row clickability** — since report row labels are now neutral ink, real `<a>` rows get a drill-in
+    `›` chevron (CSS `::after`, only on links) that nudges + turns accent on row hover; non-link rows
+    (Pending/Total) have none. Clear "this row navigates" signal without re-introducing all-purple.
+  - **Related-report links** — the bottom "Info-level / Run history / History chart / Diff" links are
+    now a **pill toolbar** (icon + label, bordered, hover-accent) instead of bare text.
+  - **Footer actions** — the two cryptic bottom-right icons are now **labeled buttons** (`↻ Rerun`,
+    `🖫 Save snapshot`) plus a labeled **Auto-refresh** toggle, with clearer provenance text.
+  - **KWARC cookie banner removed** — dropped the `//privacy.kwarc.info/policy.js` script (service is
+    no longer KWARC-hosted). *(Residual: the overview's "Created by the arXMLiv project at the KWARC
+    Research Group" credit still stands — flagged for the owner to update/keep.)*
+  Verified with the new Playwright/Chrome screenshot tool (paper + midnight).
+
 - **UI — typography scale, link styling, and a headless-screenshot loop for visual QA.**
   - **Type scale** — added theme-independent size tokens (`--fs-xs/sm/base/md/lg/xl` + line-heights)
     and mapped the scattered ad-hoc `rem`/`em` font-sizes across the report/homepage/widget CSS onto

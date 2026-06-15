@@ -913,11 +913,100 @@ h3 {
 .report-table.table > tbody > tr:hover > td {
   background-color: var(--accent-soft);
 }
+/* Related-report links as a labeled pill toolbar (clearly actionable, icon + text). */
 .report-links {
-  margin-top: 1.5rem;
+  margin-top: 1.75rem;
   display: flex;
   flex-wrap: wrap;
-  gap: 1.25rem;
+  gap: 0.6rem;
+}
+.report-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.8rem;
+  font-size: var(--fs-sm);
+  color: var(--ink-soft);
+  background-color: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+.report-links a:hover,
+.report-links a:focus {
+  color: var(--link);
+  background-color: var(--bg);
+  border-color: var(--accent);
+  text-decoration: none;
+}
+.report-links a > i {
+  color: var(--ink-muted);
+}
+.report-links a:hover > i,
+.report-links a:focus > i {
+  color: var(--accent);
+}
+
+/* Clickable report rows: a drill-in chevron after the label (only real <a> links get it), so a row
+   reads as navigable even though the label is neutral ink. The whole row highlights on hover. */
+.report-table td.left a::after {
+  content: "\203A"; /* › */
+  display: inline-block;
+  margin-left: 0.4rem;
+  color: var(--ink-muted);
+  font-weight: 700;
+  transition:
+    color 0.12s ease,
+    transform 0.12s ease;
+}
+.report-table > tbody > tr:hover td.left a,
+.report-table td.left a:hover {
+  color: var(--link);
+  text-decoration: none;
+}
+.report-table > tbody > tr:hover td.left a::after,
+.report-table td.left a:hover::after {
+  color: var(--accent);
+  transform: translateX(3px);
+}
+
+/* Report footer bar: report provenance + clearly-labeled Rerun / Save / Auto-refresh actions. */
+.footer-meta {
+  text-align: right;
+}
+.footer-meta .report-duration {
+  color: var(--ink-soft);
+  font-style: italic;
+  font-size: var(--fs-sm);
+}
+.footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.3rem;
+}
+.footer-action {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.7rem;
+  font-size: var(--fs-sm);
+  color: var(--ink-soft);
+  background-color: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+.footer-action:hover,
+.footer-action:focus {
+  color: var(--link);
+  border-color: var(--accent);
+  text-decoration: none;
+}
+.footer-autorefresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--ink-muted);
   font-size: var(--fs-sm);
 }
 .report-toggle {
