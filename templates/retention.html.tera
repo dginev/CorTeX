@@ -7,7 +7,7 @@
   </div>
 
   {% if pruned is defined and pruned %}
-  <p style="color:#1a7e1a;"><strong>Pruned {{ pruned }} per-task snapshot(s).</strong></p>
+  <p style="color:var(--ok);"><strong>Pruned {{ pruned }} per-task snapshot(s).</strong></p>
   {% endif %}
 
   <p>Each "save snapshot" copies one status row per task into <code>historical_tasks</code> — the only
@@ -34,7 +34,7 @@
   <form method="post" action="/admin/retention/prune" style="display:inline; margin-left:0.5rem;"
     onsubmit="return confirm('Permanently delete {{ preview.count }} per-task snapshots older than {{ preview.before }}? This cannot be undone.');">
     <input type="hidden" name="before" value="{{ preview.before }}">
-    <button type="submit" style="color:#a00;">Delete {{ preview.count }} snapshot(s) permanently</button>
+    <button type="submit" style="color:var(--bad);">Delete {{ preview.count }} snapshot(s) permanently</button>
   </form>
   {% else %}
   <span class="muted">nothing to prune.</span>

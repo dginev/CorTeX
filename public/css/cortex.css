@@ -190,6 +190,56 @@ textarea:focus {
 ::placeholder {
   color: var(--ink-muted);
 }
+/* A bare <input> (no type attribute defaults to text) should look themed too. */
+input:not([type]) {
+  background-color: var(--bg-elev);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+}
+
+/* Fieldsets (the Settings config form) — carded, with a compact uppercase legend. */
+fieldset {
+  margin: 1.25rem 0;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 0.5rem 1.15rem 1.15rem;
+  background-color: var(--bg-elev);
+}
+legend {
+  width: auto;
+  border: 0;
+  margin-bottom: 0;
+  padding: 0 0.5rem;
+  font-family: var(--sans);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-muted);
+}
+.config-page label {
+  display: block;
+  margin: 0.6rem 0 0.15rem;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.config-page input {
+  width: 100%;
+  max-width: 26rem;
+}
+
+/* Job progress page: themed progress bar + status colours. */
+progress {
+  width: 100%;
+  height: 1.1rem;
+}
+.status.ok {
+  color: var(--ok);
+}
+.status.fail {
+  color: var(--bad);
+}
 
 /* Buttons: Bootstrap `.btn-*`, our `.danger`, and bare (class-less) submit buttons. */
 .btn-default,
@@ -293,16 +343,9 @@ hr {
   box-shadow: var(--shadow);
 }
 
-/* The theme toggle in the top nav. */
-#theme-toggle {
-  background: transparent;
-  border: 0;
-  color: var(--ink-soft);
-  cursor: pointer;
-}
-#theme-toggle:hover {
-  color: var(--ink);
-}
+/* The theme toggle is an `<a id="theme-toggle">` in the nav action group — it inherits the
+   `.cortex-admin-nav` pill styling like Overview / Admin (no ID-specific override that would strip
+   the pill border). */
 
 .quietlink:link {
   color: var(--ink);

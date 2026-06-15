@@ -182,7 +182,11 @@ pub fn job_page(
   return_to: ReturnTo,
 ) -> Result<Template, AdminReject> {
   require_admin_to(session, &return_to)?;
-  Ok(Template::render("job", context! { uuid }))
+  let global = serde_json::json!({
+    "title": "Job progress",
+    "description": "Background job progress",
+  });
+  Ok(Template::render("job", context! { uuid, global }))
 }
 
 /// The route set for the jobs capability.

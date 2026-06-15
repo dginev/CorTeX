@@ -6,6 +6,26 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **UI — design-system sweep of the remaining screens (finishing the UI pass).**
+  - **Severity row tints** (task-list / fatal etc.): `tr.{success,warning,error,danger,info}` now blend
+    the severity token into the elevated surface — saturated, theme-aware, good contrast in both themes
+    (replacing Bootstrap's pale fixed pinks). Fixed a real bug: the generic `.danger` button rule was
+    leaking red text + a border onto `tr.danger` report rows; scoped it to `button/.btn/a`.
+  - **Nav distinction**: the right-side action group (Overview / Admin / Theme) renders as bordered
+    pill controls, clearly separate from the left breadcrumb trail (removed the `#theme-toggle`
+    ID-override so Theme is a pill too).
+  - **New `/corpora/new`** page (corpus analogue of `/services/new`): `new_corpus_page` (admin-gated)
+    + `corpora-new.html.tera`; the admin dashboard's inline "Add a corpus" form is replaced by a
+    Manage link to it.
+  - **Standalone pages adopted the design system**: `settings.html` + `job.html` were full standalone
+    HTML with their own `<style>` (off-theme); converted to `{% extends "layout" %}` (their handlers
+    now pass a `global` title/description), with carded fieldsets + compact uppercase legends, themed
+    `progress`/status colours, and bare-`<input>` theming added to the token CSS.
+  - **Hardcoded colors → tokens** in `admin-login` / `passkeys` / `retention` / `sessions` (`#a00`→
+    `--bad`, `#1a7e1a`→`--ok`, `#ddd`→`--rule`) so they read correctly in midnight.
+  Verified across themes via the Playwright sweep (admin, jobs, health, settings, corpora-new, fatal
+  task-list, …); fmt + clippy clean; settings/admin/corpora/reports tests green.
+
 - **UI — report freshness indicator + admin-gated footer actions.**
   - **Freshness** — the footer's "Report generated in X ms · <timestamp>" is now a live, colour-coded
     **"generated N ago"**: `serve_report` emits `report_time_epoch` (UTC epoch-ms via

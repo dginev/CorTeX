@@ -39,6 +39,7 @@
   <hr>
   <h3>Manage</h3>
   <ul class="admin-actions" style="line-height:1.9;">
+    <li><a href="/corpora/new"><i class="fa fa-plus-circle"></i>&nbsp; Add a corpus</a> — register a new corpus &amp; import its documents</li>
     <li><a href="/services"><i class="fa fa-cogs"></i>&nbsp; Registered services</a> — the service registry &amp; worker fleets</li>
     <li><a href="/services/new"><i class="fa fa-plus-circle"></i>&nbsp; Add a service</a> — define a new service &amp; register it on corpora</li>
     <li><a href="/jobs"><i class="fa fa-tasks"></i>&nbsp; Background jobs</a> — imports, reruns, reindex/analyze, with health (tracks in-flight registrations)</li>
@@ -52,16 +53,6 @@
     <li><a href="/api/docs"><i class="fa fa-code"></i>&nbsp; Agent API docs</a> — the generated OpenAPI / RapiDoc reference</li>
   </ul>
 
-  <hr>
-  <h3>Add a corpus</h3>
-  <form method="post" action="/corpus/import">
-    <p><label>Name <input type="text" name="name" required></label></p>
-    <p><label>Path (server-side corpus root)
-        <input type="text" name="path" size="48" required></label></p>
-    <p><label>Description <input type="text" name="description" size="48"></label></p>
-    <p><label><input type="checkbox" name="complex" value="true"> Multi-file documents (complex)</label></p>
-    <button type="submit">Register &amp; import</button>
-  </form>
 </div>
 <div class="col-md-2"></div>
 {% endblock content %}

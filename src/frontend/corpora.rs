@@ -26,7 +26,7 @@ use uuid::Uuid;
 
 use crate::backend::{from_address, progress_report, DatabaseUrl, DbPool};
 use crate::concerns::CortexInsertable;
-use crate::frontend::actor::{Actor, AdminSession};
+use crate::frontend::actor::{require_admin_to, Actor, AdminReject, AdminSession, ReturnTo};
 use crate::frontend::helpers::decorate_uri_encodings;
 use crate::frontend::jobs::JobDto;
 use crate::frontend::params::TemplateContext;
@@ -771,6 +771,29 @@ pub fn corpus_page(
   Ok(Template::render("services", context))
 }
 
+/// The "Add a corpus" screen (the corpus analogue of `/services/new`): the import form on its own
+/// page, linked from the admin dashboard. **Signed-in admins only** (anonymous → sign-in); the form
+/// posts to the existing `POST /corpus/import`.
+#[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
+#[get("/corpora/new")]
+pub fn new_corpus_page(
+  session: Option<AdminSession>,
+  return_to: ReturnTo,
+) -> Result<Template, AdminReject> {
+  require_admin_to(session, &return_to)?;
+  let mut global = HashMap::new();
+  global.insert("title".to_string(), "Add a corpus".to_string());
+  global.insert(
+    "description".to_string(),
+    "Register a new corpus and import its documents".to_string(),
+  );
+  let context = TemplateContext {
+    global,
+    ..TemplateContext::default()
+  };
+  Ok(Template::render("corpora-new", context))
+}
+
 /// The route set for the corpus-management capability (API + human screens).
 pub fn routes() -> Vec<Route> {
   // NB: the agent `/api/corpora*` routes (read + write) are mounted via `frontend::apidoc`
@@ -783,6 +806,7 @@ pub fn routes() -> Vec<Route> {
     activate_service_human,
     deactivate_service_human,
     overview_page,
+    new_corpus_page,
     corpus_page
   ]
 }

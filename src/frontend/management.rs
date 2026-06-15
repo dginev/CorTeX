@@ -453,9 +453,13 @@ pub fn settings(
   return_to: ReturnTo,
 ) -> Result<Template, AdminReject> {
   require_admin_to(session, &return_to)?;
+  let global = serde_json::json!({
+    "title": "Configuration",
+    "description": "CorTeX framework configuration",
+  });
   Ok(Template::render(
     "settings",
-    context! { config: ConfigDto::from_config(config()) },
+    context! { global, config: ConfigDto::from_config(config()) },
   ))
 }
 

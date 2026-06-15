@@ -1,23 +1,7 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CorTeX Configuration</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; color: #222; }
-    h1 { margin-bottom: .25rem; }
-    .muted { color: #666; }
-    fieldset { margin: 1rem 0; border: 1px solid #ccc; border-radius: .4rem; padding: .5rem 1rem 1rem; }
-    legend { font-weight: 600; padding: 0 .4rem; }
-    label { display: block; margin: .6rem 0 .15rem; font-size: .9rem; font-weight: 600; }
-    input { width: 100%; padding: .35rem .5rem; border: 1px solid #bbb; border-radius: .25rem; box-sizing: border-box; }
-    button { margin-top: 1rem; padding: .5rem 1.2rem; font-size: 1rem; cursor: pointer; }
-    code { background: #f3f3f3; padding: .1rem .3rem; border-radius: .2rem; }
-  </style>
-</head>
-<body>
-  <h1>CorTeX Configuration</h1>
+{% extends "layout" %} {% block content %}
+<div class="col-md-2"></div>
+<div class="col-md-8 config-page">
+  <h1>Configuration</h1>
   <p class="muted">Changes are saved to the configuration file and take effect on restart. Secrets
     are masked and edited out-of-band (<code>.env</code> / <code>config.json</code>).</p>
 
@@ -47,9 +31,9 @@
     <fieldset>
       <legend>Assets</legend>
       <label for="tpl">Template directory</label>
-      <input id="tpl" name="assets_template_dir" value="{{ config.assets.template_dir }}">
+      <input id="tpl" name="assets_template_dir" type="text" value="{{ config.assets.template_dir }}">
       <label for="pubdir">Public directory</label>
-      <input id="pubdir" name="assets_public_dir" value="{{ config.assets.public_dir }}">
+      <input id="pubdir" name="assets_public_dir" type="text" value="{{ config.assets.public_dir }}">
     </fieldset>
 
     <button type="submit">Save configuration</button>
@@ -62,5 +46,6 @@
     <p class="muted">Passkey sign-in (WebAuthn): {{ config.webauthn.enabled }}
       &middot; relying party: {{ config.webauthn.rp_id }} ({{ config.webauthn.rp_origin }})</p>
   </fieldset>
-</body>
-</html>
+</div>
+<div class="col-md-2"></div>
+{% endblock content %}
