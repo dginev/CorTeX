@@ -18,9 +18,9 @@
         {% for worker in workers %}
         <tr class="{{worker.fresh}}">
           <td>{{worker.name}}</td>
-          <td class="recent-time">{{worker.time_last_dispatch}}</td>
-          <td class="recent-time">{{worker.time_last_return}}</td>
-          <td>{{worker.session_seen}}</td>
+          <td class="recent-time"><time datetime="{{worker.time_last_dispatch}}">{{worker.time_last_dispatch}}</time></td>
+          <td class="recent-time"><time datetime="{{worker.time_last_return}}">{{worker.time_last_return}}</time></td>
+          <td><time datetime="{{worker.first_seen}}">{{worker.first_seen}}</time></td>
           <td>{{worker.total_dispatched}}</td>
           <td>{{worker.total_returned}}</td>
         </tr>

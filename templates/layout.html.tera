@@ -155,6 +155,17 @@
         var epoch = parseInt(el.getAttribute('data-report-epoch'), 10);
         var relEl = el.querySelector('.freshness-rel');
         if (!epoch || !relEl) return;
+        // Localize the absolute "refreshed at" time to the viewer's zone, with its code (the server
+        // renders it in UTC). Component options + timeZoneName (NOT dateStyle/timeStyle, which throws).
+        var absEl = el.querySelector('.freshness-abs');
+        if (absEl) {
+          try {
+            absEl.textContent = new Intl.DateTimeFormat(undefined, {
+              year: 'numeric', month: 'short', day: 'numeric',
+              hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
+            }).format(new Date(epoch));
+          } catch (e) { /* keep the server's UTC fallback */ }
+        }
         function rel(ms) {
           var s = Math.max(0, Math.floor(ms / 1000));
           if (s < 45) return 'just now';

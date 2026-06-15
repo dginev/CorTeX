@@ -91,59 +91,60 @@ impl From<WorkerMetadata> for HashMap<String, String> {
       worker.total_returned.to_string(),
     );
 
-    let mut fresh = false;
-    wh.insert(
-      "first_seen".to_string(),
-      since_string(worker.first_seen, &mut fresh),
-    );
-
+    // Absolute UTC timestamps (RFC 3339); the UI localizes them to the viewer's zone with its code
+    // (public/js/localtime.js), and the fresh/stale row coloring still conveys liveness at a
+    // glance.
+    wh.insert("first_seen".to_string(), iso_utc_system(worker.first_seen));
     wh.insert(
       "session_seen".to_string(),
-      match worker.session_seen {
-        Some(session_seen) => since_string(session_seen, &mut fresh),
-        None => String::new(),
-      },
+      worker.session_seen.map(iso_utc_system).unwrap_or_default(),
     );
-
     wh.insert(
       "time_last_dispatch".to_string(),
-      since_string(worker.time_last_dispatch, &mut fresh),
+      iso_utc_system(worker.time_last_dispatch),
     );
     wh.insert(
       "time_last_return".to_string(),
-      match worker.time_last_return {
-        Some(time_last_return) => since_string(time_last_return, &mut fresh),
-        None => String::new(),
-      },
+      worker
+        .time_last_return
+        .map(iso_utc_system)
+        .unwrap_or_default(),
     );
     wh.insert(
       "fresh".to_string(),
-      if fresh { "fresh" } else { "stale" }.to_string(),
+      if worker_is_fresh(&worker) {
+        "fresh"
+      } else {
+        "stale"
+      }
+      .to_string(),
     );
     wh.insert("name".to_string(), worker.name);
     wh
   }
 }
 
-fn since_string(then: SystemTime, is_fresh: &mut bool) -> String {
-  let now = SystemTime::now();
-  // `duration_since` errors when `then` is in the *future* (clock skew across the worker fleet's
-  // hosts, or a DB host whose clock runs ahead). Treat that as "just now" (zero elapsed) rather
-  // than `.unwrap()`-panicking — this runs on the `/workers/<service>` request path, where a
-  // panic would crash the screen for one skewed row (no-panic-on-request-path mandate; cf.
-  // KNOWN_ISSUES F-4).
-  let since_duration = now.duration_since(then).unwrap_or_default();
-  let secs = since_duration.as_secs();
-  if secs < 60 {
-    *is_fresh = true;
-    format!("{secs} seconds ago")
-  } else if secs < 3_600 {
-    format!("{} minutes ago", secs / 60)
-  } else if secs < 86_400 {
-    format!("{} hours ago", secs / 3_600)
-  } else {
-    format!("{} days ago", secs / 86_400)
-  }
+/// Formats a `SystemTime` as an RFC 3339 UTC timestamp (seconds precision) — the zone-unambiguous
+/// form the UI localizes to the viewer's zone (public/js/localtime.js); empty timestamps render as
+/// an empty cell.
+fn iso_utc_system(then: SystemTime) -> String {
+  chrono::DateTime::<chrono::Utc>::from(then).to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
+/// Whether the worker has dispatched-to or returned-a-result within the last minute — the
+/// at-a-glance liveness flag driving the row coloring. Skew-safe: a future timestamp (clock skew
+/// across the fleet's hosts, or a DB clock running ahead) counts as fresh rather than
+/// `.unwrap()`-panicking on the `/workers/<service>` request path (no-panic-on-request-path
+/// mandate; cf. KNOWN_ISSUES F-4).
+fn worker_is_fresh(worker: &WorkerMetadata) -> bool {
+  let last_active = match worker.time_last_return {
+    Some(returned) => returned.max(worker.time_last_dispatch),
+    None => worker.time_last_dispatch,
+  };
+  SystemTime::now()
+    .duration_since(last_active)
+    .map(|elapsed| elapsed.as_secs() < 60)
+    .unwrap_or(true)
 }
 
 impl WorkerMetadata {
