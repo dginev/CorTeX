@@ -34,10 +34,10 @@ impl Fairing for CORS {
         "POST, GET, OPTIONS",
       ));
       response.set_header(Header::new("Access-Control-Allow-Headers", "Content-Type"));
-      response.set_header(Header::new(
-        "Content-Security-Policy-Report-Only",
-        "default-src https:; report-uri /csp-violation-report-endpoint/",
-      ));
+      // (No CSP here: the only header this fairing fires on is JSON, which executes no scripts, and
+      // the old `Content-Security-Policy-Report-Only` reported to a `report-uri` route that doesn't
+      // exist — enforcing nothing, collecting nothing. A real *enforcing* CSP belongs on the HTML +
+      // ar5iv-preview surface, which is the open Arm 13 task.)
     }
 
     if request.method() == rocket::http::Method::Options {
@@ -71,5 +71,7 @@ mod tests {
     assert_eq!(headers.get_one("Access-Control-Allow-Origin"), Some("*"));
     // The spec-invalid / unsafe `* + credentials` combination must never be emitted.
     assert_eq!(headers.get_one("Access-Control-Allow-Credentials"), None);
+    // CSP is meaningless on a JSON response — no dead report-only header here.
+    assert_eq!(headers.get_one("Content-Security-Policy-Report-Only"), None);
   }
 }

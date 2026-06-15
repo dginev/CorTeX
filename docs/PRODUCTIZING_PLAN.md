@@ -547,7 +547,10 @@ screen. Status fields are point-in-time as of this draft.
   header is dropped. `*` is retained as the *correct* posture for the deliberately-public,
   no-credential read API (agents authorize via the explicit `X-Cortex-Token` header, the admin UI is
   same-origin); an origin *allowlist* was deliberately **not** added — it would only restrict reads of
-  public data and break browser-based agent tooling (decision noted in `OPEN_QUESTIONS.md`).
+  public data and break browser-based agent tooling (decision noted in `OPEN_QUESTIONS.md`). The same
+  fairing's dead `Content-Security-Policy-Report-Only` header (report-only, on JSON only, reporting to
+  a `report-uri` route that doesn't exist → enforcing/collecting nothing) was removed; a real
+  *enforcing* CSP on the HTML + ar5iv-preview surface remains the open task (see Risks).
 - **Screen:** the **public read-only dashboard at `corpora.latexml.rs`** — the existing overview /
   reports / history / diff / **ar5iv document-preview** screens, served read-only; plus in-app
   first-run docs + contextual help on the internal admin app.
