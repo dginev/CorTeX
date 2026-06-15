@@ -1,0 +1,6 @@
+[Unit]
+Description=CorTeX frontend health probe (restarts a hung frontend)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/cortex-healthcheck.sh

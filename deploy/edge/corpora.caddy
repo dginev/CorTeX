@@ -1,0 +1,43 @@
+# Edge Caddy blocks for corpora.latexml.rs — APPEND to the Vultr box's
+# /etc/caddy/Caddyfile (which already serves latexml.rs / *.latexml.rs via the
+# shared Anubis). `caddy validate` then `systemctl reload caddy`.
+
+# --- internal router: split AFTER the shared Anubis --------------------------
+# The one Anubis instance forwards here (TARGET=http://host.docker.internal:8181
+# in the editor's docker-compose). Route by Host: corpora -> cortex over the
+# reverse-SSH tunnel; every other latexml.rs host -> the ar5iv editor.
+# Bound on all interfaces, but ufw default-DROP + an allow from the docker subnet
+# keep :8181 off the public internet (only the Anubis container reaches it):
+#   ufw allow from 172.16.0.0/12 to any port 8181 proto tcp
+http://:8181 {
+	@corpora host corpora.latexml.rs
+	handle @corpora {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
+}
+
+# --- public vhost ------------------------------------------------------------
+# corpora.latexml.rs: the CorTeX reporting UI on the home desktop, reached over a
+# reverse-SSH tunnel (127.0.0.1:8000). Read-mostly + token-gated; the only abuse
+# surface is bot-crawling the combinatorial report URLs, so HTML is walled by the
+# shared Anubis while the agent/JSON API + liveness + assets bypass it.
+corpora.latexml.rs {
+	encode zstd gzip
+	# Agents/tools/liveness/assets are never challenged (usability).
+	@exempt path /api /api/* /healthz /robots.txt /favicon.ico /public/*
+	handle @exempt {
+		reverse_proxy 127.0.0.1:8000 {
+			header_up X-Real-Ip {remote_host}
+		}
+	}
+	# Crawlable HTML -> shared Anubis (PoW) -> router -> cortex. Human solves once.
+	# X-Real-Ip is required: Anubis 500s without it (Caddy only sets X-Forwarded-For).
+	handle {
+		reverse_proxy localhost:8080 {
+			header_up X-Real-Ip {remote_host}
+		}
+	}
+}

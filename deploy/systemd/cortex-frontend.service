@@ -1,0 +1,25 @@
+[Unit]
+Description=CorTeX frontend (Rocket web UI)
+Documentation=file:/home/deyan/git/cortex/deploy/README.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=deyan
+Group=deyan
+# CWD-coupled: cortex reads config.json from the CWD and serves templates/ + public/ relative to it.
+WorkingDirectory=/home/deyan/git/cortex
+EnvironmentFile=/etc/cortex/frontend.env
+ExecStart=/home/deyan/git/cortex/target/release/frontend
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=false
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
