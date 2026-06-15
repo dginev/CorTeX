@@ -22,7 +22,8 @@ pub(crate) use reports::task_report;
 pub use reports::TaskReportOptions;
 pub use rollup::ReportSummaryRow;
 pub(crate) use rollup::{
-  category_rollup, category_total, refresh_report_summary, severity_total, what_rollup,
+  category_rollup, category_total, refresh_report_summary, report_summary_refreshed_at,
+  severity_total, what_rollup,
 };
 
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};

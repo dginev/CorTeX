@@ -6,6 +6,18 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **Report freshness now tracks the materialized-view age (not the render time).** The footer's
+  freshness was anchored on the per-request render time → always "generated just now" (green), which
+  hid the real staleness: a report is only as current as the `report_summary` rollup it reads. Postgres
+  doesn't record a matview's refresh time, so added a single-row **`report_summary_meta(refreshed_at)`**
+  (migration `2026-06-14-140000`) stamped by `refresh_report_summary` on every refresh, and a
+  `report_summary_refreshed_at` reader; `serve_report` now anchors `report_time`/`report_time_epoch` on
+  that. The footer reads **"data refreshed N ago · <UTC>"**, colour-coded by matview age (≤30 min green
+  · ≤2 h warn · ≤1 day deep-orange · older red) — which lines up with the 1 h refresh cadence. Verified:
+  aging the stamp to 3 h showed "data refreshed 3 hours ago" in deep-orange. (Bug en route: PG 14+
+  `extract()` returns `numeric` not `double` — cast `::bigint`.) `reports_api_test` / `report_rollup_test`
+  green; fmt + clippy clean.
+
 - **UI — design-system sweep of the remaining screens (finishing the UI pass).**
   - **Severity row tints** (task-list / fatal etc.): `tr.{success,warning,error,danger,info}` now blend
     the severity token into the elevated surface — saturated, theme-aware, good contrast in both themes

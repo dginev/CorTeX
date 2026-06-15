@@ -212,17 +212,16 @@ pub fn serve_report(
       context
         .global
         .insert("report_duration".to_string(), report_duration.to_string());
-      // Report freshness: the generation time, both human-readable (tooltip / no-JS fallback) and
-      // as epoch-ms, so the footer renders a live "generated N ago" with colour-coded
-      // staleness. Set for *every* report level (the top-level branch also set `report_time`;
-      // this overwrites it).
-      context
-        .global
-        .insert("report_time".to_string(), report_timestamp());
-      context.global.insert(
-        "report_time_epoch".to_string(),
-        report_end.timestamp_millis().to_string(),
-      );
+      // Report freshness = the **data's** age: when the `report_summary` rollup was last refreshed
+      // (a report is only as current as its matview), NOT the per-request render time (always
+      // "now"). The footer renders a live, colour-coded "data refreshed N ago" from this
+      // epoch; if the stamp is missing we omit it (no freshness dot).
+      if let Some((epoch_ms, human)) = crate::backend::report_summary_refreshed_at(connection) {
+        context.global.insert("report_time".to_string(), human);
+        context
+          .global
+          .insert("report_time_epoch".to_string(), epoch_ms.to_string());
+      }
       Ok(Template::render(template, context))
     } else {
       Err(Status::NotFound)

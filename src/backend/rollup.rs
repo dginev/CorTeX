@@ -59,15 +59,45 @@ pub struct ReportSummaryRow {
 /// caller (the finalize thread, `mark_new_run`) runs it outside a transaction; keep it that way.
 pub(crate) fn refresh_report_summary(connection: &mut PgConnection) -> QueryResult<()> {
   match sql_query("REFRESH MATERIALIZED VIEW CONCURRENTLY report_summary").execute(connection) {
-    Ok(_) => Ok(()),
+    Ok(_) => {},
     Err(e) => {
       eprintln!(
         "-- report_summary CONCURRENTLY refresh failed ({e:?}); falling back to a plain refresh"
       );
       sql_query("REFRESH MATERIALIZED VIEW report_summary").execute(connection)?;
-      Ok(())
     },
   }
+  // Stamp the refresh time so report pages can show the data's true freshness (matview age). Best
+  // effort — the rollup itself already updated; a missing stamp just shows stale-unknown.
+  let _ = sql_query(
+    "INSERT INTO report_summary_meta (singleton, refreshed_at) VALUES (true, now()) \
+     ON CONFLICT (singleton) DO UPDATE SET refreshed_at = now()",
+  )
+  .execute(connection);
+  Ok(())
+}
+
+/// When the `report_summary` matview was last refreshed, as `(epoch_ms, human_utc)` — the data's
+/// freshness anchor for report pages (a report is only as current as its last rollup refresh).
+/// `None` if the meta row is missing. Read as epoch-ms + a preformatted UTC string to avoid any
+/// timezone/`chrono` round-trip.
+pub(crate) fn report_summary_refreshed_at(connection: &mut PgConnection) -> Option<(i64, String)> {
+  #[derive(diesel::QueryableByName)]
+  struct Row {
+    // Cast to bigint: Postgres 14+ `extract()` returns `numeric`, not `double precision`.
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    epoch_ms: i64,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    human: String,
+  }
+  sql_query(
+    "SELECT (extract(epoch from refreshed_at) * 1000)::bigint AS epoch_ms, \
+     to_char(refreshed_at AT TIME ZONE 'UTC', 'Dy, DD Mon YYYY HH24:MI \"UTC\"') AS human \
+     FROM report_summary_meta LIMIT 1",
+  )
+  .get_result::<Row>(connection)
+  .ok()
+  .map(|r| (r.epoch_ms, r.human))
 }
 
 /// Category-grain report for a `(corpus, service, severity)`: one row per category with its
