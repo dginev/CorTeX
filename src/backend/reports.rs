@@ -8,13 +8,42 @@ use super::rollup;
 use crate::frontend::helpers::severity_highlight;
 use crate::helpers::TaskStatus;
 use crate::models::{
-  Corpus, DiffStatusFilter, DiffStatusRow, HistoricalTask, Service, Task, TaskRunMetadata,
+  Corpus, DiffStatusFilter, DiffStatusRow, HistoricalTask, LogError, LogFatal, LogInfo, LogInvalid,
+  LogRecord, LogWarning, Service, Task, TaskRunMetadata,
 };
 use crate::reports::{AggregateReport, TaskDetailReport};
 use crate::schema::tasks;
 
 lazy_static! {
   static ref TASK_REPORT_NAME_REGEX: Regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
+}
+
+/// Every worker-log message attached to a `task` — the forensic evidence behind that document's
+/// conversion status — loaded through the Diesel-generated row structs (`LogInfo` … `LogInvalid`)
+/// via their `belongs_to(Task)` association, so the column mapping is compiler-checked. Each is
+/// returned as a [`LogRecord`] trait object (which carries its own
+/// `severity()`/`category()`/`what()` /`details()`), in info → invalid order. Cheap: every query is
+/// keyed by the indexed `task_id` and this serves a single document, never a hot path; a failed
+/// sub-query contributes no rows rather than erroring the whole report.
+pub fn task_messages(connection: &mut PgConnection, task: &Task) -> Vec<Box<dyn LogRecord>> {
+  let mut messages: Vec<Box<dyn LogRecord>> = Vec::new();
+  macro_rules! collect {
+    ($row:ty) => {
+      if let Ok(rows) = <$row>::belonging_to(task).load::<$row>(connection) {
+        messages.extend(
+          rows
+            .into_iter()
+            .map(|row| Box::new(row) as Box<dyn LogRecord>),
+        );
+      }
+    };
+  }
+  collect!(LogInfo);
+  collect!(LogWarning);
+  collect!(LogError);
+  collect!(LogFatal);
+  collect!(LogInvalid);
+  messages
 }
 
 /// An options object describing a CorTeX report request

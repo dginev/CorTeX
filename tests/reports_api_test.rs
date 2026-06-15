@@ -11,7 +11,7 @@
 use cortex::backend::{self, test_db_address};
 use cortex::frontend::server::mount_api_with;
 use cortex::models::{Corpus, NewCorpus, NewService, Service};
-use cortex::schema::{corpora, log_warnings, services, tasks};
+use cortex::schema::{corpora, log_errors, log_warnings, services, tasks};
 use diesel::prelude::*;
 use rocket::http::{ContentType, Status};
 use rocket::local::blocking::Client;
@@ -277,12 +277,102 @@ fn category_and_what_reports_match_seed() {
   );
 }
 
+/// The per-article forensic endpoint (`GET /api/corpus/<c>/<svc>/document/<name>`): a document's
+/// status plus every worker-log message behind it — "what are the errors of this article?".
+fn document_forensics_reports_status_and_messages() {
+  seed(); // ensures the corpus + service exist
+  let mut backend = backend::testdb();
+  let corpus = Corpus::find_by_name(CORPUS_NAME, &mut backend.connection).expect("corpus");
+  let service = Service::find_by_name(SERVICE_NAME, &mut backend.connection).expect("service");
+
+  // A document whose entry ends in `<name>.zip`, so `Task::find_by_name` resolves it. Status =
+  // Error (-3); seed one warning and one error message as its forensic evidence.
+  let entry = "/r/1808/0801.1234.zip";
+  let task_id: i64 = diesel::insert_into(tasks::table)
+    .values((
+      tasks::entry.eq(entry),
+      tasks::service_id.eq(service.id),
+      tasks::corpus_id.eq(corpus.id),
+      tasks::status.eq(-3i32),
+    ))
+    .returning(tasks::id)
+    .get_result(&mut backend.connection)
+    .expect("insert document task");
+  add_warning(&mut backend.connection, task_id, "math", "undefined_macro");
+  diesel::insert_into(log_errors::table)
+    .values((
+      log_errors::task_id.eq(task_id),
+      log_errors::category.eq("latex"),
+      log_errors::what.eq("undefined_control_sequence"),
+      log_errors::details.eq("\\foo at line 3"),
+    ))
+    .execute(&mut backend.connection)
+    .expect("insert log_error");
+
+  let client = client();
+  let response = client
+    .get(format!(
+      "/api/corpus/{CORPUS_NAME}/{SERVICE_NAME}/document/0801.1234"
+    ))
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok, "forensic report renders");
+  assert_eq!(response.content_type(), Some(ContentType::JSON));
+  let doc: Value = response.into_json().expect("document json");
+  assert_eq!(doc["name"], "0801.1234");
+  assert_eq!(doc["status"], "error", "the tasks-row status, keyed");
+  assert_eq!(doc["status_code"], -3);
+  assert!(
+    doc["result_url"]
+      .as_str()
+      .is_some_and(|u| u == format!("/entry/{SERVICE_NAME}/{task_id}")),
+    "carries a result-download URL keyed by the task id"
+  );
+  let messages = doc["messages"].as_array().expect("messages array");
+  assert_eq!(messages.len(), 2, "the seeded warning + error");
+  assert!(
+    messages.iter().any(|m| m["severity"] == "warning"
+      && m["category"] == "math"
+      && m["what"] == "undefined_macro"),
+    "the warning message is surfaced with its category/what"
+  );
+  assert!(
+    messages.iter().any(|m| m["severity"] == "error"
+      && m["what"] == "undefined_control_sequence"
+      && m["details"] == "\\foo at line 3"),
+    "the error message carries its forensic details"
+  );
+
+  // Unknown document -> 404.
+  let response = client
+    .get(format!(
+      "/api/corpus/{CORPUS_NAME}/{SERVICE_NAME}/document/no-such-paper-9999"
+    ))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::NotFound,
+    "unknown document -> 404"
+  );
+
+  // Clean up the extra task + its logs.
+  diesel::delete(log_warnings::table.filter(log_warnings::task_id.eq(task_id)))
+    .execute(&mut backend.connection)
+    .ok();
+  diesel::delete(log_errors::table.filter(log_errors::task_id.eq(task_id)))
+    .execute(&mut backend.connection)
+    .ok();
+  diesel::delete(tasks::table.filter(tasks::id.eq(task_id)))
+    .execute(&mut backend.connection)
+    .ok();
+}
+
 // Custom harness (`harness = false`): own `main`, so we end with `libc::_exit(0)` while the Client
 // is still alive — skipping the racy libpq/OpenSSL `atexit` teardown that SIGSEGVs a
 // default-harness exit (KNOWN_ISSUES L-1). A panic still aborts non-zero, so a real assertion
 // failure still fails CI.
 fn main() {
   category_and_what_reports_match_seed();
+  document_forensics_reports_status_and_messages();
   eprintln!("reports_api_test: all cases passed");
   unsafe { libc::_exit(0) }
 }

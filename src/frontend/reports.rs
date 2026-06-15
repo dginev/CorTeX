@@ -20,14 +20,15 @@ use rocket_dyn_templates::Template;
 use serde::Serialize;
 
 use crate::backend::{
-  category_rollup, category_total, from_address, severity_total, what_rollup, DatabaseUrl, DbPool,
-  ReportSummaryRow, RerunOptions,
+  category_rollup, category_total, from_address, severity_total, task_messages, what_rollup,
+  DatabaseUrl, DbPool, ReportSummaryRow, RerunOptions,
 };
 use crate::frontend::actor::{require_admin, Actor, AdminReject, AdminSession};
 use crate::frontend::concerns::serve_report;
 use crate::frontend::params::ReportParams;
+use crate::helpers::TaskStatus;
 use crate::jobs;
-use crate::models::{Corpus, Service};
+use crate::models::{Corpus, Service, Task};
 
 /// One report row: a category (in the category report) or a `what` class (in the drill-down), with
 /// its distinct-task and message counts.
@@ -69,6 +70,46 @@ pub struct WhatReportDto {
   pub total_messages: i64,
   /// The `what` rows for the requested page.
   pub whats: Vec<ReportRowDto>,
+}
+
+/// One worker-log message behind a document's status: its severity and the `category`/`what`/
+/// `details` triple parsed from the worker's `cortex.log`.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct MessageDto {
+  /// `info` | `warning` | `error` | `fatal` | `invalid`.
+  pub severity: String,
+  /// Mid-level description (open set).
+  pub category: String,
+  /// Low-level description (open set).
+  pub what: String,
+  /// Technical details (e.g. localization info).
+  pub details: String,
+}
+
+/// The per-article forensic report (the micro magnification): one document's conversion outcome for
+/// a service, plus every message behind it — the answer to "what are the errors of this article?".
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct DocumentReportDto {
+  /// Corpus name.
+  pub corpus: String,
+  /// Service name.
+  pub service: String,
+  /// The document's short name as queried (e.g. `0801.1234`).
+  pub name: String,
+  /// The document's source archive path (`tasks.entry`).
+  pub entry: String,
+  /// The task id for this `(corpus, service, document)`.
+  pub task_id: i64,
+  /// Conversion status key: `no_problem` | `warning` | `error` | `fatal` | `invalid` | `todo` | …
+  pub status: String,
+  /// The raw signed status code (see `helpers::TaskStatus`).
+  pub status_code: i32,
+  /// Every message logged for the document, info → invalid.
+  pub messages: Vec<MessageDto>,
+  /// Path to download the converted result archive.
+  pub result_url: String,
+  /// Path to the human preview page.
+  pub preview_url: String,
 }
 
 /// Severities the rollup aggregates over (the four message severities plus the all-messages `info`
@@ -185,6 +226,46 @@ pub fn api_what_report(
     total_tasks,
     total_messages,
     whats,
+  }))
+}
+
+/// The per-article forensic report (agent micro-drill-down): a single document's status for a
+/// service plus every worker-log message behind it — "what are the errors of this article?".
+/// `<name>` is the document's short name as it appears in reports (e.g. `0801.1234`). `404` on an
+/// unknown corpus / service / document.
+#[rocket_okapi::openapi(tag = "Reports")]
+#[get("/api/corpus/<corpus>/<service>/document/<name>")]
+pub fn api_document(
+  corpus: &str,
+  service: &str,
+  name: &str,
+  pool: &State<DbPool>,
+) -> Result<Json<DocumentReportDto>, Status> {
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let (corpus, service) = resolve(corpus, service, &mut connection)?;
+  let task =
+    Task::find_by_name(name, &corpus, &service, &mut connection).map_err(|_| Status::NotFound)?;
+  let status = TaskStatus::from_raw(task.status);
+  let messages = task_messages(&mut connection, &task)
+    .iter()
+    .map(|message| MessageDto {
+      severity: message.severity().to_string(),
+      category: message.category().to_string(),
+      what: message.what().to_string(),
+      details: message.details().to_string(),
+    })
+    .collect();
+  Ok(Json(DocumentReportDto {
+    corpus: corpus.name.clone(),
+    service: service.name.clone(),
+    name: name.to_string(),
+    entry: task.entry.trim_end().to_string(),
+    task_id: task.id,
+    status: status.to_key(),
+    status_code: status.raw(),
+    messages,
+    result_url: format!("/entry/{}/{}", service.name, task.id),
+    preview_url: format!("/preview/{}/{}/{}", corpus.name, service.name, name),
   }))
 }
 

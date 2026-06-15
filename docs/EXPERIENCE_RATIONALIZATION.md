@@ -108,10 +108,11 @@ discoverable JSON DTOs (each also the future HTML/CLI source).
 agent question and the single biggest current gap. B2 and C1/C2 are independent polish that can
 interleave.
 
-## 5. Open decisions
-- **D-A1 — document identity:** address a document by its `tasks.entry` filesystem path (already the
-  key, but ugly in a URL) or mint a stable per-(corpus,document) id. Leaning: accept the entry path
-  (URL-encoded) to avoid a schema change; revisit if it proves unwieldy.
-- **D-B2 — CLI init UX:** `ratatui` rich TUI (delightful, a real dependency + event loop) vs a plain
-  sequential prompt flow (lazy, dependency-light). Owner asked to *consider* ratatui; recommend
-  proving the guided flow first, then deciding.
+## 5. Decisions
+- **D-A1 — document identity: RESOLVED → the entry short-name.** `Task::find_by_name(name, corpus,
+  service)` already keys a document by its short name (the paper id, e.g. `0801.1234`, matched as
+  `entry LIKE %name.zip`) — exactly how documents appear in reports. The agent endpoint uses it
+  (`/api/corpus/<c>/<svc>/document/<name>`); no schema change, no ugly full-path URLs.
+- **D-B2 — CLI init UX: RESOLVED → `ratatui` rich TUI** (owner, 2026-06-15). The guided
+  `cortex init` gets a full-screen terminal UI (navigable strategic-choice panels, live validation).
+  A real dependency + event loop, accepted for the delightful admin onboarding.
