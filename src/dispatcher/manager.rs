@@ -10,6 +10,8 @@ use std::sync::Arc;
 use std::thread::{self, sleep};
 use std::time::Duration;
 
+use tracing::{error, info};
+
 use crate::backend::{build_pool, default_db_address};
 use crate::config::config;
 use crate::dispatcher::finalize::Finalize;
@@ -154,7 +156,7 @@ impl TaskManager {
           .unwrap_or_else(|e| panic!("Failed in ventilator thread: {e:?}"));
       });
       if vent_thread.join().is_err() {
-        eprintln!("-- Ventilator thread died unexpectedly!");
+        error!("Ventilator thread died unexpectedly!");
         return Err(zmq::Error::ETERM);
       }
       if job_limit.is_some() {
@@ -170,23 +172,23 @@ impl TaskManager {
       // stall unnoticed. (In `job_limit` mode we already `break`ed above, so a *cleanly
       // finished* sink/finalize is never mistaken for a death here.)
       if sink_thread.is_finished() {
-        eprintln!("-- Sink thread died unexpectedly! Aborting for a supervised restart.");
+        error!("Sink thread died unexpectedly! Aborting for a supervised restart.");
         return Err(zmq::Error::ETERM);
       }
       if finalize_thread.is_finished() {
-        eprintln!("-- Finalize (DB) thread died unexpectedly! Aborting for a supervised restart.");
+        error!("Finalize (DB) thread died unexpectedly! Aborting for a supervised restart.");
         return Err(zmq::Error::ETERM);
       }
       sleep(Duration::from_secs(1));
     }
     if sink_thread.join().is_err() {
-      eprintln!("-- Sink thread died unexpectedly!");
+      error!("Sink thread died unexpectedly!");
       Err(zmq::Error::ETERM)
     } else if finalize_thread.join().is_err() {
-      eprintln!("-- DB thread died unexpectedly!");
+      error!("DB thread died unexpectedly!");
       Err(zmq::Error::ETERM)
     } else {
-      eprintln!("-- Manager successfully terminated!");
+      info!("Manager successfully terminated!");
       Ok(())
     }
   }

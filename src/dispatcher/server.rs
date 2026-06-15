@@ -5,6 +5,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
+use tracing::{debug, error, warn};
 
 use crate::backend::Backend;
 use crate::helpers::{NewTaskMessage, TaskProgress, TaskReport, TaskStatus};
@@ -45,10 +46,10 @@ pub type ServiceCache = DashMap<String, Option<Service>>;
 
 /// Rate-limited logging for high-frequency, low-value events — the dispatcher's *discarded*
 /// messages (malformed replies/requests, unknown service names, unknown task ids). The dispatcher's
-/// request and sink loops `eprintln!`/`println!` one line per skipped message; under a **sustained
-/// flood** (a hostile or buggy peer spamming bad frames) those synchronous, locked
-/// `stderr`/`stdout` writes serialise and *slow the real pipeline* — a self-inflicted
-/// throughput-DoS (KNOWN_ISSUES D-11). This aggregates instead: it counts events and signals an
+/// request and sink loops would otherwise `warn!` one line per skipped message; under a **sustained
+/// flood** (a hostile or buggy peer spamming bad frames) even leveled logging serialises a
+/// synchronous write per event and *slows the real pipeline* — a self-inflicted throughput-DoS
+/// (KNOWN_ISSUES D-11). This aggregates instead: it counts events and signals an
 /// emit at most once per `interval` (plus the very first event, so a problem is visible
 /// immediately), carrying the suppressed count. So a flood of any size costs **O(1) log I/O per
 /// interval**, not O(flood) — *counted, not narrated* — while a genuine trickle is still surfaced.
@@ -210,7 +211,7 @@ pub fn mark_done_batch(backend: &mut Backend, reports: &[TaskReport]) -> Result<
   let request_time = chrono::Utc::now();
   let mut success = false;
   if let Err(e) = backend.mark_done(reports) {
-    println!("-- mark_done attempt failed: {e:?}");
+    warn!("mark_done attempt failed: {e:?}");
     // DB persist failed, retry
     let mut retries = 0;
     while retries < 3 {
@@ -221,7 +222,7 @@ pub fn mark_done_batch(backend: &mut Backend, reports: &[TaskReport]) -> Result<
           success = true;
           break;
         },
-        Err(e) => println!("-- mark_done retry failed: {e:?}"),
+        Err(e) => warn!("mark_done retry failed: {e:?}"),
       };
     }
   } else {
@@ -233,7 +234,7 @@ pub fn mark_done_batch(backend: &mut Backend, reports: &[TaskReport]) -> Result<
     ));
   }
   let request_duration = (chrono::Utc::now() - request_time).num_milliseconds();
-  println!(
+  debug!(
     "finalize: reporting {} tasks to DB took {request_duration}ms.",
     reports.len()
   );
@@ -247,9 +248,7 @@ pub fn mark_done_batch(backend: &mut Backend, reports: &[TaskReport]) -> Result<
 /// only log.
 pub fn send_done(done_tx: &SyncSender<TaskReport>, report: TaskReport) {
   if done_tx.send(report).is_err() {
-    eprintln!(
-      "-- done channel closed (finalize thread gone); the manager will abort for a restart"
-    );
+    error!("done channel closed (finalize thread gone); the manager will abort for a restart");
   }
 }
 

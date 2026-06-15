@@ -45,6 +45,12 @@ zmq = "0.10.0"
 # cache) — phase 4 of the dispatcher rationalization (docs/DISPATCHER_RATIONALIZATION.md), replacing
 # the contended `Arc<Mutex<HashMap>>` so leasing/return/reaping no longer serialise on one lock.
 dashmap = "6.1"
+# Structured, leveled logging (Arm 8 observability). Replaces the dispatcher's raw per-event
+# eprintln!/println! — hot-path narration drops to trace/debug, filtered out at the default `info`
+# level, so a high task rate no longer pays a synchronous locked-stderr write per dispatched task
+# (KNOWN_ISSUES D-11). Verbosity is runtime-controlled via RUST_LOG; see `cortex::observability`.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dotenvy = "0.15.7"
 figment = { version = "0.10", features = ["toml", "env"] }
 toml = "0.8"

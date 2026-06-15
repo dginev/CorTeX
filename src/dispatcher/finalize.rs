@@ -4,6 +4,7 @@ use crate::helpers::TaskReport;
 use std::error::Error;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
+use tracing::{debug, info, warn};
 
 /// Upper bound on how stale the `report_summary` rollup may get while a run is in flight. A single
 /// conversion run can take weeks, so an event-only refresh (on drain) is not enough — we also
@@ -91,7 +92,7 @@ impl Finalize {
           jobs_count += 1;
           reports_dirty = true;
           if jobs_count.is_multiple_of(100) {
-            println!("-- finalize thread persisted {jobs_count} batches.");
+            debug!("finalize thread persisted {jobs_count} batches.");
           }
           // Long runs may never idle, so bound report staleness with a periodic refresh.
           if last_report_refresh.elapsed() >= report_refresh_interval() {
@@ -126,7 +127,7 @@ impl Finalize {
       }
       if let Some(limit) = self.job_limit {
         if jobs_count >= limit {
-          println!("finalize {limit}: job limit reached, terminating finalize thread...");
+          info!("finalize {limit}: job limit reached, terminating finalize thread...");
           // Make the final batch visible before we stop.
           if reports_dirty {
             refresh_reports(&mut backend);
@@ -143,7 +144,7 @@ impl Finalize {
 /// not take down the finalize thread — log it and carry on; the next drain or daily tick retries.
 fn refresh_reports(backend: &mut backend::Backend) {
   if let Err(e) = backend.refresh_report_summary() {
-    eprintln!("-- finalize: report_summary refresh failed (non-fatal): {e:?}");
+    warn!("finalize: report_summary refresh failed (non-fatal): {e:?}");
   }
 }
 

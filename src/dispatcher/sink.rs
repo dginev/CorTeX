@@ -9,6 +9,8 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+use tracing::{info, trace, warn};
+
 use crate::config::config;
 use crate::dispatcher::server;
 use crate::helpers;
@@ -67,8 +69,8 @@ fn run_writer(rx: &Receiver<WriteCommand>, done_tx: &SyncSender<TaskReport>) {
         let file = match File::create(&recv_path) {
           Ok(f) => Some(f),
           Err(e) => {
-            eprintln!(
-              "-- sink writer: File::create({recv_path:?}) failed ({e:?}); task {} left Queued for the reaper",
+            warn!(
+              "sink writer: File::create({recv_path:?}) failed ({e:?}); task {} left Queued for the reaper",
               task.id
             );
             None
@@ -80,7 +82,7 @@ fn run_writer(rx: &Receiver<WriteCommand>, done_tx: &SyncSender<TaskReport>) {
         if let Some((_, _, slot)) = current.as_mut() {
           if let Some(file) = slot {
             if let Err(e) = file.write_all(&bytes) {
-              eprintln!("-- sink writer: write to result file failed ({e:?}); abandoning result");
+              warn!("sink writer: write to result file failed ({e:?}); abandoning result");
               // Stop writing; the (now-partial) file makes the result untrustworthy, so Commit
               // skips the report and the task is recovered by the reaper.
               *slot = None;
@@ -98,8 +100,8 @@ fn run_writer(rx: &Receiver<WriteCommand>, done_tx: &SyncSender<TaskReport>) {
               server::send_done(done_tx, report);
             },
             None => {
-              eprintln!(
-                "-- sink writer: no result file for task {} (create/write failed); skipping report (reaper will recover)",
+              warn!(
+                "sink writer: no result file for task {} (create/write failed); skipping report (reaper will recover)",
                 task.id
               );
             },
@@ -111,8 +113,8 @@ fn run_writer(rx: &Receiver<WriteCommand>, done_tx: &SyncSender<TaskReport>) {
           drop(file);
           std::fs::remove_file(&recv_path).ok();
           let taskid = task.id;
-          eprintln!(
-            "-- sink: result for task {taskid} exceeded the {max_result_bytes}-byte cap — rejected (Invalid)"
+          warn!(
+            "sink: result for task {taskid} exceeded the {max_result_bytes}-byte cap — rejected (Invalid)"
           );
           let report = TaskReport {
             task,
@@ -226,8 +228,8 @@ impl Sink {
       let identity = identity_msg.as_str().unwrap_or("_worker_");
       if !sink.get_rcvmore().unwrap_or(false) {
         if let Some(n) = discard_log.record() {
-          eprintln!(
-            "-- sink: discarded {n} malformed reply(ies) [latest: truncated after identity {identity:?}] (rate-limited)"
+          warn!(
+            "sink: discarded {n} malformed reply(ies) [latest: truncated after identity {identity:?}] (rate-limited)"
           );
         }
         continue;
@@ -236,8 +238,8 @@ impl Sink {
       let service_name = service_msg.as_str().unwrap_or("_unknown_");
       if !sink.get_rcvmore().unwrap_or(false) {
         if let Some(n) = discard_log.record() {
-          eprintln!(
-            "-- sink: discarded {n} malformed reply(ies) [latest: no taskid, worker {identity:?}] (rate-limited)"
+          warn!(
+            "sink: discarded {n} malformed reply(ies) [latest: no taskid, worker {identity:?}] (rate-limited)"
           );
         }
         continue;
@@ -257,8 +259,8 @@ impl Sink {
         // identity/service `RCVMORE` guards above; it completes the envelope hardening
         // (D-4) for the no-data-frame case.
         if let Some(n) = discard_log.record() {
-          eprintln!(
-            "-- sink: discarded {n} malformed reply(ies) [latest: no data frame after taskid {taskid:?}, worker {identity:?}] (rate-limited)"
+          warn!(
+            "sink: discarded {n} malformed reply(ies) [latest: no data frame after taskid {taskid:?}, worker {identity:?}] (rate-limited)"
           );
         }
         continue;
@@ -268,7 +270,7 @@ impl Sink {
       sink_job_count += 1;
       let mut total_incoming = 0;
       let request_time = chrono::Utc::now();
-      println!(
+      trace!(
         "sink {sink_job_count:?}: incoming result for {service_name:?}, worker {identity:?}, taskid: {taskid}");
 
       if let Some(task_progress) = progress_queue_arc.remove(taskid) {
@@ -322,8 +324,8 @@ impl Sink {
                     true
                   },
                   None => {
-                    eprintln!(
-                      "-- sink: could not derive a result path for task entry {:?}; draining + leaving Queued",
+                    warn!(
+                      "sink: could not derive a result path for task entry {:?}; draining + leaving Queued",
                       task.entry
                     );
                     false
@@ -386,8 +388,8 @@ impl Sink {
             } else {
               // Otherwise just discard the rest of the message
               if let Some(n) = discard_log.record() {
-                println!(
-                  "-- sink: discarded {n} reply(ies) [latest: service-id mismatch — requested {:?}, task is {:?}, task {taskid:?}] (rate-limited)",
+                warn!(
+                  "sink: discarded {n} reply(ies) [latest: service-id mismatch — requested {:?}, task is {:?}, task {taskid:?}] (rate-limited)",
                   service.id, task.service_id
                 );
               }
@@ -402,8 +404,8 @@ impl Sink {
       } else {
         // No such task, just discard the next message from the sink
         if let Some(n) = discard_log.record() {
-          println!(
-            "-- sink: discarded {n} reply(ies) for unknown task id(s) [latest: {taskid:?}] (rate-limited)"
+          warn!(
+            "sink: discarded {n} reply(ies) for unknown task id(s) [latest: {taskid:?}] (rate-limited)"
           );
         }
         while sink.recv(&mut recv_msg, 0).is_ok() {
@@ -414,12 +416,12 @@ impl Sink {
       }
       let responded_time = chrono::Utc::now();
       let request_duration = (responded_time - request_time).num_milliseconds();
-      println!(
+      trace!(
         "sink {sink_job_count}: received {total_incoming} bytes, recv took {request_duration}ms."
       );
       if let Some(limit_number) = job_limit {
         if sink_job_count >= limit_number {
-          println!("sink {limit_number}: job limit reached, terminating Sink thread...");
+          info!("sink {limit_number}: job limit reached, terminating Sink thread...");
           break;
         }
       }

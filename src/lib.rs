@@ -32,6 +32,7 @@ pub mod importer;
 pub mod jobs;
 pub mod migrations;
 pub mod models;
+pub mod observability;
 pub mod reports;
 /// Auto-generated diesel schema for the backend DB
 pub mod schema;

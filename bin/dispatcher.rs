@@ -9,6 +9,9 @@ use cortex::dispatcher::manager::TaskManager;
 
 /// A dispatcher executable for `CorTeX` distributed processing with ZMQ
 fn main() {
+  // Leveled logging (RUST_LOG, default info); the hot-path narration is trace/debug — see
+  // `cortex::observability`.
+  cortex::observability::init_tracing();
   // All operational parameters come from the runtime configuration
   // (defaults → cortex.toml → CORTEX_ env); see `cortex::config`.
   let cfg = config();

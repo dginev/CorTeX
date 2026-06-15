@@ -10,6 +10,7 @@ use crate::helpers;
 use crate::helpers::{TaskProgress, TaskReport};
 use crate::models::WorkerMetadataSender;
 use std::error::Error;
+use tracing::{debug, info, trace, warn};
 use zmq::SNDMORE;
 
 /// Specifies the binding and operation parameters for a ZMQ ventilator component
@@ -106,7 +107,7 @@ impl Ventilator {
         // `[identity]` with no service frame — truncated. Skipping consumes nothing further, so the
         // next request's frames are left intact (no desync).
         if let Some(n) = discard_log.record() {
-          eprintln!("-- ventilator: discarded {n} malformed request(s) [latest: truncated, no service frame] (rate-limited)");
+          warn!("ventilator: discarded {n} malformed request(s) [latest: truncated, no service frame] (rate-limited)");
         }
         continue;
       }
@@ -125,7 +126,7 @@ impl Ventilator {
       if service_name.is_empty() {
         // Empty service request (e.g. the "3 adjacent empty messages") — skip without desyncing.
         if let Some(n) = discard_log.record() {
-          eprintln!("-- ventilator: discarded {n} malformed request(s) [latest: empty service from {identity_str:?}] (rate-limited)");
+          warn!("ventilator: discarded {n} malformed request(s) [latest: empty service from {identity_str:?}] (rate-limited)");
         }
         continue;
       }
@@ -147,7 +148,7 @@ impl Ventilator {
           // worker backs off — rather than the old fatal desync (the request framing is robust now,
           // D-4). Rate-limit the log so a flood of bad-service requests can't DoS us (D-11).
           if let Some(n) = discard_log.record() {
-            eprintln!("-- ventilator: discarded {n} request(s) [latest: unknown service {service_name:?} from {identity_str:?}, mock-replied] (rate-limited)");
+            warn!("ventilator: discarded {n} request(s) [latest: unknown service {service_name:?} from {identity_str:?}, mock-replied] (rate-limited)");
           }
           ventilator.send(identity, SNDMORE)?;
           ventilator.send("0", SNDMORE)?;
@@ -161,8 +162,8 @@ impl Ventilator {
         // the sink receives results, instead of growing toward the hard panic bound. Degrade
         // gracefully under overload rather than crash.
         if server::in_flight_saturated(progress_queue_arc.len(), self.max_in_flight) {
-          eprintln!(
-            "-- BACKPRESSURE: in-flight set at capacity ({}); mock-replying to worker {identity_str:?}",
+          debug!(
+            "BACKPRESSURE: in-flight set at capacity ({}); mock-replying to worker {identity_str:?}",
             self.max_in_flight
           );
           ventilator.send(identity, SNDMORE)?;
@@ -172,8 +173,8 @@ impl Ventilator {
         }
         let task_queue: &mut Vec<TaskProgress> = queues.entry(service.id).or_default();
         if task_queue.is_empty() {
-          eprintln!(
-            "-- No tasks in task queue for service {:?}, fetching up to {:?} more from backend...",
+          debug!(
+            "No tasks in task queue for service {:?}, fetching up to {:?} more from backend...",
             service_name, self.queue_size
           );
           // Refetch a new batch of tasks
@@ -204,7 +205,7 @@ impl Ventilator {
           let current_task = current_task_progress.task;
           taskid = current_task.id;
           let serviceid = current_task.service_id;
-          eprintln!("vent {source_job_count}: worker {identity_str:?} received task {taskid:?}");
+          trace!("vent {source_job_count}: worker {identity_str:?} received task {taskid:?}");
           ventilator.send(&taskid.to_string(), SNDMORE)?;
           if serviceid == 1 {
             // No payload needed for init
@@ -234,30 +235,28 @@ impl Ventilator {
               }
               let responded_time = chrono::Utc::now();
               let request_duration = (responded_time - request_time).num_milliseconds();
-              eprintln!(
+              trace!(
                 "vent {source_job_count}: message size: {total_outgoing}, took {request_duration}ms.");
             } else {
-              eprintln!("-- Failed to prepare input stream for taskid {taskid:?}");
-              eprintln!("-- task details: {current_task:?}");
+              warn!("Failed to prepare input stream for taskid {taskid:?}");
+              debug!("task details: {current_task:?}");
               taskid = -1;
               ventilator.send(Vec::new(), 0)?;
             }
           }
         } else {
-          eprintln!("vent {source_job_count:?}: worker {identity_str:?} received mock reply.");
+          trace!("vent {source_job_count:?}: worker {identity_str:?} received mock reply.");
           ventilator.send("0", SNDMORE)?;
           ventilator.send(Vec::new(), 0)?;
         }
         // Update this worker's metadata (non-blocking enqueue to the background writer)
         self.metadata.dispatched(identity_str, service.id, taskid);
       } else {
-        eprintln!(
-          "-- No such service {service_name:?} in ventilator request from {identity_str:?}"
-        );
+        warn!("No such service {service_name:?} in ventilator request from {identity_str:?}");
       }
       if let Some(limit_number) = job_limit {
         if source_job_count >= limit_number {
-          eprintln!("vent {limit_number}: job limit reached, terminating Ventilator thread...");
+          info!("vent {limit_number}: job limit reached, terminating Ventilator thread...");
           return Ok(source_job_count);
         }
       }
