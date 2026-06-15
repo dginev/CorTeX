@@ -23,6 +23,7 @@
   --shadow-lg: 0 6px 24px rgba(40, 30, 20, 0.1);
   --ok: #2f7d3f;
   --warn: #c47e1a;
+  --orange-deep: #b5530e;
   --bad: #b32424;
   --serif: "Roboto Slab", "Iowan Old Style", Charter, Georgia, serif;
   --sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -46,6 +47,7 @@
   --shadow-lg: 0 6px 24px rgba(0, 0, 0, 0.5);
   --ok: #6dd28a;
   --warn: #f5b042;
+  --orange-deep: #e8884a;
   --bad: #f06363;
 }
 
@@ -1014,6 +1016,31 @@ h3 {
   background-color: var(--bg-elev);
   border: 1px solid var(--rule);
   border-radius: 6px;
+}
+
+/* Report freshness: a coloured dot + "generated N ago", staleness-tinted (≤30 min ok · ≤2 h warn ·
+   ≤1 day deep-orange · older bad). The colour wins over `.footer-meta .report-duration` by coming
+   later at equal specificity. */
+.report-duration .freshness-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 0.45rem;
+  background-color: currentColor;
+  vertical-align: middle;
+}
+.report-duration.fresh-green {
+  color: var(--ok);
+}
+.report-duration.fresh-aging {
+  color: var(--warn);
+}
+.report-duration.fresh-stale {
+  color: var(--orange-deep);
+}
+.report-duration.fresh-expired {
+  color: var(--bad);
 }
 .report-toggle {
   margin: 0 0 1rem;

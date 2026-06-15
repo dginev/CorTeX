@@ -24,6 +24,7 @@ pub const UNKNOWN: &str = "_unknown_";
 /// Prepare a configurable report for a <corpus,server> pair, reading over the caller-supplied
 /// (pooled) `connection` — no per-request fresh `Backend::default()`. `404` on unknown
 /// corpus/service.
+#[allow(clippy::too_many_arguments)]
 pub fn serve_report(
   connection: &mut PgConnection,
   corpus_name: String,
@@ -32,9 +33,15 @@ pub fn serve_report(
   category: Option<String>,
   what: Option<String>,
   params: Option<ReportParams>,
+  is_admin: bool,
 ) -> Result<Template, Status> {
   let report_start = chrono::Utc::now();
-  let mut context = TemplateContext::default();
+  // `is_admin` gates the footer's admin-only actions (Rerun / Save snapshot) — anonymous viewers
+  // see a sign-in card instead.
+  let mut context = TemplateContext {
+    is_admin,
+    ..TemplateContext::default()
+  };
   let mut global = HashMap::new();
 
   let corpus_name = corpus_name.to_lowercase();
@@ -205,6 +212,17 @@ pub fn serve_report(
       context
         .global
         .insert("report_duration".to_string(), report_duration.to_string());
+      // Report freshness: the generation time, both human-readable (tooltip / no-JS fallback) and
+      // as epoch-ms, so the footer renders a live "generated N ago" with colour-coded
+      // staleness. Set for *every* report level (the top-level branch also set `report_time`;
+      // this overwrites it).
+      context
+        .global
+        .insert("report_time".to_string(), report_timestamp());
+      context.global.insert(
+        "report_time_epoch".to_string(),
+        report_end.timestamp_millis().to_string(),
+      );
       Ok(Template::render(template, context))
     } else {
       Err(Status::NotFound)

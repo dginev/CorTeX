@@ -329,6 +329,7 @@ fn pooled(pool: &State<DbPool>) -> Result<crate::backend::PooledConn, Status> {
 pub fn top_service_report(
   corpus_name: String,
   service_name: String,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
 ) -> Result<Template, Status> {
   let mut connection = pooled(pool)?;
@@ -340,6 +341,7 @@ pub fn top_service_report(
     None,
     None,
     None,
+    session.is_some(),
   )
 }
 
@@ -349,6 +351,7 @@ pub fn severity_service_report(
   corpus_name: String,
   service_name: String,
   severity: String,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
 ) -> Result<Template, Status> {
   let mut connection = pooled(pool)?;
@@ -360,6 +363,7 @@ pub fn severity_service_report(
     None,
     None,
     None,
+    session.is_some(),
   )
 }
 
@@ -370,6 +374,7 @@ pub fn severity_service_report_all(
   service_name: String,
   severity: String,
   params: Option<ReportParams>,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
 ) -> Result<Template, Status> {
   let mut connection = pooled(pool)?;
@@ -381,6 +386,7 @@ pub fn severity_service_report_all(
     None,
     None,
     params,
+    session.is_some(),
   )
 }
 
@@ -391,6 +397,7 @@ pub fn category_service_report(
   service_name: String,
   severity: String,
   category: String,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
 ) -> Result<Template, Status> {
   let mut connection = pooled(pool)?;
@@ -402,6 +409,7 @@ pub fn category_service_report(
     Some(category),
     None,
     None,
+    session.is_some(),
   )
 }
 
@@ -413,6 +421,7 @@ pub fn category_service_report_all(
   severity: String,
   category: String,
   params: Option<ReportParams>,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
 ) -> Result<Template, Status> {
   let mut connection = pooled(pool)?;
@@ -424,6 +433,7 @@ pub fn category_service_report_all(
     Some(category),
     None,
     params,
+    session.is_some(),
   )
 }
 
@@ -435,6 +445,7 @@ pub fn what_service_report(
   severity: String,
   category: String,
   what: String,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
 ) -> Result<Template, Status> {
   let mut connection = pooled(pool)?;
@@ -446,6 +457,7 @@ pub fn what_service_report(
     Some(category),
     Some(what),
     None,
+    session.is_some(),
   )
 }
 
@@ -459,6 +471,7 @@ pub fn what_service_report_all(
   category: String,
   what: String,
   params: Option<ReportParams>,
+  session: Option<AdminSession>,
   pool: &State<DbPool>,
 ) -> Result<Template, Status> {
   let mut connection = pooled(pool)?;
@@ -470,6 +483,7 @@ pub fn what_service_report_all(
     Some(category),
     Some(what),
     params,
+    session.is_some(),
   )
 }
 

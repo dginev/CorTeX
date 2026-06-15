@@ -106,7 +106,7 @@
         {% block content %} {% endblock content %}
     </div>
 
-    {% if global.report_duration %}
+    {% if global.report_duration and is_admin %}
       {% include "rerun" %}
       {% include "save-historical-tasks" %}
     {% endif %}
@@ -114,12 +114,17 @@
         <nav class="navbar navbar-default navbar-fixed-bottom" role="navigation">
             {% if global.report_duration %}
             <div class="pull-right footer-meta">
-                <div class="report-duration" data-report-duration="{{global.report_duration}}">Report generated in {{global.report_duration}} ms &middot; {{global.report_time}}</div>
+                <div class="report-duration fresh-green" data-report-duration="{{global.report_duration}}" data-report-epoch="{{global.report_time_epoch}}" title="Generated in {{global.report_duration}} ms on {{global.report_time}}"><span class="freshness-dot"></span><span class="freshness-text">generated {{global.report_time}}</span></div>
                 <div class="footer-actions">
+                    {% if is_admin %}
                     <a class="footer-action" href="#modal-rerun" data-toggle="modal" data-target="#modal-rerun"
                         title="Re-queue the reported tasks for conversion"><i class="fa fa-refresh"></i>&nbsp;Rerun</a>
                     <a class="footer-action" href="#modal-savetasks" data-toggle="modal" data-target="#modal-savetasks"
                         title="Save the current task statuses as a historical snapshot"><i class="fa fa-save"></i>&nbsp;Save&nbsp;snapshot</a>
+                    {% else %}
+                    <a class="footer-action" href="/admin/login"
+                        title="Sign in to rerun tasks or save a snapshot"><i class="fa fa-lock"></i>&nbsp;Admin&nbsp;login</a>
+                    {% endif %}
                     {% if not global.severity %}
                     <span class="footer-autorefresh"><label class="switch"><input type="checkbox" name="refresh" value="false"><span class="slider round"></span></label>Auto-refresh</span>
                     {% endif %}
@@ -135,6 +140,39 @@
             {% endif %} {%block footer_extra %}{% endblock footer_extra %}
         </nav>
     </footer>
+    <script>
+      // Report freshness: render a live "generated N ago" from the server epoch, colour-coded by
+      // staleness (≤30 min green · ≤2 h light orange · ≤1 day dark orange · older red). Updates in
+      // place so an open report visibly ages when auto-refresh is off.
+      (function () {
+        var el = document.querySelector('.report-duration[data-report-epoch]');
+        if (!el) return;
+        var epoch = parseInt(el.getAttribute('data-report-epoch'), 10);
+        var textEl = el.querySelector('.freshness-text');
+        if (!epoch || !textEl) return;
+        function rel(ms) {
+          var s = Math.max(0, Math.floor(ms / 1000));
+          if (s < 45) return 'just now';
+          var m = Math.floor(s / 60);
+          if (m < 60) return m + ' minute' + (m === 1 ? '' : 's') + ' ago';
+          var h = Math.floor(m / 60), rm = m % 60;
+          if (h < 24) return h + ' hour' + (h === 1 ? '' : 's') + (rm ? ' ' + rm + ' min' : '') + ' ago';
+          var d = Math.floor(h / 24);
+          return d + ' day' + (d === 1 ? '' : 's') + ' ago';
+        }
+        function update() {
+          var age = Date.now() - epoch;
+          var cls = age <= 1800000 ? 'fresh-green'
+            : age <= 7200000 ? 'fresh-aging'
+            : age <= 86400000 ? 'fresh-stale'
+            : 'fresh-expired';
+          el.className = 'report-duration ' + cls;
+          textEl.textContent = 'generated ' + rel(age);
+        }
+        update();
+        setInterval(update, 30000);
+      })();
+    </script>
     <script src='/public/js/theme.js'></script>
 </body>
 

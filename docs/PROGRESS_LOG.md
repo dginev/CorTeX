@@ -6,6 +6,24 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the re
 
 ## 2026-06-14
 
+- **UI — report freshness indicator + admin-gated footer actions.**
+  - **Freshness** — the footer's "Report generated in X ms · <timestamp>" is now a live, colour-coded
+    **"generated N ago"**: `serve_report` emits `report_time_epoch` (UTC epoch-ms via
+    `timestamp_millis()`), and an inline script computes the age from `Date.now()` and tints it ≤30 min
+    green · ≤2 h `--warn` · ≤1 day `--orange-deep` (new token) · older `--bad`, updating in place every
+    30 s (so an open report visibly ages with auto-refresh off). **Timezone-safe by construction:** both
+    sides are UTC epoch-ms (absolute instants), so the subtraction is tz-independent; the absolute time
+    + generation duration live in the tooltip. (Residual: client *clock skew* — not timezone — can
+    offset it slightly, inherent to any client-side relative time.)
+  - **Admin-gated footer** — Rerun / Save snapshot are now shown only to signed-in admins; anonymous
+    viewers get a single **"Admin login"** card → `/admin/login`. Threaded `is_admin` through
+    `serve_report` (+ all 7 report handlers take `Option<AdminSession>`) into `TemplateContext.is_admin`;
+    the rerun/save modals are also include-gated behind `is_admin`. *(The underlying actions were
+    already enforced server-side — `bin/frontend.rs` rerun/savetasks return 401 without an
+    `AdminSession`; this hides the affordance to match. Confirmed there is **no** backend captcha
+    validation left — only removal comments in `config.rs`; auth is `Actor` token + `AdminSession`.)*
+  Verified via Playwright/Chrome (anonymous footer: Admin-login card + green "generated just now").
+
 - **UI — report affordances: clickable-row chevrons, pill link toolbar, labeled footer actions; KWARC
   cookie banner removed.** Follow-ups after review:
   - **Row clickability** — since report row labels are now neutral ink, real `<a>` rows get a drill-in
