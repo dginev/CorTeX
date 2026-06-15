@@ -1,5 +1,12 @@
 # Live-backup seeding, migration verification & load testing
 
+> **PARTLY SUPERSEDED (2026-06-15).** The "seed → load-test → empty + reseed" lifecycle is overtaken
+> by events: the seeded `cortex_load` DB (real arXiv data, ~5.87M tasks) became the **persistent
+> public showcase database** behind `corpora.latexml.rs` (served by `cortex-frontend.service`) — it is
+> **not** reset. The still-evergreen part of this doc is the **migration-fidelity check**
+> (`scripts/verify_migrations.sh`, kept), which diffs a from-scratch `migrations/` schema against a
+> restored backup. See `docs/DEPLOYMENT.md` for the live deployment.
+
 Owner request (2026-06-13): seed a dedicated database from the **live CorTeX backup**, use it to
 (a) verify our embedded migrations reproduce the live schema (find gaps), and (b) run real-world
 load testing at production data volume. Then empty + reseed for a clean state.

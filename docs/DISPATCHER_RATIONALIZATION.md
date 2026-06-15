@@ -32,6 +32,12 @@ design and fearless concurrency."*
   service cache (`server::ServiceCache` = `DashMap`) replace the two `Arc<Mutex<HashMap>>`. Built
   red/green TDD (200-concurrent-task unit test); throughput-neutral within noise (the map was never the
   wall — the DB is). See phase 4 below.
+- **Leveled logging + keepalive LANDED** (2026-06-15): the dispatcher's per-event `eprintln!`/`println!`
+  became leveled `tracing` (Arm 8, `cortex::observability`; hot-path narration is `trace`/`debug`, off
+  at the default `info` level → no synchronous stderr write per dispatched task in production; closes
+  **D-11** alongside the existing rate-limited discard logs). Separately, **TCP keepalive** was added to
+  the worker-facing ROUTER/PULL sockets (`dispatcher.tcp_keepalive_idle_seconds`, default 120) so idle
+  remote-worker connections survive NAT/overlay idle-timeouts (`server::apply_tcp_keepalive`).
 - **Remaining:** phase 5 (tokio + pure-Rust `zeromq` transport, carrying the deferred `tokio::fs` async
   file I/O) — still owner-gated on the tokio async core.
 - **Residual gate before flipping production traffic:** a **real multi-host network soak** — the one
