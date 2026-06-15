@@ -42,7 +42,7 @@
           <td class="right fatal count-fatal">{{global.fatal}}</td>
         </tr>
         <tr>
-          <td class="left">Pending</td>
+          <td class="left">Awaiting processing</td>
           <td class="bar-cell"><span class="bar-track"><span class="bar todo" style="width: {{global.todo_percent}}%"></span></span></td>
           <td class="right">{{ global.todo_percent | float(default=0) | round }}%</td>
           <td class="right todo count-todo">{{global.todo}}</td>
