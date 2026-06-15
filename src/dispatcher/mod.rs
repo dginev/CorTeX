@@ -9,7 +9,5 @@ pub mod manager;
 pub mod server;
 /// Receiver ZMQ sink component
 pub mod sink;
-/// Fail-fast supervision for the dispatcher's async components (rationalization phase 5)
-pub mod supervisor;
 /// Emitter ZMQ ventilator component
 pub mod ventilator;

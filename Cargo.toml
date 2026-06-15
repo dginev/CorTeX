@@ -51,14 +51,13 @@ dashmap = "6.1"
 # (KNOWN_ISSUES D-11). Verbosity is runtime-controlled via RUST_LOG; see `cortex::observability`.
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-# Async runtime for the dispatcher rationalization phase 5 (docs/DISPATCHER_RATIONALIZATION.md).
-# Graduated from a phase-0 spike dev-dependency to a real one now that the transport swap is
-# owner-authorized: the fail-fast supervision substrate (`dispatcher::supervisor`) is the first
-# landed piece; the async sink/ventilator (`zeromq`, `tokio::fs`) follow.
+# Async runtime for the async `zeromq` sink (dispatcher rationalization phase 5a).
 tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "fs", "time", "sync"] }
-# Pure-Rust async ZMQ transport (escapes the libzmq C FFI + its large-multipart desync flakiness —
-# KNOWN_ISSUES D-4/D-12). Graduated from a phase-0 spike dev-dependency now that the async sink
-# (phase 5a) uses it in lib code; the ventilator (5b) follows, after which the dispatcher drops `zmq`.
+# Pure-Rust async ZMQ transport for the **sink** (phase 5a): its atomic whole-message recv
+# structurally retired the libzmq frame-by-frame desync class (KNOWN_ISSUES D-4/D-12) at ≥-pipeline
+# throughput. The **ventilator stays on libzmq** (`zmq`): its ROUTER request/reply is send-latency-
+# bound, where `zeromq`/zmq.rs hit a ~3000/s send-architecture ceiling (issue #240) vs libzmq's
+# ~8500/s — see docs/DISPATCHER_5B_ROOT_CAUSE.md.
 zeromq = "0.6.0"
 dotenvy = "0.15.7"
 figment = { version = "0.10", features = ["toml", "env"] }
@@ -231,10 +230,6 @@ path = "examples/dispatcher_memory.rs"
 # its findings live in docs/archive/ARCHIVE_RATIONALIZATION.md.)
 
 [dev-dependencies]
-# Used directly by the phase-0 transport spikes (`examples/zmq_payload_*`, `zmq_interop`, …).
-# `tokio` + `zeromq` graduated to `[dependencies]` (the supervision substrate + the async sink use
-# them in lib code); `bytes` is still only named directly by the spike code.
+# `bytes` is named directly by the phase-0 transport spikes (`examples/zmq_*`); `tokio`/`zeromq` are
+# real `[dependencies]` (the async sink uses them in lib code).
 bytes = "1.11.1"
-# Phase-5b omq.rs evaluation spike (throwaway, dev-only): a pure-Rust ØMQ wire-compatible with libzmq
-# that claims ~3x libzmq TCP throughput, escaping the zmq.rs send-architecture ceiling (issue #240).
-omq-tokio = "0.14.2"
