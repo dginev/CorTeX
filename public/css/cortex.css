@@ -1002,12 +1002,18 @@ h3 {
   border-color: var(--accent);
   text-decoration: none;
 }
+/* Auto-refresh toggle hosted in the same pill card as the footer actions (consistent control group;
+   not a link, so no hover-accent — the switch inside is the control). */
 .footer-autorefresh {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  color: var(--ink-muted);
+  gap: 0.45rem;
+  padding: 0.2rem 0.7rem;
   font-size: var(--fs-sm);
+  color: var(--ink-soft);
+  background-color: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
 }
 .report-toggle {
   margin: 0 0 1rem;
