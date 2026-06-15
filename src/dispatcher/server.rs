@@ -290,24 +290,44 @@ pub fn classify_expired(expired: TaskProgress) -> ExpiredOutcome {
   }
 }
 
+/// Tally of one reaping pass — the dispatcher's re-lease / dead-letter health signal (Arm 8
+/// observability). Returned by [`reap_expired_into`] so the ventilator can log it without the
+/// reaper itself reaching for tracing.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ReapSummary {
+  /// Timed-out tasks re-queued for another dispatch attempt (retry budget remained).
+  pub requeued: usize,
+  /// Timed-out tasks given up on and reported `Fatal` (retry budget exhausted) — dead-letters.
+  pub dead_lettered: usize,
+}
+
 /// Reaps timed-out in-flight tasks and routes each to **its own service's** dispatch queue (a
 /// retry) or the done queue (a `Fatal`). Decoupled from the refetch path so the in-flight set
 /// drains even under sustained backpressure (KNOWN_ISSUES D-6); routing by `task.service_id` rather
-/// than the requesting service fixes the latent cross-service requeue bug.
+/// than the requesting service fixes the latent cross-service requeue bug. Returns a
+/// [`ReapSummary`] of what it did (re-leases vs dead-letters) for the health log.
 pub fn reap_expired_into(
   queues: &mut HashMap<i32, Vec<TaskProgress>>,
   in_flight: &InFlightSet,
   done_tx: &SyncSender<TaskReport>,
-) {
+) -> ReapSummary {
+  let mut summary = ReapSummary::default();
   for expired in in_flight.take_expired() {
     match classify_expired(expired) {
-      ExpiredOutcome::Requeue(task_progress) => queues
-        .entry(task_progress.task.service_id)
-        .or_default()
-        .push(task_progress),
-      ExpiredOutcome::Fatal(report) => send_done(done_tx, report),
+      ExpiredOutcome::Requeue(task_progress) => {
+        queues
+          .entry(task_progress.task.service_id)
+          .or_default()
+          .push(task_progress);
+        summary.requeued += 1;
+      },
+      ExpiredOutcome::Fatal(report) => {
+        send_done(done_tx, report);
+        summary.dead_lettered += 1;
+      },
     }
   }
+  summary
 }
 
 /// Memoized getter for a `Service` record from the backend, populating the shared [`ServiceCache`]
@@ -352,6 +372,30 @@ mod tests {
       created_at: 0,
       retries: 0,
     }
+  }
+
+  #[test]
+  fn reap_expired_into_tallies_requeue_and_dead_letter() {
+    use std::sync::mpsc::sync_channel;
+    // created_at = 0 (epoch) ⇒ every task's deadline is far in the past ⇒ all expired.
+    let set = InFlightSet::new();
+    set.insert(dummy_progress(1)); // retries 0 → within budget → re-queue
+    set.insert(dummy_progress(2)); // retries 0 → within budget → re-queue
+    set.insert(TaskProgress {
+      retries: MAX_DISPATCH_RETRIES + 1, // budget exhausted → dead-letter Fatal
+      ..dummy_progress(3)
+    });
+    let mut queues: HashMap<i32, Vec<TaskProgress>> = HashMap::new();
+    let (done_tx, done_rx) = sync_channel(16);
+    let summary = reap_expired_into(&mut queues, &set, &done_tx);
+    assert_eq!(summary.requeued, 2, "two within retry budget are re-leased");
+    assert_eq!(summary.dead_lettered, 1, "one over budget is dead-lettered");
+    assert_eq!(set.len(), 0, "the in-flight set fully drained");
+    assert_eq!(
+      done_rx.try_iter().count(),
+      1,
+      "the dead-letter Fatal reached the done channel"
+    );
   }
 
   #[test]

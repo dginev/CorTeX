@@ -88,12 +88,24 @@ impl Finalize {
         Ok(first) => {
           // Coalesce a batch (up to N reports, or T elapsed) into one DB round-trip.
           let (batch, disconnected) = accumulate_batch(&done_rx, first, batch_size, flush_window);
+          let batch_len = batch.len();
+          let persist_start = Instant::now();
           server::mark_done_batch(&mut backend, &batch)?;
           jobs_count += 1;
           reports_dirty = true;
-          if jobs_count.is_multiple_of(100) {
-            debug!("finalize thread persisted {jobs_count} batches.");
-          }
+          // Pipeline health signals (Arm 8 / phase-5 observability; transport-independent): batch
+          // size, DB persist latency, and whether the batch hit the size cap. `size_capped` is the
+          // backpressure/lag proxy — the bounded done channel already had a full batch queued (std
+          // `sync_channel` can't expose its depth), i.e. the DB finalize is the bottleneck and lag
+          // is building. At `debug` (one event per batch ⇒ off at the default `info`; enable on
+          // demand with `RUST_LOG=cortex=debug`).
+          debug!(
+            batch = batch_len,
+            persist_ms = persist_start.elapsed().as_millis() as u64,
+            size_capped = batch_len >= batch_size,
+            batches_total = jobs_count,
+            "finalize: persisted batch"
+          );
           // Long runs may never idle, so bound report staleness with a periodic refresh.
           if last_report_refresh.elapsed() >= report_refresh_interval() {
             refresh_reports(&mut backend);

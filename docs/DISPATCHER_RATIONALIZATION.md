@@ -337,6 +337,18 @@ new pipeline — in-flight gauge, **finalize-channel depth (backpressure/lag)**,
 histogram, re-lease + dead-letter counters. These are the health signals that tell an operator the DB
 is the bottleneck *before* it backs up (and feed the `/metrics` endpoint already shipped).
 
+**First signals landed (2026-06-15, transport-independent — they survive the phase-5 swap):** the
+finalize loop emits a per-batch `debug` event `finalize: persisted batch {batch, persist_ms,
+size_capped, batches_total}` — `size_capped` (`batch.len() >= finalize_batch_size`) is the honest
+backpressure/lag proxy, since the std `sync_channel` between sink and finalize can't expose its depth
+directly (a full batch was already queued ⇒ the DB finalize is the bottleneck). The ventilator's
+reaper emits an `info` event `dispatcher: reaped timed-out in-flight tasks {in_flight, requeued,
+dead_lettered}` whenever a reaping pass actually times anything out (the in-flight gauge + re-lease +
+dead-letter counts; `reap_expired_into` now returns a `ReapSummary`). Cross-process current-state
+backlog is already always-on at `/metrics` (`cortex_workers_in_flight_total`, DB-derived). Still to
+do under the tokio core: a finalize-latency histogram + bringing these onto the `metrics` crate if we
+adopt it.
+
 ## Crates ("prefer the foundations")
 
 - **Transport:** `zeromq` 0.6 (pure-Rust async; escapes libzmq). `tmq`/`async-zmq` rejected (wrap

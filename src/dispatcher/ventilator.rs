@@ -138,7 +138,19 @@ impl Ventilator {
       // while saturated (backpressure) — closes the D-6 reaping-coupling residual.
       if request_time.timestamp() - last_reap_sec >= reap_interval_secs {
         last_reap_sec = request_time.timestamp();
-        server::reap_expired_into(&mut queues, progress_queue_arc, done_tx);
+        let reaped = server::reap_expired_into(&mut queues, progress_queue_arc, done_tx);
+        // Health signal (Arm 8 observability; transport-independent): the in-flight gauge plus the
+        // re-lease / dead-letter counts for this reaping pass. Only logged when something actually
+        // timed out (the cadence is otherwise quiet), at `info` because a dead-letter is a task we
+        // gave up on — an operator-relevant event.
+        if reaped.requeued + reaped.dead_lettered > 0 {
+          info!(
+            in_flight = progress_queue_arc.len(),
+            requeued = reaped.requeued,
+            dead_lettered = reaped.dead_lettered,
+            "dispatcher: reaped timed-out in-flight tasks"
+          );
+        }
       }
       // Requests for unknown service names will be silently ignored.
       let service_opt = match server::get_sync_service(&service_name, services_arc, &mut backend) {
