@@ -25,6 +25,13 @@ agent needs before touching code.
 
 ## 1. Current-state map (Phase 0)
 
+> ⚠️ **This section is the original Phase-0 snapshot (2026-06-13) and is kept for history — much of it
+> is now stale.** A large fraction of the audited gaps have since been closed (e.g. `time 0.1`, `dotenv`,
+> Redis, and `libarchive-sys` are all gone; the box builds + CI is green; the `dependencies` table was
+> dropped). For the **current** load-bearing facts read [`CLAUDE.md`](../CLAUDE.md); for the live
+> resilience ledger read [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md); for the running increment trail read
+> [`archive/PROGRESS_LOG.md`](archive/PROGRESS_LOG.md). Don't treat §1 as the present state.
+
 ### 1.1 What CorTeX is, in one paragraph
 
 A distributed corpus-conversion framework. PostgreSQL (via Diesel 2.2) is the **metadata store**:
@@ -540,8 +547,9 @@ screen. Status fields are point-in-time as of this draft.
 - **Goal:** Real docs, packaging, and the end-state deployment topology — including the public
   read-only web view at **`https://corpora.latexml.rs`** that hosts the ar5iv browsing +
   conversion-report UIs for the wider community.
-- **Current:** `INSTALL.md` is now a complete, verified installation (Arm 0 ✅); `MANUAL.md` is still
-  literally `### TODO`; `README` says "not ready for off-the-shelf use"; no packaging; deployment is
+- **Current:** `INSTALL.md` is now a complete, verified installation (Arm 0 ✅); `MANUAL.md` is now a
+  real operator manual (the fresh-box → manage-historical-runs admin journey), no longer `### TODO`;
+  `README` says "not ready for off-the-shelf use"; no packaging; deployment is
   hand-run binaries. **CORS fixed (2026-06-15):** `src/frontend/cors.rs` no longer pairs
   `Access-Control-Allow-Origin: *` with `Access-Control-Allow-Credentials: true` — the credentials
   header is dropped. `*` is retained as the *correct* posture for the deliberately-public,
