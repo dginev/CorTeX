@@ -5,6 +5,16 @@ wasn't blocked; each can be revised/refactored on return. Newest first.
 
 ## Decisions taken (with a default) — confirm or revise
 
+0. **CORS fix keeps `*` (no origin allowlist).** Arm 13 flagged `src/frontend/cors.rs` pairing
+   `Access-Control-Allow-Origin: *` with `Access-Control-Allow-Credentials: true` (spec-invalid +
+   unsafe). I fixed it by **dropping the credentials header only**, keeping `*`. Rationale: the public
+   surface is read-only public data; agents authorize via the explicit `X-Cortex-Token` header (not
+   ambient cookies) and the admin UI is same-origin — so no legitimate consumer needs credentialed
+   cross-origin, and `*`-without-credentials is the standard correct posture for a public read API. The
+   plan's "origin allowlist replacing `*`" would only *restrict who can read public data* (pointless)
+   while breaking browser-based agent tooling, so I did **not** build it (no `web.*` config added).
+   *Revise* if you want reads origin-restricted anyway. (`src/frontend/cors.rs`)
+
 1. **Forced report-refresh is token-gated (Actor) + debounced.** `POST /api/reports/refresh` requires a
    rerun token, like the other write actions, and threads the actor onto the job. *Alternative:* since a
    refresh is non-destructive and debounced (at most one runs at a time), it could be **ungated** for

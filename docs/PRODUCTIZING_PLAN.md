@@ -542,8 +542,12 @@ screen. Status fields are point-in-time as of this draft.
   conversion-report UIs for the wider community.
 - **Current:** `INSTALL.md` is now a complete, verified installation (Arm 0 ✅); `MANUAL.md` is still
   literally `### TODO`; `README` says "not ready for off-the-shelf use"; no packaging; deployment is
-  hand-run binaries. `src/frontend/cors.rs` sends `Access-Control-Allow-Origin: *` **together with**
-  `Access-Control-Allow-Credentials: true` — an invalid/unsafe combination (see Risks).
+  hand-run binaries. **CORS fixed (2026-06-15):** `src/frontend/cors.rs` no longer pairs
+  `Access-Control-Allow-Origin: *` with `Access-Control-Allow-Credentials: true` — the credentials
+  header is dropped. `*` is retained as the *correct* posture for the deliberately-public,
+  no-credential read API (agents authorize via the explicit `X-Cortex-Token` header, the admin UI is
+  same-origin); an origin *allowlist* was deliberately **not** added — it would only restrict reads of
+  public data and break browser-based agent tooling (decision noted in `OPEN_QUESTIONS.md`).
 - **Screen:** the **public read-only dashboard at `corpora.latexml.rs`** — the existing overview /
   reports / history / diff / **ar5iv document-preview** screens, served read-only; plus in-app
   first-run docs + contextual help on the internal admin app.
@@ -556,8 +560,9 @@ screen. Status fields are point-in-time as of this draft.
 - **Observability:** public-traffic metrics (requests, cache hit rate) feed Arms 8/11; the public
   view is the most cache-sensitive surface (Arm 11b) and the most read-amplified.
 - **Risks:** the public boundary is security-critical — it must serve **only** read-only dashboards +
-  previews and never the write API, admin UIs, token endpoints, or `/metrics`. Fix the CORS
-  misconfiguration (`*` + credentials) into a proper origin allowlist. The ar5iv preview renders
+  previews and never the write API, admin UIs, token endpoints, or `/metrics`. ✅ CORS
+  misconfiguration (`*` + credentials) fixed by dropping the credentials header (see Current). The
+  ar5iv preview renders
   untrusted converted HTML client-side — keep the existing consent/sandbox posture and a tight CSP.
 - **Acceptance:** a real `MANUAL.md` (human) + agent quickstart; packaged/installable binaries;
   **`https://corpora.latexml.rs` live**, serving the read-only ar5iv dashboards + previews via a
