@@ -4,8 +4,8 @@
 > + the `corpus_sandbox` background job) **and** rerun-output isolation (Decisions §1, formerly
 > KNOWN_ISSUES F-6, now resolved). The owner's 4 design questions are **decided** (see below). A
 > sandbox is now a safe rerun target. Relates to Arm 5 (corpus management), Arm 7 (runs), and Arm 10
-> (data management); built on the background-job mechanism ([`JOB_MODEL.md`](archive/JOB_MODEL.md)).
-> Cross-ref: [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md).
+> (data management); built on the background-job mechanism ([`JOB_MODEL.md`](JOB_MODEL.md)).
+> Cross-ref: [`PRODUCTIZING_PLAN.md`](../PRODUCTIZING_PLAN.md).
 
 ## Decisions (owner, 2026-06-15) + as-built
 

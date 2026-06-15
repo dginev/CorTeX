@@ -1,6 +1,6 @@
 // Copyright 2015-2025 Deyan Ginev. MIT license.
 //
-// Dispatcher-rationalization SPIKE (throwaway; docs/DISPATCHER_RATIONALIZATION.md).
+// Dispatcher-rationalization SPIKE (throwaway; docs/archive/DISPATCHER_RATIONALIZATION.md).
 // Memory-discipline audit (owner, 2026-06-14): the dispatcher is co-resident with the workers on
 // one box and must stay light on RAM (≤32 GB, ideally a few GB) while up to **300 jobs** are
 // concurrently in flight with a heavy-tailed size mix (median 800 KB, mean ~1.5 MB, max 200 MB).

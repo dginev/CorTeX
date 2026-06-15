@@ -1,9 +1,9 @@
 // Copyright 2015-2025 Deyan Ginev. MIT license.
 //
-// Dispatcher-rationalization SPIKE (throwaway; docs/DISPATCHER_RATIONALIZATION.md). Examines
-// **unexpected deaths** in the async dispatcher core (owner, 2026-06-14): if the DB refuses
-// connection and the finalize arm dies, or the disk dies mid-write, or a firewall blocks one
-// direction — we must **try recovery, and if impossible stop the *entire* dispatcher**, never
+// Dispatcher-rationalization SPIKE (throwaway; docs/archive/DISPATCHER_RATIONALIZATION.md).
+// Examines **unexpected deaths** in the async dispatcher core (owner, 2026-06-14): if the DB
+// refuses connection and the finalize arm dies, or the disk dies mid-write, or a firewall blocks
+// one direction — we must **try recovery, and if impossible stop the *entire* dispatcher**, never
 // leaving a zombie arm leasing into a dead pipeline, and never an inconsistent durable state.
 //
 // The risk this targets is specific to the tokio migration: a dropped JoinHandle / swallowed error

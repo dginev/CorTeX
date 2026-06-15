@@ -1,11 +1,11 @@
 // Copyright 2015-2025 Deyan Ginev. MIT license.
 //
-// Dispatcher-rationalization SPIKE (throwaway; docs/DISPATCHER_RATIONALIZATION.md). THE decisive
-// interop test: if we move the **dispatcher** to the pure-Rust `zeromq` crate but leave the
-// **workers** (`pericortex`, the external crate) on the libzmq `zmq` binding, the two must speak
-// ZMTP to each other on the wire. zmq.rs claims it is "tested against the reference implementation"
-// (libzmq); this spike *proves* it for our exact topology + a mixed arXiv-like payload, rather than
-// trusting the README.
+// Dispatcher-rationalization SPIKE (throwaway; docs/archive/DISPATCHER_RATIONALIZATION.md). THE
+// decisive interop test: if we move the **dispatcher** to the pure-Rust `zeromq` crate but leave
+// the **workers** (`pericortex`, the external crate) on the libzmq `zmq` binding, the two must
+// speak ZMTP to each other on the wire. zmq.rs claims it is "tested against the reference
+// implementation" (libzmq); this spike *proves* it for our exact topology + a mixed arXiv-like
+// payload, rather than trusting the README.
 //
 // Wire configuration mirrors a migrated production:
 //   * OUR SIDE  — pure-Rust async `zeromq`: ROUTER ventilator + PULL sink (tokio).

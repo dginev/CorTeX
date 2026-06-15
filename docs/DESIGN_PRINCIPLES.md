@@ -27,7 +27,7 @@ work without trace, or take down unrelated components.
    in-flight tasks, file handles). Unbounded per-event acquisition is the single most dangerous
    anti-pattern here — it converts load into a self-inflicted DoS. (Proven: the pre-#4
    per-event-connection metadata writer exhausted Postgres `max_connections` + OS ports and crashed
-   the process under load — see `RESOURCE_RATIONALIZATION.md` § full-pipeline validation.)
+   the process under load — see `archive/RESOURCE_RATIONALIZATION.md` § full-pipeline validation.)
 
 2. **Transparent failure, never silent loss.** Every failure is surfaced — logged with context,
    counted in metrics, and reflected in task/run state an operator *and an agent* can query. A
@@ -68,5 +68,5 @@ work without trace, or take down unrelated components.
   [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) as debt to retire, not ignored.
 - `KNOWN_ISSUES.md` is the running ledger of resilience gaps discovered (the owner's direction:
   *record every known problem; we go back and solve them all at the end*).
-- The Arm 14 resource-rationalization work (`RESOURCE_RATIONALIZATION.md`) is the first concentrated
+- The Arm 14 resource-rationalization work (`archive/RESOURCE_RATIONALIZATION.md`) is the first concentrated
   pass at principle #1 and #4.

@@ -1,7 +1,7 @@
 # Resource & Performance Rationalization (Plan Arm 14)
 
 > Status: design notes / decisions, not yet implemented. Captures the owner's resource-use questions
-> as **mini-choices with mini-plans**. Cross-reference: [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md)
+> as **mini-choices with mini-plans**. Cross-reference: [`PRODUCTIZING_PLAN.md`](../PRODUCTIZING_PLAN.md)
 > Arm 14, and the load profile in the sprint notes (~2 admins, 20 users, ~200 ZeroMQ workers,
 > ~100 tasks/s upper bound).
 
@@ -202,7 +202,7 @@ critical path) — so raw tasks/s is **not** where the damage shows. The damage 
 **fault-injection bomb** under pipeline load — it exhausts the shared Postgres connection pool +
 OS ports and crashes, destabilising the *whole* deployment. Pooling converts an O(tasks) connection
 storm into a bounded, reused set. This is the first concrete proof point for the
-[maximum-robustness](DESIGN_PRINCIPLES.md) mandate; see also [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) for
+[maximum-robustness](../DESIGN_PRINCIPLES.md) mandate; see also [`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) for
 the residual liabilities this run surfaced (the metadata **thread-per-event spawn** still remains —
 only the *connection* is pooled, not the thread — and the metadata read-before-insert **race** drops
 the `returned` counts even in the pooled arm).

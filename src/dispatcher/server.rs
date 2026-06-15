@@ -110,7 +110,7 @@ pub const PROGRESS_QUEUE_HARD_LIMIT: usize = 10_000;
 /// the backpressure (a slow DB makes the sink wait, which backs up the ZMQ PULL, which backs up the
 /// workers), replacing the old `DONE_QUEUE_HARD_LIMIT` panic-then-OOM backstop with a graceful,
 /// loss-free hand-off (a bounded channel blocks rather than drops). Phase 1 of the dispatcher
-/// rationalization (`docs/DISPATCHER_RATIONALIZATION.md`).
+/// rationalization (`docs/archive/DISPATCHER_RATIONALIZATION.md`).
 pub const DONE_QUEUE_CAPACITY: usize = 10_000;
 
 /// Whether the in-flight set is saturated and the ventilator should apply backpressure (stop

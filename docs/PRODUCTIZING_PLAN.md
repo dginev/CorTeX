@@ -616,7 +616,7 @@ screen. Status fields are point-in-time as of this draft.
   the DB or RAID becoming the wall.
 - **Detail:** six mini-choices + mini-plans (async I/O, NVMe staging, batch/commit tuning, fast-worker
   re-tune, DB choice = keep Postgres, incremental rollups) in
-  [`RESOURCE_RATIONALIZATION.md`](RESOURCE_RATIONALIZATION.md).
+  [`archive/RESOURCE_RATIONALIZATION.md`](archive/RESOURCE_RATIONALIZATION.md).
 
 ---
 

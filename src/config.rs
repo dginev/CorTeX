@@ -111,7 +111,7 @@ pub struct DispatcherConfig {
   /// `examples/dispatcher_bench.rs` (tasks/s rises to ~1024 then plateaus, and *regresses* by
   /// ~4096 where a single transaction holds row locks long enough to stall the pipeline; see
   /// `docs/DISPATCHER_BENCH.md`). 1024 also bounds worst-case crash re-work to ~1024 tasks.
-  /// (Dispatcher rationalization phase 2, `docs/DISPATCHER_RATIONALIZATION.md`.)
+  /// (Dispatcher rationalization phase 2, `docs/archive/DISPATCHER_RATIONALIZATION.md`.)
   pub finalize_batch_size: usize,
   /// **Finalize batch coalescing — time threshold (T), milliseconds.** The maximum time a report
   /// waits in an accumulating batch before it is flushed, bounding both report staleness and

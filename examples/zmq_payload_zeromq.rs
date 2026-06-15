@@ -1,8 +1,8 @@
 // Copyright 2015-2025 Deyan Ginev. MIT license.
 //
-// Dispatcher-rationalization SPIKE (throwaway; docs/DISPATCHER_RATIONALIZATION.md). Exercises the
-// **pure-Rust, async-native `zeromq` crate** (zmq.rs — escapes the libzmq C FFI) on the questions
-// the owner raised: does it reassemble **large multi-frame** messages without
+// Dispatcher-rationalization SPIKE (throwaway; docs/archive/DISPATCHER_RATIONALIZATION.md).
+// Exercises the **pure-Rust, async-native `zeromq` crate** (zmq.rs — escapes the libzmq C FFI) on
+// the questions the owner raised: does it reassemble **large multi-frame** messages without
 // interleaving/corruption under concurrent senders (the "rare large response interrupting other
 // messages" bug), what is its throughput across a variety of payloads, and does async `tokio::fs`
 // work for the archive write.

@@ -66,7 +66,7 @@ This yields **two real paths** (both retire the personal fork — the owner's co
 | async streaming (optional) | **`async-compression`** | `tokio` `AsyncRead`/`AsyncWrite` gzip/zstd — fits the async dispatcher core if archive codec ever moves onto it |
 
 All are **streaming-native** (`Read`/`Write` traits): process a fixed buffer at a time, never a whole
-archive resident — which is exactly what the [memory-discipline audit](../DISPATCHER_RATIONALIZATION.md)
+archive resident — which is exactly what the [memory-discipline audit](DISPATCHER_RATIONALIZATION.md)
 requires.
 
 ## Evaluation

@@ -287,7 +287,7 @@ de-risk.
    (owner's flush-knob question): **T** from the acceptable crash *re-work* + report-staleness budget
    (an unflushed batch is never *lost* — tasks stay `Queued` and recover on restart — so this trades a
    little latency, not safety); **N** is the empirical throughput knee from `dispatcher_bench`
-   (tasks/s climbs to ~1024 then plateaus and *regresses* by 4096; see `docs/DISPATCHER_BENCH.md`).
+   (tasks/s climbs to ~1024 then plateaus and *regresses* by 4096; see `../DISPATCHER_BENCH.md`).
    Keeps `Queued`-until-flush + `on_conflict` (crash-safe + idempotent), `job_limit` (counts batches),
    and the refresh-on-drain/-at-least-daily cadence. Pure size-vs-time logic unit-tested. Green on
    `dispatcher_bench` (20000 tasks, no loss, all `NoProblem`). `finalize.rs`/`config.rs`.
@@ -334,7 +334,7 @@ de-risk.
    **ventilator stays on libzmq**: its ROUTER request/reply is send-latency-bound, where every async
    pure-Rust ØMQ hits a send-architecture ceiling (~3000/s for `zeromq`/zmq.rs — issue #240; ~3300/s
    for `omq.rs`, which we also evaluated) vs libzmq's flat ~8500/s. Full investigation, measurements,
-   and the omq.rs evaluation: **`docs/DISPATCHER_5B_ROOT_CAUSE.md`**. The fully-async-manager path
+   and the omq.rs evaluation: **`DISPATCHER_5B_ROOT_CAUSE.md`**. The fully-async-manager path
    (the deleted `dispatcher::supervisor`) is abandoned with it.
 
 **Cross-cutting requirement (every phase): observability.** Emit `tracing` spans + `metrics` for the
@@ -365,7 +365,7 @@ adopt it.
 > our Tokio usage. An `omq.rs` evaluation (pure-Rust, libzmq-wire-compatible) confirmed clean
 > interop with the unchanged libzmq workers but the *same* ~3300/s ceiling for our ROUTER request/reply
 > topology. Decision: **keep libzmq for the ventilator (~8500/s, flat).** Full report + numbers:
-> `docs/DISPATCHER_5B_ROOT_CAUSE.md`.
+> `DISPATCHER_5B_ROOT_CAUSE.md`.
 
 **Key simplification the swap *buys* us.** libzmq's `zmq` crate delivers a multipart message
 **frame-by-frame** (`recv()` + `get_rcvmore()`), which is the root of the entire D-4/D-12

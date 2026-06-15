@@ -1,6 +1,6 @@
 // Copyright 2015-2025 Deyan Ginev. MIT license.
 //
-// Dispatcher-rationalization SPIKE (throwaway; docs/DISPATCHER_RATIONALIZATION.md). The
+// Dispatcher-rationalization SPIKE (throwaway; docs/archive/DISPATCHER_RATIONALIZATION.md). The
 // **definitive pre-cutover torture test** for the pure-Rust `zeromq` transport + the rationalized
 // pipeline (bounded channel → batched DB finalize). Approximates real arXiv conditions, per owner
 // spec:

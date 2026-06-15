@@ -186,7 +186,7 @@ capacity and whether the send path serialises under many peers.
 
 ## UPDATE 2 — codex consulted + two more experiments; still unsolved
 
-`docs/DISPATCHER_5B_CODEX_FINDINGS.md` has codex's analysis. Codex's primary hypothesis (recv/send
+`DISPATCHER_5B_CODEX_FINDINGS.md` has codex's analysis. Codex's primary hypothesis (recv/send
 co-scheduled in one `select!` task starves send) **was empirically disproved** — spawning the send
 loop as a separate task still collapses (350/s @16, 167/s @64). Codex couldn't run the bench (no DB).
 

@@ -1,10 +1,10 @@
 // Copyright 2015-2025 Deyan Ginev. MIT license.
 //
-// Dispatcher-rationalization SPIKE (throwaway; docs/DISPATCHER_RATIONALIZATION.md). The **libzmq**
-// baseline — the current `zmq` crate (C FFI) — running the SAME workload as `zmq_payload_zeromq`,
-// so the pure-Rust crate's large-multipart correctness + throughput can be compared
-// apples-to-apples. Uses `send_multipart`/`recv_multipart` (atomic multi-frame send/recv) +
-// concurrent PUSH senders.
+// Dispatcher-rationalization SPIKE (throwaway; docs/archive/DISPATCHER_RATIONALIZATION.md). The
+// **libzmq** baseline — the current `zmq` crate (C FFI) — running the SAME workload as
+// `zmq_payload_zeromq`, so the pure-Rust crate's large-multipart correctness + throughput can be
+// compared apples-to-apples. Uses `send_multipart`/`recv_multipart` (atomic multi-frame send/recv)
+// + concurrent PUSH senders.
 //
 // Run (same env knobs as the zeromq spike; libzmq is synchronous, so this uses threads):
 //   cargo run --release --example zmq_payload_libzmq

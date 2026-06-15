@@ -13,7 +13,7 @@
 //! provenance — the predicate applied over the parent — so no per-task origin link is kept (owner
 //! decision 2026-06-15). Sources are referenced **in place** (the sandbox shares the parent's entry
 //! paths; nothing is copied) and the carved set is a **one-time snapshot** evaluated at creation.
-//! See `docs/SANDBOX_CORPORA.md`.
+//! See `docs/archive/SANDBOX_CORPORA.md`.
 
 use diesel::result::Error;
 use diesel::sql_types::{Integer, Text};
@@ -65,8 +65,8 @@ pub struct SandboxOutcome {
 /// **Output-isolation note:** the sandbox is its own `corpus_id` (own tasks, runs, reports).
 /// Running a *conversion* on it would, today, write result archives to the shared
 /// `<entry-dir>/<service>.zip` path it inherits from the parent — so isolating a sandbox's **rerun
-/// outputs** needs a follow-up (a sink output-path change), tracked in `docs/SANDBOX_CORPORA.md` +
-/// `docs/KNOWN_ISSUES.md`.
+/// outputs** needs a follow-up (a sink output-path change), tracked in
+/// `docs/archive/SANDBOX_CORPORA.md` + `docs/KNOWN_ISSUES.md`.
 pub fn create_sandbox(
   connection: &mut PgConnection,
   parent: &Corpus,

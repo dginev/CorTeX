@@ -86,7 +86,7 @@ Point the stack at `cortex_load` and measure under the documented target (~2 adm
   `report_summary` rollup fast-path holds the category/`what` reports well under the ~500ms the
   Arm-14 spike saw on the live aggregation; check the relocated+pooled report routes under
   concurrency.
-- Record results in `docs/RESOURCE_RATIONALIZATION.md` (the existing perf-evidence ledger).
+- Record results in `RESOURCE_RATIONALIZATION.md` (the existing perf-evidence ledger).
 
 ## Phase 4 — Reset
 

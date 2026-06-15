@@ -1,9 +1,9 @@
 // Copyright 2015-2025 Deyan Ginev. MIT license.
 //
-// Dispatcher-rationalization SPIKE (throwaway; docs/DISPATCHER_RATIONALIZATION.md). Caveat #3 — the
-// resilience gate before committing to the pure-Rust `zeromq` transport: does a zeromq ROUTER
-// dispatcher survive **worker churn** (crashes, request-then-die, reconnects) and still complete
-// **every** task without loss?
+// Dispatcher-rationalization SPIKE (throwaway; docs/archive/DISPATCHER_RATIONALIZATION.md). Caveat
+// #3 — the resilience gate before committing to the pure-Rust `zeromq` transport: does a zeromq
+// ROUTER dispatcher survive **worker churn** (crashes, request-then-die, reconnects) and still
+// complete **every** task without loss?
 //
 // What this models (faithful to CorTeX's recovery design):
 //   * A ROUTER ventilator that LEASES tasks and tracks them in an in-flight map, with an

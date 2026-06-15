@@ -1,9 +1,9 @@
 // Copyright 2015-2025 Deyan Ginev. MIT license.
 //
-// Dispatcher-rationalization SPIKE (throwaway; docs/DISPATCHER_RATIONALIZATION.md). Validates the
-// **pure-Rust async `zeromq` crate** against CorTeX's *full* dispatch topology under a **mixed,
-// arXiv-like (heavy-tailed) payload distribution** — the validation the owner asked for before
-// committing to drop the libzmq C dependency.
+// Dispatcher-rationalization SPIKE (throwaway; docs/archive/DISPATCHER_RATIONALIZATION.md).
+// Validates the **pure-Rust async `zeromq` crate** against CorTeX's *full* dispatch topology under
+// a **mixed, arXiv-like (heavy-tailed) payload distribution** — the validation the owner asked for
+// before committing to drop the libzmq C dependency.
 //
 // CorTeX's real ZMQ topology (confirmed from src/): the ventilator is a **ROUTER** (:51695) that
 // leases source archives to **DEALER** workers (`src/worker.rs`), which return result archives via
