@@ -6,7 +6,7 @@
 # diffs its schema (--schema-only) against a SOURCE database. A non-empty diff means the source has
 # schema our migrations do NOT reproduce (a migration to author / manual drift), or the source is
 # behind our migrations. This is the productization-blocking "where are we missing migrations?"
-# check from docs/LOAD_TESTING.md — point it at a restored live-backup DB.
+# check from docs/archive/LOAD_TESTING.md — point it at a restored live-backup DB.
 #
 # Usage:
 #   scripts/verify_migrations.sh <source_db_url> [<ref_db_url>]

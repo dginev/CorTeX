@@ -1,7 +1,8 @@
 # Open questions — decisions made autonomously, for owner review
 
 Recorded while working solo (owner away). These are choices I made with a sensible default so progress
-wasn't blocked; each can be revised/refactored on return. Newest first.
+wasn't blocked; each can be revised/refactored on return. Newest first. Resolved items are condensed to
+the one-line index at the bottom (full detail in git / `KNOWN_ISSUES.md` / `archive/PROGRESS_LOG.md`).
 
 ## Decisions taken (with a default) — confirm or revise
 
@@ -12,8 +13,11 @@ wasn't blocked; each can be revised/refactored on return. Newest first.
    ambient cookies) and the admin UI is same-origin — so no legitimate consumer needs credentialed
    cross-origin, and `*`-without-credentials is the standard correct posture for a public read API. The
    plan's "origin allowlist replacing `*`" would only *restrict who can read public data* (pointless)
-   while breaking browser-based agent tooling, so I did **not** build it (no `web.*` config added).
-   *Revise* if you want reads origin-restricted anyway. (`src/frontend/cors.rs`)
+   while breaking browser-based agent tooling, so I did **not** build it (no `web.*` config added). The
+   same fairing's dead `Content-Security-Policy-Report-Only` header (report-only, JSON-only, reporting
+   to a non-existent `report-uri` route → enforcing/collecting nothing) was removed; a real *enforcing*
+   CSP on the HTML + ar5iv-preview surface remains the open Arm 13 task. *Revise* if you want reads
+   origin-restricted anyway. (`src/frontend/cors.rs`)
 
 1. **Forced report-refresh is token-gated (Actor) + debounced.** `POST /api/reports/refresh` requires a
    rerun token, like the other write actions, and threads the actor onto the job. *Alternative:* since a
@@ -29,9 +33,6 @@ wasn't blocked; each can be revised/refactored on return. Newest first.
    pgtune.leopard.in.ua (Mixed / 256 GB / 64 cores / 300 conn / nvme) are live, incl. `io_method=io_uring`,
    `wal_compression=lz4`, `jit=off` (`docs/DB_TUNING.md`). *Confirm* these suit the box; revert via
    `ALTER SYSTEM RESET ...` + restart if not.
-
-4. **R-5 resolved** — the rerun refresh is now async (off the request path); rerun returns in <1 s.
-   `mark_new_run` is bookkeeping-only. No open decision; left here as a pointer. (`docs/KNOWN_ISSUES.md` R-5)
 
 ## Open design questions — need a direction
 
@@ -52,27 +53,18 @@ wasn't blocked; each can be revised/refactored on return. Newest first.
    accept parallel routes as the pattern (update the contract wording), or converge onto negotiation?
 
 6. **Two rerun endpoints coexist.** The modern `reports::rerun_report` (`POST /api/reports/<c>/<s>/rerun`,
-   Actor-gated, typed DTO) and the legacy `bin/frontend.rs` `/rerun/...` (token-in-JSON-body, the path the
-   human `rerun.html.tera` UI posts to). *Direction:* migrate the human UI onto the modern endpoint and
-   retire the legacy routes, or keep both?
-
-7. **API-docs framework — DONE: `rocket_okapi`, full docs generated (owner-chosen 2026-06-14).** The
-   owner previewed both spikes and chose `rocket_okapi`. **Landed in full:** `rocket_okapi` + `schemars`
-   are real deps; `frontend::apidoc` serves the generated **OpenAPI 3** spec at `GET /api/openapi.json`
-   and a **RapiDoc** page at `GET /api/docs`, built from the `#[openapi]`-annotated routes. **The
-   complete agent surface — all 26 endpoints (reads *and* writes) across all 6 capability modules — is
-   documented**, request/response DTOs derive `JsonSchema`, and the `Actor` token guard is an
-   `OpenApiFromRequest` impl advertising a `CortexToken` ApiKey security scheme (`X-Cortex-Token`). The
-   `utoipa` runner-up (dev-dep + spike example) is **pruned**. No open question remains; left here as a
-   pointer. (`src/frontend/apidoc.rs`, `src/frontend/actor.rs`)
+   Actor-gated, typed DTO) and the legacy `bin/frontend.rs` `/rerun/...` (JSON-XHR, the path the human
+   `rerun.html.tera` UI posts to, now `AdminSession`-gated). *Direction:* migrate the human UI onto the
+   modern endpoint and retire the legacy routes, or keep both?
 
 9. **Stalled-job handling: observe now, auto-interrupt deferred (W-4).** A hung job *body* (e.g. the
    importer blocked on a stale mount) can't be force-cancelled in Rust, so its thread + pooled connection
    leak for the process's life. I added **judgment-free observability** — `JobDto.seconds_since_update`
    (heartbeat age vs the DB clock), so a stalled running job is *visible* on `/api/jobs` and the `/jobs`
-   dashboard — but did **not** add any auto-kill, because every safe remedy needs a **tuning threshold the
-   owner should set**, and a too-tight one would false-kill legitimately-long ops (a full-table
-   `REINDEX (CONCURRENTLY)` or a production-scale `REFRESH` can run for many minutes with no `step()`):
+   dashboard, plus a runtime reaper (`jobs::reap_stale`, 2 h heartbeat-silence → `interrupted`) — but did
+   **not** add any hard auto-kill, because every safe remedy needs a **tuning threshold the owner should
+   set**, and a too-tight one would false-kill legitimately-long ops (a full-table `REINDEX (CONCURRENTLY)`
+   or a production-scale `REFRESH` can run for many minutes with no `step()`):
    - a **watchdog** that flips a running job past a deadline to `failed`/`stalled` (registry-accurate, but
      the thread keeps running);
    - a **`lock_timeout`** on the refresh/reindex connections (caps *lock acquisition*, not runtime — so it
@@ -80,11 +72,8 @@ wasn't blocked; each can be revised/refactored on return. Newest first.
    - a **`statement_timeout`** (caps total runtime — riskier for legitimately-long maintenance);
    - **timeouts on the importer's blocking filesystem I/O**.
    *Direction:* which remedies, and what thresholds (you're particular about DB tuning values — same as the
-   pgtune episode)? Until then the leak is *surfaced, not bounded*. (`src/jobs.rs`, `src/frontend/jobs.rs`,
-   KNOWN_ISSUES W-4)
-
-8. **`src/frontend/cached/` naming — done.** Flattened the one-function nested module and renamed it to
-   `src/frontend/render.rs` (the presentation layer). No open decision.
+   pgtune episode)? Until then the leak is *surfaced + heartbeat-reaped, not hard-bounded*. (`src/jobs.rs`,
+   `src/frontend/jobs.rs`, KNOWN_ISSUES W-4)
 
 10. **D-5 — `job_limit` drain protocol needs a design (diagnosed, not patched).** Root-caused the
     finite-`job_limit` shutdown hang: the ventilator counts `job_limit` in **requests** (including
@@ -98,56 +87,26 @@ wasn't blocked; each can be revised/refactored on return. Newest first.
     dispatcher threads. **Not urgent for production** — the perpetual dispatcher runs `job_limit = None`;
     this is benchmark/bounded-run-only. (`src/dispatcher/{ventilator,sink,finalize,manager}.rs`)
 
-11. **W-1 — oversized-result cap: IMPLEMENTED (2026-06-14), confirm the default.** Shipped as
-    `dispatcher.max_result_bytes` (default **2 GiB**): on overflow the sink stops writing, **drains the
-    remaining ZMQ frames frame-by-frame** to keep the PULL socket aligned, removes the partial file, and
-    finalizes the task **`Invalid`** (`result_too_large`) — chosen over `Fatal` because an unacceptably
-    large result is a rejected *input/output*, not a conversion failure. Torture-tested at real scale
-    (`tests/dispatcher_torture_test.rs`, `CORTEX_TORTURE_BIG=1`: 1.99 GB accepted, 3 GB rejected/cleaned,
-    alongside a 200k-malformed-reply barrage proving the frame-drain stays aligned). *Only open bit:*
-    confirm **2 GiB** is the cap you want (it's a runtime knob, so deployments can override) and that
-    `Invalid` (vs `Fatal`) is the right terminal status. (`src/dispatcher/sink.rs`, KNOWN_ISSUES W-1.)
+11. **W-1 oversized-result cap — confirm the default.** Shipped as `dispatcher.max_result_bytes` (default
+    **2 GiB**): on overflow the sink stops writing, drains the remaining ZMQ frames to stay aligned,
+    removes the partial file, and finalizes the task **`Invalid`** (`result_too_large`). Torture-tested at
+    real scale (1.99 GB accepted, 3 GB rejected/cleaned). *Confirm* 2 GiB is the cap you want (runtime
+    knob, override per deployment) and that `Invalid` (vs `Fatal`) is the right terminal status.
+    (`src/dispatcher/sink.rs`, KNOWN_ISSUES W-1.)
 
-12. **Dispatcher phase 3 (sink fan-out, closes D-7): RESOLVED (2026-06-14) — std-thread writer pool
-    (option a).** Owner chose the lower-risk intermediate. **Landed:** the sink is now a receive loop +
-    a pool of `dispatcher.sink_writers` (default 4) std-thread archive-writers, each fed a bounded
-    per-writer command channel; the receive loop owns the socket and streams each result
-    (`Begin → Chunk* → Commit|Reject`) to one writer round-robin, so receiving is no longer hostage to
-    the `/data` write + `cortex.log` parse. Per-task ordering preserved (contiguous FIFO per task),
-    fan-out across tasks, memory O(chunk) (streamed, never the whole archive). Every receive-side
-    invariant (RCVMORE envelope hardening, size cap + frame-drain, rate-limited discard, metadata
-    enqueue) unchanged; fail-fast preserved (writer death → receive-loop detection → manager abort).
-    **Gated green:** `dispatcher_torture_test` (byte-exact integrity + cap), `echo_roundtrip`,
-    `dispatcher_bench` (8-worker, 20000 tasks, no loss, throughput-neutral vs the inline baseline on
-    loopback — the win is on the slow production disk loopback can't exercise). The tokio async core +
-    `tokio::fs` *async* file I/O the plan's default envisioned is deferred to phase 5 (transport swap),
-    where it's natural; the std-thread pool already closes D-7's blocking-serialization essence.
-    (`src/dispatcher/sink.rs`, `src/config.rs`, KNOWN_ISSUES D-7 🟢.)
+## Resolved (for history — full detail in git / KNOWN_ISSUES / archive/PROGRESS_LOG)
 
-13. **Dispatcher phase 4 (lock-free maps): RESOLVED (2026-06-14) — `dashmap` approved, landed.** Owner
-    approved the `dashmap` dependency and the 4-after-3 sequencing. **Landed:** the in-flight set is now
-    `server::InFlightSet` (a sharded `DashMap<i64, TaskProgress>` + an `AtomicUsize` size counter for the
-    O(1) backpressure read), and the service cache is `server::ServiceCache` (a `DashMap<String,
-    Option<Service>>`) — so the ventilator lease, the sink return, the reaper sweep, and every dispatch
-    lookup no longer serialise on one global `Mutex`. The counter is maintained in lock-step with the
-    map (the only mutation site), with the fail-fast hard-limit backstop preserved. Built **red/green
-    TDD**: the `InFlightSet` unit tests (incl. **200 concurrent leases/drains** with a consistent
-    counter, the duplicate-insert / negative-remove edge cases) were written first (red: type absent),
-    then implemented green. **Empirical finding (the "testing reveals more" the owner anticipated):** as
-    predicted, the in-flight map was *never* the throughput wall at this scale — `dispatcher_bench`
-    8-worker is throughput-neutral within noise (median ~8.9k tasks/s, runs 8.2k–9.8k, straddling the
-    phase-3 baseline; the DB finalize at ~9k/s is the bottleneck). The win is architectural (no global
-    lock, O(1) size) and will matter as the DB ceiling lifts / under the phase-5 async core. Also added
-    a 200-task end-to-end gate (`tests/concurrent_dispatch_test.rs`: 200 tasks × 8 workers, zero loss,
-    byte-exact). (`src/dispatcher/{server,ventilator,sink,manager}.rs`, `Cargo.toml`.) **Remaining
-    dispatcher work:** phase 5 (tokio + pure-Rust `zeromq` transport, carrying the deferred async file
-    I/O) — still owner-gated on the tokio async core.
+- **4 — R-5 async rerun refresh.** `mark_new_run` is bookkeeping-only; the rollup refresh runs off the
+  request path, so rerun returns in <1 s. (KNOWN_ISSUES R-5)
+- **7 — API-docs framework = `rocket_okapi`** (owner-chosen). All 26 agent endpoints documented at
+  `GET /api/openapi.json` + RapiDoc at `GET /api/docs`; `utoipa` runner-up pruned. (`src/frontend/apidoc.rs`)
+- **8 — `src/frontend/cached/` renamed → `src/frontend/render.rs`** (flattened the one-function module).
+- **12 — Dispatcher phase 3 (sink fan-out, closes D-7):** std-thread writer pool (`dispatcher.sink_writers`,
+  default 4); receive loop streams each result round-robin to a writer. (KNOWN_ISSUES D-7)
+- **13 — Dispatcher phase 4 (lock-free maps):** in-flight set → `DashMap` + `AtomicUsize`, service cache →
+  `DashMap`; throughput-neutral (DB finalize is the wall), win is architectural. (`dashmap` dep approved.)
+- **14 — `pericortex` worker empty-queue throttle** is now `CORTEX_WORKER_THROTTLE_SECS` (default 60,
+  behaviour unchanged); shipped in pericortex 0.2.5. (`cortex-peripherals/src/worker.rs`)
 
-14. **`pericortex` worker empty-queue throttle — RESOLVED (2026-06-14).** On a mock/empty reply the
-    worker used to `sleep(60s)` (hardcoded), which (a) made tail-recovery of a reaped task slow once the
-    queue emptied (bounded by `max(lease+reap, 60s)`, not the fast dispatcher reap), (b) made the
-    `BENCH_CHAOS` gate take ~60 s, and (c) is the prime suspect behind the D-12 straggler. **Fixed:** the
-    throttle is now read from `CORTEX_WORKER_THROTTLE_SECS` (default 60 — behaviour unchanged), shipped in
-    **pericortex 0.2.5** (`357b29f`) and adopted by cortex via `cargo update -p pericortex`. Non-breaking.
-    *Next:* use a short throttle to **confirm the D-12 mechanism** and, if it holds, re-add a deterministic
-    ventilator malformed-flood gate (+ a fast `BENCH_CHAOS`). (`cortex-peripherals/src/worker.rs`.)
+> Still owner-gated (not autonomous): dispatcher **phase 5** (tokio + pure-Rust `zeromq` transport +
+> async file I/O) and the W-4 hard auto-kill threshold.
