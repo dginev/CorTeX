@@ -15,10 +15,10 @@ on: [push, pull_request]
 #     the schema (incl. the hand-SQL matview migrations) is present before the tests connect.
 #   * latexmlc is not installed, so `tex_to_html_test` skips itself (by design).
 #
-# Known flake: a few integration binaries that build a Rocket `Client` over an r2d2/libpq pool
-# SIGSEGV during process *teardown* after their tests pass (KNOWN_ISSUES L-1, pre-existing, not
-# fixable in our code today). The `scripts/ci_test.sh` wrapper in the Tests step tolerates ONLY that
-# teardown SIGSEGV (every assertion still passed) while failing CI on any real failure.
+# The former L-1 teardown SIGSEGV (Rocket-Client-over-pool binaries crashing at process exit, after
+# all assertions passed) is eliminated, not tolerated: those binaries run under a custom harness that
+# ends with `libc::_exit(0)` while the Client is still live, skipping the racy C atexit cleanup. So
+# the Tests step runs `cargo test` directly — any non-zero exit is now a real failure.
 
 jobs:
   test:
@@ -94,10 +94,9 @@ jobs:
         run: cp config.default.json config.json
 
       - name: Tests
-        # Wrapper runs the full suite and fails on real failures, but tolerates ONLY the pre-existing
-        # L-1 teardown SIGSEGV (a diesel/libpq/Tokio teardown race in Rocket-Client-over-pool binaries
-        # that crashes AFTER all assertions pass; reproduced on clean master — KNOWN_ISSUES L-1).
-        run: bash scripts/ci_test.sh
+        # --no-fail-fast so one failing binary doesn't mask the rest. The L-1 teardown SIGSEGV is
+        # eliminated at the source (custom harness + libc::_exit(0)), so any non-zero exit is real.
+        run: cargo test --no-fail-fast --color=never
 
   # Supply-chain gate (Arm 12): RUSTSEC advisories + license discipline over the dependency graph.
   # Reads only Cargo.lock + deny.toml, so it needs no system C libs or database — fast and independent

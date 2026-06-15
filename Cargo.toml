@@ -89,9 +89,9 @@ flate2 = "1"
 tar = "0.4"
 infer = "0.16"
 
-# Integration tests that build a Rocket Client over the libpq pool run under a custom harness
-# (their own `main` + `process::exit(0)`) to ELIMINATE the L-1 diesel/libpq/Tokio teardown SIGSEGV
-# that fires after assertions pass — the racy global teardown is simply never run.
+# Integration tests that hold a libpq pool (a Rocket Client over it, or a bare pool) run under a
+# custom harness (their own `main` ending in `libc::_exit(0)`) to ELIMINATE the L-1 diesel/libpq/Tokio
+# teardown SIGSEGV that fires after assertions pass — the racy C atexit cleanup is simply never run.
 [[test]]
 name = "management_api_test"
 path = "tests/management_api_test.rs"
@@ -165,6 +165,18 @@ harness = false
 [[test]]
 name = "services_test"
 path = "tests/services_test.rs"
+harness = false
+
+# Bare-pool tests (no Client/Tokio, but they hold an r2d2 pool whose reaper thread races the C atexit
+# cleanup at process exit — KNOWN_ISSUES L-1). Same custom-harness + `_exit(0)` fix as above.
+[[test]]
+name = "pool_test"
+path = "tests/pool_test.rs"
+harness = false
+
+[[test]]
+name = "jobs_test"
+path = "tests/jobs_test.rs"
 harness = false
 
 # The rocket_okapi spike (the chosen framework) — reproduces docs/archive/api-spike/okapi-openapi.json and is

@@ -12,7 +12,6 @@ use cortex::backend::{build_pool, test_db_address};
 use cortex::jobs;
 use std::time::{Duration, Instant};
 
-#[test]
 fn spawn_job_runs_to_succeeded_with_progress() {
   let pool = build_pool(test_db_address(), 4);
 
@@ -49,7 +48,6 @@ fn spawn_job_runs_to_succeeded_with_progress() {
   }
 }
 
-#[test]
 fn spawn_job_marks_a_panicking_body_failed_not_stuck() {
   // A panicking job body (e.g. a DB connection that panics on establish) must not strand the job
   // `running` forever — the worker catches the panic and records a terminal `failed` state.
@@ -88,4 +86,14 @@ fn spawn_job_marks_a_panicking_body_failed_not_stuck() {
     );
     std::thread::sleep(Duration::from_millis(20));
   }
+}
+
+// Custom harness (see KNOWN_ISSUES L-1): run the cases then `_exit(0)` so the racy C atexit cleanup
+// (libpq global teardown vs the still-live r2d2 reaper + background job threads) never runs. A
+// panic above still aborts non-zero, so a real failure fails CI.
+fn main() {
+  spawn_job_runs_to_succeeded_with_progress();
+  spawn_job_marks_a_panicking_body_failed_not_stuck();
+  eprintln!("jobs_test: all cases passed");
+  unsafe { libc::_exit(0) }
 }

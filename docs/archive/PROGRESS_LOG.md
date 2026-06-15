@@ -11,6 +11,21 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](../PRODUCTIZING_PLAN.md); the
 
 ## 2026-06-15
 
+- **L-1 RESOLVED: at-exit teardown SIGSEGV eliminated suite-wide; `scripts/ci_test.sh` deleted.**
+  Ran the full-suite survey the L-1 note had left open. First pass (each binary run *once*
+  individually) showed all 27 exit 0 — a **false green**: the crash is a *flaky* race (~4/5), so one
+  clean run proves nothing. Running the **real `cargo test --no-fail-fast`** (one process per binary,
+  as CI does) caught the last straggler — **`pool_test`** SIGSEGV'd at teardown. It's the pure
+  bare-pool case the note flagged: no `Client`/Tokio, but its **r2d2 reaper thread** races the C
+  `atexit` libpq cleanup at exit. Converted **`pool_test`** and **`jobs_test`** (the other flagged
+  bare-pool test — holds a pool + spawns background job threads) to the same custom harness as the 15
+  Client binaries: `harness = false`, a `main` that runs the cases then `unsafe { libc::_exit(0) }`
+  (skips atexit; the OS reclaims the live threads cleanly), a panic still aborts non-zero. Validated:
+  **pool_test + jobs_test 25×each → all exit 0** (old pool_test crashed ~4/5, so 25 clean = conclusive),
+  and the **full `cargo test` → exit 0, zero `signal: 11`, all 17 custom-harness + 10 default-harness
+  binaries pass**. With the crash gone at the source, deleted `scripts/ci_test.sh` (its sole job was
+  swallowing this SIGSEGV) and pointed CI's Tests step at `cargo test --no-fail-fast` directly — any
+  non-zero exit is now a real failure. L-1 → 🟢. fmt + clippy clean.
 - **W-4 job-timeout: made the reap threshold operator-tunable; rejected an in-app watchdog as
   redundant/wrong (architecture call).** Started a background "job watchdog" thread, then **removed
   it** after an owner question ("aren't we reimplementing what the web framework reaps?"). The honest
