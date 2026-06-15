@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io;
@@ -7,15 +6,14 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use crate::config::config;
 use crate::dispatcher::server;
 use crate::helpers;
-use crate::helpers::{NewTaskMessage, TaskProgress, TaskReport, TaskStatus};
-use crate::models::{Service, Task, WorkerMetadataSender};
+use crate::helpers::{NewTaskMessage, TaskReport, TaskStatus};
+use crate::models::{Task, WorkerMetadataSender};
 
 /// Capacity of each archive-writer's command channel. A small bound keeps resident memory at
 /// O(chunk) per writer (a handful of `message_size` chunks at most) while letting a writer stay a
@@ -163,8 +161,8 @@ impl Sink {
   /// of the receive path is unchanged; only *where* the bytes get written moved off-thread.
   pub fn start(
     &self,
-    services_arc: &Arc<Mutex<HashMap<String, Option<Service>>>>,
-    progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>,
+    services_arc: &Arc<server::ServiceCache>,
+    progress_queue_arc: &Arc<server::InFlightSet>,
     done_tx: &SyncSender<TaskReport>,
     job_limit: Option<usize>,
   ) -> Result<(), Box<dyn Error>> {
@@ -270,7 +268,7 @@ impl Sink {
       println!(
         "sink {sink_job_count:?}: incoming result for {service_name:?}, worker {identity:?}, taskid: {taskid}");
 
-      if let Some(task_progress) = server::pop_progress_task(progress_queue_arc, taskid) {
+      if let Some(task_progress) = progress_queue_arc.remove(taskid) {
         let task = task_progress.task;
         match server::get_service(service_name, services_arc) {
           None => {

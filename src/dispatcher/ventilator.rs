@@ -2,14 +2,13 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Duration;
 
 use crate::backend;
 use crate::dispatcher::server;
 use crate::helpers;
 use crate::helpers::{TaskProgress, TaskReport};
-use crate::models::{Service, WorkerMetadataSender};
+use crate::models::WorkerMetadataSender;
 use std::error::Error;
 use zmq::SNDMORE;
 
@@ -42,8 +41,8 @@ impl Ventilator {
   /// Upon premature termination, returns the number of tasks processed.
   pub fn start(
     &self,
-    services_arc: &Arc<Mutex<HashMap<String, Option<Service>>>>,
-    progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>,
+    services_arc: &Arc<server::ServiceCache>,
+    progress_queue_arc: &Arc<server::InFlightSet>,
     done_tx: &SyncSender<TaskReport>,
     job_limit: Option<usize>,
   ) -> Result<usize, Box<dyn Error>> {
@@ -57,12 +56,7 @@ impl Ventilator {
     // original results are still pending (a double-dispatch). On first start `progress_queue` is
     // empty, so this recovers all leftover Queued tasks exactly as before.
     let mut backend = backend::from_address(&self.backend_address);
-    let in_flight_ids: Vec<i64> = progress_queue_arc
-      .lock()
-      .expect("progress_queue mutex poisoned")
-      .keys()
-      .copied()
-      .collect();
+    let in_flight_ids: Vec<i64> = progress_queue_arc.ids();
     backend.clear_limbo_tasks_except(&in_flight_ids)?;
     // Ok, let's bind to a port and start broadcasting
     let context = zmq::Context::new();
@@ -158,10 +152,7 @@ impl Ventilator {
         // lease more work — mock-reply so the worker backs off and retries. The set then drains as
         // the sink receives results, instead of growing toward the hard panic bound. Degrade
         // gracefully under overload rather than crash.
-        if server::in_flight_saturated(
-          server::progress_queue_len(progress_queue_arc),
-          self.max_in_flight,
-        ) {
+        if server::in_flight_saturated(progress_queue_arc.len(), self.max_in_flight) {
           eprintln!(
             "-- BACKPRESSURE: in-flight set at capacity ({}); mock-replying to worker {identity_str:?}",
             self.max_in_flight
@@ -200,7 +191,7 @@ impl Ventilator {
           // higher worker concurrency (KNOWN_ISSUES D-4 / docs/DISPATCHER_BENCH.md 8-worker loss).
           // Recording first also leaves a mid-stream send failure correctly in-flight for the
           // reaper.
-          server::push_progress_task(progress_queue_arc, current_task_progress.clone());
+          progress_queue_arc.insert(current_task_progress.clone());
 
           let current_task = current_task_progress.task;
           taskid = current_task.id;

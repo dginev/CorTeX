@@ -114,14 +114,24 @@ wasn't blocked; each can be revised/refactored on return. Newest first.
     where it's natural; the std-thread pool already closes D-7's blocking-serialization essence.
     (`src/dispatcher/sink.rs`, `src/config.rs`, KNOWN_ISSUES D-7 🟢.)
 
-13. **Dispatcher phase 4 (lock-free maps): `dashmap` dependency OK?** Phase 4 swaps the in-flight set +
-    service-cache `Arc<Mutex<HashMap>>` for `DashMap` + an `AtomicUsize` size counter (your "aspire for a
-    lock-free design" directive). It needs the **`dashmap`** crate (it's in the rationalization plan's
-    crate list; alternative is a hand-sharded `Mutex<HashMap>` — more code, no new dep). *Note on
-    sequencing:* the in-flight mutex is **not** a measured bottleneck at today's throughput (held for
-    microseconds; the DB + disk dominate), so phase 4's win only materialises **after** phase 3 removes
-    the disk ceiling — I'd sequence 4 after 3 rather than now (doing it now is near-zero measurable gain).
-    *Direction:* approve `dashmap`, and confirm 4-after-3 sequencing. (`src/dispatcher/server.rs`.)
+13. **Dispatcher phase 4 (lock-free maps): RESOLVED (2026-06-14) — `dashmap` approved, landed.** Owner
+    approved the `dashmap` dependency and the 4-after-3 sequencing. **Landed:** the in-flight set is now
+    `server::InFlightSet` (a sharded `DashMap<i64, TaskProgress>` + an `AtomicUsize` size counter for the
+    O(1) backpressure read), and the service cache is `server::ServiceCache` (a `DashMap<String,
+    Option<Service>>`) — so the ventilator lease, the sink return, the reaper sweep, and every dispatch
+    lookup no longer serialise on one global `Mutex`. The counter is maintained in lock-step with the
+    map (the only mutation site), with the fail-fast hard-limit backstop preserved. Built **red/green
+    TDD**: the `InFlightSet` unit tests (incl. **200 concurrent leases/drains** with a consistent
+    counter, the duplicate-insert / negative-remove edge cases) were written first (red: type absent),
+    then implemented green. **Empirical finding (the "testing reveals more" the owner anticipated):** as
+    predicted, the in-flight map was *never* the throughput wall at this scale — `dispatcher_bench`
+    8-worker is throughput-neutral within noise (median ~8.9k tasks/s, runs 8.2k–9.8k, straddling the
+    phase-3 baseline; the DB finalize at ~9k/s is the bottleneck). The win is architectural (no global
+    lock, O(1) size) and will matter as the DB ceiling lifts / under the phase-5 async core. Also added
+    a 200-task end-to-end gate (`tests/concurrent_dispatch_test.rs`: 200 tasks × 8 workers, zero loss,
+    byte-exact). (`src/dispatcher/{server,ventilator,sink,manager}.rs`, `Cargo.toml`.) **Remaining
+    dispatcher work:** phase 5 (tokio + pure-Rust `zeromq` transport, carrying the deferred async file
+    I/O) — still owner-gated on the tokio async core.
 
 14. **`pericortex` worker empty-queue throttle — RESOLVED (2026-06-14).** On a mock/empty reply the
     worker used to `sleep(60s)` (hardcoded), which (a) made tail-recovery of a reaped task slow once the

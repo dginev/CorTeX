@@ -1,13 +1,21 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::SyncSender;
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
+
+use dashmap::DashMap;
 
 use crate::backend::Backend;
 use crate::helpers::{NewTaskMessage, TaskProgress, TaskReport, TaskStatus};
 use crate::models::Service;
+
+/// The dispatcher's **service cache**: a `service_name → Option<Service>` memo shared by the
+/// ventilator (populated on a cache miss) and the sink (read on every result), so a `Service` row
+/// is looked up from the DB at most once per name. Phase 4 of the dispatcher rationalization
+/// replaces the old `Arc<Mutex<HashMap>>` with a sharded `DashMap`, so this near-static,
+/// read-mostly cache is no longer behind a single global lock contended on every dispatch.
+pub type ServiceCache = DashMap<String, Option<Service>>;
 
 /// Rate-limited logging for high-frequency, low-value events — the dispatcher's *discarded*
 /// messages (malformed replies/requests, unknown service names, unknown task ids). The dispatcher's
@@ -75,14 +83,91 @@ pub fn in_flight_saturated(in_flight: usize, max_in_flight: usize) -> bool {
   in_flight >= max_in_flight
 }
 
-/// Current size of the in-flight (progress) set — the count of dispatched-but-unfinished tasks.
-pub fn progress_queue_len<S: ::std::hash::BuildHasher>(
-  progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress, S>>>,
-) -> usize {
-  progress_queue_arc
-    .lock()
-    .expect("Failed to obtain Mutex lock in progress_queue_len")
-    .len()
+/// The dispatcher's **in-flight (progress) set**: the dispatched-but-unfinished tasks, keyed by
+/// task id. Phase 4 of the dispatcher rationalization replaces the contended
+/// `Arc<Mutex<HashMap<i64, TaskProgress>>>` with a sharded, lock-free [`DashMap`] — so the
+/// ventilator's lease ([`Self::insert`]), the sink's return ([`Self::remove`]), and the reaper
+/// sweep ([`Self::take_expired`]) no longer serialise on one global lock — plus an [`AtomicUsize`]
+/// size counter so the per-request backpressure check ([`in_flight_saturated`]) reads the size in
+/// **O(1)** without locking or scanning the map.
+///
+/// The counter is maintained in lock-step with the map *here* (the only place either is mutated),
+/// so it converges to exactly the map size; a momentary ±1 skew between a map mutation and its
+/// atomic update is harmless for backpressure (self-correcting, never a leak). Shared as
+/// `Arc<InFlightSet>` across the ventilator / sink / reaper threads.
+#[derive(Default)]
+pub struct InFlightSet {
+  map: DashMap<i64, TaskProgress>,
+  len: AtomicUsize,
+}
+
+impl InFlightSet {
+  /// A new, empty in-flight set.
+  pub fn new() -> Self { Self::default() }
+
+  /// Current number of in-flight tasks — an **O(1)** atomic load (the backpressure hot read), not a
+  /// map scan.
+  pub fn len(&self) -> usize { self.len.load(Ordering::Acquire) }
+
+  /// Whether the in-flight set is empty.
+  pub fn is_empty(&self) -> bool { self.len() == 0 }
+
+  /// Record a dispatched task as in-flight (keyed by `task.id`). Re-inserting the same id (a
+  /// re-lease) overwrites without double-counting. Preserves the fail-fast hard-limit backstop: if
+  /// the set ever exceeds [`PROGRESS_QUEUE_HARD_LIMIT`] (backpressure failed to hold the line) we
+  /// panic → process abort → external restart, rather than grow unbounded.
+  pub fn insert(&self, progress_task: TaskProgress) {
+    let id = progress_task.task.id;
+    if self.map.insert(id, progress_task).is_none() {
+      self.len.fetch_add(1, Ordering::AcqRel);
+    }
+    if self.len() > PROGRESS_QUEUE_HARD_LIMIT {
+      panic!(
+        "Progress queue is too large: {:?} tasks. Stop the ventilator!",
+        self.len()
+      );
+    }
+  }
+
+  /// Remove and return the in-flight task with `taskid` (the sink draining a returned result).
+  /// Negative (mock-reply) ids are never tracked, so they short-circuit to `None`; removing an
+  /// already-gone task is a no-op that never underflows the counter.
+  pub fn remove(&self, taskid: i64) -> Option<TaskProgress> {
+    if taskid < 0 {
+      // Mock ids are to be skipped
+      return None;
+    }
+    let removed = self.map.remove(&taskid).map(|(_, v)| v);
+    if removed.is_some() {
+      self.len.fetch_sub(1, Ordering::AcqRel);
+    }
+    removed
+  }
+
+  /// Remove and return every in-flight task past its visibility-timeout deadline (the reaper
+  /// sweep).
+  pub fn take_expired(&self) -> Vec<TaskProgress> {
+    let now = chrono::Utc::now().timestamp();
+    let expired_keys: Vec<i64> = self
+      .map
+      .iter()
+      .filter(|entry| entry.value().expected_at() < now)
+      .map(|entry| *entry.key())
+      .collect();
+    let mut expired_tasks = Vec::with_capacity(expired_keys.len());
+    for key in expired_keys {
+      if let Some((_, task_progress)) = self.map.remove(&key) {
+        self.len.fetch_sub(1, Ordering::AcqRel);
+        expired_tasks.push(task_progress);
+      }
+    }
+    expired_tasks
+  }
+
+  /// Snapshot of the currently in-flight task ids — used on a ventilator restart to **exclude**
+  /// these from the `Queued → TODO` crash-recovery reset (`clear_limbo_tasks_except`), so tasks the
+  /// sink is still processing are not re-leased mid-flight (KNOWN_ISSUES D-4).
+  pub fn ids(&self) -> Vec<i64> { self.map.iter().map(|entry| *entry.key()).collect() }
 }
 
 /// Persists a **batch** of finished reports to the Task store, with bounded retry on a transient DB
@@ -142,62 +227,6 @@ pub fn send_done(done_tx: &SyncSender<TaskReport>, report: TaskReport) {
   }
 }
 
-/// Check for, remove and return any expired tasks from the progress queue
-pub fn timeout_progress_tasks<S: ::std::hash::BuildHasher>(
-  progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress, S>>>,
-) -> Vec<TaskProgress> {
-  let mut progress_queue = progress_queue_arc
-    .lock()
-    .expect("Failed to obtain Mutex lock in timeout_progress_tasks");
-  let now = chrono::Utc::now().timestamp();
-  let expired_keys = progress_queue
-    .iter()
-    .filter(|&(_, v)| v.expected_at() < now)
-    .map(|(k, _)| *k)
-    .collect::<Vec<_>>();
-  let mut expired_tasks = Vec::new();
-  for key in expired_keys {
-    if let Some(task_progress) = progress_queue.remove(&key) {
-      expired_tasks.push(task_progress);
-    }
-  }
-  expired_tasks
-}
-
-/// Pops the next task from the progress queue
-pub fn pop_progress_task<S: ::std::hash::BuildHasher>(
-  progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress, S>>>,
-  taskid: i64,
-) -> Option<TaskProgress> {
-  if taskid < 0 {
-    // Mock ids are to be skipped
-    return None;
-  }
-  let mut progress_queue = progress_queue_arc
-    .lock()
-    .unwrap_or_else(|_| panic!("Failed to obtain Mutex lock in pop_progress_task"));
-  progress_queue.remove(&taskid)
-}
-
-/// Pushes a new task on the progress queue
-pub fn push_progress_task<S: ::std::hash::BuildHasher>(
-  progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress, S>>>,
-  progress_task: TaskProgress,
-) {
-  let mut progress_queue = progress_queue_arc
-    .lock()
-    .unwrap_or_else(|_| panic!("Failed to obtain Mutex lock in push_progress_task"));
-  // Fail-fast backstop if backpressure (max_in_flight) ever fails to hold the line; see
-  // PROGRESS_QUEUE_HARD_LIMIT. A workaround for the inability to catch thread panic!() calls.
-  if progress_queue.len() > PROGRESS_QUEUE_HARD_LIMIT {
-    panic!(
-      "Progress queue is too large: {:?} tasks. Stop the ventilator!",
-      progress_queue.len()
-    );
-  }
-  progress_queue.insert(progress_task.task.id, progress_task);
-}
-
 /// The maximum number of dispatch retries before a perpetually-incomplete task is given up on.
 /// A task re-dispatched this many times that still never returns a result is treated as a hard
 /// failure (`Fatal`) rather than retried forever.
@@ -242,10 +271,10 @@ pub fn classify_expired(expired: TaskProgress) -> ExpiredOutcome {
 /// than the requesting service fixes the latent cross-service requeue bug.
 pub fn reap_expired_into(
   queues: &mut HashMap<i32, Vec<TaskProgress>>,
-  progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>,
+  in_flight: &InFlightSet,
   done_tx: &SyncSender<TaskReport>,
 ) {
-  for expired in timeout_progress_tasks(progress_queue_arc) {
+  for expired in in_flight.take_expired() {
     match classify_expired(expired) {
       ExpiredOutcome::Requeue(task_progress) => queues
         .entry(task_progress.task.service_id)
@@ -256,34 +285,27 @@ pub fn reap_expired_into(
   }
 }
 
-/// Memoized getter for a `Service` record from the backend
-pub fn get_sync_service<S: ::std::hash::BuildHasher>(
+/// Memoized getter for a `Service` record from the backend, populating the shared [`ServiceCache`]
+/// on a miss. The `or_insert_with` holds only the relevant DashMap *shard* during the one-time DB
+/// lookup (vs. the old whole-map `Mutex`), so concurrent lookups of *other* services are unblocked.
+pub fn get_sync_service(
   service_name: &str,
-  services: &Arc<Mutex<HashMap<String, Option<Service>, S>>>,
+  services: &ServiceCache,
   backend: &mut Backend,
 ) -> Option<Service> {
-  let mut services = services
-    .lock()
-    .unwrap_or_else(|_| panic!("Failed to obtain Mutex lock in get_sync_services"));
   services
     .entry(service_name.to_string())
     .or_insert_with(|| Service::find_by_name(service_name, &mut backend.connection).ok())
+    .value()
     .clone()
 }
 
-/// Getter for a `Service` stored inside an `Arc<Mutex<HashMap>`, with no DB access
-pub fn get_service<S: ::std::hash::BuildHasher>(
-  service_name: &str,
-  services: &Arc<Mutex<HashMap<String, Option<Service>, S>>>,
-) -> Option<Service> {
-  let services = services
-    .lock()
-    .expect("Failed to obtain Mutex lock in get_service");
-  let service = services.get(service_name);
-  match service {
-    None => None, // TODO: Should we panic? Can we recover?
-    Some(service) => service.clone(),
-  }
+/// Getter for a `Service` from the shared [`ServiceCache`], with no DB access (a `None` entry means
+/// a prior lookup found no such service).
+pub fn get_service(service_name: &str, services: &ServiceCache) -> Option<Service> {
+  services
+    .get(service_name)
+    .and_then(|entry| entry.value().clone())
 }
 
 #[cfg(test)]
@@ -291,6 +313,7 @@ mod tests {
   use super::*;
   use crate::config::DispatcherConfig;
   use crate::models::Task;
+  use std::sync::Arc;
 
   fn dummy_progress(id: i64) -> TaskProgress {
     TaskProgress {
@@ -329,15 +352,92 @@ mod tests {
   }
 
   #[test]
-  fn progress_queue_len_tracks_dispatch_and_drain() {
-    let queue = Arc::new(Mutex::new(HashMap::new()));
-    assert_eq!(progress_queue_len(&queue), 0);
-    push_progress_task(&queue, dummy_progress(1));
-    push_progress_task(&queue, dummy_progress(2));
-    assert_eq!(progress_queue_len(&queue), 2, "two tasks now in flight");
+  fn inflight_len_tracks_dispatch_and_drain() {
+    let set = InFlightSet::new();
+    assert_eq!(set.len(), 0);
+    set.insert(dummy_progress(1));
+    set.insert(dummy_progress(2));
+    assert_eq!(set.len(), 2, "two tasks now in flight");
     // The sink draining a returned result shrinks the in-flight set — how backpressure recovers.
-    pop_progress_task(&queue, 1);
-    assert_eq!(progress_queue_len(&queue), 1);
+    set.remove(1);
+    assert_eq!(set.len(), 1);
+  }
+
+  #[test]
+  fn inflight_count_ignores_duplicate_insert_and_negative_remove() {
+    // The O(1) size counter must stay exactly equal to the map size under the edge cases the
+    // dispatcher actually hits: a re-leased task (same id inserted again) and the sink's mock-id
+    // (negative) results. A drift here would mis-fire backpressure or leak toward the hard bound.
+    let set = InFlightSet::new();
+    set.insert(dummy_progress(7));
+    set.insert(dummy_progress(7)); // same id → overwrite, not a second entry
+    assert_eq!(
+      set.len(),
+      1,
+      "re-inserting the same task id does not double-count"
+    );
+    assert!(
+      set.remove(-1).is_none(),
+      "negative (mock) ids are never tracked"
+    );
+    assert_eq!(set.len(), 1);
+    assert!(set.remove(7).is_some());
+    assert_eq!(set.len(), 0);
+    assert!(set.remove(7).is_none(), "removing a gone task is a no-op");
+    assert_eq!(
+      set.len(),
+      0,
+      "a redundant remove does not underflow the counter"
+    );
+  }
+
+  #[test]
+  fn inflight_handles_200_concurrent_tasks_with_consistent_count() {
+    // Deployment sizing is ~200 concurrent workers; the in-flight set must absorb 200 simultaneous
+    // leases from many threads (and then 200 concurrent drains) without losing entries or drifting
+    // its O(1) size counter — the property the sharded DashMap + AtomicUsize must guarantee in
+    // place of the old global Mutex. (Dispatcher rationalization phase 4.)
+    let set = Arc::new(InFlightSet::new());
+    let n: i64 = 200;
+    let leasers: Vec<_> = (1..=n)
+      .map(|id| {
+        let set = set.clone();
+        thread::spawn(move || set.insert(dummy_progress(id)))
+      })
+      .collect();
+    for h in leasers {
+      h.join().unwrap();
+    }
+    assert_eq!(
+      set.len(),
+      n as usize,
+      "all 200 concurrent leases tracked, counter consistent"
+    );
+    assert_eq!(
+      set.ids().len(),
+      n as usize,
+      "every id is present in the map"
+    );
+    let drainers: Vec<_> = (1..=n)
+      .map(|id| {
+        let set = set.clone();
+        thread::spawn(move || set.remove(id))
+      })
+      .collect();
+    let drained = drainers
+      .into_iter()
+      .filter_map(|h| h.join().unwrap())
+      .count();
+    assert_eq!(
+      drained, n as usize,
+      "each of the 200 tasks drained exactly once"
+    );
+    assert_eq!(
+      set.len(),
+      0,
+      "counter back to zero after a full concurrent drain"
+    );
+    assert!(set.is_empty());
   }
 
   fn expired_progress(id: i64, service_id: i32, retries: i64) -> TaskProgress {
@@ -380,9 +480,9 @@ mod tests {
 
   #[test]
   fn reap_routes_to_own_service_and_drains() {
-    let progress = Arc::new(Mutex::new(HashMap::new()));
-    push_progress_task(&progress, expired_progress(1, 7, 0)); // retriable, service 7
-    push_progress_task(&progress, expired_progress(2, 9, MAX_DISPATCH_RETRIES + 1)); // fatal, svc 9
+    let progress = InFlightSet::new();
+    progress.insert(expired_progress(1, 7, 0)); // retriable, service 7
+    progress.insert(expired_progress(2, 9, MAX_DISPATCH_RETRIES + 1)); // fatal, svc 9
     let mut queues: HashMap<i32, Vec<TaskProgress>> = HashMap::new();
     let (done_tx, done_rx) = std::sync::mpsc::sync_channel::<TaskReport>(10);
 
@@ -400,6 +500,6 @@ mod tests {
     assert_eq!(reports.len(), 1);
     assert_eq!(reports[0].task.id, 2);
     // The in-flight set is fully drained.
-    assert_eq!(progress_queue_len(&progress), 0);
+    assert_eq!(progress.len(), 0);
   }
 }

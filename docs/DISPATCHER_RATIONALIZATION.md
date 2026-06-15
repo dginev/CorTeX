@@ -27,8 +27,13 @@ design and fearless concurrency."*
   the receive loop to a pool of `dispatcher.sink_writers` (default 4) std-thread writers. Gated green on
   `dispatcher_torture_test` (byte-exact integrity + cap), `echo_roundtrip`, and the 8-worker bench (no
   loss, throughput-neutral on loopback). See phase 3 in the migration plan below.
-- **Remaining:** phase 4 (lock-free in-flight/service maps — gated on OPEN_QUESTIONS #13 `dashmap`) and
-  phase 5 (tokio + pure-Rust `zeromq` transport, carrying the deferred `tokio::fs` async file I/O).
+- **Phase 4 LANDED** (2026-06-14, owner approved `dashmap` — OPEN_QUESTIONS #13): **lock-free maps** —
+  the in-flight set (`server::InFlightSet` = sharded `DashMap` + `AtomicUsize` size counter) and the
+  service cache (`server::ServiceCache` = `DashMap`) replace the two `Arc<Mutex<HashMap>>`. Built
+  red/green TDD (200-concurrent-task unit test); throughput-neutral within noise (the map was never the
+  wall — the DB is). See phase 4 below.
+- **Remaining:** phase 5 (tokio + pure-Rust `zeromq` transport, carrying the deferred `tokio::fs` async
+  file I/O) — still owner-gated on the tokio async core.
 - **Residual gate before flipping production traffic:** a **real multi-host network soak** — the one
   property a loopback harness cannot prove. Not a blocker for starting the build.
 
@@ -67,8 +72,12 @@ Three long-lived threads spawned by `dispatcher::manager`, sharing state through
    `DONE_QUEUE_HARD_LIMIT` panic backstop standing in for real backpressure. A **bounded channel** *is*
    this hand-off, without the lock or the panic.
 3. **`Mutex<HashMap>` in-flight set**: locked on every lease, return, backpressure size-check, and the
-   timeout sweep — contended between vent + sink + reaper.
+   timeout sweep — contended between vent + sink + reaper. ✅ **FIXED — phase 4 (2026-06-14):** now
+   `InFlightSet` = a sharded `DashMap` + an `AtomicUsize` size counter (O(1) backpressure read), no
+   global lock.
 4. **`Mutex<HashMap>` service cache**: locked on every dispatch though it is ~read-only after warmup.
+   ✅ **FIXED — phase 4 (2026-06-14):** now `ServiceCache` = a `DashMap`, so a dispatch lookup never
+   waits on a whole-map lock.
 5. **The DB finalize persists per-result, not in batches.** *(Owner: batching "reduces latency
    tremendously".)* The torture test confirms the DB is the true bottleneck — larger batches amortize
    the round-trip + index maintenance + rollup refresh; a channel hand-off makes batching natural.
@@ -291,10 +300,21 @@ de-risk.
    phase 5:** the `tokio::fs` *async* file I/O the plan's default envisioned + the ventilator's async
    source reads — natural alongside the tokio core; the std-thread pool already closes D-7's
    blocking-serialization essence without committing to tokio.
-4. **In-flight set → DashMap + AtomicUsize; service cache → DashMap/arc-swap.** Backpressure reads the
-   atomic; the reaper iterates the DashMap; dispatch lookups contention-free. **⏸ Gated — OPEN_QUESTIONS
-   #13:** needs the `dashmap` dep sign-off, and is best sequenced **after** phase 3 (the in-flight mutex
-   isn't a measured bottleneck until the disk ceiling is gone).
+4. **In-flight set → DashMap + AtomicUsize; service cache → DashMap. ✅ DONE (2026-06-14, owner approved
+   `dashmap` — OPEN_QUESTIONS #13).** The in-flight set is now `server::InFlightSet` (a sharded
+   `DashMap<i64, TaskProgress>` + an `AtomicUsize` size counter so backpressure reads the size O(1)
+   without locking/scanning); the service cache is `server::ServiceCache` (`DashMap<String,
+   Option<Service>>`). The ventilator lease, the sink return, the reaper sweep, and every dispatch
+   lookup no longer serialise on one global `Mutex`. The counter is maintained in lock-step with the map
+   (its only mutation site — so it converges to the map size; a momentary ±1 skew is harmless for
+   backpressure), and the fail-fast `PROGRESS_QUEUE_HARD_LIMIT` backstop is preserved. Built **red/green
+   TDD**: the `InFlightSet` unit tests (200 concurrent leases/drains with a consistent counter;
+   duplicate-insert / negative-remove edge cases) written first (red), then green. **Empirical finding:**
+   throughput-neutral within noise on `dispatcher_bench` 8-worker (median ~8.9k tasks/s; the DB finalize
+   ~9k/s is the bottleneck, as predicted — the map was never the wall), so the win is architectural
+   (lock-free, O(1) size) and accrues as the DB ceiling lifts / under the phase-5 async core. A new
+   200-task end-to-end gate (`tests/concurrent_dispatch_test.rs`) plus `echo_roundtrip` + the torture
+   suite stay green. `server.rs`/`ventilator.rs`/`sink.rs`/`manager.rs`/`Cargo.toml`.
 5. **Transport swap → tokio + `zeromq`.** ROUTER/PULL as async tasks. Workers stay on libzmq
    (interop-proven); a later, optional phase migrates `worker.rs` + `pericortex` to finish removing the
    C dependency.
@@ -315,7 +335,7 @@ is the bottleneck *before* it backs up (and feed the `/metrics` endpoint already
 
 | Quality | How the (decided) design achieves it | Status |
 | --- | --- | --- |
-| Fearless concurrency | ownership transfer via channels; lock-free DashMap/atomics only where shared | ✅ planned |
+| Fearless concurrency | ownership transfer via channels; lock-free DashMap/atomics only where shared | ✅ done (phases 1,4): done-queue channel; in-flight `DashMap`+`AtomicUsize`; service-cache `DashMap` |
 | Async, non-blocking I/O | sink fan-out via std-thread writer pool (✅ phase 3, closes D-7); `tokio::fs` for `/data` + async ZMQ deferred to the tokio core | 🟡 fan-out done; async I/O phase 5 |
 | Backpressure, bounded resources | `max_in_flight` + bounded channels (block, never drop); no unbounded per-event acquisition | ✅ (today + plan) |
 | At-least-once + idempotent ⇒ exactly-once effect | `Queued` durable mark + `on_conflict` finalize + dedup | ✅ today |

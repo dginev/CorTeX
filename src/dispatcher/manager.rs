@@ -5,20 +5,19 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::collections::HashMap;
 use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::thread::{self, sleep};
 use std::time::Duration;
 
 use crate::backend::{build_pool, default_db_address};
 use crate::config::config;
 use crate::dispatcher::finalize::Finalize;
+use crate::dispatcher::server::{InFlightSet, ServiceCache};
 use crate::dispatcher::sink::Sink;
 use crate::dispatcher::ventilator::Ventilator;
-use crate::helpers::{TaskProgress, TaskReport};
-use crate::models::{start_metadata_writer, Service};
+use crate::helpers::TaskReport;
+use crate::models::start_metadata_writer;
 use zmq::Error;
 
 /// Manager struct responsible for dispatching and receiving tasks
@@ -56,12 +55,11 @@ impl Default for TaskManager {
 impl TaskManager {
   /// Starts a new manager, spinning of dispatch/sink servers, listening on the specified ports
   pub fn start(&self, job_limit: Option<usize>) -> Result<(), Error> {
-    // We'll use some local memoization shared between source and sink:
-    let services: HashMap<String, Option<Service>> = HashMap::new();
-    let progress_queue: HashMap<i64, TaskProgress> = HashMap::new();
-
-    let services_arc = Arc::new(Mutex::new(services));
-    let progress_queue_arc = Arc::new(Mutex::new(progress_queue));
+    // Shared dispatcher state between the source (ventilator) and sink threads, now lock-free
+    // (phase 4): a sharded `ServiceCache` (`service_name → Option<Service>` memo) and the
+    // `InFlightSet` (dispatched-but-unfinished tasks + an O(1) size counter for backpressure).
+    let services_arc = Arc::new(ServiceCache::new());
+    let progress_queue_arc = Arc::new(InFlightSet::new());
 
     // Done queue (phase 1): a **bounded** channel instead of `Arc<Mutex<Vec<TaskReport>>>` + a
     // panic backstop. The sink + ventilator-reaper `send` finished reports (cloning the
