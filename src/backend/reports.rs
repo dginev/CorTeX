@@ -99,23 +99,21 @@ pub(crate) fn task_report(
     options.what_opt.as_deref(),
     options.all_messages,
   ) {
-    let task_status = options
-      .severity_opt
-      .as_deref()
-      .and_then(TaskStatus::from_key);
-    let severity = task_status.and_then(rollup_severity_key);
-    // The oracle guarantees both are `Some` and that the grain is a category/`what` aggregate; the
-    // `if let` + fall-through keeps this panic-free on the request path regardless.
-    if let (Some(task_status), Some(severity)) = (task_status, severity) {
+    // The oracle guarantees a rollup severity; the URL severity string IS the matview's `severity`
+    // key (`warning`/`error`/`fatal`/`invalid`/`info`). The `if let` + fall-through keeps this
+    // panic-free on the request path regardless.
+    if let Some(severity) = options.severity_opt.clone() {
       match (options.category_opt.as_deref(), options.what_opt.as_deref()) {
         // Category report: one row per category, plus the severity totals.
         (None, None) => {
+          let severity_tasks =
+            severity_task_count(connection, options.corpus, options.service, &severity);
           return category_grain_from_rollup(
             connection,
             options.corpus,
             options.service,
-            severity,
-            task_status,
+            &severity,
+            severity_tasks,
             options.page_size,
             options.offset,
           );
@@ -126,7 +124,7 @@ pub(crate) fn task_report(
             connection,
             options.corpus,
             options.service,
-            severity,
+            &severity,
             category,
             options.page_size,
             options.offset,
@@ -141,9 +139,10 @@ pub(crate) fn task_report(
 
 /// Whether a report request is served from the **`report_summary` rollup** (a fast, matview-backed
 /// indexed lookup) rather than the live `log_*` aggregation in [`task_report_live`]. The matview
-/// covers only the category and `what`-drill-down **aggregate grains** of the four rollup
-/// severities; the top-level overview (`progress_report`, a live `tasks` count), the all-severities
-/// `all=true` view, the `no_messages` row, and every per-task entry list are computed live.
+/// covers only the category and `what`-drill-down **aggregate grains** of the five rollup
+/// severities (`warning`/`error`/`fatal`/`invalid`/`info`); the top-level overview
+/// (`progress_report`, a live `tasks` count), the all-severities `all=true` view, the `no_messages`
+/// row, and every per-task entry list are computed live.
 ///
 /// This is the single source of truth for both the serving branch ([`task_report`]) **and** the
 /// report-freshness footer: the "data refreshed …" matview timestamp must be shown **iff** this is
@@ -158,10 +157,10 @@ pub fn report_uses_rollup(
   if all_messages {
     return false;
   }
-  let Some(task_status) = severity_opt.and_then(TaskStatus::from_key) else {
+  let Some(severity) = severity_opt else {
     return false;
   };
-  if rollup_severity_key(task_status).is_none() {
+  if !is_rollup_severity(severity) {
     return false;
   }
   match (category_opt, what_opt) {
@@ -172,16 +171,13 @@ pub fn report_uses_rollup(
   }
 }
 
-/// Maps a task status to its `report_summary` severity key, or `None` for statuses the rollup does
-/// not aggregate over (`NoProblem`, `TODO`, `Queued`, …), which stay on the live path.
-fn rollup_severity_key(task_status: TaskStatus) -> Option<&'static str> {
-  match task_status {
-    TaskStatus::Warning => Some("warning"),
-    TaskStatus::Error => Some("error"),
-    TaskStatus::Fatal => Some("fatal"),
-    TaskStatus::Invalid => Some("invalid"),
-    _ => None,
-  }
+/// The five severities the `report_summary` matview aggregates: the four message severities (keyed
+/// off task status) plus **`info`** (the all-messages dimension over `log_infos`, across all
+/// completed non-invalid tasks). Other severity keys (`no_problem`, `todo`, …) have no aggregate
+/// matview grain and stay on the live path. The URL severity string is also the matview's
+/// `severity` key, so it can be passed straight to the rollup readers.
+fn is_rollup_severity(severity: &str) -> bool {
+  matches!(severity, "warning" | "error" | "fatal" | "invalid" | "info")
 }
 
 /// Total tasks counted toward percentage denominators: all tasks for the pair minus `Invalid` ones
@@ -225,6 +221,39 @@ fn count_in_status(
     .unwrap_or(0)
 }
 
+/// The denominator a rollup severity's report is computed against, matching the live path: the four
+/// message severities count tasks **in that status**; `info` is the all-messages dimension, so its
+/// denominator is the **full task count** (the `all_messages` branch of [`task_report_live`] counts
+/// every task of the pair, invalids included).
+fn severity_task_count(
+  connection: &mut PgConnection,
+  corpus: &Corpus,
+  service: &Service,
+  severity: &str,
+) -> i64 {
+  let raw_status = match severity {
+    "warning" => TaskStatus::Warning.raw(),
+    "error" => TaskStatus::Error.raw(),
+    "fatal" => TaskStatus::Fatal.raw(),
+    "invalid" => TaskStatus::Invalid.raw(),
+    // `info` aggregates across all tasks, not one status.
+    _ => return total_task_count(connection, corpus, service),
+  };
+  count_in_status(connection, corpus, service, raw_status)
+}
+
+/// Total tasks of a `(corpus, service)` pair (all statuses, invalids included) — the `info`
+/// report's denominator.
+fn total_task_count(connection: &mut PgConnection, corpus: &Corpus, service: &Service) -> i64 {
+  use crate::schema::tasks::dsl::{corpus_id, service_id};
+  tasks::table
+    .filter(service_id.eq(service.id))
+    .filter(corpus_id.eq(corpus.id))
+    .count()
+    .get_result(connection)
+    .unwrap_or(0)
+}
+
 /// Category report for a severity, assembled from the rollup: one row per category (distinct tasks
 /// + messages), a `no_messages` row for tasks that completed silently, and the severity total.
 fn category_grain_from_rollup(
@@ -232,7 +261,7 @@ fn category_grain_from_rollup(
   corpus: &Corpus,
   service: &Service,
   severity: &str,
-  task_status: TaskStatus,
+  severity_tasks: i64,
   limit: i64,
   offset: i64,
 ) -> Vec<HashMap<String, String>> {
@@ -242,7 +271,6 @@ fn category_grain_from_rollup(
   let grand_total =
     rollup::severity_total(connection, corpus.id, service.id, severity).unwrap_or_default();
   let total_valid_count = total_valid_task_count(connection, corpus, service);
-  let severity_tasks = count_in_status(connection, corpus, service, task_status.raw());
   // Tasks that carry at least one message of this severity, and the total message count.
   let logged_task_count = grand_total.as_ref().map_or(0, |g| g.task_count);
   let logged_message_count = grand_total.as_ref().map_or(0, |g| g.message_count);
@@ -816,7 +844,7 @@ mod rollup_equivalence_tests {
   use crate::backend;
   use crate::helpers::TaskStatus;
   use crate::models::{Corpus, NewCorpus, NewService, Service};
-  use crate::schema::{corpora, log_errors, log_warnings, services, tasks};
+  use crate::schema::{corpora, log_errors, log_infos, log_warnings, services, tasks};
   use diesel::prelude::*;
   use std::collections::HashMap;
 
@@ -858,6 +886,18 @@ mod rollup_equivalence_tests {
       ))
       .execute(conn)
       .expect("insert log_error");
+  }
+
+  fn add_info(conn: &mut PgConnection, task_id: i64, category: &str, what: &str) {
+    diesel::insert_into(log_infos::table)
+      .values((
+        log_infos::task_id.eq(task_id),
+        log_infos::category.eq(category),
+        log_infos::what.eq(what),
+        log_infos::details.eq(""),
+      ))
+      .execute(conn)
+      .expect("insert log_info");
   }
 
   /// Index report rows by their `name` so comparisons are order-independent.
@@ -970,6 +1010,20 @@ mod rollup_equivalence_tests {
     add_error(conn, f, "tex", "err1");
     add_error(conn, f, "tex", "err2");
 
+    // Info: the all-messages dimension — `log_infos` over ALL completed tasks regardless of status,
+    // so attach info messages to a warning task (a), an error task (e) and a no-problem task (g).
+    // /info was the report that scanned live instead of using the matview's `info` branch.
+    let g = add_task(
+      conn,
+      "/eq/g",
+      service.id,
+      corpus.id,
+      TaskStatus::NoProblem.raw(),
+    );
+    add_info(conn, a, "load", "package");
+    add_info(conn, e, "load", "package");
+    add_info(conn, g, "load", "class");
+
     rollup::refresh_report_summary(conn).expect("refresh rollup");
 
     // --- Equivalence across both severities and both aggregate grains ----------------------------
@@ -979,6 +1033,10 @@ mod rollup_equivalence_tests {
       ("warning", Some("font")),
       ("error", None),
       ("error", Some("tex")),
+      // `info` — the all-messages dimension; must come from the matview's info branch, not a live
+      // log_infos scan.
+      ("info", None),
+      ("info", Some("load")),
     ];
     for (severity, category) in cases {
       let fast = by_name(task_report(
@@ -1067,17 +1125,38 @@ mod rollup_equivalence_tests {
   }
 
   #[test]
-  fn rollup_severity_key_routes_only_message_severities() {
-    // The aggregate grains the rollup serves are exactly the four message severities; everything
-    // else (no_problem entry lists, todo/queued/blocked) must fall through to the live path.
-    use super::rollup_severity_key;
-    assert_eq!(rollup_severity_key(TaskStatus::Warning), Some("warning"));
-    assert_eq!(rollup_severity_key(TaskStatus::Error), Some("error"));
-    assert_eq!(rollup_severity_key(TaskStatus::Fatal), Some("fatal"));
-    assert_eq!(rollup_severity_key(TaskStatus::Invalid), Some("invalid"));
-    assert_eq!(rollup_severity_key(TaskStatus::NoProblem), None);
-    assert_eq!(rollup_severity_key(TaskStatus::TODO), None);
-    assert_eq!(rollup_severity_key(TaskStatus::Queued(1)), None);
-    assert_eq!(rollup_severity_key(TaskStatus::Blocked(-6)), None);
+  fn report_uses_rollup_routes_aggregate_grains_only() {
+    use super::report_uses_rollup;
+    // The five matview severities, at the category grain, are rollup-served — INCLUDING `info`
+    // (the all-messages dimension; the bug that made /info do a live log_infos scan).
+    for sev in ["warning", "error", "fatal", "invalid", "info"] {
+      assert!(
+        report_uses_rollup(Some(sev), None, None, false),
+        "{sev} category report should use the rollup"
+      );
+      // `what` drill-down is also an aggregate grain.
+      assert!(report_uses_rollup(Some(sev), Some("cat"), None, false));
+    }
+    // Non-rollup severities, per-task lists, and the all-severities view stay live.
+    assert!(!report_uses_rollup(Some("no_problem"), None, None, false));
+    assert!(!report_uses_rollup(Some("todo"), None, None, false));
+    assert!(!report_uses_rollup(
+      Some("warning"),
+      Some("no_messages"),
+      None,
+      false
+    ));
+    assert!(
+      !report_uses_rollup(Some("warning"), None, None, true),
+      "all=true is the live all-severities view"
+    );
+    assert!(!report_uses_rollup(None, None, None, false));
+    // `what`-detail (per-task list) stays live.
+    assert!(!report_uses_rollup(
+      Some("warning"),
+      Some("cat"),
+      Some("w"),
+      false
+    ));
   }
 }
