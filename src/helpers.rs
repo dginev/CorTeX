@@ -399,14 +399,17 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
     if in_details_mode {
       // If the line starts with tab, we are indeed reading in details
       if line.starts_with('\t') {
-        // Append details line to the last message
-        let mut last_message = messages.pop().expect(
-          "parse_log tried to parse details without having a log message, invalid log file?",
-        );
-        let mut truncated_details = last_message.details().to_string() + "\n" + line;
-        utf_truncate(&mut truncated_details, 2000);
-        last_message.set_details(truncated_details);
-        messages.push(last_message);
+        // Append the details line to the last message. `in_details_mode` is only ever set true
+        // right after a message is pushed, so `messages` is non-empty here by invariant — but we
+        // never `.expect()`-panic the dispatch path on a hostile log (DESIGN_PRINCIPLES): if that
+        // invariant is ever broken, treat the orphan details line as noise and carry on rather than
+        // aborting the whole task's log parse.
+        if let Some(mut last_message) = messages.pop() {
+          let mut truncated_details = last_message.details().to_string() + "\n" + line;
+          utf_truncate(&mut truncated_details, 2000);
+          last_message.set_details(truncated_details);
+          messages.push(last_message);
+        }
         continue; // This line has been consumed, next
       } else {
         // Otherwise, no tab at the line beginning means last message has ended
@@ -613,6 +616,7 @@ mod log_decode_tests {
   //! W-2: a non-UTF-8 worker log must degrade gracefully (decode lossily + record a warning), not
   //! get discarded wholesale with the task force-marked Fatal. DB-free, so no L-1 teardown risk.
   use super::{decode_worker_log, parse_log};
+  use crate::models::LogRecord;
 
   #[test]
   fn valid_utf8_passes_through_unchanged() {
@@ -674,5 +678,34 @@ mod log_decode_tests {
     // A missing / non-zip path is a graceful Err (task left Fatal), never a panic.
     assert!(read_cortex_log(std::path::Path::new("/nonexistent/x.zip")).is_err());
     std::fs::remove_file(&zip_path).ok();
+  }
+
+  #[test]
+  fn tab_indented_details_fold_into_the_preceding_message() {
+    // A message header followed by tab-indented continuation lines: the details fold into the one
+    // preceding message (the path that used to run through the `.expect()`).
+    let log = "Error:math:bad first detail\n\tsecond line\n\tthird line\n";
+    let messages = parse_log(7, log);
+    assert_eq!(messages.len(), 1, "one message, the details folded into it");
+    let details = messages[0].details();
+    assert!(details.contains("first detail"), "got: {details:?}");
+    assert!(details.contains("second line"), "got: {details:?}");
+    assert!(details.contains("third line"), "got: {details:?}");
+  }
+
+  #[test]
+  fn orphan_details_line_does_not_panic() {
+    // A hostile log that opens with a tab-indented "details" line before any message header must be
+    // treated as noise, never panic the dispatch path (DESIGN_PRINCIPLES: no `.expect()` on a
+    // parse).
+    let messages = parse_log(
+      7,
+      "\torphan detail with no header\nInfo:cortex:hi a real line\n",
+    );
+    assert_eq!(
+      messages.len(),
+      1,
+      "the orphan line is ignored; the real message survives"
+    );
   }
 }
