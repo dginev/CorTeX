@@ -40,7 +40,8 @@ Units live in `deploy/systemd/`. Install:
 ```bash
 sudo install -d -m 755 /etc/cortex
 sudo cp deploy/systemd/frontend.env.example /etc/cortex/frontend.env   # then EDIT it (DB url!)
-sudo chmod 600 /etc/cortex/frontend.env
+sudo cp deploy/systemd/dispatcher.env.example /etc/cortex/dispatcher.env  # then EDIT it (DB url!)
+sudo chmod 600 /etc/cortex/frontend.env /etc/cortex/dispatcher.env
 sudo cp deploy/systemd/cortex-*.service deploy/systemd/cortex-*.timer /etc/systemd/system/
 sudo cp deploy/systemd/cortex-healthcheck.sh /usr/local/bin/ && sudo chmod 755 /usr/local/bin/cortex-healthcheck.sh
 sudo systemctl daemon-reload
@@ -56,6 +57,7 @@ user on the edge whose `authorized_keys` is `restrict,port-forwarding,permitlist
 |---|---|
 | `cortex-tunnel.service`   | reverse-SSH tunnel desktop→edge (`-R 127.0.0.1:8000`). `Restart=always`. **Enabled.** |
 | `cortex-frontend.service` | the Rocket web app. `Restart=always` (crash recovery). Binds `127.0.0.1:8000`. |
+| `cortex-dispatcher.service` | the ZeroMQ dispatcher (ventilator `:51695` + sink `:51696`, all interfaces incl. the Tailscale IP — see the worker-network section in `docs/DEPLOYMENT.md`). `Restart=always` — systemd *is* the supervisor for the dispatcher's deliberate fail-fast panic. `EnvironmentFile=/etc/cortex/dispatcher.env`. |
 | `cortex-health.timer`     | every 30 s runs the watchdog: if the service is active but `/healthz` is unreachable or not `ok`, `systemctl restart cortex-frontend` (catches a *hang* a crash-restart can't). |
 
 ```bash
@@ -83,10 +85,34 @@ curl -s https://corpora.latexml.rs/healthz | head -c 80
 
 Both bind `127.0.0.1:8000`, so the tunnel + edge need no changes across the swap.
 
+## Dispatcher cutover (run conversions under systemd)
+
+The dispatcher is independent of the frontend/tunnel/edge (those serve the read-only public site; the
+dispatcher runs the conversion pipeline for the worker fleet). To manage it with systemd:
+
+```bash
+# 1) build the release binary (the unit points at target/release/dispatcher)
+cd /home/deyan/git/cortex && cargo build --release --bin dispatcher
+# 2) set the REAL pipeline database (NOT the static showcase DB cortex_load)
+sudoedit /etc/cortex/dispatcher.env
+# 3) start it (binds :51695/:51696 on all interfaces, incl. the Tailscale IP 100.x for remote workers)
+sudo systemctl enable --now cortex-dispatcher.service
+# 4) confirm it bound + accepts a worker connection
+ss -ltn | grep -E ':51695|:51696'
+journalctl -u cortex-dispatcher -f
+#    from a worker box on the LAN/Tailscale:  nc -vz <dispatcher-ip> 51695
+```
+
+Workers (the external `pericortex` crate) point at `tcp://<dispatcher-ip>:51695` / `:51696` — the LAN IP
+for co-located boxes, the Tailscale `100.x` for remote ones. No edge/tunnel involvement; see the
+worker-network section in `docs/DEPLOYMENT.md`.
+
 ## Rollback
 
 - **Local:** `sudo systemctl disable --now cortex-frontend cortex-health.timer` and run the
   frontend by hand again. `sudo systemctl stop cortex-tunnel` drops the public path entirely.
+  `sudo systemctl disable --now cortex-dispatcher` stops the conversion pipeline (independent of the
+  public site; safe to stop/start on its own).
 - **Edge:** timestamped backups sit next to the live files —
   `/etc/caddy/Caddyfile.bak.cortex*` and `/opt/ar5iv-editor/deploy/docker-compose.yml.bak.cortex*`.
   Restore + `systemctl reload caddy` / `docker compose up -d`. See `deploy/edge/`.

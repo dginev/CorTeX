@@ -1,0 +1,31 @@
+[Unit]
+Description=CorTeX dispatcher (ZeroMQ ventilator + sink)
+Documentation=file:/home/deyan/git/cortex/deploy/README.md
+# Needs the network up (binds :51695/:51696 on all interfaces, incl. the Tailscale IP) and the DB.
+# tailscaled is ordered-after when present so the overlay interface exists at bind time; the ZMQ
+# wildcard bind (tcp://*) also accepts an interface that appears later, so this is best-effort.
+After=network-online.target postgresql.service tailscaled.service
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=deyan
+Group=deyan
+# CWD-coupled: cortex reads cortex.toml from the CWD; result archives are written under /data.
+WorkingDirectory=/home/deyan/git/cortex
+EnvironmentFile=/etc/cortex/dispatcher.env
+ExecStart=/home/deyan/git/cortex/target/release/dispatcher
+# The dispatcher fails fast by design (mutex-poison -> panic -> abort); systemd IS the supervisor
+# that restarts it (see docs/DESIGN_PRINCIPLES.md). StartLimitBurst backs off a tight crash loop.
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+# ProtectSystem=full leaves /data (the shared result filesystem) writable; do NOT use =strict.
+ProtectSystem=full
+ProtectHome=false
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
