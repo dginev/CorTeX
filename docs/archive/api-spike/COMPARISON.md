@@ -6,7 +6,7 @@ spike. Both frameworks annotate the **same slice** — the corpora read endpoint
 spec. Reproduce with:
 
 ```bash
-cargo run --example api_doc_spike_okapi    # -> docs/api-spike/okapi-openapi.json
+cargo run --example api_doc_spike_okapi    # -> docs/archive/api-spike/okapi-openapi.json
 # (the utoipa spike example was pruned once rocket_okapi was chosen — see the note at the bottom)
 ```
 

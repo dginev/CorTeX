@@ -9,7 +9,8 @@
 //! `rocket_okapi` directly from the `#[openapi]`-annotated agent routes — the spec is generated
 //! from the single source of truth (the real Rocket route + its return type) and so can never drift
 //! from the served API. This is the symmetry contract extended to the docs (see
-//! `docs/api-spike/COMPARISON.md` + OPEN_QUESTIONS #7; rocket_okapi was chosen over utoipa).
+//! `docs/archive/api-spike/COMPARISON.md` + OPEN_QUESTIONS #7; rocket_okapi was chosen over
+//! utoipa).
 //!
 //! Adding an endpoint to the docs is two steps: put `#[openapi(tag = "…")]` above its
 //! `#[get/post/…]` attribute, and list its handler in the [`openapi_get_routes_spec!`] call in

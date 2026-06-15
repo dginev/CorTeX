@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render the API-docs spike specs as self-contained, browser-openable HTML.
 
-Wraps each committed OpenAPI JSON (docs/api-spike/*-openapi.json) in a RapiDoc page with the spec
+Wraps each committed OpenAPI JSON (docs/archive/api-spike/*-openapi.json) in a RapiDoc page with the spec
 *embedded inline*, so the files open directly from file:// — no server, no CORS. The SAME renderer
 is used for both, so what differs on screen is the generated spec, not the UI. Also writes an
 index.html that shows both side by side.
@@ -11,7 +11,7 @@ Run from the repo root:  python3 scripts/render_api_spike.py
 import json
 import pathlib
 
-HERE = pathlib.Path("docs/api-spike")
+HERE = pathlib.Path("docs/archive/api-spike")
 
 PAGE = """<!doctype html>
 <html lang="en">
@@ -64,10 +64,10 @@ def render(stem: str, title: str) -> None:
   # Embed the JSON as a JS object literal (valid JS); placeholder avoids brace clashes.
   html = PAGE.format(title=title).replace("__SPEC__", spec)
   (HERE / f"{stem}-docs.html").write_text(html)
-  print(f"wrote docs/api-spike/{stem}-docs.html")
+  print(f"wrote docs/archive/api-spike/{stem}-docs.html")
 
 
 render("okapi", "rocket_okapi — CorTeX corpora API")
 render("utoipa", "utoipa — CorTeX corpora API")
 (HERE / "index.html").write_text(INDEX)
-print("wrote docs/api-spike/index.html (side-by-side)")
+print("wrote docs/archive/api-spike/index.html (side-by-side)")

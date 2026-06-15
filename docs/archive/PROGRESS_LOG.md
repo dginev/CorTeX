@@ -1,8 +1,12 @@
 # CorTeX productization — progress log
 
 Append-only, dated log of increments (one entry per working session/loop iteration). The plan and
-current-state map live in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the resilience ledger in
-[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md). This file is the lightweight "what changed, in order" trail.
+current-state map live in [`PRODUCTIZING_PLAN.md`](../PRODUCTIZING_PLAN.md); the resilience ledger in
+[`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md). This file is the lightweight "what changed, in order" trail.
+
+> **Archived 2026-06-15** — moved to `docs/archive/` (with the decided `api-spike/`) as a frozen record
+> of completed work. Live tracking continues in [`../PRODUCTIZING_PLAN.md`](../PRODUCTIZING_PLAN.md) and
+> [`../KNOWN_ISSUES.md`](../KNOWN_ISSUES.md).
 
 ## 2026-06-14
 

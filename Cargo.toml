@@ -57,7 +57,7 @@ diesel_migrations = "2.2"
 clap = { version = "4", features = ["derive"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 lazy_static = "1.0.0"
-# API-docs auto-generation (Arm 9). rocket_okapi was chosen over utoipa (docs/api-spike/COMPARISON.md
+# API-docs auto-generation (Arm 9). rocket_okapi was chosen over utoipa (docs/archive/api-spike/COMPARISON.md
 # + OPEN_QUESTIONS #7): its `#[openapi]` reads the real Rocket route, so the OpenAPI spec is generated
 # from the single source of truth and can't drift — the symmetry contract extended to the docs.
 # `schemars` provides the `JsonSchema` derive for the DTOs. (0.9 is the rocket_okapi release that
@@ -153,8 +153,8 @@ name = "services_test"
 path = "tests/services_test.rs"
 harness = false
 
-# The rocket_okapi spike (the chosen framework) — reproduces docs/api-spike/okapi-openapi.json and is
-# referenced by docs/api-spike/COMPARISON.md. (The utoipa runner-up was pruned once okapi was chosen.)
+# The rocket_okapi spike (the chosen framework) — reproduces docs/archive/api-spike/okapi-openapi.json and is
+# referenced by docs/archive/api-spike/COMPARISON.md. (The utoipa runner-up was pruned once okapi was chosen.)
 [[example]]
 name = "api_doc_spike_okapi"
 path = "examples/api_doc_spike_okapi.rs"
