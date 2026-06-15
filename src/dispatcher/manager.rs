@@ -15,7 +15,7 @@ use tracing::{error, info};
 use crate::backend::{build_pool, default_db_address};
 use crate::config::config;
 use crate::dispatcher::finalize::Finalize;
-use crate::dispatcher::server::{InFlightSet, ServiceCache};
+use crate::dispatcher::server::{InFlightSet, SandboxCache, ServiceCache};
 use crate::dispatcher::sink::Sink;
 use crate::dispatcher::ventilator::Ventilator;
 use crate::helpers::TaskReport;
@@ -61,6 +61,7 @@ impl TaskManager {
     // (phase 4): a sharded `ServiceCache` (`service_name → Option<Service>` memo) and the
     // `InFlightSet` (dispatched-but-unfinished tasks + an O(1) size counter for backpressure).
     let services_arc = Arc::new(ServiceCache::new());
+    let sandboxes_arc = Arc::new(SandboxCache::new());
     let progress_queue_arc = Arc::new(InFlightSet::new());
 
     // Done queue (phase 1): a **bounded** channel instead of `Arc<Mutex<Vec<TaskReport>>>` + a
@@ -107,6 +108,7 @@ impl TaskManager {
     let result_backend_address = self.backend_address.clone();
 
     let sink_services_arc = services_arc.clone();
+    let sink_sandboxes_arc = sandboxes_arc.clone();
     let sink_progress_queue_arc = progress_queue_arc.clone();
 
     let sink_done_tx = done_tx.clone();
@@ -121,6 +123,7 @@ impl TaskManager {
       }
       .start(
         &sink_services_arc,
+        &sink_sandboxes_arc,
         &sink_progress_queue_arc,
         &sink_done_tx,
         job_limit,
@@ -133,6 +136,7 @@ impl TaskManager {
     //          it may be possible to return to the previous single-threaded lifecycle.
     loop {
       let vent_services_arc = services_arc.clone();
+      let vent_sandboxes_arc = sandboxes_arc.clone();
       let vent_progress_queue_arc = progress_queue_arc.clone();
       let vent_done_tx = done_tx.clone();
       let vent_backend_address = source_backend_address.clone();
@@ -149,6 +153,7 @@ impl TaskManager {
         ventilator
           .start(
             &vent_services_arc,
+            &vent_sandboxes_arc,
             &vent_progress_queue_arc,
             &vent_done_tx,
             job_limit,

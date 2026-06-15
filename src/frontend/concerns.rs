@@ -1,7 +1,6 @@
 //! Common concerns for frontend routes
 use crate::rocket::futures::TryFutureExt;
 use diesel::PgConnection;
-use regex::Regex;
 use rocket::fs::NamedFile;
 use rocket::http::Status;
 use rocket::response::status::{Accepted, NotFound};
@@ -15,9 +14,6 @@ use crate::frontend::params::{ReportParams, TemplateContext};
 use crate::frontend::render::task_report;
 use crate::models::{Corpus, HistoricalRun, Service, Task};
 
-lazy_static! {
-  static ref STRIP_NAME_REGEX: Regex = Regex::new(r"/[^/]+$").unwrap();
-}
 /// Placeholder word for unknown filters/fields
 pub const UNKNOWN: &str = "_unknown_";
 
@@ -327,20 +323,25 @@ pub async fn serve_entry(
 ) -> Result<NamedFile, NotFound<String>> {
   match Task::find(entry_id as i64, connection) {
     Ok(task) => {
-      let entry = task.entry;
-      let zip_path = match service_name.as_str() {
-        "import" => entry,
-        _ => STRIP_NAME_REGEX.replace(&entry, "").to_string() + "/" + &service_name + ".zip",
-      };
-      if zip_path.is_empty() {
-        Err(NotFound(format!(
-          "Service {service_name:?} does not have a result
-                               for entry {entry_id:?}"
-        )))
+      let zip_path = if service_name == "import" {
+        Some(std::path::PathBuf::from(task.entry))
       } else {
-        NamedFile::open(&zip_path)
-          .map_err(|_| NotFound("Invalid Zip at path".to_string()))
-          .await
+        // A sandbox's results are name-scoped by its corpus id (F-6), so resolve the task's corpus
+        // to match what the sink wrote. One lookup per file-serve request (not a hot path).
+        let sandbox_id = Corpus::find_by_id(task.corpus_id, connection)
+          .ok()
+          .and_then(|corpus| corpus.sandbox_id());
+        crate::helpers::result_archive_path(&task.entry, &service_name, sandbox_id)
+      };
+      match zip_path {
+        Some(path) => {
+          NamedFile::open(&path)
+            .map_err(|_| NotFound("Invalid Zip at path".to_string()))
+            .await
+        },
+        None => Err(NotFound(format!(
+          "Service {service_name:?} does not have a result for entry {entry_id:?}"
+        ))),
       }
     },
     Err(e) => Err(NotFound(format!("Task not found: {e}"))),

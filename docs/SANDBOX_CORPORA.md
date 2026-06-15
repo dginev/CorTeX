@@ -1,9 +1,9 @@
 # Filtered Sandbox Corpora — design note + creation landed
 
-> Status: **creation LANDED 2026-06-15** (`src/backend/sandbox.rs` + `POST /api/corpora/<parent>/sandbox`
-> + the `corpus_sandbox` background job). The owner's 4 design questions are **decided** (see below).
-> The remaining piece is **output isolation on a sandbox *rerun*** (Decisions §1) — tracked in
-> [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md). Relates to Arm 5 (corpus management), Arm 7 (runs), and Arm 10
+> Status: **LANDED 2026-06-15** — creation (`src/backend/sandbox.rs` + `POST /api/corpora/<parent>/sandbox`
+> + the `corpus_sandbox` background job) **and** rerun-output isolation (Decisions §1, formerly
+> KNOWN_ISSUES F-6, now resolved). The owner's 4 design questions are **decided** (see below). A
+> sandbox is now a safe rerun target. Relates to Arm 5 (corpus management), Arm 7 (runs), and Arm 10
 > (data management); built on the background-job mechanism ([`JOB_MODEL.md`](archive/JOB_MODEL.md)).
 > Cross-ref: [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md).
 
@@ -13,10 +13,14 @@ Design **C** (a real corpus + parent link + stored selection) was chosen, with t
 open questions:
 
 1. **Outputs — isolated own tree.** A sandbox is its own `corpus_id` (own tasks, runs, reports), so
-   its DB-level run state is already isolated. *Residual:* a sandbox **rerun** would write result
-   archives to the `<entry-dir>/<service>.zip` path inherited from the parent (sources are referenced
-   in place), so isolating the **filesystem outputs** of a sandbox rerun needs a sink output-path
-   change — the one remaining sandbox task (KNOWN_ISSUES). Creation + viewing are unaffected.
+   its DB-level run state is already isolated. **Filesystem outputs are now isolated too** (2026-06-15,
+   was KNOWN_ISSUES F-6): result-archive paths are derived by the single corpus-aware helper
+   `helpers::result_archive_path(entry, service, sandbox_id)`, which name-scopes a sandbox's archives
+   by its own id — `<entry-dir>/<service>.sandbox-<id>.zip` — so a sandbox rerun can't overwrite the
+   parent's `<service>.zip` (ordinary corpora keep the historical path). The sink learns a task's
+   sandbox id from a lock-free `SandboxCache` memoised by the ventilator on dispatch (no per-result
+   DB hit); the frontend readers pass `corpus.sandbox_id()` so they read back the same path. Sources
+   are still referenced in place.
 2. **Sources — referenced in place.** Sandbox tasks carry the parent's `entry` paths verbatim; nothing
    is copied or symlinked (the dispatcher already streams a task's source from its `entry`).
 3. **Selection — one-time snapshot.** The predicate is evaluated once at creation; the carved set is
@@ -91,8 +95,11 @@ via an explicit origin link.
   (the message condition: `{severity, category, what, …}`) — non-null only for sandbox corpora.
 - `tasks`: add nullable `origin_task_id BIGINT REFERENCES tasks(id)` — a sandbox task points at the
   parent task it was carved from (preserves the original-log connection without copying logs).
-- **Source files:** the sandbox references the parent's entry files (shared path or symlink); only
-  *outputs* are sandbox-local. The exact mechanism (symlink vs path indirection) is an open question.
+- **Source files:** the sandbox references the parent's entry files in place (shared path, no copy);
+  only *outputs* are sandbox-local. **As-built mechanism (resolved):** path indirection in
+  `helpers::result_archive_path` — a sandbox's archives are name-scoped `…/<service>.sandbox-<id>.zip`,
+  no symlinks. (The sketched `tasks.origin_task_id` link was **not** built: the stored `selection`
+  predicate is the sandbox's provenance, so no per-task origin link is kept.)
 
 ## API (symmetry contract)
 

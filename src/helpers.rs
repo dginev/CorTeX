@@ -11,7 +11,7 @@ use regex::Regex;
 use std::fs::File;
 use std::io;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str;
 
 use diesel::pg::PgConnection;
@@ -578,6 +578,35 @@ pub fn prepare_input_stream(task: &Task) -> Result<File, io::Error> {
   File::open(entry_path)
 }
 
+/// The single source of truth for where a service's **result archive** lives, given a task's source
+/// `entry`. The sink writes it here and the frontend reads it back from here — previously three
+/// call sites re-derived the same `<entry-dir>/<service>.zip` three different ways (a
+/// `Path::parent` and two subtly-different regexes), so this collapses them into one.
+///
+/// `sandbox_id` carries the F-6 fix: a **sandbox** corpus shares the parent's source `entry` paths
+/// in place (owner decision: no source copy), so keying its outputs on `entry` alone would let a
+/// sandbox rerun overwrite the parent's archives. When `Some(id)` (the sandbox's own corpus id) the
+/// archive is name-scoped — `<entry-dir>/<service>.sandbox-<id>.zip` — so a sandbox's outputs never
+/// collide with the parent's (or another sandbox's). `None` keeps the historical
+/// `<entry-dir>/<service>.zip` for ordinary corpora (backward-compatible with existing archives).
+///
+/// Returns `None` if `entry` has no parent directory (a malformed/relative entry) — the caller then
+/// has no result path to write or serve.
+pub fn result_archive_path(
+  entry: &str,
+  service_name: &str,
+  sandbox_id: Option<i32>,
+) -> Option<PathBuf> {
+  let dir = Path::new(entry.trim_end())
+    .parent()
+    .and_then(Path::to_str)?;
+  let stem = match sandbox_id {
+    Some(id) => format!("{service_name}.sandbox-{id}"),
+    None => service_name.to_string(),
+  };
+  Some(PathBuf::from(format!("{dir}/{stem}.zip")))
+}
+
 /// Utility functions, until they find a better place
 pub fn utf_truncate(input: &mut String, maxsize: usize) {
   let mut utf_maxsize = input.len();
@@ -707,5 +736,31 @@ mod log_decode_tests {
       1,
       "the orphan line is ignored; the real message survives"
     );
+  }
+
+  #[test]
+  fn result_archive_path_scopes_sandbox_outputs() {
+    use super::result_archive_path;
+    let entry = "/data/arxiv/1234/5678/source/5678.zip";
+    // Ordinary corpus: the historical path, unchanged (backward-compatible).
+    assert_eq!(
+      result_archive_path(entry, "tex_to_html", None).unwrap(),
+      std::path::PathBuf::from("/data/arxiv/1234/5678/source/tex_to_html.zip")
+    );
+    // Sandbox (F-6): same source dir, but a corpus-id-scoped archive name, so a sandbox rerun can
+    // never overwrite the parent's `tex_to_html.zip`.
+    assert_eq!(
+      result_archive_path(entry, "tex_to_html", Some(42)).unwrap(),
+      std::path::PathBuf::from("/data/arxiv/1234/5678/source/tex_to_html.sandbox-42.zip")
+    );
+    // A trailing newline (DB `text` columns carry them) is trimmed before taking the parent dir.
+    assert_eq!(
+      result_archive_path(&format!("{entry}\n"), "tex_to_html", None).unwrap(),
+      std::path::PathBuf::from("/data/arxiv/1234/5678/source/tex_to_html.zip")
+    );
+    // No parent directory (a blank/root entry) ⇒ no result path: the caller skips the write/serve
+    // instead of panicking.
+    assert!(result_archive_path("", "tex_to_html", None).is_none());
+    assert!(result_archive_path("/", "tex_to_html", None).is_none());
   }
 }

@@ -11,6 +11,22 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](../PRODUCTIZING_PLAN.md); the
 
 ## 2026-06-15
 
+- **Sandbox rerun-output isolation landed — KNOWN_ISSUES F-6 resolved + a DRY pass on result-archive
+  paths.** A sandbox (Arm 5) references the parent's source `entry` paths in place, so the sink's
+  entry-derived output path (`<entry-dir>/<service>.zip`) would have let a sandbox rerun overwrite the
+  parent's archives. Root cause was the path being derived **three different ways** in three places
+  (the sink's `Path::parent`, and two *divergent* frontend regexes — `concerns::STRIP_NAME_REGEX` and
+  `reports::ENTRY_NAME_REGEX`). Collapsed all three into one corpus-aware helper
+  `helpers::result_archive_path(entry, service, sandbox_id)` (unit-tested): a sandbox name-scopes its
+  archives by its own corpus id — `<entry-dir>/<service>.sandbox-<id>.zip` — so it can never collide
+  with the parent's (or another sandbox's); ordinary corpora keep the historical `<service>.zip`
+  (backward-compatible). The sink learns a task's sandbox id from a new lock-free `SandboxCache`
+  (`server.rs`, the corpus-keyed twin of `ServiceCache`) the **ventilator memoises on dispatch** — so
+  no per-result DB hit (sandbox-ness is immutable, one lookup per corpus ever dispatched); the
+  frontend readers pass `corpus.sandbox_id()` so they read back exactly what the sink wrote. Sources
+  still referenced in place. A sandbox is now a safe rerun target. Green: the new path unit test +
+  `echo_roundtrip` (real sink write→read, ordinary corpus still `<service>.zip`) + corpora/backend/
+  reports/runs suites; clippy clean.
 - **Arm 12 — supply-chain gate landed: `deny.toml` + a CI `cargo-deny` job.** Closed the named Arm-12
   acceptance gap (`cargo-audit`/`cargo-deny` gating). New `deny.toml` (mirrors latexml-oxide's policy,
   adapted: MIT project, `pericortex` git dep): **advisories** schema v2 (yanked = deny, RUSTSEC

@@ -43,6 +43,7 @@ impl Ventilator {
   pub fn start(
     &self,
     services_arc: &Arc<server::ServiceCache>,
+    sandboxes_arc: &Arc<server::SandboxCache>,
     progress_queue_arc: &Arc<server::InFlightSet>,
     done_tx: &SyncSender<TaskReport>,
     job_limit: Option<usize>,
@@ -217,6 +218,9 @@ impl Ventilator {
           let current_task = current_task_progress.task;
           taskid = current_task.id;
           let serviceid = current_task.service_id;
+          // Memoise this task's corpus → sandbox id now, before the payload is sent (so before the
+          // result can return), so the sink scopes the result archive without its own DB hit (F-6).
+          server::get_sync_sandbox_id(current_task.corpus_id, sandboxes_arc, &mut backend);
           trace!("vent {source_job_count}: worker {identity_str:?} received task {taskid:?}");
           ventilator.send(&taskid.to_string(), SNDMORE)?;
           if serviceid == 1 {

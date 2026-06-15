@@ -49,6 +49,11 @@ impl Corpus {
   pub fn find_by_id(id_query: i32, connection: &mut PgConnection) -> Result<Self, Error> {
     corpora::table.find(id_query).first(connection)
   }
+  /// The id under which this corpus's **result archives** are name-scoped, or `None` for an
+  /// ordinary corpus. A sandbox (`parent_corpus_id.is_some()`) scopes its outputs by its own id
+  /// so a rerun can't clobber the parent's archives — see [`crate::helpers::result_archive_path`]
+  /// (F-6).
+  pub fn sandbox_id(&self) -> Option<i32> { self.parent_corpus_id.map(|_| self.id) }
   /// ORM-like until diesel.rs introduces finders for more fields
   pub fn find_by_path(path_query: &str, connection: &mut PgConnection) -> Result<Self, Error> {
     use crate::schema::corpora::path;

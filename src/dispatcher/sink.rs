@@ -2,7 +2,7 @@ use std::error::Error;
 use std::fs::File;
 use std::io;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -208,6 +208,7 @@ impl Sink {
   pub fn start(
     &self,
     services_arc: &Arc<server::ServiceCache>,
+    sandboxes_arc: &Arc<server::SandboxCache>,
     progress_queue_arc: &Arc<server::InFlightSet>,
     done_tx: &SyncSender<TaskReport>,
     job_limit: Option<usize>,
@@ -315,11 +316,12 @@ impl Sink {
                     },
                   );
                 } else {
-                  // Derive the result path (cheap, no I/O): `<entry-dir>/<service>.zip`.
-                  let recv_path_opt = Path::new(&task.entry)
-                    .parent()
-                    .and_then(Path::to_str)
-                    .map(|dir| PathBuf::from(format!("{dir}/{}.zip", service.name)));
+                  // Derive the result path (cheap, no I/O): `<entry-dir>/<service>.zip`, or a
+                  // sandbox-scoped name when this task's corpus is a sandbox (lock-free cache read,
+                  // memoised by the ventilator on dispatch — F-6).
+                  let sandbox_id = server::get_sandbox_id(task.corpus_id, sandboxes_arc);
+                  let recv_path_opt =
+                    helpers::result_archive_path(&task.entry, &service.name, sandbox_id);
 
                   // Hard size cap (disk protection): sum the data frames; an over-cap result is
                   // rejected (Invalid) without being written. The whole multipart message is already

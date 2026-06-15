@@ -44,6 +44,16 @@ pub fn apply_tcp_keepalive(socket: &zmq::Socket, idle_seconds: i32) -> zmq::Resu
 /// read-mostly cache is no longer behind a single global lock contended on every dispatch.
 pub type ServiceCache = DashMap<String, Option<Service>>;
 
+/// The dispatcher's **sandbox cache**: a `corpus_id → Option<sandbox_id>` memo, the corpus-keyed
+/// twin of [`ServiceCache`]. `Some(id)` means the corpus is a sandbox (Arm 5) whose result archives
+/// are name-scoped by its own id; `None` means an ordinary corpus. Sandbox-ness is immutable per
+/// corpus (a corpus is born sandbox-or-not and never flips), so a one-time DB lookup per
+/// `corpus_id` is correct forever — no invalidation. The ventilator memoises it on dispatch (it
+/// holds a `Backend`), so the sink can scope a result's output path with a lock-free read — no
+/// per-result DB hit — keeping a sandbox rerun from overwriting the parent's archives (KNOWN_ISSUES
+/// F-6).
+pub type SandboxCache = DashMap<i32, Option<i32>>;
+
 /// Rate-limited logging for high-frequency, low-value events — the dispatcher's *discarded*
 /// messages (malformed replies/requests, unknown service names, unknown task ids). The dispatcher's
 /// request and sink loops would otherwise `warn!` one line per skipped message; under a **sustained
@@ -351,6 +361,32 @@ pub fn get_service(service_name: &str, services: &ServiceCache) -> Option<Servic
   services
     .get(service_name)
     .and_then(|entry| entry.value().clone())
+}
+
+/// Memoised getter for a corpus's sandbox id, populating the shared [`SandboxCache`] from the
+/// backend on a miss (the ventilator's DB-holding counterpart to [`get_sandbox_id`]). One lookup
+/// per `corpus_id` ever dispatched — bounded by the corpus count, not the task count.
+pub fn get_sync_sandbox_id(
+  corpus_id: i32,
+  sandboxes: &SandboxCache,
+  backend: &mut Backend,
+) -> Option<i32> {
+  *sandboxes
+    .entry(corpus_id)
+    .or_insert_with(|| {
+      crate::models::Corpus::find_by_id(corpus_id, &mut backend.connection)
+        .ok()
+        .and_then(|corpus| corpus.sandbox_id())
+    })
+    .value()
+}
+
+/// Getter for a corpus's sandbox id from the shared [`SandboxCache`], with no DB access — the
+/// sink's read on the result path. An absent entry yields `None` (treat as an ordinary corpus); the
+/// ventilator always memoises a task's corpus on dispatch, before its result can return, so the
+/// entry is present by the time the sink looks.
+pub fn get_sandbox_id(corpus_id: i32, sandboxes: &SandboxCache) -> Option<i32> {
+  sandboxes.get(&corpus_id).and_then(|entry| *entry.value())
 }
 
 #[cfg(test)]

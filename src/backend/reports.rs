@@ -14,7 +14,6 @@ use crate::reports::{AggregateReport, TaskDetailReport};
 use crate::schema::tasks;
 
 lazy_static! {
-  static ref ENTRY_NAME_REGEX: Regex = Regex::new(r"^(.+)/[^/]+$").unwrap();
   static ref TASK_REPORT_NAME_REGEX: Regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
 }
 
@@ -732,11 +731,12 @@ pub(crate) fn list_entries(
   list_tasks(connection, corpus, service, task_status)
     .into_iter()
     .map(|task| {
-      let trimmed_entry = task.entry.trim_end().to_string();
       if service.name == "import" {
-        trimmed_entry
+        task.entry.trim_end().to_string()
       } else {
-        ENTRY_NAME_REGEX.replace(&trimmed_entry, "$1").to_string() + "/" + &service.name + ".zip"
+        crate::helpers::result_archive_path(&task.entry, &service.name, corpus.sandbox_id())
+          .map(|p| p.to_string_lossy().into_owned())
+          .unwrap_or_default()
       }
     })
     .collect()
