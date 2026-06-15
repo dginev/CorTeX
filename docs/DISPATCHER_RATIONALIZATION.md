@@ -328,9 +328,14 @@ de-risk.
    (lock-free, O(1) size) and accrues as the DB ceiling lifts / under the phase-5 async core. A new
    200-task end-to-end gate (`tests/concurrent_dispatch_test.rs`) plus `echo_roundtrip` + the torture
    suite stay green. `server.rs`/`ventilator.rs`/`sink.rs`/`manager.rs`/`Cargo.toml`.
-5. **Transport swap → tokio + `zeromq`.** ROUTER/PULL as async tasks. Workers stay on libzmq
-   (interop-proven); a later, optional phase migrates `worker.rs` + `pericortex` to finish removing the
-   C dependency.
+5. **Transport swap → async pure-Rust. ⏹ CONCLUDED — mixed transport (sink on `zeromq`, ventilator
+   stays libzmq).** The **sink** moved to async `zeromq` (phase 5a — its atomic whole-message recv
+   structurally retired the D-4/D-12 framing-desync class, at ≥-pipeline throughput ~9840/s). The
+   **ventilator stays on libzmq**: its ROUTER request/reply is send-latency-bound, where every async
+   pure-Rust ØMQ hits a send-architecture ceiling (~3000/s for `zeromq`/zmq.rs — issue #240; ~3300/s
+   for `omq.rs`, which we also evaluated) vs libzmq's flat ~8500/s. Full investigation, measurements,
+   and the omq.rs evaluation: **`docs/DISPATCHER_5B_ROOT_CAUSE.md`**. The fully-async-manager path
+   (the deleted `dispatcher::supervisor`) is abandoned with it.
 
 **Cross-cutting requirement (every phase): observability.** Emit `tracing` spans + `metrics` for the
 new pipeline — in-flight gauge, **finalize-channel depth (backpressure/lag)**, batch size + latency
@@ -351,11 +356,16 @@ adopt it.
 
 ## Phase 5 — detailed sub-plan (transport swap → tokio + `zeromq`)
 
-> **Status: planned, awaiting owner sign-off before any hot-path code.** Phases 1–4 + the
-> transport-independent observability signals have landed; the spikes (re-validated 2026-06-15) say
-> GO. This decomposes the swap into independently-shippable, reversible sub-steps. **Workers stay on
-> libzmq throughout** (ZMTP interop proven by `zmq_interop`), so each step is dispatcher-only and a
-> bad step reverts by swapping that one socket back — external workers never notice.
+> **Status: SUPERSEDED — only 5a (async `zeromq` sink) shipped; 5b (async ventilator) was attempted,
+> measured, and reverted to libzmq.** The plan below is kept for history. What actually happened:
+> the async sink (5a) is a clean win and is live. The async ventilator (5b) was prototyped across many
+> designs (split halves, unified, decoupled prep-thread, idiomatic single-task actor with
+> `spawn_blocking`/`unconstrained`) — all capped at ~110–578/s, then root-caused to a `zeromq`/zmq.rs
+> **crate send-architecture ceiling** (the caller awaits the per-peer kernel write — issue #240), not
+> our Tokio usage. An `omq.rs` evaluation (pure-Rust, libzmq-wire-compatible) confirmed clean
+> interop with the unchanged libzmq workers but the *same* ~3300/s ceiling for our ROUTER request/reply
+> topology. Decision: **keep libzmq for the ventilator (~8500/s, flat).** Full report + numbers:
+> `docs/DISPATCHER_5B_ROOT_CAUSE.md`.
 
 **Key simplification the swap *buys* us.** libzmq's `zmq` crate delivers a multipart message
 **frame-by-frame** (`recv()` + `get_rcvmore()`), which is the root of the entire D-4/D-12
