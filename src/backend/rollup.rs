@@ -83,8 +83,8 @@ pub(crate) fn refresh_report_summary(connection: &mut PgConnection) -> QueryResu
 
 /// When the `report_summary` matview was last refreshed, as `(epoch_ms, human_utc)` — the data's
 /// freshness anchor for report pages (a report is only as current as its last rollup refresh).
-/// `None` if the meta row is missing. Read as epoch-ms + a preformatted UTC string to avoid any
-/// timezone/`chrono` round-trip.
+/// `None` if the meta row is missing. The `Timestamptz` column reads as an absolute
+/// `DateTime<Utc>`, so the epoch is timezone-correct; the human label is formatted (UTC) in Rust.
 pub(crate) fn report_summary_refreshed_at(connection: &mut PgConnection) -> Option<(i64, String)> {
   use crate::schema::report_summary_meta::dsl as meta;
   // `Timestamptz -> DateTime<Utc>` (diesel's chrono feature) keeps this an absolute instant, so the
