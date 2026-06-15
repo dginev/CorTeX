@@ -618,6 +618,22 @@ screen. Status fields are point-in-time as of this draft.
   re-tune, DB choice = keep Postgres, incremental rollups) in
   [`archive/RESOURCE_RATIONALIZATION.md`](archive/RESOURCE_RATIONALIZATION.md).
 
+### Arm 15 — Experience rationalization (admin UI · CLI · agent API as one surface)
+- **Goal:** Generalize the symmetry contract from two surfaces (web HTML + agent JSON) to **three**
+  (add the **CLI**), complete across **four magnifications** (macro trends → meso reports → micro
+  per-article forensics → management ops), so a human or an agent can answer any question at any zoom
+  without keeping local notes. Owner directive (2026-06-15) folding five directions — live ops
+  console, design-system polish, smoother workflows, a rich guided CLI, rich agentic workflows — into
+  one program.
+- **Principle:** one capability = one backend op = one DTO, surfaced through all three consumers;
+  **agent-API-first** (each typed endpoint is then rendered by web + CLI for free).
+- **Arms:** **A** agent forensic + trend completeness (per-article forensics, macro-trend series,
+  service-overview hub) — the keystone; **B** CLI as a first-class surface (management subcommands +
+  guided init, ratatui TBD); **C** web cohesion + smoother workflows + rendering the new
+  magnifications. The **live ops console** (Arm-A's dashboard facet) has **landed**.
+- **Detail + grounded coverage audit + open decisions:**
+  [`EXPERIENCE_RATIONALIZATION.md`](EXPERIENCE_RATIONALIZATION.md).
+
 ---
 
 ## 4. Sequencing & dependency plan (who blocks whom)

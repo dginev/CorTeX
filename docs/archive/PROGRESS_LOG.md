@@ -11,6 +11,27 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](../PRODUCTIZING_PLAN.md); the
 
 ## 2026-06-15
 
+- **Live ops console (Arm 15 / direction 1) + the five-direction program plan.** Owner expanded the
+  "rich admin UX" steer into **five directions** (live ops console, design-system polish, smoother
+  workflows, a rich guided CLI, rich agentic workflows) and asked to *rationalize + plan carefully*.
+  (1) **Shipped the live ops console** (`9bc9cdd`): the `/admin` dashboard was a static once-rendered
+  snapshot; now one shared `AdminStatusDto` + `admin_status(pool)` feeds both the server-side first
+  paint and a new **cookie-gated `GET /admin/status.json`** the page **polls every 5s** (vanilla
+  fetch, no JS framework, progressive-enhancement). Enriched the strip with the live-pipeline signals
+  — **workers in-flight** (fleet backlog via `WorkerMetadata::fleet_summary`), **failed jobs (24h)**,
+  **pool saturation** — all cheap small-table/in-memory reads (no dispatcher/storage probe; that
+  stays the Health screen's job). A live dot **beats** on each poll, goes **stale** on error.
+  Extended the design system (scoped `.admin-status`/`.admin-card.wide`/`.live-dot` + reduced-motion
+  guard; reused `.status-ok/.status-warn`) instead of inline styles. The agent twin of these gauges
+  is the pre-existing token-gated `/metrics`, so no `/api` duplicate. Tested (`admin_test`: feed 401
+  to anon, 200 JSON snapshot when signed in). (2) **Rationalized the program** into
+  `docs/EXPERIENCE_RATIONALIZATION.md` + plan **Arm 15**: the five directions are the **same
+  capabilities** across **three surfaces** (web UI · CLI · agent API) at **four magnifications**
+  (macro trends → meso reports → micro per-article forensics → management ops). Principle: one
+  capability = one backend op = one DTO, **agent-API-first** (web + CLI render the same DTO for free).
+  Grounded coverage audit found the gaps: **agent per-article forensics** ("errors of this article")
+  and **macro-trend series** are missing, the **CLI is install-only** (no management), the web has
+  cohesion/workflow debt. Sequenced Arm A (agent forensic/trend keystone) → B (CLI) → C (web cohesion).
 - **L-1 RESOLVED: at-exit teardown SIGSEGV eliminated suite-wide; `scripts/ci_test.sh` deleted.**
   Ran the full-suite survey the L-1 note had left open. First pass (each binary run *once*
   individually) showed all 27 exit 0 — a **false green**: the crash is a *flaky* race (~4/5), so one
