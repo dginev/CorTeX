@@ -111,3 +111,70 @@ sequential (spike shape) vs `split()` halves. Scheduling: both loops under one `
 thread. Confirmed not-the-cause: Nagle (TCP_NODELAY is set), thread oversubscription, `select!`
 send-starvation, backend-lock contention, mock-reply/throttle churn, channel-bridge latency, `send()`
 latency, prep latency. The per-stage instrumentation (this report's table) is the decisive evidence.
+
+## ADDENDUM — it's a `zmq.rs` *crate-architecture* ceiling, and a pure-Rust escape exists (2026-06-15)
+
+After a Tokio-patterns deep-research pass and an idiomatic-Tokio rewrite attempt (single actor task +
+`spawn_blocking`-over-pool + `unconstrained` + `recv_many`), the rewrite **still capped at 110–578
+tasks/s** across every runtime/coop/read-strategy combination — *below* even the spike's 3000/s. The
+reason was then found, definitively, in **`zmq.rs` issue #240**:
+
+> *"DEALER/ROUTER `send` ends up at `peer.send_queue.send(message).await` — `Sink::send` on
+> `FramedWrite`, which awaits encode + flush + **the actual kernel write completing**. A slow peer
+> **head-of-line-blocks the caller**."* — the fork author, corroborated by the `zmq.rs` maintainer.
+
+So `router.send().await` in `zeromq` 0.6 **awaits the per-peer kernel write inside the caller** (no
+decoupling writer task, no `writev`, a `BytesMut` memcpy per frame in the codec). Under many peers this
+serialises/HOL-blocks the single dispatcher — the measured collapse. **This is inside the crate; no
+amount of our Tokio usage fixes it.** The deep-research verdict ("~3000/s is the zmq.rs ceiling;
+~8500/s flat is not plausible on zmq.rs") is thus *confirmed and mechanistically explained.*
+
+**The pure-Rust + libzmq-class path is a different crate, not `zmq.rs`:**
+- **`omq.rs`** (`paddor/omq.rs`) — pure Rust, **"Faster than libzmq"**, two backends (**tokio** +
+  **compio/io_uring**), 20 socket types (covers ROUTER/DEALER/PUSH/PULL), same ZMQ API, cancel-safe
+  recv. The `zmq.rs` maintainer acknowledged *"almost 10x in certain cases."* **But: "Experimental.
+  API unstable… not yet battle-tested in production"** (21★, single maintainer, io_uring backend not on
+  crates.io yet).
+- A `zmq.rs` fork (`rustzmq2`) reached libzmq parity with a decoupled per-peer writer + `writev` +
+  zero-copy, but was **deleted**; its engine may eventually merge upstream (maintainer interested, ~"a
+  month" away, uncertain).
+
+**Decision (3-way, now fully informed):**
+
+| option | throughput | pure Rust | maturity | effort |
+| --- | --- | --- | --- | --- |
+| **libzmq** (`zmq` 0.10, committed) | ~8500/s | ✗ C FFI | ✅ the reference impl | none |
+| `zmq.rs` 0.6 idiomatic | ~3000/s ceiling (and we couldn't reach it) | ✅ | 🟡 slow send arch | high, low payoff |
+| **`omq.rs`** | **≥ libzmq** | ✅ + io_uring | 🔴 experimental, unstable API | medium, real risk |
+
+Given the **maximum-robustness mandate** (prime directive), betting the production dispatcher hot path
+on an experimental, not-production-tested crate is not justified *today*. **Recommendation: keep libzmq
+for the ventilator now; keep the `zmq.rs` sink (5a — a genuine win, and the *receive*-only PULL path is
+not subject to the send ceiling); track `omq.rs` (and the converging `zmq.rs` engine) and revisit the
+pure-Rust ventilator when one is battle-tested.** The ecosystem is actively converging on a
+fast pure-Rust ØMQ, so this is a *when*, not *if*.
+
+## ADDENDUM 2 — omq.rs evaluation spike (2026-06-15)
+
+Built `examples/omq_interop.rs` (omq-tokio ROUTER+PULL on our side ↔ **byte-for-byte unchanged libzmq
+`zmq` DEALER+PUSH workers**, same heavy-tailed workload as `zmq_interop`). Measured findings:
+
+- **Worker interop: ✅ clean** at 4 / 64 / 200 peers — zero loss/reorder/misrouting. omq.rs is
+  ZMTP-wire-compatible with libzmq, so **the workers (`pericortex`) stay exactly as they are**
+  (owner's "same conventions for the workers" — confirmed yes).
+- **Throughput for OUR pattern: ~3300 tasks/s, and it does not scale.** 4422/s @4 peers → 3341/s @64 →
+  2703/s @200; running 1/4/8/16 *concurrent* ventilator tasks on the (clonable, `&self`) omq socket
+  made **no difference** (~3300/s) — omq funnels all send/recv through a single internal socket actor,
+  so app-side concurrency doesn't parallelize the wire. This is **the same ballpark as zmq.rs (~3033),
+  ~10% better — NOT the "3× libzmq" omq advertises** (that figure is omq↔omq throughput-streaming
+  PUSH/PULL, not our ROUTER request/reply to libzmq peers). It is still **~2.5× below libzmq's ~8500**
+  for this topology.
+
+**Conclusion: for CorTeX's dispatcher topology (ROUTER request/reply, many libzmq worker peers), BOTH
+pure-Rust crates cap at ~3000–4400/s; libzmq holds ~8500/s (~2.5× faster).** omq.rs is the *better*
+pure-Rust crate (clonable socket, cancel-safe recv, io_uring/compio backend, actively developed,
+slightly faster than zmq.rs) — but it does **not** recover libzmq-class throughput for us, and it is
+**experimental** (unstable API, not production-tested). ~3300/s is still ~15× current production load
+(~200/s) and ~8× the fast-worker future (~400/s), so it is *throughput-viable* — the decision reduces
+to **pure-Rust + io_uring-future + Rust-safety (experimental, ~3300/s) vs proven C-FFI libzmq
+(~8500/s)**, no longer "can pure-Rust go as fast" (it can't, for us).

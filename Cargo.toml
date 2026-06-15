@@ -235,3 +235,6 @@ path = "examples/dispatcher_memory.rs"
 # `tokio` + `zeromq` graduated to `[dependencies]` (the supervision substrate + the async sink use
 # them in lib code); `bytes` is still only named directly by the spike code.
 bytes = "1.11.1"
+# Phase-5b omq.rs evaluation spike (throwaway, dev-only): a pure-Rust ØMQ wire-compatible with libzmq
+# that claims ~3x libzmq TCP throughput, escaping the zmq.rs send-architecture ceiling (issue #240).
+omq-tokio = "0.14.2"
