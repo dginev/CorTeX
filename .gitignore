@@ -28,3 +28,6 @@ docs/CorTeX-productizing-HANDOFF.md
 
 # Local UI screenshots (visual verification, not committed)
 .shots/
+
+# Python venv for the Playwright screenshot tool (local, not committed)
+.venv/

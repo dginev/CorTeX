@@ -16,6 +16,15 @@ mkdir -p "$(dirname "$out")"
 # Firefox writes the screenshot relative to its CWD (and snap-confined), so always pass an ABSOLUTE
 # path — a relative one silently produces nothing.
 out="$(cd "$(dirname "$out")" && pwd)/$(basename "$out")"
+here="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Preferred route: Playwright (repo venv) driving system Google Chrome — runs alongside a desktop
+# browser, retina-scaled, waits for network idle. See scripts/screenshot.py.
+if [ -x "$here/.venv/bin/python" ] && "$here/.venv/bin/python" -c "import playwright" 2>/dev/null; then
+  if "$here/.venv/bin/python" "$here/scripts/screenshot.py" "$url" "$out" "$w" "$h" >/dev/null 2>&1; then
+    [ -s "$out" ] && { echo "$out"; exit 0; }
+  fi
+fi
 
 for chrome in chromium chromium-browser google-chrome google-chrome-stable; do
   if command -v "$chrome" >/dev/null 2>&1; then
