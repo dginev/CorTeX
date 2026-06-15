@@ -227,6 +227,24 @@ impl Default for AssetsConfig {
   }
 }
 
+/// Background-job lifecycle settings (W-4 stall handling).
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct JobsConfig {
+  /// A non-terminal job whose progress heartbeat (`updated_at`) has been silent this long is
+  /// presumed hung and reaped (marked `interrupted`) the next time the jobs surface is read.
+  /// Generous by default (2 h): a *progressing* job freshens its heartbeat each `step`, so only a
+  /// genuinely stuck body trips it. Raise it if you run long **single-statement** jobs that don't
+  /// heartbeat between steps (e.g. a multi-hour `REINDEX` of one huge table).
+  pub stale_timeout_seconds: i64,
+}
+impl Default for JobsConfig {
+  fn default() -> Self {
+    JobsConfig {
+      stale_timeout_seconds: 7200, // 2 h
+    }
+  }
+}
+
 /// Top-level `CorTeX` runtime configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CortexConfig {
@@ -240,6 +258,8 @@ pub struct CortexConfig {
   pub assets: AssetsConfig,
   /// Passkey (WebAuthn) sign-in settings.
   pub webauthn: WebauthnConfig,
+  /// Background-job lifecycle settings.
+  pub jobs: JobsConfig,
 }
 
 impl CortexConfig {
@@ -304,12 +324,14 @@ pub fn to_persisted_toml(config: &CortexConfig) -> Result<String, toml::ser::Err
     dispatcher: &'a DispatcherConfig,
     assets: &'a AssetsConfig,
     webauthn: &'a WebauthnConfig,
+    jobs: &'a JobsConfig,
   }
   toml::to_string_pretty(&Persisted {
     database: &config.database,
     dispatcher: &config.dispatcher,
     assets: &config.assets,
     webauthn: &config.webauthn,
+    jobs: &config.jobs,
   })
 }
 

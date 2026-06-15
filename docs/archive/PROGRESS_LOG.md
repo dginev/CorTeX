@@ -11,6 +11,22 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](../PRODUCTIZING_PLAN.md); the
 
 ## 2026-06-15
 
+- **W-4 job-timeout: made the reap threshold operator-tunable; rejected an in-app watchdog as
+  redundant/wrong (architecture call).** Started a background "job watchdog" thread, then **removed
+  it** after an owner question ("aren't we reimplementing what the web framework reaps?"). The honest
+  finding: jobs are **detached** `std::thread::spawn` workers (the request already returned `202`), so
+  Rocket — which reaps *request* lifecycles — never sees them; and even under tokio a **blocking** body
+  (diesel/libpq, `REINDEX`) is uncancellable (`timeout`/`spawn_blocking` can't abort mid-call). So a
+  hung blocking job is un-killable in-process regardless of framework — only **subprocess isolation**
+  (a SIGKILL-able child) could truly kill it (deliberately not built; not worth it for rare admin
+  hangs). The watchdog was also redundant: `reap_stale` already runs **on every read** of the jobs
+  surface, so every consumer self-heals the accounting, and a sweeper can't reclaim the leaked
+  thread/RAM anyway. Kept the one real win the code had flagged as TODO: the hardcoded 2h reap
+  threshold is now `config.jobs.stale_timeout_seconds` (figment `JobsConfig`, scaffolded into
+  `cortex.toml` via `to_persisted_toml`), so deployments with long single-statement jobs can raise it
+  without a recompile. W-4 stays 🟡 **by design** (accounting correct + tunable; un-killable-thread
+  leak is an accepted, documented in-process limit). Build + clippy clean; jobs/settings/config tests
+  green (the existing `reap_stale` test exercises the default threshold).
 - **Arm 10 (CLI step, D1): `cortex export-dataset` — the two `bundle-html-dataset*.sh` scripts
   retired.** Collapsed the per-month script and the per-severity script (which differed only in the
   grouping dimension, and disagreed on `no_problem` vs `no-problem`) into one parameterized

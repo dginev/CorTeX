@@ -19,6 +19,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::backend::DbPool;
+use crate::config::config;
 use crate::schema::jobs;
 
 /// A persisted background job.
@@ -312,14 +313,8 @@ pub fn find_job(connection: &mut PgConnection, job_uuid: Uuid) -> Option<Job> {
     .flatten()
 }
 
-/// A non-terminal job whose progress heartbeat (`updated_at`) has been silent this long is presumed
-/// **stalled** and reaped by [`reap_stale`]. Generous on purpose: a long but *progressing*
-/// operation freshens its heartbeat every `step`, so only a genuinely hung body trips this.
-/// (Configurable knob later; a constant for now.)
-pub const STALE_JOB_HEARTBEAT_TIMEOUT_SECS: i64 = 7200; // 2h
-
 /// Marks any non-terminal job whose progress heartbeat has been silent for longer than
-/// [`STALE_JOB_HEARTBEAT_TIMEOUT_SECS`] as `interrupted` — the **runtime** complement to
+/// `config().jobs.stale_timeout_seconds` as `interrupted` — the **runtime** complement to
 /// [`interrupt_orphans`] (which only runs at startup). It closes the W-4 zombie: a job whose body
 /// *hangs* while a long-lived frontend keeps running would otherwise sit `running` forever, leaking
 /// a thread and lying to every pending-check + the report-refresh debounce. A job that keeps
@@ -327,11 +322,19 @@ pub const STALE_JOB_HEARTBEAT_TIMEOUT_SECS: i64 = 7200; // 2h
 /// a merely-slow job is reaped and later finishes, its `finish()` overwrites the status, so a
 /// generous timeout costs at most a transient `interrupted` display. Skew-free (differences against
 /// the DB clock, like [`db_now`]). Returns the count reaped; best-effort.
+///
+/// **Caveat — Rust cannot force-kill a thread:** reaping marks the DB row terminal (so accounting,
+/// pending-checks, and the refresh debounce are correct) but the hung OS thread itself runs until
+/// its body unblocks. The leak is bounded — its pooled connection is returned between `step`s and
+/// the r2d2 pool caps total connections — but the thread/stack is only reclaimed when the body
+/// returns; truly aborting a hung *blocking* job would need subprocess isolation (a SIGKILL-able
+/// child), a deliberate architecture trade. See the W-4 ledger entry.
 pub fn reap_stale(connection: &mut PgConnection) -> usize {
+  let timeout_secs = config().jobs.stale_timeout_seconds;
   let Some(clock) = db_now(connection) else {
     return 0; // DB clock unreadable → skip rather than reap against a bogus app clock
   };
-  let cutoff = clock - chrono::Duration::seconds(STALE_JOB_HEARTBEAT_TIMEOUT_SECS);
+  let cutoff = clock - chrono::Duration::seconds(timeout_secs);
   diesel::update(
     jobs::table
       .filter(jobs::status.eq("queued").or(jobs::status.eq("running")))
@@ -341,7 +344,7 @@ pub fn reap_stale(connection: &mut PgConnection) -> usize {
     jobs::status.eq("interrupted"),
     jobs::message.eq(format!(
       "no progress heartbeat for over {} minutes; presumed stalled (W-4)",
-      STALE_JOB_HEARTBEAT_TIMEOUT_SECS / 60
+      timeout_secs / 60
     )),
   ))
   .execute(connection)
