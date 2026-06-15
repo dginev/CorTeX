@@ -348,6 +348,60 @@ hr {
   box-shadow: var(--shadow);
 }
 
+/* Live ops console — the at-a-glance stat strip + its live-refresh indicator. */
+.admin-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.5rem 0 1rem;
+}
+.admin-status .admin-card {
+  flex: 1 1 7rem;
+  min-width: 7rem;
+  text-align: center;
+}
+.admin-card.wide {
+  margin: 0 0 1rem;
+}
+.live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85em;
+}
+.live-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background-color: var(--ok);
+}
+.live-dot.stale {
+  background-color: var(--ink-muted);
+}
+.live-dot.beat {
+  animation: live-beat 0.6s ease;
+}
+@keyframes live-beat {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  45% {
+    transform: scale(1.9);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-dot.beat {
+    animation: none;
+  }
+}
+
 /* The theme toggle is an `<a id="theme-toggle">` in the nav action group — it inherits the
    `.cortex-admin-nav` pill styling like Overview / Admin (no ID-specific override that would strip
    the pill border). */

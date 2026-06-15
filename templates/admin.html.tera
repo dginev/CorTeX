@@ -11,25 +11,44 @@
     <p><a href="/">view public overview</a></p>
   </div>
 
-  <div class="admin-status" style="display:flex; flex-wrap:wrap; gap:0.75rem; margin:1rem 0;">
-    <div class="admin-card" style="flex:1; min-width:8rem; text-align:center;">
-      <div class="stat-number">{{ corpus_count }}</div>
+  <div class="center">
+    <span class="live-indicator"><span class="live-dot" id="live-dot"></span><span class="muted" id="live-label">live</span></span>
+  </div>
+
+  <div class="admin-status">
+    <div class="admin-card">
+      <div class="stat-number" id="stat-corpora">{{ status.corpus_count }}</div>
       <div class="muted"><a href="/">corpora</a></div>
     </div>
-    <div class="admin-card" style="flex:1; min-width:8rem; text-align:center;">
-      <div class="stat-number"{% if active_jobs > 0 %} style="color:var(--ok);"{% endif %}>{{ active_jobs }}</div>
+    <div class="admin-card">
+      <div class="stat-number {% if status.active_jobs > 0 %}status-ok{% endif %}" id="stat-jobs">{{ status.active_jobs }}</div>
       <div class="muted"><a href="/jobs">active jobs</a></div>
     </div>
-    <div class="admin-card" style="flex:1; min-width:8rem; text-align:center;">
-      <div class="stat-number">{{ active_sessions }}</div>
-      <div class="muted"><a href="/admin/sessions">active sessions</a></div>
+    <div class="admin-card">
+      <div class="stat-number" id="stat-workers">{{ status.workers_in_flight }} / {{ status.workers_total }}</div>
+      <div class="muted"><a href="/services">workers in&nbsp;flight</a></div>
     </div>
-    <div class="admin-card" style="flex:2; min-width:12rem;">
-      <div class="muted">Last run &nbsp;<a href="/admin/runs">(all runs)</a></div>
-      {% if last_run %}
-      <div><strong><time datetime="{{ last_run.when }}">{{ last_run.when }}</time></strong>{% if last_run.open %} <span style="color:var(--ok);">· open{% if last_run.in_progress > 0 %} · {{ last_run.in_progress }} in&nbsp;progress{% endif %}</span>{% endif %}
-        &nbsp;by {{ last_run.owner }}</div>
-      <div class="muted" style="font-size:0.9em;">{{ last_run.total }} tasks — {{ last_run.description }}</div>
+    <div class="admin-card">
+      <div class="stat-number {% if status.jobs_failed_recent > 0 %}status-warn{% endif %}" id="stat-failed">{{ status.jobs_failed_recent }}</div>
+      <div class="muted"><a href="/jobs">failed (24h)</a></div>
+    </div>
+    <div class="admin-card">
+      <div class="stat-number" id="stat-sessions">{{ status.active_sessions }}</div>
+      <div class="muted"><a href="/admin/sessions">sessions</a></div>
+    </div>
+    <div class="admin-card">
+      <div class="stat-number" id="stat-pool">{{ status.pool_in_use }} / {{ status.pool_max }}</div>
+      <div class="muted"><a href="/health">pool in&nbsp;use</a></div>
+    </div>
+  </div>
+
+  <div class="admin-card wide" id="stat-lastrun-card">
+    <div class="muted">Last run &nbsp;<a href="/admin/runs">(all runs)</a></div>
+    <div id="stat-lastrun">
+      {% if status.last_run %}
+      <div><strong><time datetime="{{ status.last_run.when }}">{{ status.last_run.when }}</time></strong>{% if status.last_run.open %} <span class="status-ok">· open{% if status.last_run.in_progress > 0 %} · {{ status.last_run.in_progress }} in&nbsp;progress{% endif %}</span>{% endif %}
+        &nbsp;by {{ status.last_run.owner }}</div>
+      <div class="muted" style="font-size:0.9em;">{{ status.last_run.total }} tasks — {{ status.last_run.description }}</div>
       {% else %}
       <div class="muted">no runs yet</div>
       {% endif %}
@@ -55,4 +74,46 @@
 
 </div>
 <div class="col-md-2"></div>
+
+<script>
+// Live ops console — vanilla-fetch poll of the cookie-gated /admin/status.json feed (no JS
+// framework; same pattern as the job progress page). Server-rendered first paint means this is pure
+// progressive enhancement: with JS off, the dashboard still shows the snapshot, just not live.
+(function () {
+  var FEED = '/admin/status.json', PERIOD = 5000;
+  var dot = document.getElementById('live-dot'), label = document.getElementById('live-label');
+  function set(id, text) { var el = document.getElementById(id); if (el) el.textContent = text; }
+  function flag(id, cls, on) { var el = document.getElementById(id); if (el) el.classList.toggle(cls, on); }
+  function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+  function renderLastRun(r) {
+    var box = document.getElementById('stat-lastrun');
+    if (!box) return;
+    if (!r) { box.innerHTML = '<div class="muted">no runs yet</div>'; return; }
+    var openBit = r.open ? ' <span class="status-ok">· open' + (r.in_progress > 0 ? ' · ' + r.in_progress + ' in&nbsp;progress' : '') + '</span>' : '';
+    box.innerHTML = '<div><strong><time datetime="' + esc(r.when) + '">' + esc(r.when) + '</time></strong>' + openBit +
+      '&nbsp;by ' + esc(r.owner) + '</div>' +
+      '<div class="muted" style="font-size:0.9em;">' + r.total + ' tasks — ' + esc(r.description) + '</div>';
+  }
+  function beat() { if (!dot) return; dot.classList.remove('beat'); void dot.offsetWidth; dot.classList.add('beat'); }
+  async function poll() {
+    var resp;
+    try { resp = await fetch(FEED, { headers: { 'Accept': 'application/json' } }); }
+    catch (e) { if (label) label.textContent = 'offline'; if (dot) dot.classList.add('stale'); return; }
+    if (!resp.ok) { if (label) label.textContent = resp.status === 401 ? 'signed out' : 'paused'; if (dot) dot.classList.add('stale'); return; }
+    var s = await resp.json();
+    if (dot) dot.classList.remove('stale');
+    if (label) label.textContent = 'live';
+    set('stat-corpora', s.corpus_count);
+    set('stat-jobs', s.active_jobs); flag('stat-jobs', 'status-ok', s.active_jobs > 0);
+    set('stat-workers', s.workers_in_flight + ' / ' + s.workers_total);
+    set('stat-failed', s.jobs_failed_recent); flag('stat-failed', 'status-warn', s.jobs_failed_recent > 0);
+    set('stat-sessions', s.active_sessions);
+    set('stat-pool', s.pool_in_use + ' / ' + s.pool_max);
+    renderLastRun(s.last_run);
+    beat();
+  }
+  poll();
+  setInterval(poll, PERIOD);
+})();
+</script>
 {% endblock content %}

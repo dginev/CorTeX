@@ -107,10 +107,17 @@ fn admin_requires_sign_in_then_grants_access() {
     body.contains("Add a corpus"),
     "the add-corpus action is consolidated on the admin dashboard"
   );
-  // The command-center status cards render (at-a-glance system state).
+  // The live ops console's status cards + the live-refresh indicator render (at-a-glance state).
   assert!(
-    body.contains("active jobs") && body.contains("active sessions") && body.contains("Last run"),
-    "the dashboard shows at-a-glance status (jobs / sessions / last run)"
+    body.contains("active jobs")
+      && body.contains("workers in")
+      && body.contains("failed (24h)")
+      && body.contains("Last run"),
+    "the dashboard shows the live ops status strip (jobs / workers / failures / last run)"
+  );
+  assert!(
+    body.contains("live-dot") && body.contains("/admin/status.json"),
+    "the dashboard wires up the live poll of /admin/status.json"
   );
 
   // The historical-runs management screen renders for a signed-in admin (covers admin-runs.html).
@@ -137,9 +144,54 @@ fn admin_requires_sign_in_then_grants_access() {
   );
 }
 
-// Custom harness (see KNOWN_ISSUES L-1): run the case then `_exit(0)`.
+// The live ops console's poll feed (`/admin/status.json`) is cookie-gated and returns the snapshot
+// DTO as JSON for a signed-in admin.
+fn admin_status_feed_is_cookie_gated_and_returns_the_snapshot() {
+  let client = client();
+
+  // Unauthenticated XHR → 401 (not an HTML redirect — the page keeps its last-good values).
+  let response = client.get("/admin/status.json").dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Unauthorized,
+    "the status feed is closed to anonymous callers"
+  );
+
+  // Sign in, then the feed returns JSON with the snapshot fields.
+  client
+    .post("/admin/login")
+    .header(ContentType::Form)
+    .body("token=token1")
+    .dispatch();
+  let response = client.get("/admin/status.json").dispatch();
+  assert_eq!(response.status(), Status::Ok, "signed-in feed is readable");
+  assert_eq!(
+    response.content_type(),
+    Some(ContentType::JSON),
+    "the feed is JSON"
+  );
+  let body: serde_json::Value = response.into_json().expect("the feed is valid JSON");
+  for field in [
+    "corpus_count",
+    "active_jobs",
+    "active_sessions",
+    "workers_total",
+    "workers_in_flight",
+    "jobs_failed_recent",
+    "pool_in_use",
+    "pool_max",
+  ] {
+    assert!(
+      body.get(field).is_some(),
+      "the snapshot DTO carries `{field}`"
+    );
+  }
+}
+
+// Custom harness (see KNOWN_ISSUES L-1): run the cases then `_exit(0)`.
 fn main() {
   admin_requires_sign_in_then_grants_access();
+  admin_status_feed_is_cookie_gated_and_returns_the_snapshot();
   eprintln!("admin_test: all cases passed");
   unsafe { libc::_exit(0) }
 }
