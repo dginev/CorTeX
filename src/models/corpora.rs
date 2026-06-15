@@ -30,6 +30,13 @@ pub struct Corpus {
   pub complex: bool,
   /// a human-readable description of the corpus, maybe allow markdown here?
   pub description: String,
+  /// For a **sandbox** corpus: the parent corpus it was carved from (else `None`). See
+  /// [`crate::backend::sandbox`].
+  pub parent_corpus_id: Option<i32>,
+  /// For a **sandbox** corpus: the filter predicate it was built from — the JSON
+  /// `{service, severity, category, what}` selection over the parent. This IS the sandbox's
+  /// provenance ("why these entries"), so no per-task origin link is kept.
+  pub selection: Option<serde_json::Value>,
 }
 
 impl Corpus {
@@ -37,6 +44,10 @@ impl Corpus {
   pub fn find_by_name(name_query: &str, connection: &mut PgConnection) -> Result<Self, Error> {
     use crate::schema::corpora::name;
     corpora::table.filter(name.eq(name_query)).first(connection)
+  }
+  /// Find a corpus by its primary key (used to resolve a sandbox's parent).
+  pub fn find_by_id(id_query: i32, connection: &mut PgConnection) -> Result<Self, Error> {
+    corpora::table.find(id_query).first(connection)
   }
   /// ORM-like until diesel.rs introduces finders for more fields
   pub fn find_by_path(path_query: &str, connection: &mut PgConnection) -> Result<Self, Error> {
@@ -143,6 +154,33 @@ impl Default for NewCorpus {
   }
 }
 impl CortexInsertable for NewCorpus {
+  fn create(&self, connection: &mut PgConnection) -> Result<usize, Error> {
+    insert_into(corpora::table).values(self).execute(connection)
+  }
+}
+
+/// Insertable for a **sandbox** corpus — a `NewCorpus` plus the parent link and the filter
+/// predicate that defines it. Kept separate from [`NewCorpus`] so ordinary corpus creation (the
+/// import path, and dozens of test fixtures) stays a 4-field literal; the two sandbox columns are
+/// nullable, so a plain `NewCorpus` insert simply leaves them `NULL`.
+#[derive(Insertable)]
+#[diesel(table_name = corpora)]
+pub struct NewSandboxCorpus {
+  /// file system path to corpus root — the sandbox references the **parent's** path in place
+  /// (sources are not copied; owner decision 2026-06-15).
+  pub path: String,
+  /// a human-readable name for this sandbox
+  pub name: String,
+  /// inherited from the parent (same on-disk topology)
+  pub complex: bool,
+  /// frontend-facing description (auto-generated from the selection)
+  pub description: String,
+  /// the parent corpus this sandbox was carved from
+  pub parent_corpus_id: Option<i32>,
+  /// the filter predicate (`{service, severity, category, what}`) — the sandbox's provenance
+  pub selection: Option<serde_json::Value>,
+}
+impl CortexInsertable for NewSandboxCorpus {
   fn create(&self, connection: &mut PgConnection) -> Result<usize, Error> {
     insert_into(corpora::table).values(self).execute(connection)
   }

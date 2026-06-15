@@ -809,6 +809,157 @@ fn deactivate_service_removes_pair_tasks_and_logs() {
   cleanup(&mut db, corpus_name, target_svc);
 }
 
+// A sandbox carves exactly the parent entries matching a `(severity, category, what)` filter into a
+// new child corpus, as TODO tasks, with the parent link + selection predicate recorded.
+// Token-gated.
+fn sandbox_carves_matching_entries_into_a_new_corpus() {
+  let parent_name = "sandbox_parent_corpus";
+  let sandbox_name = "sandbox_child_corpus";
+  let svc_name = "sandbox_target_svc";
+  let mut db = backend::testdb();
+  cleanup(&mut db, parent_name, svc_name);
+  cleanup_corpus(&mut db, sandbox_name);
+
+  // Parent corpus + a conversion service.
+  db.add(&NewCorpus {
+    name: parent_name.to_string(),
+    path: "/tmp/sandbox_parent".to_string(),
+    complex: true,
+    description: "p".to_string(),
+  })
+  .expect("parent corpus");
+  let parent = Corpus::find_by_name(parent_name, &mut db.connection).unwrap();
+  db.add(&NewService {
+    name: svc_name.to_string(),
+    version: 0.1,
+    inputformat: "tex".to_string(),
+    outputformat: "html".to_string(),
+    inputconverter: None,
+    complex: true,
+    description: "svc".to_string(),
+  })
+  .expect("service");
+  let svc = Service::find_by_name(svc_name, &mut db.connection).unwrap();
+
+  // Three converted documents: two warnings (one carrying the category/what we filter on, one a
+  // different `what`), and one error. The carve must capture exactly the matching warning.
+  let warn_match = "/tmp/sandbox_parent/1/1.zip";
+  let warn_other = "/tmp/sandbox_parent/2/2.zip";
+  let err_doc = "/tmp/sandbox_parent/3/3.zip";
+  for (entry, status) in [
+    (warn_match, TaskStatus::Warning),
+    (warn_other, TaskStatus::Warning),
+    (err_doc, TaskStatus::Error),
+  ] {
+    db.add(&NewTask {
+      service_id: svc.id,
+      corpus_id: parent.id,
+      status: status.raw(),
+      entry: entry.to_string(),
+    })
+    .expect("task");
+  }
+  let warn_match_task = Task::find_by_entry(warn_match, &mut db.connection).unwrap();
+  let warn_other_task = Task::find_by_entry(warn_other, &mut db.connection).unwrap();
+  db.add(&NewLogWarning {
+    task_id: warn_match_task.id,
+    category: "missing_file".to_string(),
+    what: "foo.cls".to_string(),
+    details: String::new(),
+  })
+  .expect("matching log");
+  db.add(&NewLogWarning {
+    task_id: warn_other_task.id,
+    category: "missing_file".to_string(),
+    what: "bar.cls".to_string(),
+    details: String::new(),
+  })
+  .expect("other log");
+
+  let client = client();
+  let body = serde_json::json!({
+    "name": sandbox_name, "service_id": svc.id,
+    "severity": "warning", "category": "missing_file", "what": "foo.cls",
+  });
+  // Untokened → 401 (carving a sandbox is a write).
+  let denied_url = format!("/api/corpora/{parent_name}/sandbox");
+  let denied = client
+    .post(denied_url.as_str())
+    .header(ContentType::JSON)
+    .body(body.to_string())
+    .dispatch();
+  assert_eq!(
+    denied.status(),
+    Status::Unauthorized,
+    "sandbox without a token is 401"
+  );
+  // Tokened → 202 + a `corpus_sandbox` job.
+  let url = format!("/api/corpora/{parent_name}/sandbox?token=token1");
+  let response = client
+    .post(url.as_str())
+    .header(ContentType::JSON)
+    .body(body.to_string())
+    .dispatch();
+  assert_eq!(response.status(), Status::Accepted);
+  let job: serde_json::Value = response.into_json().expect("a job handle");
+  assert_eq!(job["kind"], "corpus_sandbox");
+  let uuid = job["uuid"].as_str().expect("a uuid").to_string();
+
+  // Poll the carve job to a terminal state.
+  let path = format!("/api/jobs/{uuid}");
+  let mut last = serde_json::Value::Null;
+  for _ in 0..500 {
+    last = client
+      .get(path.as_str())
+      .dispatch()
+      .into_json()
+      .expect("job json");
+    let status = last["status"].as_str().unwrap_or_default();
+    if status == "succeeded" || status == "failed" || status == "interrupted" {
+      break;
+    }
+    std::thread::sleep(std::time::Duration::from_millis(20));
+  }
+  assert_eq!(
+    last["status"], "succeeded",
+    "sandbox job did not succeed: {}",
+    last["message"]
+  );
+
+  // The sandbox is a real corpus linked to its parent, carrying the selection predicate,
+  // referencing the parent's path in place.
+  let sandbox =
+    Corpus::find_by_name(sandbox_name, &mut db.connection).expect("sandbox corpus created");
+  assert_eq!(
+    sandbox.parent_corpus_id,
+    Some(parent.id),
+    "sandbox links to its parent"
+  );
+  assert!(
+    sandbox.selection.is_some(),
+    "sandbox stores its selection predicate"
+  );
+  assert_eq!(
+    sandbox.path, parent.path,
+    "sandbox references the parent path in place"
+  );
+  // Exactly the one matching entry was carved, as a TODO task for the service.
+  let carved: Vec<String> = tasks::table
+    .filter(tasks::corpus_id.eq(sandbox.id))
+    .filter(tasks::status.eq(TaskStatus::TODO.raw()))
+    .select(tasks::entry)
+    .load(&mut db.connection)
+    .expect("sandbox tasks");
+  assert_eq!(
+    carved,
+    vec![warn_match.to_string()],
+    "only the warning+missing_file:foo.cls entry is carved"
+  );
+
+  cleanup(&mut db, parent_name, svc_name);
+  cleanup_corpus(&mut db, sandbox_name);
+}
+
 fn main() {
   api_corpora_lists_registered_corpora();
   api_corpus_detail_reports_services_and_counts();
@@ -822,6 +973,7 @@ fn main() {
   post_corpora_extend_adds_new_entries();
   human_corpus_forms_are_session_and_confirm_gated();
   deactivate_service_removes_pair_tasks_and_logs();
+  sandbox_carves_matching_entries_into_a_new_corpus();
   eprintln!("corpora_test: all cases passed");
   unsafe { libc::_exit(0) }
 }

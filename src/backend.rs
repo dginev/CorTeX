@@ -12,6 +12,7 @@ mod corpora_aggregate;
 mod mark;
 mod reports;
 mod rollup;
+mod sandbox;
 mod services_aggregate;
 mod tasks_aggregate;
 pub(crate) use mark::{mark_rerun, save_historical_tasks};
@@ -26,6 +27,7 @@ pub(crate) use rollup::{
   category_rollup, category_total, refresh_report_summary, report_summary_refreshed_at,
   severity_total, what_rollup,
 };
+pub(crate) use sandbox::{create_sandbox, SandboxSelection};
 
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use diesel::result::Error;

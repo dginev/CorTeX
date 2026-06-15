@@ -1,9 +1,37 @@
-# Filtered Sandbox Corpora — design note (post-completion task)
+# Filtered Sandbox Corpora — design note + creation landed
 
-> Status: **design note / future task**, not yet implemented. Captures the owner's target agentic
-> workflow for *sandbox corpora derived from a message-condition filter*. Relates to Arm 5 (corpus
-> management), Arm 7 (runs), and Arm 10 (data management); builds directly on the background-job
-> mechanism ([`JOB_MODEL.md`](archive/JOB_MODEL.md)). Cross-ref: [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md).
+> Status: **creation LANDED 2026-06-15** (`src/backend/sandbox.rs` + `POST /api/corpora/<parent>/sandbox`
+> + the `corpus_sandbox` background job). The owner's 4 design questions are **decided** (see below).
+> The remaining piece is **output isolation on a sandbox *rerun*** (Decisions §1) — tracked in
+> [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md). Relates to Arm 5 (corpus management), Arm 7 (runs), and Arm 10
+> (data management); built on the background-job mechanism ([`JOB_MODEL.md`](archive/JOB_MODEL.md)).
+> Cross-ref: [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md).
+
+## Decisions (owner, 2026-06-15) + as-built
+
+Design **C** (a real corpus + parent link + stored selection) was chosen, with these answers to the
+open questions:
+
+1. **Outputs — isolated own tree.** A sandbox is its own `corpus_id` (own tasks, runs, reports), so
+   its DB-level run state is already isolated. *Residual:* a sandbox **rerun** would write result
+   archives to the `<entry-dir>/<service>.zip` path inherited from the parent (sources are referenced
+   in place), so isolating the **filesystem outputs** of a sandbox rerun needs a sink output-path
+   change — the one remaining sandbox task (KNOWN_ISSUES). Creation + viewing are unaffected.
+2. **Sources — referenced in place.** Sandbox tasks carry the parent's `entry` paths verbatim; nothing
+   is copied or symlinked (the dispatcher already streams a task's source from its `entry`).
+3. **Selection — one-time snapshot.** The predicate is evaluated once at creation; the carved set is
+   then stable to iterate campaigns against.
+4. **Origin — the selection predicate IS the origin** (owner: *"the origin is the filter predicate
+   applied over the larger corpus"*). No per-task `origin_task_id` link; the sandbox corpus stores its
+   `parent_corpus_id` + `selection` JSON, and that predicate over the parent is the provenance.
+
+**As built:** migration `2026-06-15-120000_sandbox_corpora` adds `corpora.parent_corpus_id` +
+`corpora.selection JSONB`. `backend::create_sandbox` performs the carve **entirely server-side** —
+`INSERT INTO tasks (...) SELECT ... FROM tasks ...` (a `category`/`what` filter joins the severity's
+`log_*` table; `SELECT DISTINCT` dedups) — so a 100k-entry carve loads **no entries into the
+application** (no client RAM, no 65535 bind-param cap) and is one atomic transaction. The carve runs
+as the `corpus_sandbox` background job (the matching `SELECT` over a large parent can take up to an
+hour). Tasks land as `TODO`, so the sandbox is immediately a runnable work-list.
 
 ## The target workflow
 

@@ -45,6 +45,8 @@ impl Default for Importer {
         path: ".".to_string(),
         complex: true,
         description: String::new(),
+        parent_corpus_id: None,
+        selection: None,
       },
       backend: default_backend,
       cwd: Importer::cwd(),

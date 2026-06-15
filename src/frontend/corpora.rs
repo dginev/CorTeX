@@ -24,7 +24,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::backend::{from_address, progress_report, DatabaseUrl, DbPool};
+use crate::backend::{
+  create_sandbox, from_address, progress_report, DatabaseUrl, DbPool, SandboxSelection,
+};
 use crate::concerns::CortexInsertable;
 use crate::frontend::actor::{require_admin_to, Actor, AdminReject, AdminSession, ReturnTo};
 use crate::frontend::helpers::decorate_uri_encodings;
@@ -293,6 +295,148 @@ fn count_service_tasks(connection: &mut PgConnection, corpus: i32, service: i32)
     .count()
     .get_result::<i64>(connection)
     .unwrap_or(0) as i32
+}
+
+/// Request body for carving a **sandbox** corpus out of a parent by a message-condition filter
+/// (Arm 5). The `(service, severity, category, what)` dimensions match the report drill-down.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SandboxRequest {
+  /// Name for the new sandbox corpus (its external handle; must be unique).
+  pub name: String,
+  /// The service whose conversion results are filtered.
+  pub service_id: i32,
+  /// Severity key (`no_problem` | `warning` | `error` | `fatal` | `invalid`).
+  pub severity: String,
+  /// Optional message-category narrowing.
+  pub category: Option<String>,
+  /// Optional `what` narrowing within the category.
+  pub what: Option<String>,
+}
+
+impl From<&SandboxRequest> for SandboxSelection {
+  fn from(request: &SandboxRequest) -> Self {
+    SandboxSelection {
+      service_id: request.service_id,
+      severity: request.severity.clone(),
+      category: request.category.clone(),
+      what: request.what.clone(),
+    }
+  }
+}
+
+/// Carves a **sandbox corpus** from `<parent>` by a message-condition filter and starts the job
+/// that populates it; returns `202 Accepted` + the job handle to poll. **Token-gated** via the
+/// [`Actor`] guard; `401` without a valid token, `404` if the parent is unknown, `409` if the
+/// sandbox name is taken. The sandbox is a first-class corpus an agent can then run/rerun to
+/// iterate a campaign.
+#[rocket_okapi::openapi(tag = "Corpora")]
+#[post("/api/corpora/<parent>/sandbox", format = "json", data = "<request>")]
+pub fn create_sandbox_corpus(
+  parent: &str,
+  request: Json<SandboxRequest>,
+  actor: Actor,
+  pool: &State<DbPool>,
+  database_url: &State<DatabaseUrl>,
+) -> Result<(Status, Json<JobDto>), Status> {
+  let request = request.into_inner();
+  let job_uuid = start_sandbox(pool, &database_url.0, &actor.owner, parent, &request)?;
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let job = jobs::find_job(&mut connection, job_uuid).ok_or(Status::InternalServerError)?;
+  Ok((Status::Accepted, Json(JobDto::from(job))))
+}
+
+/// Resolves the parent (`404`), rejects a taken sandbox name (`409`), and spawns the
+/// `corpus_sandbox` job. The shared core of the agent endpoint and the human form.
+fn start_sandbox(
+  pool: &DbPool,
+  database_url: &str,
+  actor: &str,
+  parent: &str,
+  request: &SandboxRequest,
+) -> Result<Uuid, Status> {
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let parent_corpus =
+    Corpus::find_by_name(parent, &mut connection).map_err(|_| Status::NotFound)?;
+  if Corpus::find_by_name(&request.name, &mut connection).is_ok() {
+    return Err(Status::Conflict);
+  }
+  drop(connection);
+
+  let database_url = database_url.to_string();
+  let name = request.name.clone();
+  let selection = SandboxSelection::from(request);
+  let params = serde_json::json!({
+    "parent": parent, "name": name, "selection": serde_json::to_value(&selection).ok(),
+  });
+  jobs::spawn_job(
+    pool.clone(),
+    "corpus_sandbox",
+    actor,
+    params,
+    move |progress| run_sandbox(&database_url, parent_corpus, name, selection, progress),
+  )
+  .map_err(|_| Status::InternalServerError)
+}
+
+/// Fields of the human "Create a sandbox" form on the corpus page.
+#[derive(FromForm)]
+pub struct SandboxForm {
+  /// New sandbox corpus name.
+  pub name: String,
+  /// Service whose results are filtered.
+  pub service_id: i32,
+  /// Severity key.
+  pub severity: String,
+  /// Optional category narrowing (empty string = none).
+  pub category: Option<String>,
+  /// Optional `what` narrowing (empty string = none).
+  pub what: Option<String>,
+}
+
+/// The human twin of [`create_sandbox_corpus`]: the corpus page's "Create a sandbox" form. **Gated
+/// by the signed-in [`AdminSession`] cookie**; carves the sandbox off the request path and
+/// redirects to `/jobs`. `404` unknown parent, `409` name taken.
+#[post("/corpus/<parent>/sandbox", data = "<form>")]
+pub fn create_sandbox_human(
+  parent: &str,
+  form: Form<SandboxForm>,
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+  database_url: &State<DatabaseUrl>,
+) -> Result<Redirect, Status> {
+  let Some(session) = session else {
+    return Ok(Redirect::to("/admin/login"));
+  };
+  let form = form.into_inner();
+  // Treat empty optional inputs as "no narrowing".
+  let blank_to_none = |value: Option<String>| value.filter(|text| !text.trim().is_empty());
+  let request = SandboxRequest {
+    name: form.name,
+    service_id: form.service_id,
+    severity: form.severity,
+    category: blank_to_none(form.category),
+    what: blank_to_none(form.what),
+  };
+  start_sandbox(pool, &database_url.0, &session.owner, parent, &request)?;
+  Ok(Redirect::to("/jobs"))
+}
+
+/// The body of a `corpus_sandbox` job: carve the sandbox in-process and report the captured-entry
+/// count. Returns `{ sandbox, entries }`.
+fn run_sandbox(
+  database_url: &str,
+  parent: Corpus,
+  name: String,
+  selection: SandboxSelection,
+  progress: &JobProgress,
+) -> Result<Value, String> {
+  progress.step(0, None, &format!("carving sandbox '{name}'"));
+  let mut backend = from_address(database_url);
+  let outcome = create_sandbox(&mut backend.connection, &parent, &name, &selection)
+    .map_err(|error| error.to_string())?;
+  let captured = outcome.entry_count as i32;
+  progress.step(captured, Some(captured), "sandbox created");
+  Ok(serde_json::json!({ "sandbox": outcome.sandbox.name, "entries": outcome.entry_count }))
 }
 
 /// Extends an existing corpus with newly-arrived entries; starts an in-process job and returns
@@ -805,6 +949,7 @@ pub fn routes() -> Vec<Route> {
     delete_corpus_human,
     activate_service_human,
     deactivate_service_human,
+    create_sandbox_human,
     overview_page,
     new_corpus_page,
     corpus_page

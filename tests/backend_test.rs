@@ -141,6 +141,8 @@ fn batch_ops_test() {
     path: String::new(),
     complex: false,
     description: String::new(),
+    parent_corpus_id: None,
+    selection: None,
   };
 
   let mock_task_count = rand_in_range(10, 100) as usize;
