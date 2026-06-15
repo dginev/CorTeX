@@ -11,6 +11,51 @@ served openly; the **write / admin** surfaces stay gated (signed-in admins only)
 API** stays token-gated. The deployment is reverse-proxied (Caddy) over Tailscale to the frontend on
 the `cortex` host.
 
+## Worker ↔ dispatcher network
+
+There are **two independent networks** in a CorTeX deployment — don't conflate them:
+
+| Path | Carries | Latency-/throughput-critical? |
+|---|---|---|
+| **Web / dashboard** | the Rocket frontend HTTP (Caddy → Anubis → reverse-proxy → cortex) | No — reads hit the `report_summary` rollup; proxy hops are fine |
+| **Worker ↔ dispatcher** | ZeroMQ: ventilator `:51695` (source out) + sink `:51696` (results in) | **Yes** — streams source/result archives (100 KB chunks, up to the `max_result_bytes` cap) |
+
+The **workers must never traverse the web edge** (Anubis PoW + reverse-SSH is exactly wrong for
+high-throughput ZMQ). Give them a **single hop on a private network**. The dispatcher binds
+`tcp://*:<port>` (all interfaces), so reachability is purely a *network + firewall* question, not a
+code one.
+
+**Co-located workers (same LAN) — the fastest option.** Point workers at `tcp://<dispatcher-lan-ip>:51695`
+/ `:51696`. Prefer **wired Ethernet over WiFi**: lower, stable latency, full-duplex throughput, and no
+WiFi power-save/roaming dropping idle connections. WiFi *works* (with only a couple of CPU-bound
+`latexml` workers the conversion time dominates the network), but wired removes a variable. Either way:
+**pin the dispatcher host's IP** (static or a DHCP reservation) so the workers' `tcp://<ip>` config
+survives a reconnect.
+
+**Remote workers — Tailscale (WireGuard mesh).** Each node gets a stable `100.x` address that survives
+IP changes; kernel WireGuard is fast (UDP) and encrypted. Workers connect to the dispatcher's **Tailscale
+IP** on `:51695` / `:51696`. Readiness:
+
+- **Tailscale up** on the dispatcher host (`tailscale ip -4` → the `100.x` to give workers; `tailscale status`
+  lists the worker peers).
+- **Tailscale ACLs**: the default policy allows all traffic between a tailnet's own nodes, so same-owner
+  worker machines reach the ports out of the box. Only a *custom* ACL would need an explicit grant for
+  `:51695`/`:51696`.
+- **Host firewall**: traffic arriving on `tailscale0` must be accepted. Tailscale's own nftables chain
+  already accepts `iifname "tailscale0"`; with a default-`accept` INPUT policy (or `ufw allow in on
+  tailscale0`) nothing more is needed. Verify from a worker: `nc -vz <dispatcher-tailscale-ip> 51695`
+  (only returns once the dispatcher is actually running and bound).
+
+**Stability knob:** `dispatcher.tcp_keepalive_idle_seconds` (default 120) keeps idle worker connections
+alive across NAT/WiFi/overlay idle-timeouts so a worker doesn't silently fall out of the fleet. Task
+*correctness* is independent of it (the lease reaper recovers a dead worker's task), so it's safe to
+disable (`<= 0`).
+
+**Avoid:** per-worker reverse-SSH tunnels (TCP-over-TCP head-of-line blocking, doesn't scale, chokes on
+large multipart archives) and **raw public exposure** of `:51695`/`:51696` — ZeroMQ has no authentication
+by default, so keep it on the private LAN/Tailscale overlay (a public bind would require ZMQ CURVE, which
+is not configured).
+
 ## Bot / abuse protection: **Anubis at the edge, not in the framework**
 
 Owner decision (2026-06-14): the prototype's `captcha_secret` read-only guard is **removed from the
@@ -63,8 +108,8 @@ scrape_configs:
 ```
 
 These are cheap current-state gauges read per scrape (no dispatcher instrumentation, no ZMQ/storage
-probe — that is `/healthz`'s job). Real-time event counters (request rates, per-task tallies) are a
-follow-on that needs hot-path instrumentation.
+probe — that is the token-gated `/api/health`'s job; the public `/healthz` is liveness-only). Real-time
+event counters (request rates, per-task tallies) are a follow-on that needs hot-path instrumentation.
 
 ## Checklist (preview)
 
