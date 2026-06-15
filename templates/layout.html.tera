@@ -114,7 +114,7 @@
         <nav class="navbar navbar-default navbar-fixed-bottom" role="navigation">
             {% if global.report_duration %}
             <div class="pull-right footer-meta">
-                <div class="report-duration fresh-green" data-report-duration="{{global.report_duration}}" data-report-epoch="{{global.report_time_epoch}}" title="Generated in {{global.report_duration}} ms on {{global.report_time}}"><span class="freshness-dot"></span><span class="freshness-text">generated {{global.report_time}}</span></div>
+                <div class="report-duration fresh-green" data-report-duration="{{global.report_duration}}" data-report-epoch="{{global.report_time_epoch}}" title="Generated in {{global.report_duration}} ms on {{global.report_time}}"><span class="freshness-dot"></span><span class="freshness-text">generated <span class="freshness-rel"></span><span class="freshness-abs">{{global.report_time}}</span></span></div>
                 <div class="footer-actions">
                     {% if is_admin %}
                     <a class="footer-action" href="#modal-rerun" data-toggle="modal" data-target="#modal-rerun"
@@ -148,8 +148,8 @@
         var el = document.querySelector('.report-duration[data-report-epoch]');
         if (!el) return;
         var epoch = parseInt(el.getAttribute('data-report-epoch'), 10);
-        var textEl = el.querySelector('.freshness-text');
-        if (!epoch || !textEl) return;
+        var relEl = el.querySelector('.freshness-rel');
+        if (!epoch || !relEl) return;
         function rel(ms) {
           var s = Math.max(0, Math.floor(ms / 1000));
           if (s < 45) return 'just now';
@@ -167,7 +167,7 @@
             : age <= 86400000 ? 'fresh-stale'
             : 'fresh-expired';
           el.className = 'report-duration ' + cls;
-          textEl.textContent = 'generated ' + rel(age);
+          relEl.textContent = rel(age) + ' · ';
         }
         update();
         setInterval(update, 30000);

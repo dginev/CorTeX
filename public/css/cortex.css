@@ -974,6 +974,8 @@ h3 {
 /* Report footer bar: report provenance + clearly-labeled Rerun / Save / Auto-refresh actions. */
 .footer-meta {
   text-align: right;
+  /* Match the left content's 4em inset (p.corpus-description/.service-description padding-left). */
+  padding-right: 4em;
 }
 .footer-meta .report-duration {
   color: var(--ink-soft);
