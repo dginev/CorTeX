@@ -73,6 +73,30 @@
     <p>Re-scan the corpus path for newly-arrived entries:</p>
     <p><button type="submit">Extend</button></p>
   </form>
+  {% if services and services | length > 0 %}
+  <form method="post" action="/corpus/{{global.corpus_name_uri}}/sandbox"
+    style="display:inline-block; margin:0 1.5rem; vertical-align:top;">
+    <p>Carve a sandbox corpus from a message-condition filter:</p>
+    <p>
+      <input type="text" name="name" placeholder="new sandbox name" size="20" required>
+      <select name="service_id" required>
+        {% for service in services %}
+        <option value="{{ service.id }}">{{ service.name }}</option>
+        {% endfor %}
+      </select>
+      <select name="severity" required>
+        <option value="no_problem">no_problem</option>
+        <option value="warning" selected>warning</option>
+        <option value="error">error</option>
+        <option value="fatal">fatal</option>
+        <option value="invalid">invalid</option>
+      </select>
+      <input type="text" name="category" placeholder="category (optional)" size="16">
+      <input type="text" name="what" placeholder="what (optional)" size="16">
+      <button type="submit">Create sandbox</button>
+    </p>
+  </form>
+  {% endif %}
   <form method="post" action="/corpus/{{global.corpus_name_uri}}/delete"
     style="display:inline-block; margin:0 1.5rem; vertical-align:top;">
     <p>Delete this corpus and all its tasks &amp; logs (irreversible):</p>
