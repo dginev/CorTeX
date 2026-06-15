@@ -617,8 +617,31 @@ table.history-report {
 }
 
 span.history-footnote {
-  font-size: 12px;
+  font-size: var(--fs-sm);
+  color: var(--ink-muted);
   text-align: left;
+}
+
+/* History page: the run-quality Vega chart sits in a themed card so it reads as part of the app in
+   both light/dark (the chart's own fill/text/axis colours are set from these same design tokens in
+   templates/vega-history.html.tera). */
+.history-chart {
+  background-color: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 1rem 1.15rem;
+  margin: 0 auto 1.5rem;
+}
+.history-chart #vis {
+  width: 100%;
+}
+/* Vega-Embed's action menu (Export / View source / Open in editor) — themed links, spaced. */
+.vega-actions a {
+  margin-right: 5px;
+  color: var(--link);
+}
+.vega-actions a:hover {
+  color: var(--link-hover);
 }
 
 div.arxmliv-kwarc-footer {
