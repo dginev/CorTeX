@@ -367,15 +367,24 @@ existing RCVMORE-hardening invariants (D-4 request `[identity, service]`, D-12 r
 service, taskid, …data]`, W-1③ size-cap frame-drain) become straight-line frame-count checks on the
 message's frame vector — keep their **tests** (`dispatcher_torture_test`) as the regression net.
 
-**5a — Async sink (PULL).** Smallest, most isolated; do first. Replace the sink's sync `zmq` PULL
-receive loop with a `zeromq::PullSocket` driven on a tokio runtime owned by the sink thread. **Keep
-the phase-3 std-thread writer pool unchanged** (the receive loop still hands each parsed result to a
-writer over the existing bounded channel) — so this step swaps *only* the socket + frame parsing, not
-the `/data` write path. `tokio::fs` async writers are deferred to 5c (smallest possible diff first).
-Preserve: the `[identity, service, taskid, …data]` envelope check, `max_result_bytes` cap + (now
-trivial) frame-skip, rate-limited discard logging, metadata enqueue, per-task FIFO to one writer.
-*Gate:* `dispatcher_torture_test` (byte-exact + cap accept/reject + malformed sink/vent floods),
-`echo_roundtrip`, `dispatcher_bench` 8-worker. *Revert:* swap the PULL socket back to `zmq`.
+**5a — Async sink (PULL). ✅ DONE (2026-06-15).** The sink's sync `zmq` PULL receive loop is now a
+`zeromq::PullSocket` driven on a current-thread tokio runtime owned by the sink thread; the phase-3
+std-thread writer pool is **unchanged** (the receive loop still streams each result to a writer over
+the existing bounded channel — the blocking sends are the correct backpressure for this single-task
+runtime). As predicted, `zeromq`'s atomic whole-message delivery **retired the entire D-4/D-12 desync
+class**: the four chained `RCVMORE` guards + the malformed-reply drain loops collapsed into one pure
+`parse_reply_envelope` frame-count check (a short reply is just dropped — it can't swallow the next
+one). The `max_result_bytes` cap is computed up front from the data-frame sizes (same disk-protection
+guarantee — ZMQ buffers whole multipart messages atomically regardless); rate-limited discard
+logging, metadata enqueue, per-task FIFO-to-one-writer, and the writer-death fail-fast are preserved.
+**`zeromq`/`tokio` graduated to real `[dependencies]`.** *Gates all green:* `echo_roundtrip`,
+`concurrent_dispatch_test` (200 tasks / 8 workers, zero loss, byte-exact), `dispatcher_torture_test`
+(byte-exact + cap accept/reject under the malformed sink/vent floods), `dispatcher_bench` (20000
+tasks, **9840 tasks/s**, no loss — no throughput regression vs the libzmq sink). Five new unit tests
+for `parse_reply_envelope`. **Known gap (recorded):** `zeromq` exposes no TCP-keepalive knob, so
+`dispatcher.tcp_keepalive_idle_seconds` no longer applies to the sink PULL socket — keepalive was
+stability-only (remote-worker NAT mappings) and the lease reaper is the correctness net; revisit if
+remote-result NAT drops show up. *Revert:* swap the PULL socket back to `zmq`.
 
 **5b — Async ventilator (ROUTER) + async source reads.** Replace the sync ROUTER recv/send and the
 source-archive streaming with `zeromq` ROUTER + `tokio::fs` reads of the source archive. The

@@ -56,6 +56,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # owner-authorized: the fail-fast supervision substrate (`dispatcher::supervisor`) is the first
 # landed piece; the async sink/ventilator (`zeromq`, `tokio::fs`) follow.
 tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "fs", "time", "sync"] }
+# Pure-Rust async ZMQ transport (escapes the libzmq C FFI + its large-multipart desync flakiness —
+# KNOWN_ISSUES D-4/D-12). Graduated from a phase-0 spike dev-dependency now that the async sink
+# (phase 5a) uses it in lib code; the ventilator (5b) follows, after which the dispatcher drops `zmq`.
+zeromq = "0.6.0"
 dotenvy = "0.15.7"
 figment = { version = "0.10", features = ["toml", "env"] }
 toml = "0.8"
@@ -227,8 +231,7 @@ path = "examples/dispatcher_memory.rs"
 # its findings live in docs/archive/ARCHIVE_RATIONALIZATION.md.)
 
 [dev-dependencies]
-# Phase-0 dispatcher spike only (NOT yet wired into the running dispatcher). `zeromq` = pure-Rust
-# async ZMQ; it graduates to a real dependency when the async sink (phase 5a) uses it in lib code.
-# `tokio` already graduated to `[dependencies]` (the supervision substrate uses it).
+# Used directly by the phase-0 transport spikes (`examples/zmq_payload_*`, `zmq_interop`, …).
+# `tokio` + `zeromq` graduated to `[dependencies]` (the supervision substrate + the async sink use
+# them in lib code); `bytes` is still only named directly by the spike code.
 bytes = "1.11.1"
-zeromq = "0.6.0"

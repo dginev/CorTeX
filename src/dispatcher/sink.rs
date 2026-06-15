@@ -2,7 +2,6 @@ use std::error::Error;
 use std::fs::File;
 use std::io;
 use std::io::Write;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::Arc;
@@ -10,6 +9,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use tracing::{info, trace, warn};
+use zeromq::{PullSocket, Socket, SocketRecv, ZmqMessage};
 
 use crate::config::config;
 use crate::dispatcher::server;
@@ -134,6 +134,43 @@ fn run_writer(rx: &Receiver<WriteCommand>, done_tx: &SyncSender<TaskReport>) {
   }
 }
 
+/// The parsed header of a worker reply envelope `[identity, service, taskid, <≥1 data frame>]`.
+/// The data frames (index 3..) are read directly off the [`ZmqMessage`] by the caller.
+struct ReplyHeader {
+  /// the worker's ZMQ identity (for metadata + logs)
+  identity: String,
+  /// the service name the worker claims to have run
+  service: String,
+  /// the task id this result is for (`-1` if the frame wasn't a valid integer)
+  taskid: i64,
+}
+
+/// Validates + parses the reply envelope from one **atomically-received** `zeromq` message. Because
+/// `zeromq` delivers the whole multipart message at once (unlike libzmq's frame-by-frame `recv` +
+/// `RCVMORE`), a short/truncated/malformed reply is simply a message with too few frames — dropping
+/// it cannot desync the *next* reply, so the entire libzmq desync bug class (KNOWN_ISSUES D-4/D-12)
+/// is structurally gone and a frame-count check replaces the four chained `RCVMORE` guards. A valid
+/// reply has **≥4** frames (`identity, service, taskid`, then ≥1 data frame — even an empty result
+/// carries one empty data frame); fewer ⇒ `Err(reason)` for the rate-limited discard log. Pure
+/// (no I/O), so it is unit-tested directly.
+fn parse_reply_envelope(msg: &ZmqMessage) -> Result<ReplyHeader, &'static str> {
+  if msg.len() < 4 {
+    return Err("truncated reply: fewer than 4 frames (no data frame after taskid)");
+  }
+  let frame_str = |i: usize, default: &str| -> String {
+    msg
+      .get(i)
+      .and_then(|f| std::str::from_utf8(f).ok())
+      .unwrap_or(default)
+      .to_string()
+  };
+  Ok(ReplyHeader {
+    identity: frame_str(0, "_worker_"),
+    service: frame_str(1, "_unknown_"),
+    taskid: frame_str(2, "-1").parse::<i64>().unwrap_or(-1),
+  })
+}
+
 /// Specifies the binding and operation parameters for a ZMQ sink component
 pub struct Sink {
   /// port to listen on
@@ -156,11 +193,18 @@ impl Sink {
   /// as well as a queue for completed tasks pending persisting to disk.
   /// A job limit can be provided as a termination condition for the sink server.
   ///
-  /// The slow part of each result — the blocking `/data` archive write and `cortex.log` parse — is
-  /// fanned out to a pool of [`run_writer`] threads (size `dispatcher.sink_writers`), so the single
-  /// ZMQ-PULL receive loop only reads frames + hands them off and is never hostage to disk latency
-  /// (dispatcher rationalization phase 3, closes D-7). Every framing / size-cap / discard invariant
-  /// of the receive path is unchanged; only *where* the bytes get written moved off-thread.
+  /// **Phase 5a (transport swap):** the receive loop now runs on the pure-Rust async `zeromq`
+  /// transport, driven by a current-thread tokio runtime this sink thread owns. `zeromq` delivers
+  /// each result as **one atomic multipart [`ZmqMessage`]**, which retires the libzmq
+  /// frame-by-frame desync bug class (D-4/D-12): a malformed reply is just a message with too few
+  /// frames, discarded by dropping it — it can no longer swallow the next reply. The blocking
+  /// `/data` write + `cortex.log` parse stay fanned out to the **unchanged** phase-3
+  /// [`run_writer`] std-thread pool (size `dispatcher.sink_writers`); the blocking channel sends
+  /// to it (and to the done channel) from this single-task runtime are the correct backpressure —
+  /// when the disk or DB can't keep up, the loop stops receiving and the workers back off.
+  /// **Note:** `zeromq` exposes no TCP-keepalive knob, so `dispatcher.tcp_keepalive_idle_seconds`
+  /// no longer applies to the sink PULL socket; keepalive was stability-only (remote-worker NAT
+  /// mappings) and the lease reaper remains the correctness net.
   pub fn start(
     &self,
     services_arc: &Arc<server::ServiceCache>,
@@ -168,15 +212,6 @@ impl Sink {
     done_tx: &SyncSender<TaskReport>,
     job_limit: Option<usize>,
   ) -> Result<(), Box<dyn Error>> {
-    // Ok, let's bind to a port and start broadcasting
-    let context = zmq::Context::new();
-    let sink = context.socket(zmq::PULL)?;
-    // Keep idle remote-worker result connections alive across NAT/firewall idle-timeouts (set
-    // before bind so accepted connections inherit it). See `server::apply_tcp_keepalive`.
-    server::apply_tcp_keepalive(&sink, config().dispatcher.tcp_keepalive_idle_seconds)?;
-    let address = format!("tcp://*:{}", self.port);
-    sink.bind(&address).unwrap();
-
     // Hard cap on a single result's on-disk size (config `dispatcher.max_result_bytes`, default
     // 2 GiB): a runaway worker must not fill `/data`.
     let max_result_bytes = config().dispatcher.max_result_bytes;
@@ -195,237 +230,190 @@ impl Sink {
     }
     let mut next_writer = 0_usize;
 
-    let mut sink_job_count: usize = 0;
-    // Rate-limited logging for discarded replies (malformed envelopes, unknown task ids). A
-    // sustained bad-reply flood must not turn per-message `stderr` writes into a throughput-DoS
-    // (KNOWN_ISSUES D-11) — count, don't narrate.
-    let mut discard_log = server::RateLimitedLog::new(Duration::from_secs(5));
+    let address = format!("tcp://0.0.0.0:{}", self.port);
 
-    loop {
-      // Fail-fast: a writer thread that died (e.g. a panic in `generate_report`) must bring down
-      // the dispatcher, not leave a half-working pipeline. Detect it promptly here (and again
-      // via a send error below) so the manager aborts for a supervised restart (CLAUDE.md
-      // fail-fast).
-      if let Some(idx) = writer_handles.iter().position(JoinHandle::is_finished) {
-        return Err(Box::new(io::Error::other(format!(
-          "sink writer thread {idx} died unexpectedly; aborting for a supervised restart"
-        ))));
-      }
+    // A current-thread runtime is right: there is one PULL socket and one receive loop, and
+    // blocking it on writer/done-channel backpressure is exactly the flow control we want (stop
+    // receiving when the pipeline downstream is full). The writer pool threads drain
+    // independently, so a blocking send here always makes progress.
+    let runtime = tokio::runtime::Builder::new_current_thread()
+      .enable_all()
+      .build()?;
 
-      let mut recv_msg = zmq::Message::new();
-      let mut identity_msg = zmq::Message::new();
-      let mut taskid_msg = zmq::Message::new();
-      let mut service_msg = zmq::Message::new();
+    let recv_result: Result<(), Box<dyn Error>> = runtime.block_on(async {
+      let mut pull = PullSocket::new();
+      pull.bind(&address).await.map_err(|e| {
+        io::Error::other(format!("sink: zeromq bind {address} failed: {e}"))
+      })?;
 
-      // Read the reply envelope `[identity, service, taskid, ...data]`. A malformed / empty /
-      // truncated reply (a worker crash mid-send, or a hostile post: no frames, id-only, etc.)
-      // would otherwise desync the multipart framing of the *next* reply — the sink would
-      // read the next reply's frames as this one's. So require `RCVMORE` after each header
-      // frame: if the message ends early its frames are already fully consumed, and skipping
-      // it leaves the next reply to parse cleanly. (Envelope robustness — torture-tested by
-      // the bad-reply barrage.)
-      sink.recv(&mut identity_msg, 0)?;
-      let identity = identity_msg.as_str().unwrap_or("_worker_");
-      if !sink.get_rcvmore().unwrap_or(false) {
-        if let Some(n) = discard_log.record() {
-          warn!(
-            "sink: discarded {n} malformed reply(ies) [latest: truncated after identity {identity:?}] (rate-limited)"
-          );
+      let mut sink_job_count: usize = 0;
+      // Rate-limited logging for discarded replies (malformed envelopes, unknown task ids). A
+      // sustained bad-reply flood must not turn per-message `stderr` writes into a throughput-DoS
+      // (KNOWN_ISSUES D-11) — count, don't narrate.
+      let mut discard_log = server::RateLimitedLog::new(Duration::from_secs(5));
+
+      loop {
+        // Fail-fast: a writer thread that died (e.g. a panic in `generate_report`) must bring down
+        // the dispatcher, not leave a half-working pipeline. Detect it promptly here (and again via
+        // a send error below) so the manager aborts for a supervised restart (CLAUDE.md fail-fast).
+        if let Some(idx) = writer_handles.iter().position(JoinHandle::is_finished) {
+          return Err(Box::<dyn Error>::from(io::Error::other(format!(
+            "sink writer thread {idx} died unexpectedly; aborting for a supervised restart"
+          ))));
         }
-        continue;
-      }
-      sink.recv(&mut service_msg, 0)?;
-      let service_name = service_msg.as_str().unwrap_or("_unknown_");
-      if !sink.get_rcvmore().unwrap_or(false) {
-        if let Some(n) = discard_log.record() {
-          warn!(
-            "sink: discarded {n} malformed reply(ies) [latest: no taskid, worker {identity:?}] (rate-limited)"
-          );
-        }
-        continue;
-      }
-      sink.recv(&mut taskid_msg, 0)?;
-      let taskid_str = taskid_msg.as_str().unwrap_or("-1");
-      let taskid = taskid_str.parse::<i64>().unwrap_or(-1);
-      if !sink.get_rcvmore().unwrap_or(false) {
-        // A well-formed reply is `[identity, service, taskid, <≥1 data frame>]` — even an empty
-        // result carries one empty data frame (the worker's `respond_to_cortex` always sends one).
-        // No frame after the taskid means a truncated / malformed reply whose frames are *already
-        // fully consumed*. We must `continue` WITHOUT draining: the drain loops below `recv()`
-        // first and only then check `RCVMORE`, so on an already-complete message that first
-        // `recv()` would cross the message boundary and swallow the *entire next reply* — a
-        // real worker result read as this one's payload and lost, stranding its task
-        // `Queued` (KNOWN_ISSUES D-12). This is the taskid-frame analogue of the
-        // identity/service `RCVMORE` guards above; it completes the envelope hardening
-        // (D-4) for the no-data-frame case.
-        if let Some(n) = discard_log.record() {
-          warn!(
-            "sink: discarded {n} malformed reply(ies) [latest: no data frame after taskid {taskid:?}, worker {identity:?}] (rate-limited)"
-          );
-        }
-        continue;
-      }
 
-      // We have a job, count it
-      sink_job_count += 1;
-      let mut total_incoming = 0;
-      let request_time = chrono::Utc::now();
-      trace!(
-        "sink {sink_job_count:?}: incoming result for {service_name:?}, worker {identity:?}, taskid: {taskid}");
-
-      if let Some(task_progress) = progress_queue_arc.remove(taskid) {
-        let task = task_progress.task;
-        match server::get_service(service_name, services_arc) {
-          None => {
-            return Err(Box::new(io::Error::other(
-              "TODO: Server::get_service found nothing.",
-            )));
-          }, // TODO: Handle errors
-          Some(service) => {
-            if service.id == task.service_id {
-              // println!("Task and Service match up.");
-              if service.id == 1 {
-                // No payload needed for init — read its single (empty) data frame and report
-                // inline; no disk write, so no writer involved.
-                sink.recv(&mut recv_msg, 0)?;
-                let done_report = TaskReport {
-                  task,
-                  status: TaskStatus::NoProblem,
-                  messages: Vec::new(),
-                };
-                server::send_done(done_tx, done_report);
-              } else {
-                // Derive the result path up front (cheap, no I/O): `<entry-dir>/<service>.zip`. We
-                // do this *before* receiving the data frames so that even a path
-                // failure still drains the socket below (no desync) — only the
-                // write target differs.
-                let recv_path_opt = Path::new(&task.entry)
-                  .parent()
-                  .and_then(Path::to_str)
-                  .map(|dir| PathBuf::from(format!("{dir}/{}.zip", service.name)));
-
-                // Assign this task to a writer (round-robin) and open the stream. `Begin` moves the
-                // task to the writer; a send error means that writer died → fail-fast.
-                let widx = next_writer;
-                next_writer = (next_writer + 1) % num_writers;
-                let streaming = match recv_path_opt {
-                  Some(recv_path) => {
-                    if writer_txs[widx]
-                      .send(WriteCommand::Begin {
-                        task: Box::new(task),
-                        recv_path,
-                      })
-                      .is_err()
-                    {
-                      return Err(Box::new(io::Error::other(
-                        "sink writer thread died while beginning a result; aborting",
-                      )));
-                    }
-                    true
-                  },
-                  None => {
-                    warn!(
-                      "sink: could not derive a result path for task entry {:?}; draining + leaving Queued",
-                      task.entry
-                    );
-                    false
-                  },
-                };
-
-                // Receive the rest of the input. Stream each data frame to the writer (or just
-                // drain it, if we have no valid target), enforcing the hard size
-                // cap on the receive side (the receive loop knows the running byte
-                // total as frames arrive).
-                let mut oversized = false;
-                while sink.recv(&mut recv_msg, 0).is_ok() {
-                  // Hard cap: a result over `max_result_bytes` must not be written (disk
-                  // protection). Stop forwarding, drain the rest of the message frame-by-frame
-                  // (bounded memory — never the whole reply resident) to resync the socket, and
-                  // reject the task on the writer side.
-                  if total_incoming + recv_msg.len() > max_result_bytes {
-                    oversized = true;
-                    while sink.get_rcvmore().unwrap_or(false) {
-                      let _ = sink.recv(&mut recv_msg, 0);
-                    }
-                    break;
-                  }
-                  if streaming
-                    && writer_txs[widx]
-                      .send(WriteCommand::Chunk(recv_msg.deref().to_vec()))
-                      .is_err()
-                  {
-                    return Err(Box::new(io::Error::other(
-                      "sink writer thread died while streaming a result; aborting",
-                    )));
-                  }
-                  total_incoming += recv_msg.len();
-                  match sink.get_rcvmore() {
-                    Ok(true) => {}, // keep receiving
-                    _ => break,     /* println!("Error TODO: sink.get_rcvmore failed:
-                                      * {:?}", e); */
-                  };
-                }
-
-                // Close the stream: commit the written result (→ generate_report → finalize) or
-                // reject the over-cap one. A send error means the writer died → fail-fast.
-                if streaming {
-                  let cmd = if oversized {
-                    WriteCommand::Reject { max_result_bytes }
-                  } else {
-                    WriteCommand::Commit
-                  };
-                  if writer_txs[widx].send(cmd).is_err() {
-                    return Err(Box::new(io::Error::other(
-                      "sink writer thread died while finishing a result; aborting",
-                    )));
-                  }
-                }
-              }
-              // Also update worker metadata (non-blocking enqueue to the background writer)
-              self
-                .metadata
-                .received(identity.to_string(), service.id, taskid);
-            } else {
-              // Otherwise just discard the rest of the message
-              if let Some(n) = discard_log.record() {
-                warn!(
-                  "sink: discarded {n} reply(ies) [latest: service-id mismatch — requested {:?}, task is {:?}, task {taskid:?}] (rate-limited)",
-                  service.id, task.service_id
-                );
-              }
-              while sink.recv(&mut recv_msg, 0).is_ok() {
-                if !sink.get_rcvmore()? {
-                  break;
-                }
-              }
-            }
+        // One atomic multipart message: `[identity, service, taskid, ...data]`. No RCVMORE dance —
+        // the whole message arrives at once, so a short/malformed reply is just a short frame
+        // vector (handled by `parse_reply_envelope`), never a desync of the next reply.
+        let msg = match pull.recv().await {
+          Ok(m) => m,
+          Err(e) => {
+            return Err(Box::<dyn Error>::from(io::Error::other(format!(
+              "sink: zeromq recv failed: {e}"
+            ))))
           },
         };
-      } else {
-        // No such task, just discard the next message from the sink
-        if let Some(n) = discard_log.record() {
+
+        let header = match parse_reply_envelope(&msg) {
+          Ok(h) => h,
+          Err(reason) => {
+            if let Some(n) = discard_log.record() {
+              warn!("sink: discarded {n} malformed reply(ies) [latest: {reason}] (rate-limited)");
+            }
+            continue;
+          },
+        };
+
+        sink_job_count += 1;
+        let taskid = header.taskid;
+        let request_time = chrono::Utc::now();
+        trace!(
+          "sink {sink_job_count}: incoming result for {:?}, worker {:?}, taskid: {taskid}",
+          header.service,
+          header.identity
+        );
+
+        if let Some(task_progress) = progress_queue_arc.remove(taskid) {
+          let task = task_progress.task;
+          match server::get_service(&header.service, services_arc) {
+            None => {
+              return Err(Box::<dyn Error>::from(io::Error::other(
+                "sink: get_service found nothing",
+              )));
+            },
+            Some(service) => {
+              if service.id == task.service_id {
+                if service.id == 1 {
+                  // No payload needed for init — its (empty) data frames are ignored; report inline,
+                  // no disk write, so no writer involved.
+                  server::send_done(
+                    done_tx,
+                    TaskReport {
+                      task,
+                      status: TaskStatus::NoProblem,
+                      messages: Vec::new(),
+                    },
+                  );
+                } else {
+                  // Derive the result path (cheap, no I/O): `<entry-dir>/<service>.zip`.
+                  let recv_path_opt = Path::new(&task.entry)
+                    .parent()
+                    .and_then(Path::to_str)
+                    .map(|dir| PathBuf::from(format!("{dir}/{}.zip", service.name)));
+
+                  // Hard size cap (disk protection): sum the data frames; an over-cap result is
+                  // rejected (Invalid) without being written. The whole multipart message is already
+                  // received (ZMQ delivers it atomically — true of libzmq too), so this is the same
+                  // disk-protection guarantee as the streamed check, just computed up front.
+                  let data_bytes: usize = msg.iter().skip(3).map(|f| f.len()).sum();
+                  let oversized = data_bytes > max_result_bytes;
+
+                  let widx = next_writer;
+                  next_writer = (next_writer + 1) % num_writers;
+                  match recv_path_opt {
+                    Some(recv_path) => {
+                      // `Begin` moves the task to the writer; a send error means that writer died →
+                      // fail-fast.
+                      if writer_txs[widx]
+                        .send(WriteCommand::Begin {
+                          task: Box::new(task),
+                          recv_path,
+                        })
+                        .is_err()
+                      {
+                        return Err(Box::<dyn Error>::from(io::Error::other(
+                          "sink writer thread died while beginning a result; aborting",
+                        )));
+                      }
+                      if oversized {
+                        if writer_txs[widx]
+                          .send(WriteCommand::Reject { max_result_bytes })
+                          .is_err()
+                        {
+                          return Err(Box::<dyn Error>::from(io::Error::other(
+                            "sink writer thread died while rejecting a result; aborting",
+                          )));
+                        }
+                      } else {
+                        for frame in msg.iter().skip(3) {
+                          if writer_txs[widx]
+                            .send(WriteCommand::Chunk(frame.to_vec()))
+                            .is_err()
+                          {
+                            return Err(Box::<dyn Error>::from(io::Error::other(
+                              "sink writer thread died while streaming a result; aborting",
+                            )));
+                          }
+                        }
+                        if writer_txs[widx].send(WriteCommand::Commit).is_err() {
+                          return Err(Box::<dyn Error>::from(io::Error::other(
+                            "sink writer thread died while finishing a result; aborting",
+                          )));
+                        }
+                      }
+                    },
+                    None => {
+                      warn!(
+                        "sink: could not derive a result path for task entry {:?}; leaving Queued",
+                        task.entry
+                      );
+                    },
+                  }
+                }
+                // Update worker metadata (non-blocking enqueue to the background writer).
+                self
+                  .metadata
+                  .received(header.identity.clone(), service.id, taskid);
+              } else if let Some(n) = discard_log.record() {
+                warn!(
+                  "sink: discarded {n} reply(ies) [latest: service-id mismatch — service {:?} (id {}), task is {}, task {taskid}] (rate-limited)",
+                  header.service, service.id, task.service_id
+                );
+              }
+            },
+          };
+        } else if let Some(n) = discard_log.record() {
+          // No such in-flight task — drop the message (already fully received; nothing to drain).
           warn!(
-            "sink: discarded {n} reply(ies) for unknown task id(s) [latest: {taskid:?}] (rate-limited)"
+            "sink: discarded {n} reply(ies) for unknown task id(s) [latest: {taskid}] (rate-limited)"
           );
         }
-        while sink.recv(&mut recv_msg, 0).is_ok() {
-          if !sink.get_rcvmore()? {
+
+        let request_duration = (chrono::Utc::now() - request_time).num_milliseconds();
+        let total_incoming: usize = msg.iter().skip(3).map(|f| f.len()).sum();
+        trace!(
+          "sink {sink_job_count}: received {total_incoming} bytes, recv took {request_duration}ms."
+        );
+
+        if let Some(limit_number) = job_limit {
+          if sink_job_count >= limit_number {
+            info!("sink {limit_number}: job limit reached, terminating Sink thread...");
             break;
           }
         }
       }
-      let responded_time = chrono::Utc::now();
-      let request_duration = (responded_time - request_time).num_milliseconds();
-      trace!(
-        "sink {sink_job_count}: received {total_incoming} bytes, recv took {request_duration}ms."
-      );
-      if let Some(limit_number) = job_limit {
-        if sink_job_count >= limit_number {
-          info!("sink {limit_number}: job limit reached, terminating Sink thread...");
-          break;
-        }
-      }
-    }
+      Ok(())
+    });
 
     // Shut the writer pool down cleanly: dropping the senders disconnects each writer's channel; it
     // drains any buffered commands first (so the final `Commit` still reaches finalize —
@@ -435,6 +423,68 @@ impl Sink {
     for handle in writer_handles {
       let _ = handle.join();
     }
-    Ok(())
+    recv_result
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::parse_reply_envelope;
+  use bytes::Bytes;
+  use zeromq::ZmqMessage;
+
+  /// Build a `ZmqMessage` from frame byte-slices (the test analogue of a received reply).
+  fn message(frames: &[&[u8]]) -> ZmqMessage {
+    let mut iter = frames.iter();
+    let first = iter.next().expect("at least one frame");
+    let mut msg = ZmqMessage::from(first.to_vec());
+    for f in iter {
+      msg.push_back(Bytes::copy_from_slice(f));
+    }
+    msg
+  }
+
+  #[test]
+  fn parses_a_well_formed_reply() {
+    // [identity, service, taskid, data] — the minimal valid reply (one data frame).
+    let msg = message(&[b"worker-7", b"tex_to_html", b"4242", b"<zip bytes>"]);
+    let header = parse_reply_envelope(&msg).expect("valid envelope");
+    assert_eq!(header.identity, "worker-7");
+    assert_eq!(header.service, "tex_to_html");
+    assert_eq!(header.taskid, 4242);
+  }
+
+  #[test]
+  fn rejects_a_reply_with_no_data_frame() {
+    // Exactly 3 frames (no data) is the D-12 shape — must be discarded, not accepted. With atomic
+    // message delivery this can no longer swallow the next reply (it's just a short frame vector).
+    let msg = message(&[b"worker-7", b"tex_to_html", b"4242"]);
+    assert!(parse_reply_envelope(&msg).is_err());
+  }
+
+  #[test]
+  fn rejects_an_empty_or_identity_only_reply() {
+    assert!(parse_reply_envelope(&message(&[b""])).is_err());
+    assert!(parse_reply_envelope(&message(&[b"worker-7"])).is_err());
+    assert!(parse_reply_envelope(&message(&[b"worker-7", b"svc"])).is_err());
+  }
+
+  #[test]
+  fn defaults_a_non_numeric_taskid_to_minus_one() {
+    let msg = message(&[b"w", b"svc", b"not-a-number", b"data"]);
+    let header = parse_reply_envelope(&msg).expect("valid frame count");
+    assert_eq!(
+      header.taskid, -1,
+      "an unpar'seable taskid is -1 (unknown), not a panic"
+    );
+  }
+
+  #[test]
+  fn tolerates_non_utf8_header_frames() {
+    // A hostile/garbled identity must not panic the parse — it falls back to the default label.
+    let msg = message(&[&[0xff, 0xfe], b"svc", b"7", b"data"]);
+    let header = parse_reply_envelope(&msg).expect("valid frame count");
+    assert_eq!(header.identity, "_worker_");
+    assert_eq!(header.taskid, 7);
   }
 }
