@@ -120,6 +120,24 @@ a:focus {
   background-color: var(--ink-soft);
 }
 
+/* Distinguish the right-side action group (Overview / Admin / Theme) from the left breadcrumb trail:
+   render them as compact bordered pill controls, so they don't read as part of the "where am I"
+   path even when the two sit close together. */
+.navbar-default .cortex-admin-nav > li > a {
+  margin: 9px 3px;
+  padding: 6px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  line-height: 1.1;
+  color: var(--ink-soft);
+}
+.navbar-default .cortex-admin-nav > li > a:hover,
+.navbar-default .cortex-admin-nav > li > a:focus {
+  background-color: var(--bg-elev);
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
 /* Tables (reports, registries, job lists). */
 .table {
   color: var(--ink);
@@ -206,7 +224,7 @@ button:not([class]):hover {
 }
 button.danger,
 .btn.danger,
-.danger {
+a.danger {
   background-color: transparent;
   background-image: none;
   color: var(--bad);
@@ -215,9 +233,30 @@ button.danger,
   padding: 4px 10px;
 }
 button.danger:hover,
-.btn.danger:hover {
+.btn.danger:hover,
+a.danger:hover {
   background-color: var(--bad);
   color: #fff;
+}
+
+/* Severity-tinted report rows (e.g. the task-list / fatal pages use `tr.{success,warning,error,
+   danger,info}` from `severity_highlight`). Theme-aware + saturated: blend the severity hue into the
+   elevated surface so the band reads clearly in both paper and midnight, while the row text stays
+   `--ink`. Overrides Bootstrap's pale contextual colors (set on `> td`, so striping can't bleed). */
+.table > tbody > tr.success > td {
+  background-color: color-mix(in srgb, var(--ok) 16%, var(--bg-elev));
+}
+.table > tbody > tr.warning > td {
+  background-color: color-mix(in srgb, var(--warn) 20%, var(--bg-elev));
+}
+.table > tbody > tr.error > td {
+  background-color: color-mix(in srgb, var(--bad) 15%, var(--bg-elev));
+}
+.table > tbody > tr.danger > td {
+  background-color: color-mix(in srgb, var(--bad) 24%, var(--bg-elev));
+}
+.table > tbody > tr.info > td {
+  background-color: color-mix(in srgb, var(--accent) 14%, var(--bg-elev));
 }
 
 /* Code, rules, muted text, status helpers. */
