@@ -35,8 +35,6 @@
   --space-md: 1rem;
   --space-lg: 1.5rem;
   --space-xl: 2rem;
-  /* The centered main-content column width for report layouts (replaces the dead Bootstrap grid). */
-  --report-col-width: 83.333%;
 }
 :root[data-theme="midnight"] {
   --bg: #161618;
@@ -426,15 +424,19 @@ hr {
   flex-wrap: wrap;
   gap: 0.75rem;
   margin: 0.5rem 0 1rem;
+  /* Content-sized cards centre as a group (and a partial last row stays centred). */
+  justify-content: center;
 }
 .admin-status .admin-card {
-  flex: 1 1 9.5rem;
+  /* `flex-basis: auto` sizes each card to its OWN content, so a card holding a large corpus count
+     (e.g. 2,925,766 pending tasks, paired with `.stat-number { white-space: nowrap }`) grows wide
+     enough to keep the number on one line, instead of every card sharing an equal width too narrow
+     for 7–8 digits. `min-width` is just a floor for the small ("0") cards. */
+  flex: 1 1 auto;
   min-width: 9.5rem;
   text-align: center;
-  /* Stat cards hold large corpus counts (e.g. 2,925,766 pending tasks) — keep numbers/words intact
-     (wrap only at spaces) rather than breaking mid-value like the base `.admin-card` does for long
-     run descriptions. Paired with `.stat-number { white-space: nowrap }` so the headline never
-     breaks and the card grows to fit it. */
+  /* Keep words/numbers intact (wrap only at spaces) rather than breaking mid-value like the base
+     `.admin-card` does for long run descriptions. */
   overflow-wrap: normal;
 }
 .admin-card.wide {
@@ -476,11 +478,11 @@ hr {
 .gap-bottom {
   margin-bottom: var(--space-md);
 }
-/* The centered main-content column for report layouts — a real replacement for the dead
-   `.row`/`.col-md-1`/`.col-md-10` Bootstrap classes (undefined no-ops). One canonical scaffold for
-   every tabular page (the tabular DRY pass). */
+/* Full-width content wrapper that replaces the dead `.row`/`.col-md-1`/`.col-md-10` Bootstrap no-ops
+   — one canonical scaffold for every tabular page. Report tables centre WITHIN it via the unified
+   `.table { margin-inline: auto }` rule; deliberately NOT a `max-width` reading-column, which clipped
+   and off-centred wide tables (e.g. the 10-column /jobs table). */
 .report-layout {
-  max-width: var(--report-col-width);
   margin-left: auto;
   margin-right: auto;
 }
