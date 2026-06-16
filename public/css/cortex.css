@@ -11,7 +11,9 @@
   --bg-sunken: #cdccc3;
   --ink: #1a1a1a;
   --ink-soft: #4a4a4a;
-  --ink-muted: #6e6e68;
+  /* Muted/secondary text. Darkened from #6e6e68 (3.69:1, failed WCAG AA) to reach 4.62:1 on --bg
+     (5.08 on --bg-elev) so timestamps/hints/descriptions clear AA for normal text. */
+  --ink-muted: #5f5f5a;
   --rule: #b9b8af;
   --rule-soft: #ceccc2;
   --accent: #7a3e9d;
@@ -42,7 +44,9 @@
   --bg-sunken: #101013;
   --ink: #e8e4dc;
   --ink-soft: #b8b3a8;
-  --ink-muted: #807a70;
+  /* Muted/secondary text. Lightened from #807a70 (3.95:1 on --bg-elev, failed WCAG AA) to reach
+     4.59:1 on --bg-elev (4.94 on --bg) so muted text clears AA for normal text in the dark theme. */
+  --ink-muted: #8b857c;
   --rule: #2a2a30;
   --rule-soft: #1f1f24;
   --accent: #c79bff;
