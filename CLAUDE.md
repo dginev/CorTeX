@@ -82,8 +82,10 @@ additionally needs `latexmlc` (skips otherwise): `cargo test`.
   acquisition** (pool/bound connections, threads, in-flight work), **no `unwrap`/`expect`/`panic!` on
   request or dispatch paths** (return `Result`, log, count, continue — never drop work silently),
   isolate blast radius, degrade gracefully, idempotent crash-consistent writes. Record every
-  resilience gap you find in [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) (the running ledger —
+  resilience gap you find in [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) (the **bugs-only** ledger —
   owner: *we go back and solve them all at the end*); never fix-and-forget or leave a gap unrecorded.
+  Mitigated items with a documented upgrade path (accepted trade-offs, owner cost-calls) are **stretch
+  goals, not bugs** — record those in [`docs/POSSIBLE_UPGRADES.md`](docs/POSSIBLE_UPGRADES.md) instead.
 - **Style:** `.rustfmt.toml` (2-space indent, custom). Run `cargo fmt`; `cargo clippy` must stay
   clean. `src/lib.rs` has `#![deny(missing_docs)]` — **every public item needs a doc comment.**
 - **License header:** every source file starts with the MIT copyright block (copy an existing file).
