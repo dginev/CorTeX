@@ -61,7 +61,7 @@
   <form method="post" action="/corpus/{{global.corpus_name_uri}}/activate">
     <p>Register a service on this corpus:</p>
     <p>
-      <select name="service" required>
+      <select name="service" aria-label="Service to register on this corpus" required>
         {% for service in all_services %}
         <option value="{{ service.name }}">{{ service.name }}</option>
         {% endfor %}
@@ -78,21 +78,21 @@
   <form method="post" action="/corpus/{{global.corpus_name_uri}}/sandbox">
     <p>Carve a sandbox corpus from a message-condition filter:</p>
     <p>
-      <input type="text" name="name" placeholder="new sandbox name" size="20" required>
-      <select name="service_id" required>
+      <input type="text" name="name" placeholder="new sandbox name" aria-label="New sandbox corpus name" size="20" required>
+      <select name="service_id" aria-label="Service whose results to filter" required>
         {% for service in services %}
         <option value="{{ service.id }}">{{ service.name }}</option>
         {% endfor %}
       </select>
-      <select name="severity" required>
+      <select name="severity" aria-label="Severity to capture" required>
         <option value="no_problem">no_problem</option>
         <option value="warning" selected>warning</option>
         <option value="error">error</option>
         <option value="fatal">fatal</option>
         <option value="invalid">invalid</option>
       </select>
-      <input type="text" name="category" placeholder="category (optional)" size="16">
-      <input type="text" name="what" placeholder="what (optional)" size="16">
+      <input type="text" name="category" placeholder="category (optional)" aria-label="Message category (optional)" size="16">
+      <input type="text" name="what" placeholder="what (optional)" aria-label="Message what filter (optional)" size="16">
       <button type="submit">Create sandbox</button>
     </p>
   </form>

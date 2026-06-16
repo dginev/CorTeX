@@ -9,14 +9,14 @@
     <p>Enter a CorTeX admin token to reach the administration dashboard.</p>
     <form method="post" action="/admin/login">
       {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
-      <p><input type="password" name="token" placeholder="admin token" required autofocus></p>
+      <p><input type="password" name="token" placeholder="admin token" aria-label="Admin token" required autofocus></p>
       <button type="submit">Sign in</button>
     </form>
 
     {% if passkeys_enabled %}
     <div style="margin-top:1.5rem; border-top:1px solid var(--rule); padding-top:1rem;">
       <p>or sign in with a passkey:</p>
-      <p><input type="text" id="passkey-owner" placeholder="your name" autocomplete="username webauthn"></p>
+      <p><input type="text" id="passkey-owner" placeholder="your name" aria-label="Your name (for passkey sign-in)" autocomplete="username webauthn"></p>
       <button type="button" id="signin-passkey" {% if next %}data-next="{{ next }}"{% endif %}><i class="fa fa-key"></i>&nbsp; Sign in with a passkey</button>
       <p id="passkey-error" class="status-bad" style="margin-top:0.5rem;"></p>
     </div>
