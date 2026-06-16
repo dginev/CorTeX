@@ -26,7 +26,7 @@ use crate::backend::{
   TaskReportOptions,
 };
 use crate::frontend::actor::{require_admin, Actor, AdminReject, AdminSession};
-use crate::frontend::concerns::serve_report;
+use crate::frontend::concerns::{serve_report, LiveReportLimiter};
 use crate::frontend::params::{ReportParams, MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE};
 use crate::helpers::TaskStatus;
 use crate::jobs;
@@ -757,15 +757,24 @@ pub fn severity_service_report(
 }
 
 /// Severity-level report with paging/all-messages query params.
+#[allow(clippy::too_many_arguments)]
 #[get("/corpus/<corpus_name>/<service_name>/<severity>?<params..>")]
-pub fn severity_service_report_all(
+pub async fn severity_service_report_all(
   corpus_name: String,
   service_name: String,
   severity: String,
   params: Option<ReportParams>,
   session: Option<AdminSession>,
+  limiter: &State<LiveReportLimiter>,
   pool: &State<DbPool>,
 ) -> Result<Template, Status> {
+  // Gate the expensive live `?all=true` aggregation: acquire a permit BEFORE checking out a pooled
+  // connection so a burst can't pin the pool and 503 others (P-2). Paged/non-all requests through
+  // this route are rollup-fast and skip the permit.
+  let _permit = match params.as_ref().and_then(|p| p.all) {
+    Some(true) => Some(limiter.acquire().await?),
+    _ => None,
+  };
   let mut connection = pooled(pool)?;
   serve_report(
     &mut connection,
@@ -803,16 +812,24 @@ pub fn category_service_report(
 }
 
 /// Category-level report with paging/all-messages query params.
+#[allow(clippy::too_many_arguments)]
 #[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>?<params..>")]
-pub fn category_service_report_all(
+pub async fn category_service_report_all(
   corpus_name: String,
   service_name: String,
   severity: String,
   category: String,
   params: Option<ReportParams>,
   session: Option<AdminSession>,
+  limiter: &State<LiveReportLimiter>,
   pool: &State<DbPool>,
 ) -> Result<Template, Status> {
+  // Gate the expensive live `?all=true` aggregation behind the limiter (P-2); see the severity
+  // variant above. Cheap paged requests skip the permit.
+  let _permit = match params.as_ref().and_then(|p| p.all) {
+    Some(true) => Some(limiter.acquire().await?),
+    _ => None,
+  };
   let mut connection = pooled(pool)?;
   serve_report(
     &mut connection,

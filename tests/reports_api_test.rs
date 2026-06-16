@@ -207,6 +207,24 @@ fn category_and_what_reports_match_seed() {
     "offset past ENTRY_LIST_MAX_OFFSET -> 400 (no multi-second deep scan)"
   );
 
+  // --- The human live `?all=true` report is gated by the P-2 bounded-concurrency limiter but still
+  //     serves the page (this seed is tiny, so the live aggregation is fast). Two sequential hits
+  //     exercise the permit acquire-before-pool path + RAII release — a leaked permit would still
+  //     pass the first but the limiter is sized > 1 so this mainly pins "the gate doesn't break
+  // it".
+  for _ in 0..2 {
+    let response = client
+      .get(format!(
+        "/corpus/{CORPUS_NAME}/{SERVICE_NAME}/warning?all=true"
+      ))
+      .dispatch();
+    assert_eq!(
+      response.status(),
+      Status::Ok,
+      "the limiter-gated ?all=true live report still serves (permit acquired + released)"
+    );
+  }
+
   // --- Guards ----------------------------------------------------------------------------------
   let response = client
     .get(format!("/api/reports/{CORPUS_NAME}/{SERVICE_NAME}/bogus"))

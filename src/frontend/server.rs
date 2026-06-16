@@ -76,6 +76,9 @@ pub fn mount_api_with(
     // ceremony store. See `frontend::webauthn`.
     .manage(crate::frontend::webauthn::build_state(&config().webauthn))
     .manage(crate::frontend::webauthn::CeremonyStore::new())
+    // Bounds concurrent expensive live (`?all=true`) report aggregations so a burst can't exhaust
+    // the connection pool and 503 other requests (KNOWN_ISSUES P-2).
+    .manage(crate::frontend::concerns::LiveReportLimiter::default())
     .mount("/", management::routes())
     .mount("/", corpora::routes())
     .mount("/", reports::routes())

@@ -5,10 +5,12 @@ use rocket::fs::NamedFile;
 use rocket::http::Status;
 use rocket::response::status::{Accepted, NotFound};
 use rocket::serde::json::Json;
+use rocket::tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use rocket::{get, post, routes, Route, State};
 use rocket_dyn_templates::Template;
 use std::collections::HashMap;
 use std::str;
+use std::sync::Arc;
 
 use crate::backend::{
   mark_rerun, progress_report, save_historical_tasks, DbPool, PooledConn, RerunOptions,
@@ -27,6 +29,43 @@ pub const UNKNOWN: &str = "_unknown_";
 /// rollup-backed reports return in ~10–90 ms, so this only fires on the expensive `all=true` /
 /// large-corpus live aggregations, not normal traffic.
 const SLOW_REPORT_WARN_MS: i64 = 2000;
+
+/// Default cap on concurrent expensive **live** (`?all=true`) report aggregations (KNOWN_ISSUES
+/// P-2). Each such request holds a pooled connection for its whole multi-second run, so without a
+/// bound a burst can exhaust the pool (default 32) and `503` every other request. Four lets a small
+/// flurry through while leaving the bulk of the pool for cheap rollup-backed traffic.
+pub const MAX_CONCURRENT_LIVE_REPORTS: usize = 4;
+
+/// Bounds how many expensive live (`?all=true`) report aggregations run at once so a burst can't
+/// saturate the frontend connection pool and `503` other requests (KNOWN_ISSUES P-2, owner-chosen
+/// mitigation). A permit is acquired **before** a pooled connection is checked out, and the
+/// `(N+1)`th expensive request **waits asynchronously** (no worker thread or DB connection held)
+/// rather than being rejected — it changes no result and rejects nothing, pure blast-radius
+/// isolation (DESIGN_PRINCIPLES #6). Cheap rollup-backed and paged reports never take a permit.
+// ponytail: a const cap; promote to a `config.web` knob if a deployment needs to tune it.
+pub struct LiveReportLimiter(Arc<Semaphore>);
+
+impl LiveReportLimiter {
+  /// Builds a limiter capping concurrent live reports at `max_concurrent` (clamped to ≥1).
+  pub fn new(max_concurrent: usize) -> Self {
+    LiveReportLimiter(Arc::new(Semaphore::new(max_concurrent.max(1))))
+  }
+
+  /// Acquires a permit, awaiting asynchronously if all are currently in use. The returned guard
+  /// releases the permit on drop. Errs only if the semaphore were closed (it never is).
+  pub async fn acquire(&self) -> Result<OwnedSemaphorePermit, Status> {
+    self
+      .0
+      .clone()
+      .acquire_owned()
+      .await
+      .map_err(|_| Status::ServiceUnavailable)
+  }
+}
+
+impl Default for LiveReportLimiter {
+  fn default() -> Self { Self::new(MAX_CONCURRENT_LIVE_REPORTS) }
+}
 
 /// Prepare a configurable report for a <corpus,server> pair, reading over the caller-supplied
 /// (pooled) `connection` — no per-request fresh `Backend::default()`. `404` on unknown
@@ -700,4 +739,38 @@ pub fn routes() -> Vec<Route> {
     rerun_what,
     savetasks
   ]
+}
+
+#[cfg(test)]
+mod live_report_limiter_tests {
+  use super::LiveReportLimiter;
+
+  #[test]
+  fn caps_then_releases_permits() {
+    let limiter = LiveReportLimiter::new(1);
+    assert_eq!(limiter.0.available_permits(), 1);
+    {
+      let _permit = limiter
+        .0
+        .clone()
+        .try_acquire_owned()
+        .expect("first permit available");
+      assert!(
+        limiter.0.clone().try_acquire_owned().is_err(),
+        "exhausted at the cap of 1"
+      );
+    }
+    // The guard dropped at the block end, so the permit is restored (RAII release).
+    assert_eq!(limiter.0.available_permits(), 1, "permit released on drop");
+    assert!(
+      limiter.0.clone().try_acquire_owned().is_ok(),
+      "reacquire succeeds after release"
+    );
+  }
+
+  #[test]
+  fn zero_is_clamped_to_one() {
+    let limiter = LiveReportLimiter::new(0);
+    assert_eq!(limiter.0.available_permits(), 1, "a 0 cap can't deadlock");
+  }
 }
