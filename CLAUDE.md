@@ -56,11 +56,13 @@ read it before non-trivial work. Active work branch: **`productize-2026`**.
 Build deps (Ubuntu; not yet installed on a fresh box):
 ```bash
 sudo apt install -y postgresql libpq-dev libzmq3-dev libsodium-dev pkg-config
-cargo install diesel_cli --no-default-features --features postgres   # until embedded migrations land
+cargo install diesel_cli --no-default-features --features postgres   # only for the test DB / authoring migrations
 ```
-Then (from repo root): `diesel migration run`, copy `config.default.json` → `config.json`,
-`cargo build`. Toolchain is **nightly** (`rust-toolchain.toml`, floating). DB on
-**NVMe, never `/data`** (QLC RAID6 is wrong for an OLTP DB).
+Then (from repo root): `cargo build`, then `cortex init` — migrations are **embedded**
+(`src/migrations.rs`), so `init` self-migrates the production DB and scaffolds `cortex.toml` with **no
+`diesel_cli` on the host**; `cortex doctor` verifies. (diesel_cli above is still needed to migrate the
+*test* DB and to author new migrations.) Toolchain is **nightly** (`rust-toolchain.toml`, floating).
+DB on **NVMe, never `/data`** (QLC RAID6 is wrong for an OLTP DB).
 
 Tests are integration-heavy and need a live test DB (`TEST_DATABASE_URL`); `tex_to_html_test`
 additionally needs `latexmlc` (skips otherwise): `cargo test`.

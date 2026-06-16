@@ -4,10 +4,12 @@ A complete, step-by-step installation for the **entire** CorTeX system, verified
 **Ubuntu 26.04 with PostgreSQL 18** (the `cortex` production node). Every command below was run
 end-to-end on a clean box; copy-paste them in order.
 
-> **Coming soon (productize-2026):** a single `cortex init` command will collapse Steps 3–6 into a
-> guided, self-healing bootstrap (see [`docs/PRODUCTIZING_PLAN.md`](docs/PRODUCTIZING_PLAN.md),
-> Arm 2). Until then, this manual path is the supported installation, and `cortex init` will be
-> built to reproduce exactly these steps.
+> **Fast path (productize-2026):** once the binaries are built (Step 6), a single **`cortex init`**
+> applies the embedded migrations and scaffolds `cortex.toml` — **no `diesel_cli` needed** — and
+> `cortex doctor` verifies the install (see [`docs/PRODUCTIZING_PLAN.md`](docs/PRODUCTIZING_PLAN.md),
+> Arm 2). The manual steps below remain the explicit, transparent reference for what `cortex init`
+> automates; you only need the diesel_cli path in Step 5 for the *test* database or when authoring
+> new migrations.
 
 ---
 
@@ -132,20 +134,24 @@ token updates its owner.
 
 ## 5. Database schema (migrations)
 
-Install the Diesel CLI (PostgreSQL only) and apply the migrations to **both** databases:
+The migrations under `migrations/` are **embedded in the binary** (`src/migrations.rs`), so the
+production database is migrated by **`cortex init`** after the build (Step 6) — **no `diesel_cli` on
+the host**. That is the supported deployment path; you can skip ahead to Step 6 and let `cortex init`
+apply the schema.
+
+`diesel_cli` is only needed for the **test** database (the test harness does not run `cortex init`)
+and for *authoring* new migrations:
 
 ```bash
 cargo install diesel_cli --no-default-features --features postgres
 
-# production database (uses DATABASE_URL from .env)
-diesel migration run
-
-# test database
+# test database (production is migrated by `cortex init` in Step 7)
 DATABASE_URL="postgres://cortex_tester:cortex_tester@localhost/cortex_tester" diesel migration run
 ```
 
-Verify the schema landed (you should see `corpora`, `services`, `tasks`, the five `log_*` tables,
-`historical_runs`, `historical_tasks`, `worker_metadata`, …):
+Verify the schema landed (after migrating — `cortex init` for production in Step 7, or the
+`diesel migration run` above for the test database — you should see `corpora`, `services`, `tasks`,
+the five `log_*` tables, `historical_runs`, `historical_tasks`, `worker_metadata`, …):
 
 ```bash
 PGPASSWORD=cortex psql "postgres://cortex:cortex@localhost/cortex" -c '\dt'
@@ -172,7 +178,17 @@ cargo test
 
 ## 7. Run the system
 
-Start the pieces from the repository root, each in its own shell (or under a process manager):
+First **initialize the production database** — `cortex init` applies the embedded migrations (the
+schema from Step 5, no `diesel_cli` needed) and scaffolds `cortex.toml` if absent; `cortex doctor`
+then confirms the box is ready (database reachable, migrations current, services seeded, admin token
+set):
+
+```bash
+cargo run --release --bin cortex -- init      # idempotent: safe to re-run
+cargo run --release --bin cortex -- doctor     # green checklist, or actionable fixes
+```
+
+Then start the pieces from the repository root, each in its own shell (or under a process manager):
 
 ```bash
 # 1) the dispatcher (ZeroMQ ventilator on :51695, sink on :51696)
@@ -242,5 +258,7 @@ online with `REINDEX (CONCURRENTLY) …` (see `docs/DB_TUNING.md` for the mainte
 - Toolchain, `rustfmt`, and `clippy` are pinned via `rust-toolchain.toml`; `cargo fmt` and a clean
   `cargo clippy` are expected before pushing.
 - See [`CLAUDE.md`](CLAUDE.md) for architecture facts and conventions, and
-  [`docs/PRODUCTIZING_PLAN.md`](docs/PRODUCTIZING_PLAN.md) for the roadmap that turns this manual
-  install into a one-command `cortex init`.
+  [`docs/PRODUCTIZING_PLAN.md`](docs/PRODUCTIZING_PLAN.md) for the roadmap. `cortex init` +
+  `cortex doctor` already automate the schema-migration, config-scaffold, and verification steps
+  (Steps 4–5, 7); the remaining roadmap work folds the OS/PostgreSQL provisioning (Steps 2–3) into
+  the guided bootstrap.
