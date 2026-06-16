@@ -64,6 +64,7 @@ pub fn mount_api_with(
     .mount("/", runs::routes())
     .mount("/", jobs::routes())
     .mount("/", services::routes())
+    .mount("/", crate::frontend::concerns::routes())
     .mount("/", crate::frontend::admin::routes())
     .mount("/", crate::frontend::audit::routes())
     .mount("/", crate::frontend::sessions::routes())

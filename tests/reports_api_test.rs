@@ -421,6 +421,35 @@ fn document_forensics_reports_status_and_messages() {
     "info messages are tucked into a collapsed <details>, out of the lead table"
   );
 
+  // --- Document serving (migrated bin → library): graceful degradation on the hostile `/data`
+  // filesystem. The seeded task's result archive does not exist on disk, so a download must yield a
+  // clean 404 (never a panic / 500); an unknown task id likewise 404s; and the preview shell still
+  // renders (its converted-document asset is fetched client-side from the download URL).
+  let response = client
+    .post(format!("/entry/{SERVICE_NAME}/{task_id}"))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::NotFound,
+    "a missing result archive on /data yields a clean 404, not a panic/500"
+  );
+  let response = client
+    .post(format!("/entry/{SERVICE_NAME}/999999999"))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::NotFound,
+    "an unknown task id is a clean 404"
+  );
+  let response = client
+    .get(format!("/preview/{CORPUS_NAME}/{SERVICE_NAME}/0801.1234"))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Ok,
+    "the preview shell renders even without the archive (asset fetched client-side)"
+  );
+
   // The no-JS lookup shortcut: GET /document/<c>/<s>?name=<id> redirects to the canonical path URL,
   // so the service-overview "look up an article" form reaches the forensic screen with scripting
   // off.

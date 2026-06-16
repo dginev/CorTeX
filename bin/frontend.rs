@@ -15,44 +15,14 @@ use rocket::futures::TryFutureExt;
 use rocket::response::status::{Accepted, NotFound};
 use rocket::serde::json::Json;
 use rocket::State;
-use rocket_dyn_templates::Template;
 
-use cortex::backend::{DbPool, PooledConn};
+use cortex::backend::DbPool;
 use cortex::config::config;
 use cortex::frontend::actor::AdminSession;
-use cortex::frontend::concerns::{serve_entry, serve_entry_preview, serve_rerun, serve_savetasks};
+use cortex::frontend::concerns::{serve_rerun, serve_savetasks};
 use cortex::frontend::cors::CORS;
 use cortex::frontend::params::RerunRequestParams;
 use rocket::http::Status;
-
-/// Checks out a pooled connection for the legacy `concerns`-backed routes, mapping pool exhaustion
-/// to a `404` (their shared error type).
-fn pooled(pool: &State<DbPool>) -> Result<PooledConn, NotFound<String>> {
-  pool
-    .get()
-    .map_err(|_| NotFound("database unavailable".to_string()))
-}
-
-#[get("/preview/<corpus_name>/<service_name>/<entry_name>")]
-fn preview_entry(
-  corpus_name: String,
-  service_name: String,
-  entry_name: String,
-  pool: &State<DbPool>,
-) -> Result<Template, NotFound<String>> {
-  let mut conn = pooled(pool)?;
-  serve_entry_preview(&mut conn, corpus_name, service_name, entry_name)
-}
-
-#[post("/entry/<service_name>/<entry_id>")]
-async fn entry_fetch(
-  service_name: String,
-  entry_id: usize,
-  pool: &State<DbPool>,
-) -> Result<NamedFile, NotFound<String>> {
-  let mut conn = pooled(pool)?;
-  serve_entry(&mut conn, service_name, entry_id).await
-}
 
 #[post(
   "/rerun/<corpus_name>/<service_name>",
@@ -229,8 +199,6 @@ fn rocket() -> _ {
         favicon,
         robots,
         files,
-        preview_entry,
-        entry_fetch,
         rerun_corpus,
         rerun_severity,
         rerun_category,

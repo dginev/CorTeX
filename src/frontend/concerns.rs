@@ -4,11 +4,14 @@ use diesel::PgConnection;
 use rocket::fs::NamedFile;
 use rocket::http::Status;
 use rocket::response::status::{Accepted, NotFound};
+use rocket::{get, post, routes, Route, State};
 use rocket_dyn_templates::Template;
 use std::collections::HashMap;
 use std::str;
 
-use crate::backend::{mark_rerun, progress_report, save_historical_tasks, DbPool, RerunOptions};
+use crate::backend::{
+  mark_rerun, progress_report, save_historical_tasks, DbPool, PooledConn, RerunOptions,
+};
 use crate::frontend::helpers::*;
 use crate::frontend::params::{ReportParams, TemplateContext};
 use crate::frontend::render::task_report;
@@ -424,3 +427,41 @@ pub fn serve_entry_preview(
     .insert("report_duration".to_string(), report_duration.to_string());
   Ok(Template::render("task-preview", context))
 }
+
+/// Checks out a pooled connection for the document-serving routes, mapping pool exhaustion to their
+/// shared `404` error type.
+fn pooled(pool: &State<DbPool>) -> Result<PooledConn, NotFound<String>> {
+  pool
+    .get()
+    .map_err(|_| NotFound("database unavailable".to_string()))
+}
+
+/// The per-article **preview** screen: renders a shell whose converted-document asset is fetched
+/// client-side from the download URL. `404` on an unknown corpus / service / document.
+#[get("/preview/<corpus_name>/<service_name>/<entry_name>")]
+pub fn preview_entry(
+  corpus_name: String,
+  service_name: String,
+  entry_name: String,
+  pool: &State<DbPool>,
+) -> Result<Template, NotFound<String>> {
+  let mut connection = pooled(pool)?;
+  serve_entry_preview(&mut connection, corpus_name, service_name, entry_name)
+}
+
+/// **Downloads** a converted document's result archive (streamed, so a large archive never loads
+/// into memory). `404` when the task is unknown **or** the archive is missing/unreadable on `/data`
+/// — a hostile or unmounted filesystem yields a clean `404`, never a panic or a `500`.
+#[post("/entry/<service_name>/<entry_id>")]
+pub async fn entry_fetch(
+  service_name: String,
+  entry_id: usize,
+  pool: &State<DbPool>,
+) -> Result<NamedFile, NotFound<String>> {
+  let mut connection = pooled(pool)?;
+  serve_entry(&mut connection, service_name, entry_id).await
+}
+
+/// The document-serving route set (preview + archive download), migrated out of `bin/frontend.rs`
+/// onto the pooled, testable library surface.
+pub fn routes() -> Vec<Route> { routes![preview_entry, entry_fetch] }
