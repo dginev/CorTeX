@@ -35,7 +35,6 @@
 | # | Sev | Mitigation today & upgrade path |
 |---|---|---|
 | E-1 | S4 | **CI refreshed to current requirements** (`/.github/workflows/CI.yml`): Postgres + roles, nightly via `dtolnay/rust-toolchain` (the `actions-rs/*` actions are archived), diesel_cli 2.x migrations on both DBs, **no Redis**, and `fmt --check` + `clippy -D warnings` gates mirroring `.githooks/`. **Still pending:** publishing API docs + rustdoc to GH Pages (Arm 9/12). (The L-1 teardown SIGSEGV that could red the run is now resolved — the Tests step runs `cargo test` directly.) |
-| E-3 | S4 | **`cortex export-dataset` holds the whole work-list in RAM.** `backend::export_html_dataset` (Arm 10) loads one severity's `entry` paths into a `Vec`, then buckets a lightweight `{result_zip, paper, yymm}` per task into a `BTreeMap` before bundling. The **HTML bytes are streamed** one paper at a time (O(1) resident), so this is the *path-list* footprint only — bounded by a single corpus's size (≈ a few hundred MB for the largest ~1.5M-paper corpus), not the dataset bytes. The retired shell scripts materialised the same list to a text file, so this is no worse; it's a batch CLI op, not the dispatch hot path. **Fix (if a corpus outgrows host RAM):** a server-side cursor (or keyset pagination over `entry`) + per-`yymm` streaming close — month-mode archive members are already contiguous under `ORDER BY entry`. |
 
 ## Performance
 

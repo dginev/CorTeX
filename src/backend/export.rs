@@ -18,7 +18,6 @@
 //! one naming inconsistency (`no_problem` vs `no-problem` for the same severity) is resolved in
 //! favour of the canonical [`TaskStatus::to_key`] spelling (`no_problem`).
 
-use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -85,14 +84,17 @@ pub struct DatasetExportOutcome {
   pub skipped: usize,
 }
 
-/// One paper's contribution to the dataset: where its HTML comes from and where it goes.
-struct Paper {
-  /// the task's result archive (`<entry-dir>/<service>.zip`)
-  result_zip: PathBuf,
-  /// the paper id (the entry directory's name) — the output HTML is named `<paper>.html`
-  paper: String,
-  /// the year-month bucket (the entry directory's parent name)
-  yymm: String,
+/// Keyset-pagination page size for the entry scan: at most this many `entry` paths are resident at
+/// once (then streamed into archives and dropped). With the per-archive streaming below, that makes
+/// the exporter's footprint O(one page + one open zip + one paper's HTML) regardless of corpus size
+/// — the fix for the old whole-work-list-in-RAM `BTreeMap` (KNOWN_ISSUES E-3).
+const EXPORT_PAGE_SIZE: i64 = 10_000;
+
+/// The shared ZIP entry options for every dataset archive (max-deflate, matching the scripts).
+fn zip_options() -> zip::write::FileOptions<'static, ()> {
+  zip::write::FileOptions::default()
+    .compression_method(zip::CompressionMethod::Deflated)
+    .compression_level(Some(9))
 }
 
 /// Export a corpus/service's converted HTML into ZIP archives bucketed by [`GroupBy`].
@@ -114,92 +116,57 @@ pub fn export_html_dataset(
   out_dir: &PathBuf,
   mut progress: impl FnMut(&str),
 ) -> Result<DatasetExportOutcome, String> {
-  use crate::schema::tasks::dsl as t;
-
   fs::create_dir_all(out_dir).map_err(|e| format!("cannot create {}: {e}", out_dir.display()))?;
 
-  // Bucket papers by their archive key. `BTreeMap` keeps a deterministic (sorted) archive order.
-  // ponytail: the whole work-list lives in RAM here — bounded by one corpus's size (the lightweight
-  // {result_zip, paper, yymm} per task), not the html bytes (those are streamed one at a time
-  // during the write phase). The scripts materialised the same list to a text file; for the largest
-  // corpus (~1.5M papers ≈ a few hundred MB transient) this is fine. Recorded as KNOWN_ISSUES E-3;
-  // upgrade path = a server-side cursor + per-yymm streaming if a corpus outgrows RAM.
-  let mut buckets: BTreeMap<String, Vec<Paper>> = BTreeMap::new();
-  let mut skipped = 0_usize;
+  progress("Streaming HTML dataset export...");
+  // Stream the matching papers straight into per-archive ZIPs, holding at most ONE archive open at
+  // a time, so the resident footprint is O(page) — not the whole corpus's work-list in a
+  // `BTreeMap` (the old KNOWN_ISSUES E-3 gap). Both modes feed the streamer with same-archive-key
+  // entries contiguous, which is the streamer's one requirement.
+  let mut streamer = ArchiveStreamer::new(out_dir, corpus, &service.name, group_by);
 
-  for status in severities {
-    let key = status.to_key();
-    let entries: Vec<String> = t::tasks
-      .filter(t::corpus_id.eq(corpus.id))
-      .filter(t::service_id.eq(service.id))
-      .filter(t::status.eq(status.raw()))
-      .select(t::entry)
-      .order(t::entry.asc())
-      .load(connection)
-      .map_err(|e| format!("querying {key} tasks failed: {e}"))?;
-    progress(&format!("  {key}: {} task(s)", entries.len()));
-
-    for entry in entries {
-      // The result archive sits next to the source entry (sandbox-aware, F-6).
-      let result_zip = match result_archive_path(&entry, &service.name, corpus.sandbox_id()) {
-        Some(path) => path,
-        None => {
-          skipped += 1;
-          continue;
-        },
-      };
-      // Layout: `<base>/<yymm>/<paper>/<service>.zip` ⇒ paper = parent dir name, yymm = its parent.
-      let entry_dir = match result_zip.parent() {
-        Some(dir) => dir,
-        None => {
-          skipped += 1;
-          continue;
-        },
-      };
-      let paper = entry_dir.file_name().and_then(|s| s.to_str());
-      let yymm = entry_dir
-        .parent()
-        .and_then(|p| p.file_name())
-        .and_then(|s| s.to_str());
-      let (paper, yymm) = match (paper, yymm) {
-        (Some(p), Some(y)) => (p.to_string(), y.to_string()),
-        _ => {
-          skipped += 1;
-          continue;
-        },
-      };
-      let archive_key = match group_by {
-        GroupBy::Month => yymm.clone(),
-        GroupBy::Severity => key.clone(),
-      };
-      buckets.entry(archive_key).or_default().push(Paper {
-        result_zip,
-        paper,
-        yymm,
-      });
-    }
+  match group_by {
+    // Month: ONE keyset-paginated pass over *all* requested severities, ordered by `entry`. Since
+    // `entry` is `<base>/<yymm>/<paper>/…`, that order makes each `yymm` (the archive key) a
+    // contiguous run — even when one month's papers span several severities.
+    GroupBy::Month => {
+      let raws: Vec<i32> = severities.iter().map(|s| s.raw()).collect();
+      let mut after: Option<String> = None;
+      loop {
+        let page = fetch_entry_page(connection, corpus.id, service.id, &raws, after.as_deref())?;
+        let full = page.len() as i64 == EXPORT_PAGE_SIZE;
+        for entry in &page {
+          streamer.feed(entry, None, &mut progress)?;
+        }
+        after = page.into_iter().next_back();
+        if !full {
+          break;
+        }
+      }
+    },
+    // Severity: one archive per severity, so process a severity at a time — its `entry`-ordered
+    // pages stream into that single archive (the per-severity loop *is* the contiguity).
+    GroupBy::Severity => {
+      for status in severities {
+        let key = status.to_key();
+        let raws = [status.raw()];
+        let mut after: Option<String> = None;
+        loop {
+          let page = fetch_entry_page(connection, corpus.id, service.id, &raws, after.as_deref())?;
+          let full = page.len() as i64 == EXPORT_PAGE_SIZE;
+          for entry in &page {
+            streamer.feed(entry, Some(&key), &mut progress)?;
+          }
+          after = page.into_iter().next_back();
+          if !full {
+            break;
+          }
+        }
+      }
+    },
   }
 
-  progress(&format!("Bundling {} archive(s)...", buckets.len()));
-  let mut archives = Vec::new();
-  let mut total_entries = 0_usize;
-  for (archive_key, papers) in &buckets {
-    let archive_name = format!("{}-{archive_key}.zip", corpus.name);
-    let archive_path = out_dir.join(&archive_name);
-    if archive_path.exists() {
-      // Resume: an already-written archive is kept as-is (the scripts' behaviour).
-      progress(&format!("  {archive_name} exists — skipping"));
-      continue;
-    }
-    let (written, html_skipped) = write_archive(&archive_path, papers, group_by, &service.name)?;
-    skipped += html_skipped;
-    total_entries += written;
-    progress(&format!("  {archive_name}: {written} document(s)"));
-    archives.push(DatasetArchive {
-      name: archive_name,
-      entries: written,
-    });
-  }
+  let (archives, total_entries, skipped) = streamer.finish(&mut progress)?;
 
   let outcome = DatasetExportOutcome {
     corpus: corpus.name.clone(),
@@ -229,59 +196,218 @@ pub fn export_html_dataset(
   Ok(outcome)
 }
 
-/// Write one dataset archive: copy each paper's main HTML out of its result archive into a fresh
-/// `<archive>.zip`. Returns `(documents_written, skipped)`. A paper whose result archive is
-/// missing/unreadable or carries no HTML is skipped (counted), never fatal — one bad paper must not
-/// sink a multi-thousand-paper export (DESIGN_PRINCIPLES: isolate blast radius).
-fn write_archive(
-  archive_path: &PathBuf,
-  papers: &[Paper],
-  group_by: GroupBy,
-  service_name: &str,
-) -> Result<(usize, usize), String> {
-  let file = File::create(archive_path)
-    .map_err(|e| format!("cannot create {}: {e}", archive_path.display()))?;
-  let mut zip = zip::ZipWriter::new(file);
-  let options: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default()
-    .compression_method(zip::CompressionMethod::Deflated)
-    .compression_level(Some(9));
+/// One keyset page of matching `entry` paths, ordered by `entry`, strictly after the `after` cursor
+/// (the last entry of the previous page). `entry` is unique within a `(corpus, service)` (the
+/// `UNIQUE(entry, service, corpus)` constraint), so it is a safe, gap-free keyset cursor — O(log n)
+/// per page, no deep-`OFFSET` scan-and-discard. Bounded to [`EXPORT_PAGE_SIZE`] rows.
+fn fetch_entry_page(
+  connection: &mut PgConnection,
+  corpus_id: i32,
+  service_id: i32,
+  status_raws: &[i32],
+  after: Option<&str>,
+) -> Result<Vec<String>, String> {
+  use crate::schema::tasks::dsl as t;
+  let mut query = t::tasks
+    .filter(t::corpus_id.eq(corpus_id))
+    .filter(t::service_id.eq(service_id))
+    .filter(t::status.eq_any(status_raws.to_vec()))
+    .select(t::entry)
+    .order(t::entry.asc())
+    .into_boxed();
+  if let Some(cursor) = after {
+    query = query.filter(t::entry.gt(cursor.to_string()));
+  }
+  query
+    .limit(EXPORT_PAGE_SIZE)
+    .load(connection)
+    .map_err(|e| format!("querying export tasks failed: {e}"))
+}
 
-  let mut written = 0_usize;
-  let mut skipped = 0_usize;
-  for paper in papers {
-    let html = match extract_main_html(&paper.result_zip, &paper.paper) {
+/// The one archive currently being written by the [`ArchiveStreamer`].
+struct OpenArchive {
+  /// archive key (a `yymm` in month mode, a severity in severity mode)
+  key: String,
+  /// the on-disk file name (`<corpus>-<key>.zip`)
+  name: String,
+  /// the open ZIP writer
+  zip: zip::ZipWriter<File>,
+  /// documents written into it so far
+  written: usize,
+}
+
+/// Streams papers into per-archive-key ZIPs while holding **at most one archive open** at a time,
+/// so the exporter's resident memory is O(one open zip + one paper's HTML) regardless of corpus
+/// size (the fix for the old whole-work-list `BTreeMap` — KNOWN_ISSUES E-3). Callers must feed
+/// entries so that all papers sharing an archive key arrive contiguously; [`export_html_dataset`]
+/// guarantees that in both [`GroupBy`] modes. Resume parity with the scripts: a key whose `.zip`
+/// already exists is skipped without opening a writer (its papers are never read). A paper whose
+/// result archive is missing/unreadable or carries no HTML is skipped (counted), never fatal — one
+/// bad paper must not sink a multi-thousand-paper export (DESIGN_PRINCIPLES: isolate blast radius).
+struct ArchiveStreamer<'a> {
+  out_dir: &'a PathBuf,
+  corpus: &'a Corpus,
+  service_name: &'a str,
+  group_by: GroupBy,
+  /// the archive currently open for writing (`None` before the first paper / while skipping)
+  open: Option<OpenArchive>,
+  /// the key currently being skipped because its `.zip` already exists (resume)
+  skipping: Option<String>,
+  archives: Vec<DatasetArchive>,
+  total: usize,
+  skipped: usize,
+}
+
+impl<'a> ArchiveStreamer<'a> {
+  fn new(
+    out_dir: &'a PathBuf,
+    corpus: &'a Corpus,
+    service_name: &'a str,
+    group_by: GroupBy,
+  ) -> Self {
+    ArchiveStreamer {
+      out_dir,
+      corpus,
+      service_name,
+      group_by,
+      open: None,
+      skipping: None,
+      archives: Vec::new(),
+      total: 0,
+      skipped: 0,
+    }
+  }
+
+  /// Route one task `entry` to its archive: derive `(result_zip, paper, yymm)`, rotate the open
+  /// archive if the key changed, then copy the paper's main HTML in (or count a skip).
+  /// `key_override` forces the archive key (severity mode); month mode passes `None` and uses the
+  /// `yymm`.
+  fn feed(
+    &mut self,
+    entry: &str,
+    key_override: Option<&str>,
+    progress: &mut impl FnMut(&str),
+  ) -> Result<(), String> {
+    // The result archive sits next to the source entry (sandbox-aware, F-6).
+    let result_zip = match result_archive_path(entry, self.service_name, self.corpus.sandbox_id()) {
+      Some(path) => path,
+      None => {
+        self.skipped += 1;
+        return Ok(());
+      },
+    };
+    // Layout: `<base>/<yymm>/<paper>/<service>.zip` ⇒ paper = parent dir name, yymm = its parent.
+    let entry_dir = match result_zip.parent() {
+      Some(dir) => dir,
+      None => {
+        self.skipped += 1;
+        return Ok(());
+      },
+    };
+    let paper = entry_dir.file_name().and_then(|s| s.to_str());
+    let yymm = entry_dir
+      .parent()
+      .and_then(|p| p.file_name())
+      .and_then(|s| s.to_str());
+    let (paper, yymm) = match (paper, yymm) {
+      (Some(p), Some(y)) => (p.to_string(), y.to_string()),
+      _ => {
+        self.skipped += 1;
+        return Ok(());
+      },
+    };
+    let archive_key = match key_override {
+      Some(k) => k.to_string(),
+      None => yymm.clone(),
+    };
+    self.rotate_to(&archive_key, progress)?;
+    // Resume: the archive for this key already existed → its papers are left untouched.
+    let internal = match self.group_by {
+      GroupBy::Month => format!("{yymm}/{paper}.html"),
+      GroupBy::Severity => format!("{archive_key}/{yymm}/{paper}.html"),
+    };
+    let html = match extract_main_html(&result_zip, &paper) {
       Some(bytes) => bytes,
       None => {
-        skipped += 1;
-        continue;
+        // Only count an HTML miss when we'd actually be writing (not while resume-skipping a key).
+        if self.open.is_some() {
+          self.skipped += 1;
+        }
+        return Ok(());
       },
     };
-    // Internal layout mirrors the scripts: month → `<yymm>/<paper>.html`, severity zips keep the
-    // `<severity>/<yymm>/…` nesting (the severity is the archive key for that mode).
-    let internal = match group_by {
-      GroupBy::Month => format!("{}/{}.html", paper.yymm, paper.paper),
-      GroupBy::Severity => {
-        // archive key (severity) is the file stem; the path keeps the yymm subdir under it
-        let severity = archive_path
-          .file_stem()
-          .and_then(|s| s.to_str())
-          .and_then(|s| s.rsplit('-').next())
-          .unwrap_or(service_name);
-        format!("{severity}/{}/{}.html", paper.yymm, paper.paper)
-      },
+    let Some(open) = self.open.as_mut() else {
+      return Ok(());
     };
-    zip
-      .start_file(internal, options)
+    open
+      .zip
+      .start_file(internal, zip_options())
       .map_err(|e| format!("zip start_file failed: {e}"))?;
-    zip
+    open
+      .zip
       .write_all(&html)
       .map_err(|e| format!("zip write failed: {e}"))?;
-    written += 1;
+    open.written += 1;
+    self.total += 1;
+    Ok(())
   }
-  zip
-    .finish()
-    .map_err(|e| format!("finalizing {} failed: {e}", archive_path.display()))?;
-  Ok((written, skipped))
+
+  /// Switch the open archive to `key` when the streamed key changes: close the previous archive,
+  /// then either open a fresh writer or (resume) mark the key skipped because its `.zip` exists.
+  fn rotate_to(&mut self, key: &str, progress: &mut impl FnMut(&str)) -> Result<(), String> {
+    let active = self
+      .open
+      .as_ref()
+      .map(|o| o.key.as_str())
+      .or(self.skipping.as_deref());
+    if active == Some(key) {
+      return Ok(());
+    }
+    self.close_open(progress)?;
+    self.skipping = None;
+    let name = format!("{}-{key}.zip", self.corpus.name);
+    let path = self.out_dir.join(&name);
+    if path.exists() {
+      // Resume: an already-written archive is kept as-is (the scripts' behaviour).
+      progress(&format!("  {name} exists — skipping"));
+      self.skipping = Some(key.to_string());
+    } else {
+      let file =
+        File::create(&path).map_err(|e| format!("cannot create {}: {e}", path.display()))?;
+      self.open = Some(OpenArchive {
+        key: key.to_string(),
+        name,
+        zip: zip::ZipWriter::new(file),
+        written: 0,
+      });
+    }
+    Ok(())
+  }
+
+  /// Finalize the currently-open archive (if any), recording it in the outcome.
+  fn close_open(&mut self, progress: &mut impl FnMut(&str)) -> Result<(), String> {
+    if let Some(open) = self.open.take() {
+      open
+        .zip
+        .finish()
+        .map_err(|e| format!("finalizing {} failed: {e}", open.name))?;
+      progress(&format!("  {}: {} document(s)", open.name, open.written));
+      self.archives.push(DatasetArchive {
+        name: open.name,
+        entries: open.written,
+      });
+    }
+    Ok(())
+  }
+
+  /// Close the last open archive and return `(archives, total_documents, skipped)`.
+  fn finish(
+    mut self,
+    progress: &mut impl FnMut(&str),
+  ) -> Result<(Vec<DatasetArchive>, usize, usize), String> {
+    self.close_open(progress)?;
+    Ok((self.archives, self.total, self.skipped))
+  }
 }
 
 /// Pull the main HTML document out of a result archive. Prefers a root-level `<paper>.html`, then

@@ -171,3 +171,179 @@ fn exports_html_into_month_and_severity_archives() {
   let _ = std::fs::remove_dir_all(&out_month);
   let _ = std::fs::remove_dir_all(&out_sev);
 }
+
+/// Stages one `<base>/<yymm>/<paper>/<paper>.zip` task with a result archive carrying
+/// `<paper>.html`.
+fn stage_paper(
+  db: &mut backend::Backend,
+  corpus: &Corpus,
+  service: &Service,
+  base: &std::path::Path,
+  yymm: &str,
+  paper: &str,
+  status: TaskStatus,
+) {
+  let entry_dir = base.join(yymm).join(paper);
+  write_result_zip(&entry_dir, paper, &format!("HTML {paper}"));
+  db.add(&NewTask {
+    service_id: service.id,
+    corpus_id: corpus.id,
+    status: status.raw(),
+    entry: entry_dir
+      .join(format!("{paper}.zip"))
+      .to_string_lossy()
+      .into_owned(),
+  })
+  .expect("insert task");
+}
+
+/// The streaming rewrite (KNOWN_ISSUES E-3) must handle the cases the single-paper test can't: many
+/// papers across **several `yymm`s** (the per-archive rotation as the key changes mid-stream) and a
+/// month archive that **aggregates papers from more than one severity** (the single cross-severity
+/// `ORDER BY entry` pass must keep each `yymm` contiguous). Layout:
+///   1801 → 1801.001 (no_problem) + 1801.002 (warning)   [two severities, one month]
+///   1802 → 1802.001 (no_problem)
+#[test]
+fn streams_multiple_months_and_severities() {
+  let corpus_name = "export_streaming_test";
+  let service_name = "tex_to_html";
+  let mut db = backend::testdb();
+  if let Ok(prior) = Corpus::find_by_name(corpus_name, &mut db.connection) {
+    prior.destroy(&mut db.connection).expect("clear prior");
+  }
+
+  let base = std::env::temp_dir().join("cortex_export_streaming_base");
+  let _ = std::fs::remove_dir_all(&base);
+
+  db.add(&NewCorpus {
+    name: corpus_name.to_string(),
+    path: base.to_string_lossy().into_owned(),
+    complex: true,
+    description: "streaming export test".to_string(),
+  })
+  .expect("insert corpus");
+  let corpus = Corpus::find_by_name(corpus_name, &mut db.connection).unwrap();
+  let service = match Service::find_by_name(service_name, &mut db.connection) {
+    Ok(s) => s,
+    Err(_) => {
+      db.add(&NewService {
+        name: service_name.to_string(),
+        version: 0.1,
+        inputformat: "tex".to_string(),
+        outputformat: "html".to_string(),
+        inputconverter: None,
+        complex: true,
+        description: "d".to_string(),
+      })
+      .expect("insert service");
+      Service::find_by_name(service_name, &mut db.connection).unwrap()
+    },
+  };
+
+  stage_paper(
+    &mut db,
+    &corpus,
+    &service,
+    &base,
+    "1801",
+    "1801.001",
+    TaskStatus::NoProblem,
+  );
+  stage_paper(
+    &mut db,
+    &corpus,
+    &service,
+    &base,
+    "1801",
+    "1801.002",
+    TaskStatus::Warning,
+  );
+  stage_paper(
+    &mut db,
+    &corpus,
+    &service,
+    &base,
+    "1802",
+    "1802.001",
+    TaskStatus::NoProblem,
+  );
+
+  // --- month: one archive per yymm; 1801 aggregates BOTH severities ---
+  let out_month = std::env::temp_dir().join("cortex_export_streaming_month");
+  let _ = std::fs::remove_dir_all(&out_month);
+  let outcome = export_html_dataset(
+    &mut db.connection,
+    &corpus,
+    &service,
+    &[TaskStatus::NoProblem, TaskStatus::Warning],
+    GroupBy::Month,
+    &out_month,
+    |_| {},
+  )
+  .expect("month export");
+  assert_eq!(outcome.total_entries, 3, "all three papers bundled");
+  assert_eq!(outcome.skipped, 0);
+  assert_eq!(
+    outcome.archives.len(),
+    2,
+    "one archive per yymm (1801, 1802)"
+  );
+  let a1801 = out_month.join(format!("{corpus_name}-1801.zip"));
+  assert_eq!(
+    read_zip_entry(&a1801, "1801/1801.001.html").as_deref(),
+    Some("HTML 1801.001"),
+    "1801 archive holds the no_problem paper"
+  );
+  assert_eq!(
+    read_zip_entry(&a1801, "1801/1801.002.html").as_deref(),
+    Some("HTML 1801.002"),
+    "1801 archive ALSO holds the warning paper — cross-severity month aggregation"
+  );
+  assert_eq!(
+    read_zip_entry(
+      &out_month.join(format!("{corpus_name}-1802.zip")),
+      "1802/1802.001.html"
+    )
+    .as_deref(),
+    Some("HTML 1802.001"),
+    "1802 archive holds its own paper after the streamer rotated off 1801"
+  );
+
+  // --- severity: one archive per severity, spanning yymms ---
+  let out_sev = std::env::temp_dir().join("cortex_export_streaming_sev");
+  let _ = std::fs::remove_dir_all(&out_sev);
+  let sev = export_html_dataset(
+    &mut db.connection,
+    &corpus,
+    &service,
+    &[TaskStatus::NoProblem, TaskStatus::Warning],
+    GroupBy::Severity,
+    &out_sev,
+    |_| {},
+  )
+  .expect("severity export");
+  assert_eq!(sev.total_entries, 3);
+  let np = out_sev.join(format!("{corpus_name}-no_problem.zip"));
+  assert_eq!(
+    read_zip_entry(&np, "no_problem/1801/1801.001.html").as_deref(),
+    Some("HTML 1801.001")
+  );
+  assert_eq!(
+    read_zip_entry(&np, "no_problem/1802/1802.001.html").as_deref(),
+    Some("HTML 1802.001"),
+    "the no_problem archive spans both months"
+  );
+  assert_eq!(
+    read_zip_entry(
+      &out_sev.join(format!("{corpus_name}-warning.zip")),
+      "warning/1801/1801.002.html"
+    )
+    .as_deref(),
+    Some("HTML 1801.002")
+  );
+
+  corpus.destroy(&mut db.connection).expect("clean up");
+  let _ = std::fs::remove_dir_all(&base);
+  let _ = std::fs::remove_dir_all(&out_month);
+  let _ = std::fs::remove_dir_all(&out_sev);
+}
