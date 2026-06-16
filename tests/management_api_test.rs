@@ -288,6 +288,62 @@ fn put_config_is_token_gated() {
   );
 }
 
+fn all_api_writes_reject_untokened_requests() {
+  // Class-level regression guard for X-5: PUT /api/config shipped *ungated* and went undetected
+  // because no test exercised its write path. EVERY mutating `/api` route must `401` an un-tokened
+  // request — the `Actor` request guard runs before the handler body, so a *missing* guard surfaces
+  // here as a non-401 status. The routes are auto-discovered from the live table, so a **future**
+  // ungated write endpoint fails this test too (no per-endpoint test needed to catch the whole
+  // class).
+  use rocket::http::{MediaType, Method};
+  let client = client();
+  let writes: Vec<(Method, String, bool)> = client
+    .rocket()
+    .routes()
+    .filter(|r| matches!(r.method, Method::Post | Method::Put | Method::Delete))
+    .filter(|r| r.uri.to_string().starts_with("/api/"))
+    .map(|r| {
+      let is_json = r.format.as_ref() == Some(&MediaType::JSON);
+      (r.method, r.uri.to_string(), is_json)
+    })
+    .collect();
+  assert!(
+    writes.len() >= 10,
+    "expected to auto-discover the /api write routes, found {}",
+    writes.len()
+  );
+  for (method, uri, is_json) in writes {
+    // Concretize: drop the query string, replace each `<param>` / `<param..>` path segment with `x`
+    // (every /api write uses string path params, so `x` always matches the route).
+    let path = uri
+      .split('?')
+      .next()
+      .unwrap_or("")
+      .split('/')
+      .map(|seg| if seg.starts_with('<') { "x" } else { seg })
+      .collect::<Vec<_>>()
+      .join("/");
+    let mut req = match method {
+      Method::Post => client.post(path.clone()),
+      Method::Put => client.put(path.clone()),
+      Method::Delete => client.delete(path.clone()),
+      _ => unreachable!("filtered to POST/PUT/DELETE above"),
+    };
+    // A JSON-body route only *matches* with the json content-type; send a minimal body so the
+    // request reaches the Actor guard (which runs before the body is parsed — the content is
+    // irrelevant to the auth check).
+    if is_json {
+      req = req.header(ContentType::JSON).body("{}");
+    }
+    let status = req.dispatch().status();
+    assert_eq!(
+      status,
+      Status::Unauthorized,
+      "{method} {path} must be 401 without a token (is its Actor guard missing?), got {status}"
+    );
+  }
+}
+
 fn healthz_flags_unreadable_corpus_storage() {
   // A corpus whose configured source directory is missing on disk (a moved/unmounted /data mount)
   // is surfaced in the storage-health section — informational, so it does not flip the status.
@@ -408,6 +464,7 @@ fn main() {
   api_index_lists_the_agent_surface();
   reindex_is_token_gated();
   put_config_is_token_gated();
+  all_api_writes_reject_untokened_requests();
   analyze_is_token_gated();
   healthz_flags_unreadable_corpus_storage();
   openapi_spec_and_rapidoc_are_served();
