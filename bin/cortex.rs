@@ -5,8 +5,9 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! `cortex` — the administration CLI. A thin renderer over [`cortex::bootstrap`]: self-install
-//! (`init`) and diagnostics (`doctor`).
+//! `cortex` — the administration CLI. A thin renderer over the library: self-install (`init`),
+//! diagnostics (`doctor`), DB tuning, token management, the `report` query surface (the CLI twin of
+//! the web/agent service overview), and dataset export.
 
 use std::path::PathBuf;
 

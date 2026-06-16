@@ -90,7 +90,9 @@ discoverable JSON DTOs (each also the future HTML/CLI source).
 ### Arm B — CLI as a first-class surface (direction 4)
 - **B1 — Management subcommands.** `cortex report|runs|document|rerun|extend|sandbox …` — thin
   clients over the **same backend ops/DTOs** as Arm A (no new logic; render the DTO as a table/JSON).
-  Makes the CLI scriptable for the same questions and mutations.
+  Makes the CLI scriptable for the same questions and mutations. **Started:** `cortex report <corpus>
+  <service> [--json]` — the CLI twin of the web report top + agent `GET /api/reports/<c>/<s>`, via the
+  shared `Backend::progress_report` (so all three surfaces agree). `--json` mirrors `ServiceOverviewDto`.
 - **B2 — Guided init.** An interactive `cortex init --guided` walking the strategic choices (database,
   admin token, services, dispatcher knobs). **Decision D-B2 (see §5): ratatui rich TUI vs a plain
   guided prompt flow.** Default lazy: ship the plain prompt flow first (no heavy new dep; 90% of the
