@@ -326,6 +326,13 @@ impl RouteTable {
 /// docs. Self-describing — built by introspecting the live route table, so it never drifts.
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct ApiIndexDto {
+  /// One-line orientation for an agent landing on the API root.
+  pub description: &'static str,
+  /// Path to the full machine-readable OpenAPI 3 specification (typed request/response schemas for
+  /// every endpoint) — the authoritative contract behind this lightweight index.
+  pub openapi: &'static str,
+  /// Path to the human-browsable API reference (RapiDoc, rendered from the same OpenAPI spec).
+  pub docs: &'static str,
   /// Number of agent endpoints.
   pub count: usize,
   /// The agent endpoints, sorted by path then method.
@@ -344,6 +351,10 @@ pub fn api_index(routes: &State<RouteTable>) -> Json<ApiIndexDto> {
     .collect();
   endpoints.sort_by(|a, b| a.uri.cmp(&b.uri).then_with(|| a.method.cmp(&b.method)));
   Json(ApiIndexDto {
+    description: "CorTeX agent API. Enumerate endpoints below; see `openapi` for the full typed \
+                 contract. Most reads are open; mutations require an X-Cortex-Token header.",
+    openapi: "/api/openapi.json",
+    docs: "/api/docs",
     count: endpoints.len(),
     endpoints,
   })

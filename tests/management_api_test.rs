@@ -207,6 +207,19 @@ fn api_index_lists_the_agent_surface() {
   assert_eq!(response.content_type(), Some(ContentType::JSON));
 
   let body: serde_json::Value = response.into_json().expect("a JSON body");
+  // The API home points an agent at the full typed contract + the human reference.
+  assert_eq!(
+    body["openapi"], "/api/openapi.json",
+    "the index points at the OpenAPI spec"
+  );
+  assert_eq!(body["docs"], "/api/docs", "the index points at the docs");
+  assert!(
+    body["description"]
+      .as_str()
+      .unwrap_or("")
+      .contains("X-Cortex-Token"),
+    "the index orients the agent (incl. the auth hint for mutations)"
+  );
   let endpoints = body["endpoints"].as_array().expect("endpoints array");
   assert!(!endpoints.is_empty(), "the agent surface is non-empty");
   assert_eq!(
