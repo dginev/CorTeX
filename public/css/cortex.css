@@ -1112,6 +1112,18 @@ h3 {
   color: var(--ink-muted);
   font-size: var(--fs-sm);
 }
+/* Report-ladder breadcrumb: ancestor levels link up, current level is plain emphasized text. Sits
+   above the report header on every drill screen so the macro→micro path is always navigable. */
+.report-breadcrumb {
+  margin-bottom: 0.6rem;
+}
+.report-breadcrumb a {
+  white-space: nowrap;
+}
+.crumb-current {
+  color: var(--ink);
+  font-weight: 600;
+}
 .report-table {
   width: 100%;
 }

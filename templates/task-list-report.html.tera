@@ -1,5 +1,6 @@
 {% extends "layout" %} {% block content %}
 <div class="center">
+  {% include "breadcrumb" %}
   <h1>Entries {{global.from_offset}} to {{global.to_offset}}</h1>
   <br>
   <div>

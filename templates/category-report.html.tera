@@ -1,5 +1,6 @@
 {% extends "layout" %} {% block content %}
 <div class="report">
+  {% include "breadcrumb" %}
   <header class="report-header">
     <h1 class="report-title">{{global.category}} <span class="report-sep">·</span> what</h1>
     <p class="report-sub">{{global.corpus_name}} <span class="report-sep">/</span> {{global.service_name}} <span class="report-sep">·</span> {{global.severity}}</p>
