@@ -40,9 +40,12 @@ pub struct AdminStatusDto {
   pub active_jobs: usize,
   /// Active (unexpired) admin sessions.
   pub active_sessions: usize,
-  /// Worker rows registered with the dispatcher (per name+service).
+  /// Workers **active in the last ~10 minutes** (dispatched or returned a task) — the
+  /// actively-converting fleet, not all registered rows. `0` when no dispatcher is running.
   pub workers_total: i64,
-  /// Dispatched-but-not-yet-returned tasks summed across the fleet (backlog signal).
+  /// Tasks in-flight (dispatched, not yet returned) at those **active** workers — real current
+  /// in-flight work, `0` on an idle deployment (no longer a cumulative-lifetime tally;
+  /// KNOWN_ISSUES P-3).
   pub workers_in_flight: i64,
   /// Tasks awaiting conversion (status TODO, not yet dispatched) — the pending-work backlog, the
   /// human twin of the `cortex_tasks_todo` `/metrics` gauge.

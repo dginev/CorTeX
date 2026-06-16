@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 use std::sync::mpsc::{sync_channel, SyncSender};
 use std::thread;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use diesel::result::Error;
 use diesel::*;
@@ -181,12 +181,28 @@ impl WorkerMetadata {
       .get_result(connection)
   }
 
-  /// Fleet-wide totals for observability (`/metrics`): the number of registered worker rows and the
-  /// total in-flight (dispatched-but-not-yet-returned) tasks summed across the whole fleet. One
-  /// aggregate query over the small `worker_metadata` table — cheap enough to compute per scrape.
+  /// The **currently-active** fleet summary (for the dashboard, `/metrics`, and `cortex status`):
+  /// the number of workers that dispatched or returned a task within
+  /// [`ACTIVE_WORKER_WINDOW_SECS`], and the tasks in-flight (`dispatched − returned`) summed
+  /// across **those** workers. Filtering by recent activity is what makes this a truthful "what's
+  /// happening now" signal: without it, an idle deployment whose `worker_metadata` rows are
+  /// months stale reports a large phantom fleet and a meaningless cumulative-lifetime in-flight
+  /// gap (the KNOWN_ISSUES **P-3** confusion). With no dispatcher running this correctly returns
+  /// `(0, 0)`. One aggregate query over the small `worker_metadata` table — cheap per scrape.
   pub fn fleet_summary(connection: &mut PgConnection) -> Result<(i64, i64), Error> {
     use crate::schema::worker_metadata::dsl;
+    let active_since = SystemTime::now()
+      .checked_sub(Duration::from_secs(ACTIVE_WORKER_WINDOW_SECS))
+      .unwrap_or(SystemTime::UNIX_EPOCH);
     let (count, in_flight): (i64, Option<i64>) = worker_metadata::table
+      // Active = dispatched or returned a task within the window. `time_last_dispatch` is NOT NULL;
+      // a NULL `time_last_return` simply doesn't satisfy that arm (a never-returned worker still
+      // counts if it dispatched recently).
+      .filter(
+        dsl::time_last_dispatch
+          .ge(active_since)
+          .or(dsl::time_last_return.ge(active_since)),
+      )
       .select((
         diesel::dsl::count_star(),
         diesel::dsl::sum(dsl::total_dispatched - dsl::total_returned),
@@ -195,6 +211,13 @@ impl WorkerMetadata {
     Ok((count, in_flight.unwrap_or(0)))
   }
 }
+
+/// How recently a worker must have dispatched or returned a task to count as **active** in
+/// [`WorkerMetadata::fleet_summary`]. Workers process tasks frequently, so ten minutes captures the
+/// actively-converting fleet (even mid-conversion on a slow `latexml` document) while excluding
+/// rows left stale by a finished — or never-started — run. So a deployment with no dispatcher
+/// reports an empty fleet rather than a phantom one (P-3).
+const ACTIVE_WORKER_WINDOW_SECS: u64 = 600;
 
 /// Capacity of the worker-metadata event queue. A few seconds of headroom at the deployment's
 /// ~100–200 events/s; if the writer falls this far behind (e.g. the DB is stalled), further events

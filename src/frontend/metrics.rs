@@ -126,17 +126,16 @@ pub fn metrics(_caller: Actor, pool: &State<DbPool>) -> (ContentType, String) {
         gauge(
           &mut out,
           "cortex_workers_total",
-          "Worker rows registered with the dispatcher (per name+service).",
+          "Workers active in the last ~10 minutes (dispatched or returned a task) — the actively-converting fleet, not all registered rows. 0 when no dispatcher is running.",
           workers,
         );
         gauge(
           &mut out,
-          // NB: metric name kept stable for existing scrapers/dashboards even though it overstates
-          // the semantics — this is the lifetime dispatched−returned gap (KNOWN_ISSUES P-3), ≈
-          // in-flight only while the dispatcher is live; on an idle deployment it is a cumulative
-          // lifetime shortfall, not current work. The human surfaces label it "leased" accordingly.
+          // Metric name kept stable for existing scrapers/dashboards. Now a TRUE current gauge: tasks
+          // in-flight at the *active* workers, so it reads 0 on an idle deployment instead of the old
+          // misleading cumulative-lifetime gap (KNOWN_ISSUES P-3).
           "cortex_workers_in_flight_total",
-          "Tasks dispatched but not yet returned (leased), summed across the fleet. ~= in-flight while the dispatcher runs; a cumulative lifetime shortfall on an idle deployment.",
+          "Tasks in-flight (dispatched, not yet returned) at the active workers — real current in-flight work, 0 on an idle deployment.",
           in_flight,
         );
       }

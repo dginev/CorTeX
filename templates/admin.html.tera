@@ -26,7 +26,7 @@
     </div>
     <div class="admin-card">
       <div class="stat-number" id="stat-workers">{{ status.workers_total | group_thousands }}</div>
-      <div class="muted"><a href="/services">workers</a> · <span id="stat-leased">{{ status.workers_in_flight | group_thousands }}</span>&nbsp;<abbr title="Tasks dispatched but not yet returned (leased to workers). ≈ in-flight while the dispatcher is running; a cumulative lifetime shortfall on an idle deployment, so don't read it as live in-flight work.">leased</abbr></div>
+      <div class="muted"><a href="/services" title="Workers that dispatched or returned a task in the last 10 minutes — the actively-converting fleet. 0 when no dispatcher is running (registered-but-stale rows are excluded).">active&nbsp;workers</a> · <span id="stat-leased">{{ status.workers_in_flight | group_thousands }}</span>&nbsp;<abbr title="Tasks currently leased to those active workers (dispatched, not yet returned) — real in-flight work, 0 on an idle deployment.">leased</abbr></div>
     </div>
     <div class="admin-card">
       <div class="stat-number" id="stat-todo">{{ status.tasks_todo | group_thousands }}</div>

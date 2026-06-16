@@ -1846,11 +1846,12 @@ fn run_status(json: bool) {
       "  pending tasks:    {}   (awaiting conversion / TODO)",
       group_thousands(tasks_todo)
     );
-    // `workers_in_flight` is the *lifetime* `dispatched − returned` gap (inflated by reaps/
-    // redispatches over a corpus's life), not currently-in-flight work — so label it plainly here
-    // (KNOWN_ISSUES P-3); the value matches the dashboard/`/metrics` for cross-checking.
+    // The *active* fleet (workers that dispatched/returned within ~10 min) + their in-flight tasks
+    // — a truthful "what's running now" signal that reads 0 on an idle deployment, rather than
+    // the old lifetime gap (KNOWN_ISSUES P-3); matches the dashboard/`/metrics` for
+    // cross-checking.
     println!(
-      "  workers:          {workers_total} registered · {} dispatched−unreturned (lifetime)",
+      "  workers:          {workers_total} active · {} in-flight",
       group_thousands(workers_in_flight)
     );
     println!("  background jobs:  {active_jobs} active · {jobs_failed_recent} failed (24h)");
