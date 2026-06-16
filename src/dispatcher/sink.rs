@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -22,6 +23,14 @@ use crate::models::{Task, WorkerMetadataSender};
 /// little ahead of the receive loop; a full channel simply makes the receive loop wait, which is
 /// the correct backpressure when the disk cannot keep up.
 const SINK_WRITER_CHANNEL_CAPACITY: usize = 64;
+
+/// How often a **bounded** (`job_limit = Some(_)`) sink wakes from a blocked `recv()` to re-check
+/// the shared completion signal, so it can terminate once the ventilator has finished dispatching
+/// and the in-flight set has drained (KNOWN_ISSUES D-5). `recv()` is cancel-safe — its `FairQueue`
+/// buffers messages behind a `Mutex` and the `recv` future holds no message — so a timed-out poll
+/// loses nothing. Perpetual production runs (`job_limit = None`) never use this; they block
+/// plainly.
+const SINK_TERMINATION_POLL: Duration = Duration::from_millis(250);
 
 /// A unit of work streamed from the sink's receive loop to an archive-writer thread (dispatcher
 /// rationalization phase 3 — D-7 sink fan-out). The receive loop owns the ZMQ socket and reads each
@@ -212,6 +221,7 @@ impl Sink {
     progress_queue_arc: &Arc<server::InFlightSet>,
     done_tx: &SyncSender<TaskReport>,
     job_limit: Option<usize>,
+    dispatch_complete: &Arc<AtomicBool>,
   ) -> Result<(), Box<dyn Error>> {
     // Hard cap on a single result's on-disk size (config `dispatcher.max_result_bytes`, default
     // 2 GiB): a runaway worker must not fill `/data`.
@@ -252,6 +262,11 @@ impl Sink {
       // sustained bad-reply flood must not turn per-message `stderr` writes into a throughput-DoS
       // (KNOWN_ISSUES D-11) — count, don't narrate.
       let mut discard_log = server::RateLimitedLog::new(Duration::from_secs(5));
+      // A bounded run (`job_limit = Some(_)`) must be able to stop once the ventilator signals
+      // dispatching is done and the in-flight set has drained; a perpetual production run
+      // (`job_limit = None`) blocks plainly forever (terminated only by the manager's supervised
+      // abort), exactly as before.
+      let bounded = job_limit.is_some();
 
       loop {
         // Fail-fast: a writer thread that died (e.g. a panic in `generate_report`) must bring down
@@ -266,7 +281,27 @@ impl Sink {
         // One atomic multipart message: `[identity, service, taskid, ...data]`. No RCVMORE dance —
         // the whole message arrives at once, so a short/malformed reply is just a short frame
         // vector (handled by `parse_reply_envelope`), never a desync of the next reply.
-        let msg = match pull.recv().await {
+        //
+        // Bounded run: poll the recv so we wake to re-check the shared completion signal even when
+        // no result is arriving (e.g. the ventilator finished and the last result already landed
+        // before `dispatch_complete` flipped). The timeout only ever fires while idle — i.e. with
+        // nothing mid-delivery — and `recv()` is cancel-safe, so dropping the timed-out future
+        // loses no message (KNOWN_ISSUES D-5).
+        let recv_outcome = if bounded {
+          match tokio::time::timeout(SINK_TERMINATION_POLL, pull.recv()).await {
+            Ok(inner) => inner,
+            Err(_elapsed) => {
+              if dispatch_complete.load(Ordering::Acquire) && progress_queue_arc.is_empty() {
+                info!("sink: dispatching complete and in-flight drained; terminating sink");
+                break;
+              }
+              continue;
+            },
+          }
+        } else {
+          pull.recv().await
+        };
+        let msg = match recv_outcome {
           Ok(m) => m,
           Err(e) => {
             return Err(Box::<dyn Error>::from(io::Error::other(format!(
@@ -407,11 +442,15 @@ impl Sink {
           "sink {sink_job_count}: received {total_incoming} bytes, recv took {request_duration}ms."
         );
 
-        if let Some(limit_number) = job_limit {
-          if sink_job_count >= limit_number {
-            info!("sink {limit_number}: job limit reached, terminating Sink thread...");
-            break;
-          }
+        // Bounded run: terminate once the ventilator has signalled dispatching is done AND every
+        // dispatched task has come back (the in-flight set is empty) — the shared completion
+        // condition that replaced the old per-thread `sink_job_count >= limit` (KNOWN_ISSUES D-5).
+        // Checked here right after a result lands (so the run ends promptly when the last one
+        // arrives) and on the recv-timeout poll above (so a sink already blocked when the signal
+        // flips still wakes to notice).
+        if bounded && dispatch_complete.load(Ordering::Acquire) && progress_queue_arc.is_empty() {
+          info!("sink: dispatching complete and in-flight drained; terminating sink");
+          break;
         }
       }
       Ok(())

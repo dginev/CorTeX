@@ -158,6 +158,11 @@ path = "tests/concurrent_dispatch_test.rs"
 harness = false
 
 [[test]]
+name = "dispatcher_job_limit_test"
+path = "tests/dispatcher_job_limit_test.rs"
+harness = false
+
+[[test]]
 name = "reports_api_test"
 path = "tests/reports_api_test.rs"
 harness = false

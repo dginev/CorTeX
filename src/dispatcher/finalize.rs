@@ -4,7 +4,7 @@ use crate::helpers::TaskReport;
 use std::error::Error;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 /// Upper bound on how stale the `report_summary` rollup may get while a run is in flight. A single
 /// conversion run can take weeks, so an event-only refresh (on drain) is not enough — we also
@@ -23,8 +23,6 @@ fn report_refresh_interval() -> Duration {
 pub struct Finalize {
   /// the DB address to bind on
   pub backend_address: String,
-  /// Maximum number of jobs before manager termination (optional)
-  pub job_limit: Option<usize>,
 }
 
 /// Accumulates a finalize batch off the bounded done channel: starting from `first`, keep pulling
@@ -70,9 +68,11 @@ impl Finalize {
   /// whole batch in one `mark_done` transaction. This is **event-driven** (woken the instant a
   /// result lands), **backpressured** by the bounded channel (not the old `Mutex<Vec>` +
   /// panic-backstop), and **coalesced** so DB write frequency stays bounded under load (phase 2).
-  /// The outer `recv_timeout(1s)` preserves the 1s idle cadence for the `job_limit` check + the
-  /// refresh-on-drain. `Disconnected` (all producers gone) is a clean shutdown. `jobs_count` counts
-  /// **batches**, as before, so `job_limit` semantics are unchanged.
+  /// The outer `recv_timeout(1s)` preserves the 1s idle cadence for the refresh-on-drain. Shutdown
+  /// is driven entirely by `Disconnected` (every producer's done-sender dropped): in a bounded run
+  /// the manager drops the last sender once the ventilator + sink have finished, and the finalize
+  /// thread then drains the remaining reports and stops (KNOWN_ISSUES D-5 — no per-thread
+  /// `job_limit` counter, which was the unit that disagreed with the other two threads).
   pub fn start(&self, done_rx: Receiver<TaskReport>) -> Result<(), Box<dyn Error>> {
     let mut backend = backend::from_address(&self.backend_address);
     let dispatcher = &crate::config::config().dispatcher;
@@ -136,16 +136,6 @@ impl Finalize {
           }
           break;
         },
-      }
-      if let Some(limit) = self.job_limit {
-        if jobs_count >= limit {
-          info!("finalize {limit}: job limit reached, terminating finalize thread...");
-          // Make the final batch visible before we stop.
-          if reports_dirty {
-            refresh_reports(&mut backend);
-          }
-          break;
-        }
       }
     }
     Ok(())

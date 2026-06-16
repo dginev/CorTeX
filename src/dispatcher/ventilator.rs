@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::Read;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::time::Duration;
@@ -47,6 +48,7 @@ impl Ventilator {
     progress_queue_arc: &Arc<server::InFlightSet>,
     done_tx: &SyncSender<TaskReport>,
     job_limit: Option<usize>,
+    dispatch_complete: &Arc<AtomicBool>,
   ) -> Result<usize, Box<dyn Error>> {
     // We have a Ventilator-exclusive "queues" stack of tasks to be dispatched, keyed by service id
     // so a reaped task is always re-queued to its own service (not whichever service is
@@ -83,6 +85,12 @@ impl Ventilator {
       std::io::Error::other(format!("ventilator: zeromq bind {address} failed: {e}"))
     })?;
     let mut source_job_count: usize = 0;
+    // Count of *fresh* tasks actually leased to a worker (a `retries == 0` lease), as distinct from
+    // `source_job_count` which counts every request — including the mock-replies (unknown service,
+    // backpressure, momentary-empty-queue). A bounded run (`job_limit = Some(N)`) terminates on N
+    // **real dispatches**, not N requests: the unit mismatch — three threads counting `job_limit`
+    // in three incompatible units — was the KNOWN_ISSUES D-5 lockstep-termination hang.
+    let mut real_dispatched: usize = 0;
     // Reap timed-out in-flight tasks on a cadence rather than only on refetch (KNOWN_ISSUES D-6),
     // so the in-flight set drains even under sustained backpressure (when refetch never runs). The
     // cadence is runtime-configurable (`dispatcher.reap_interval_seconds`, default 60s — well below
@@ -141,6 +149,9 @@ impl Ventilator {
 
       let request_time = chrono::Utc::now();
       source_job_count += 1;
+      // Whether this iteration actually leased a task to the worker (vs. a mock-reply). Drives the
+      // bounded-run source-drain check at the bottom of the loop.
+      let mut dispatched_this_iter = false;
       // Reap timed-out in-flight tasks on a cadence (decoupled from refetch): routes each expired
       // task back to its own service's queue or reports it Fatal, so the in-flight set drains even
       // while saturated (backpressure) — closes the D-6 reaping-coupling residual.
@@ -212,6 +223,14 @@ impl Ventilator {
         ventilator.send(identity, SNDMORE)?;
         let mut taskid = -1;
         if let Some(current_task_progress) = task_queue.pop() {
+          dispatched_this_iter = true;
+          // A `retries == 0` task is entering the pipeline for the first time; a re-leased task
+          // (retries > 0, from the reaper requeue) was already counted on its first dispatch, so
+          // only fresh leases advance the bounded-run target — keeping `real_dispatched` a true
+          // unique-task count that finalize can eventually match.
+          if current_task_progress.retries == 0 {
+            real_dispatched += 1;
+          }
           // Record the dispatch in the in-flight set BEFORE streaming the payload to the worker. A
           // fast worker (e.g. echo) can return its result to the sink before this iteration even
           // finishes; if the task were recorded only *after* the send (as it was), the sink's
@@ -278,9 +297,26 @@ impl Ventilator {
         warn!("No such service {service_name:?} in ventilator request from {identity_str:?}");
       }
       if let Some(limit_number) = job_limit {
-        if source_job_count >= limit_number {
-          info!("vent {limit_number}: job limit reached, terminating Ventilator thread...");
-          return Ok(source_job_count);
+        // Bounded run terminates on N *real* dispatches (not N requests). Publish the shared
+        // completion signal so the sink (which then drains the in-flight set) and finalize (which
+        // the manager disconnects) agree on "done" — one condition instead of the three
+        // incompatible per-thread counters that used to deadlock (KNOWN_ISSUES D-5).
+        if real_dispatched >= limit_number {
+          info!("vent: bounded job limit ({limit_number}) reached after {real_dispatched} real dispatch(es); terminating ventilator");
+          dispatch_complete.store(true, Ordering::Release);
+          return Ok(real_dispatched);
+        }
+        // Source-drain: this iteration leased nothing (the queue was empty after a refetch) and no
+        // task is still in flight, so there is genuinely no more work to dispatch — stop rather
+        // than mock-reply forever toward an unreachable limit (the owner-noted "empty-queue
+        // mock-replies forever" gap). The in-flight-empty guard prevents terminating while
+        // results are still pending; it is exact for the single-service bounded runs
+        // `job_limit` is used for (a multi-service bounded run could drain one service
+        // early — acceptable, benchmark-only).
+        if !dispatched_this_iter && progress_queue_arc.is_empty() {
+          info!("vent: source exhausted after {real_dispatched} dispatch(es) (< limit {limit_number}); terminating ventilator");
+          dispatch_complete.store(true, Ordering::Release);
+          return Ok(real_dispatched);
         }
       }
     }

@@ -5,6 +5,7 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
 use std::thread::{self, sleep};
@@ -64,6 +65,12 @@ impl TaskManager {
     let sandboxes_arc = Arc::new(SandboxCache::new());
     let progress_queue_arc = Arc::new(InFlightSet::new());
 
+    // Shared bounded-run completion signal (KNOWN_ISSUES D-5). The ventilator sets it once it has
+    // dispatched the `job_limit`'s worth of real tasks (or drained the source); the sink reads it
+    // to know it may terminate as soon as the in-flight set empties. It stays `false` forever
+    // in perpetual production mode (`job_limit = None`), so that path is provably unchanged.
+    let dispatch_complete = Arc::new(AtomicBool::new(false));
+
     // Done queue (phase 1): a **bounded** channel instead of `Arc<Mutex<Vec<TaskReport>>>` + a
     // panic backstop. The sink + ventilator-reaper `send` finished reports (cloning the
     // sender); the finalize thread owns the single receiver. A full channel blocks the
@@ -95,7 +102,6 @@ impl TaskManager {
     let finalize_thread = thread::spawn(move || {
       Finalize {
         backend_address: finalize_backend_address,
-        job_limit,
       }
       .start(done_rx)
       .unwrap_or_else(|e| panic!("Failed in finalize thread: {e:?}"));
@@ -113,6 +119,7 @@ impl TaskManager {
 
     let sink_done_tx = done_tx.clone();
     let sink_metadata = metadata.clone();
+    let sink_dispatch_complete = dispatch_complete.clone();
     let sink_thread = thread::spawn(move || {
       Sink {
         port: result_port,
@@ -127,6 +134,7 @@ impl TaskManager {
         &sink_progress_queue_arc,
         &sink_done_tx,
         job_limit,
+        &sink_dispatch_complete,
       )
       .unwrap_or_else(|e| panic!("Failed in sink thread: {e:?}"));
     });
@@ -141,6 +149,7 @@ impl TaskManager {
       let vent_done_tx = done_tx.clone();
       let vent_backend_address = source_backend_address.clone();
       let vent_metadata = metadata.clone();
+      let vent_dispatch_complete = dispatch_complete.clone();
       let vent_thread = thread::spawn(move || {
         let ventilator = Ventilator {
           port: source_port,
@@ -157,6 +166,7 @@ impl TaskManager {
             &vent_progress_queue_arc,
             &vent_done_tx,
             job_limit,
+            &vent_dispatch_complete,
           )
           .unwrap_or_else(|e| panic!("Failed in ventilator thread: {e:?}"));
       });
@@ -186,10 +196,19 @@ impl TaskManager {
       }
       sleep(Duration::from_secs(1));
     }
+    // Bounded run only (perpetual mode returns `ETERM` inside the loop and never reaches here). The
+    // ventilator has signalled completion; join the sink (it drains the in-flight set, then stops),
+    // then DROP the manager's done-channel sender so the finalize thread sees `Disconnected` — its
+    // clean shutdown — and persists the last batch before stopping. This shared completion
+    // handshake (dispatch_complete → sink drains → drop sender → finalize disconnects) replaced
+    // the three mismatched per-thread `job_limit` counters that used to deadlock (KNOWN_ISSUES
+    // D-5).
     if sink_thread.join().is_err() {
       error!("Sink thread died unexpectedly!");
-      Err(zmq::Error::ETERM)
-    } else if finalize_thread.join().is_err() {
+      return Err(zmq::Error::ETERM);
+    }
+    drop(done_tx);
+    if finalize_thread.join().is_err() {
       error!("DB thread died unexpectedly!");
       Err(zmq::Error::ETERM)
     } else {
