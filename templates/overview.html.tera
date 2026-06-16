@@ -11,7 +11,6 @@
 
   {% if corpora and corpora | length > 0 %}
   <h2 class="section-heading">Corpora</h2>
-  <p class="muted"><a href="/api/corpora">view as JSON</a></p>
   <section class="corpora-grid">
     {% for corpus in corpora %}
     <a class="corpus-card" href="/corpus/{{ corpus.name_uri }}">
