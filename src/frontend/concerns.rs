@@ -4,6 +4,7 @@ use diesel::PgConnection;
 use rocket::fs::NamedFile;
 use rocket::http::Status;
 use rocket::response::status::{Accepted, NotFound};
+use rocket::serde::json::Json;
 use rocket::{get, post, routes, Route, State};
 use rocket_dyn_templates::Template;
 use std::collections::HashMap;
@@ -12,8 +13,9 @@ use std::str;
 use crate::backend::{
   mark_rerun, progress_report, save_historical_tasks, DbPool, PooledConn, RerunOptions,
 };
+use crate::frontend::actor::AdminSession;
 use crate::frontend::helpers::*;
-use crate::frontend::params::{ReportParams, TemplateContext};
+use crate::frontend::params::{ReportParams, RerunRequestParams, TemplateContext};
 use crate::frontend::render::task_report;
 use crate::models::{Corpus, HistoricalRun, Service, Task};
 
@@ -464,4 +466,172 @@ pub async fn entry_fetch(
 
 /// The document-serving route set (preview + archive download), migrated out of `bin/frontend.rs`
 /// onto the pooled, testable library surface.
-pub fn routes() -> Vec<Route> { routes![preview_entry, entry_fetch] }
+/// Shared core of the **human** (cookie-authed) rerun routes: require a signed-in admin, then mark
+/// the `(corpus, service[, severity, category, what])` scope for reconversion — attributed to the
+/// admin, spawning the debounced rollup refresh off the request path (the agent twin is the
+/// token-gated `POST /api/reports/<c>/<s>/rerun`). `401` without a session; `404` on an unknown
+/// corpus/service (in `serve_rerun`).
+#[allow(clippy::too_many_arguments)]
+fn human_rerun(
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+  corpus_name: String,
+  service_name: String,
+  severity: Option<String>,
+  category: Option<String>,
+  what: Option<String>,
+  description: &str,
+) -> Result<Accepted<String>, Status> {
+  let session = session.ok_or(Status::Unauthorized)?;
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  serve_rerun(
+    &mut connection,
+    pool.inner(),
+    corpus_name,
+    service_name,
+    severity,
+    category,
+    what,
+    &session.owner,
+    description,
+  )
+}
+
+/// Human rerun — whole `(corpus, service)`. Cookie-gated; the rerun modal XHRs a JSON
+/// `{description}`.
+#[post(
+  "/rerun/<corpus_name>/<service_name>",
+  format = "application/json",
+  data = "<rr>"
+)]
+pub fn rerun_corpus(
+  corpus_name: String,
+  service_name: String,
+  rr: Json<RerunRequestParams>,
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+) -> Result<Accepted<String>, Status> {
+  human_rerun(
+    session,
+    pool,
+    corpus_name,
+    service_name,
+    None,
+    None,
+    None,
+    &rr.description,
+  )
+}
+
+/// Human rerun — scoped to a `severity`.
+#[post(
+  "/rerun/<corpus_name>/<service_name>/<severity>",
+  format = "application/json",
+  data = "<rr>"
+)]
+pub fn rerun_severity(
+  corpus_name: String,
+  service_name: String,
+  severity: String,
+  rr: Json<RerunRequestParams>,
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+) -> Result<Accepted<String>, Status> {
+  human_rerun(
+    session,
+    pool,
+    corpus_name,
+    service_name,
+    Some(severity),
+    None,
+    None,
+    &rr.description,
+  )
+}
+
+/// Human rerun — scoped to a `severity`/`category`.
+#[post(
+  "/rerun/<corpus_name>/<service_name>/<severity>/<category>",
+  format = "application/json",
+  data = "<rr>"
+)]
+#[allow(clippy::too_many_arguments)]
+pub fn rerun_category(
+  corpus_name: String,
+  service_name: String,
+  severity: String,
+  category: String,
+  rr: Json<RerunRequestParams>,
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+) -> Result<Accepted<String>, Status> {
+  human_rerun(
+    session,
+    pool,
+    corpus_name,
+    service_name,
+    Some(severity),
+    Some(category),
+    None,
+    &rr.description,
+  )
+}
+
+/// Human rerun — scoped to a `severity`/`category`/`what`.
+#[post(
+  "/rerun/<corpus_name>/<service_name>/<severity>/<category>/<what>",
+  format = "application/json",
+  data = "<rr>"
+)]
+#[allow(clippy::too_many_arguments)]
+pub fn rerun_what(
+  corpus_name: String,
+  service_name: String,
+  severity: String,
+  category: String,
+  what: String,
+  rr: Json<RerunRequestParams>,
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+) -> Result<Accepted<String>, Status> {
+  human_rerun(
+    session,
+    pool,
+    corpus_name,
+    service_name,
+    Some(severity),
+    Some(category),
+    Some(what),
+    &rr.description,
+  )
+}
+
+/// Human **save-snapshot**: freezes the current per-task statuses into `historical_tasks`.
+/// Cookie-gated (`401` without a session); `404` on an unknown corpus/service.
+#[post("/savetasks/<corpus_name>/<service_name>")]
+pub fn savetasks(
+  corpus_name: String,
+  service_name: String,
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+) -> Result<Accepted<String>, Status> {
+  if session.is_none() {
+    return Err(Status::Unauthorized);
+  }
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  serve_savetasks(&mut connection, corpus_name.to_lowercase(), service_name)
+}
+
+/// The document-serving + human rerun/save-snapshot route set, migrated out of `bin/frontend.rs`
+/// onto the pooled, testable library surface.
+pub fn routes() -> Vec<Route> {
+  routes![
+    preview_entry,
+    entry_fetch,
+    rerun_corpus,
+    rerun_severity,
+    rerun_category,
+    rerun_what,
+    savetasks
+  ]
+}

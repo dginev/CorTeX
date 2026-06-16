@@ -567,6 +567,44 @@ fn document_forensics_caps_pathological_message_volume() {
     .ok();
 }
 
+// The **human** rerun route (cookie-authed, migrated from bin → library): denied without a session
+// (no anonymous reprocessing), accepted for a signed-in admin — the human twin of the token-gated
+// agent rerun. (The agent path's 401 is covered above; this pins the cookie-auth half.)
+fn human_rerun_requires_session() {
+  seed();
+  let client = client();
+
+  // No session cookie → 401 (the modal's XHR carries the cookie; anonymous is rejected).
+  let response = client
+    .post(format!("/rerun/{CORPUS_NAME}/{SERVICE_NAME}"))
+    .header(ContentType::JSON)
+    .body(r#"{"description":"contract test rerun"}"#)
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Unauthorized,
+    "a human rerun without a signed-in session is 401"
+  );
+
+  // Sign in (AdminSession cookie), then the scoped rerun is accepted (marks the warning slice
+  // TODO).
+  client
+    .post("/admin/login")
+    .header(ContentType::Form)
+    .body("token=token1")
+    .dispatch();
+  let response = client
+    .post(format!("/rerun/{CORPUS_NAME}/{SERVICE_NAME}/warning"))
+    .header(ContentType::JSON)
+    .body(r#"{"description":"contract test rerun"}"#)
+    .dispatch();
+  let status = response.status();
+  assert!(
+    status == Status::Ok || status == Status::Accepted,
+    "a signed-in admin rerun is accepted, got {status}"
+  );
+}
+
 // Custom harness (`harness = false`): own `main`, so we end with `libc::_exit(0)` while the Client
 // is still alive — skipping the racy libpq/OpenSSL `atexit` teardown that SIGSEGVs a
 // default-harness exit (KNOWN_ISSUES L-1). A panic still aborts non-zero, so a real assertion
@@ -576,6 +614,7 @@ fn main() {
   service_overview_reports_the_status_breakdown();
   document_forensics_reports_status_and_messages();
   document_forensics_caps_pathological_message_volume();
+  human_rerun_requires_session();
   eprintln!("reports_api_test: all cases passed");
   unsafe { libc::_exit(0) }
 }

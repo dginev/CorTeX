@@ -12,155 +12,14 @@ use std::path::{Path, PathBuf};
 
 use rocket::fs::NamedFile;
 use rocket::futures::TryFutureExt;
-use rocket::response::status::{Accepted, NotFound};
-use rocket::serde::json::Json;
-use rocket::State;
+use rocket::response::status::NotFound;
 
-use cortex::backend::DbPool;
 use cortex::config::config;
-use cortex::frontend::actor::AdminSession;
-use cortex::frontend::concerns::{serve_rerun, serve_savetasks};
 use cortex::frontend::cors::CORS;
-use cortex::frontend::params::RerunRequestParams;
-use rocket::http::Status;
 
-#[post(
-  "/rerun/<corpus_name>/<service_name>",
-  format = "application/json",
-  data = "<rr>"
-)]
-fn rerun_corpus(
-  corpus_name: String,
-  service_name: String,
-  rr: Json<RerunRequestParams>,
-  session: Option<AdminSession>,
-  pool: &State<DbPool>,
-) -> Result<Accepted<String>, Status> {
-  let Some(session) = session else {
-    return Err(Status::Unauthorized);
-  };
-  let mut conn = pool.get().map_err(|_| Status::ServiceUnavailable)?;
-  serve_rerun(
-    &mut conn,
-    pool.inner(),
-    corpus_name.to_lowercase(),
-    service_name,
-    None,
-    None,
-    None,
-    &session.owner,
-    &rr.description,
-  )
-}
-
-#[post(
-  "/rerun/<corpus_name>/<service_name>/<severity>",
-  format = "application/json",
-  data = "<rr>"
-)]
-fn rerun_severity(
-  corpus_name: String,
-  service_name: String,
-  severity: String,
-  rr: Json<RerunRequestParams>,
-  session: Option<AdminSession>,
-  pool: &State<DbPool>,
-) -> Result<Accepted<String>, Status> {
-  let Some(session) = session else {
-    return Err(Status::Unauthorized);
-  };
-  let mut conn = pool.get().map_err(|_| Status::ServiceUnavailable)?;
-  serve_rerun(
-    &mut conn,
-    pool.inner(),
-    corpus_name,
-    service_name,
-    Some(severity),
-    None,
-    None,
-    &session.owner,
-    &rr.description,
-  )
-}
-
-#[post(
-  "/rerun/<corpus_name>/<service_name>/<severity>/<category>",
-  format = "application/json",
-  data = "<rr>"
-)]
-#[allow(clippy::too_many_arguments)]
-fn rerun_category(
-  corpus_name: String,
-  service_name: String,
-  severity: String,
-  category: String,
-  rr: Json<RerunRequestParams>,
-  session: Option<AdminSession>,
-  pool: &State<DbPool>,
-) -> Result<Accepted<String>, Status> {
-  let Some(session) = session else {
-    return Err(Status::Unauthorized);
-  };
-  let mut conn = pool.get().map_err(|_| Status::ServiceUnavailable)?;
-  serve_rerun(
-    &mut conn,
-    pool.inner(),
-    corpus_name,
-    service_name,
-    Some(severity),
-    Some(category),
-    None,
-    &session.owner,
-    &rr.description,
-  )
-}
-
-#[post(
-  "/rerun/<corpus_name>/<service_name>/<severity>/<category>/<what>",
-  format = "application/json",
-  data = "<rr>"
-)]
-#[allow(clippy::too_many_arguments)]
-fn rerun_what(
-  corpus_name: String,
-  service_name: String,
-  severity: String,
-  category: String,
-  what: String,
-  rr: Json<RerunRequestParams>,
-  session: Option<AdminSession>,
-  pool: &State<DbPool>,
-) -> Result<Accepted<String>, Status> {
-  let Some(session) = session else {
-    return Err(Status::Unauthorized);
-  };
-  let mut conn = pool.get().map_err(|_| Status::ServiceUnavailable)?;
-  serve_rerun(
-    &mut conn,
-    pool.inner(),
-    corpus_name,
-    service_name,
-    Some(severity),
-    Some(category),
-    Some(what),
-    &session.owner,
-    &rr.description,
-  )
-}
-
-#[post("/savetasks/<corpus_name>/<service_name>")]
-fn savetasks(
-  corpus_name: String,
-  service_name: String,
-  session: Option<AdminSession>,
-  pool: &State<DbPool>,
-) -> Result<Accepted<String>, Status> {
-  let Some(_session) = session else {
-    return Err(Status::Unauthorized);
-  };
-  let mut conn = pool.get().map_err(|_| Status::ServiceUnavailable)?;
-  serve_savetasks(&mut conn, corpus_name.to_lowercase(), service_name)
-}
+// The binary now owns only the static-asset routes; every database-backed route (corpora, reports,
+// runs, services, management, the document-serving + human rerun/save-snapshot paths) lives on the
+// pooled, testable library surface and is mounted by `cortex::frontend::server::mount_api`.
 
 #[get("/favicon.ico")]
 async fn favicon() -> Result<NamedFile, NotFound<String>> {
@@ -193,21 +52,9 @@ fn rocket() -> _ {
   let figment =
     rocket::Config::figment().merge(("template_dir", config().assets.template_dir.as_str()));
   let rocket = rocket::custom(figment)
-    .mount(
-      "/",
-      routes![
-        favicon,
-        robots,
-        files,
-        rerun_corpus,
-        rerun_severity,
-        rerun_category,
-        rerun_what,
-        savetasks
-      ],
-    )
+    .mount("/", routes![favicon, robots, files])
     .attach(CORS());
-  // Mount the library API/UI surface (management/health/settings, corpora, …); the builder owns the
-  // connection pool and the Template fairing.
+  // Mount the library API/UI surface (management/health/settings, corpora, reports, the document +
+  // rerun routes, …); the builder owns the connection pool and the Template fairing.
   cortex::frontend::server::mount_api(rocket)
 }
