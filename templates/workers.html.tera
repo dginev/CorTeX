@@ -1,6 +1,15 @@
 {% extends "layout" %} {% block content %}
 <div class="center">
   <h1>Workers for {{global.service_name}}</h1>
+  <p class="fleet-summary">
+    <strong>{{global.fleet_total}}</strong> workers
+    <span class="report-sep">·</span>
+    <span class="status-ok">{{global.fleet_fresh}} active</span>
+    <span class="report-sep">·</span>
+    <span class="muted">{{global.fleet_stale}} idle</span>
+    <span class="report-sep">·</span>
+    <span class="muted">{{global.fleet_dispatched}} dispatched / {{global.fleet_returned}} returned (lifetime)</span>
+  </p>
   <p class="muted"><a href="/api/services/{{global.service_name}}/workers">view as JSON</a></p>
   <br>
   <div>
@@ -18,7 +27,7 @@
       <tbody>
         {% for worker in workers %}
         <tr class="{{worker.fresh}}">
-          <td>{{worker.name}}</td>
+          <td>{% if worker.name %}{{worker.name}}{% else %}<span class="muted">(unnamed)</span>{% endif %}</td>
           <td class="recent-time"><time datetime="{{worker.time_last_dispatch}}">{{worker.time_last_dispatch}}</time></td>
           <td class="recent-time"><time datetime="{{worker.time_last_return}}">{{worker.time_last_return}}</time></td>
           <td><time datetime="{{worker.first_seen}}">{{worker.first_seen}}</time></td>

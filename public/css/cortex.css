@@ -418,6 +418,12 @@ hr {
 .severity-summary {
   margin: 0.25rem 0 1rem;
 }
+/* At-a-glance fleet-health line above the worker table (active/idle counts + throughput). */
+.fleet-summary {
+  margin: 0.25rem 0 0.75rem;
+  font-size: var(--fs-sm);
+  color: var(--ink-soft);
+}
 /* Shown when a document carries more messages than the per-severity display cap — the tables are a
    bounded sample, so flag it (the counts stay exact). */
 .truncation-note {

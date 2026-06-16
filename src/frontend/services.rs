@@ -128,6 +128,24 @@ fn resolve(service: &str, connection: &mut diesel::PgConnection) -> Result<Servi
   Service::find_by_name(service, connection).map_err(|_| Status::NotFound)
 }
 
+/// Groups a non-negative count into thousands with commas (`5449369` → `5,449,369`) for the
+/// fleet-summary throughput, which can reach millions on a long-lived corpus.
+fn group_thousands(n: i64) -> String {
+  let digits = n.abs().to_string();
+  let mut grouped = String::new();
+  for (i, ch) in digits.chars().enumerate() {
+    if i > 0 && (digits.len() - i).is_multiple_of(3) {
+      grouped.push(',');
+    }
+    grouped.push(ch);
+  }
+  if n < 0 {
+    format!("-{grouped}")
+  } else {
+    grouped
+  }
+}
+
 /// The service registry (agent twin of the registry screen): every registered service. `503` if the
 /// pool is exhausted.
 #[rocket_okapi::openapi(tag = "Services")]
@@ -584,13 +602,40 @@ pub fn worker_report_page(
   require_admin_to(session, &return_to)?;
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let service_record = resolve(service, &mut connection)?;
-  let workers: Vec<HashMap<String, String>> = service_record
+  let worker_records = service_record
     .select_workers(&mut connection)
-    .unwrap_or_default()
-    .into_iter()
-    .map(Into::into)
-    .collect();
+    .unwrap_or_default();
+  // Fleet-health summary so a ~200-worker fleet reads at a glance instead of by scanning every row.
+  let fleet_total = worker_records.len();
+  let fleet_fresh = worker_records.iter().filter(|w| w.is_fresh()).count();
+  let fleet_dispatched: i64 = worker_records
+    .iter()
+    .map(|w| i64::from(w.total_dispatched))
+    .sum();
+  let fleet_returned: i64 = worker_records
+    .iter()
+    .map(|w| i64::from(w.total_returned))
+    .sum();
+  let workers: Vec<HashMap<String, String>> = worker_records.into_iter().map(Into::into).collect();
   let mut global = HashMap::new();
+  global.insert("fleet_total".to_string(), fleet_total.to_string());
+  global.insert("fleet_fresh".to_string(), fleet_fresh.to_string());
+  global.insert(
+    "fleet_stale".to_string(),
+    fleet_total.saturating_sub(fleet_fresh).to_string(),
+  );
+  // Throughput is cumulative (lifetime) and can reach millions on a long-lived corpus, so group the
+  // digits for readability. (Deliberately no "in flight" total here — `dispatched - returned` is a
+  // lifetime gap inflated by reaps/redispatches, not currently-in-flight work; the per-worker table
+  // surfaces the actionable per-worker gap.)
+  global.insert(
+    "fleet_dispatched".to_string(),
+    group_thousands(fleet_dispatched),
+  );
+  global.insert(
+    "fleet_returned".to_string(),
+    group_thousands(fleet_returned),
+  );
   global.insert(
     "title".to_string(),
     format!("Worker report for service {service} "),
@@ -700,4 +745,20 @@ pub fn routes() -> Vec<Route> {
     worker_report_page,
     delete_service_human
   ]
+}
+
+#[cfg(test)]
+mod tests {
+  use super::group_thousands;
+
+  #[test]
+  fn group_thousands_inserts_separators() {
+    assert_eq!(group_thousands(0), "0");
+    assert_eq!(group_thousands(7), "7");
+    assert_eq!(group_thousands(999), "999");
+    assert_eq!(group_thousands(1000), "1,000");
+    assert_eq!(group_thousands(12345), "12,345");
+    assert_eq!(group_thousands(5_449_369), "5,449,369");
+    assert_eq!(group_thousands(-1234), "-1,234");
+  }
 }

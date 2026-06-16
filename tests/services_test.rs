@@ -114,6 +114,17 @@ fn worker_fleet_api_and_screen() {
     "a worker last active at now() is fresh"
   );
 
+  // A worker that registered with an EMPTY identity must not render as a blank, unidentifiable row.
+  let mut db = backend::testdb();
+  diesel::sql_query(format!(
+    "INSERT INTO worker_metadata \
+     (service_id, last_dispatched_task_id, total_dispatched, total_returned, first_seen, \
+      time_last_dispatch, name) \
+     VALUES ({service_id}, 1, 5, 5, now(), now(), '')"
+  ))
+  .execute(&mut db.connection)
+  .expect("seed empty-identity worker");
+
   // --- HTML twin: the worker-fleet screen renders the worker server-side ----------------------
   let response = client.get(format!("/workers/{SERVICE_NAME}")).dispatch();
   assert_eq!(response.status(), Status::Ok);
@@ -123,6 +134,17 @@ fn worker_fleet_api_and_screen() {
   assert!(
     body.contains(WORKER_NAME),
     "lists the seeded worker server-side"
+  );
+  // The fleet-health summary renders at-a-glance counts (a ~200-worker fleet read without
+  // scanning).
+  assert!(
+    body.contains("active") && body.contains("idle") && body.contains("dispatched"),
+    "the fleet-health summary header is rendered"
+  );
+  // The empty-identity worker shows a placeholder rather than a blank cell.
+  assert!(
+    body.contains("(unnamed)"),
+    "an empty-identity worker renders as (unnamed), not a blank row"
   );
 
   // --- Service registry: the agent API lists our service, the HTML screen renders it ----------

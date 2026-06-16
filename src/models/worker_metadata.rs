@@ -138,18 +138,25 @@ fn iso_utc_system(then: SystemTime) -> String {
 /// across the fleet's hosts, or a DB clock running ahead) counts as fresh rather than
 /// `.unwrap()`-panicking on the `/workers/<service>` request path (no-panic-on-request-path
 /// mandate; cf. KNOWN_ISSUES F-4).
-fn worker_is_fresh(worker: &WorkerMetadata) -> bool {
-  let last_active = match worker.time_last_return {
-    Some(returned) => returned.max(worker.time_last_dispatch),
-    None => worker.time_last_dispatch,
-  };
-  SystemTime::now()
-    .duration_since(last_active)
-    .map(|elapsed| elapsed.as_secs() < 60)
-    .unwrap_or(true)
-}
+fn worker_is_fresh(worker: &WorkerMetadata) -> bool { worker.is_fresh() }
 
 impl WorkerMetadata {
+  /// Whether this worker dispatched-to or returned-a-result within the last minute — its
+  /// at-a-glance liveness (the threshold that drives the fleet-screen row coloring and the
+  /// fleet-health summary). Skew-safe: a future timestamp (clock skew across the fleet's hosts, or
+  /// a DB clock running ahead) counts as fresh rather than `.unwrap()`-panicking (KNOWN_ISSUES
+  /// F-4).
+  pub fn is_fresh(&self) -> bool {
+    let last_active = match self.time_last_return {
+      Some(returned) => returned.max(self.time_last_dispatch),
+      None => self.time_last_dispatch,
+    };
+    SystemTime::now()
+      .duration_since(last_active)
+      .map(|elapsed| elapsed.as_secs() < 60)
+      .unwrap_or(true)
+  }
+
   /// Load worker metadata record by identity and service id
   pub fn find_by_name(
     identity: &str,
