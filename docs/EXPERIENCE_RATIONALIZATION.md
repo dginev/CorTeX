@@ -55,7 +55,7 @@ from *two* surfaces to *three* (add the CLI). The corollary that drives sequenci
 | Top-of-service severity summary (`progress_report`) | ✓ | ✓ **A3 landed** (`/api/reports/<c>/<s>`) | ✗ |
 | Rerun / reconvert (filtered) | ✓ | ✓ | ✓ (`cortex rerun`, dry-run+`--yes`) |
 | Extend corpus | ✓ | ✓ | ✗ |
-| Sandbox via filter | ✓ | ✓ | ✗ |
+| Sandbox via filter | ✓ | ✓ | ✓ (`cortex sandbox`, dry-run+`--yes`) |
 | Service register / activate / delete | ✓ | ✓ | ✗ |
 | Export dataset | ✗ | ✗ | ✓ |
 | Live ops console | ✓ (landed) | `/metrics` | ✗ |
@@ -99,7 +99,13 @@ discoverable JSON DTOs (each also the future HTML/CLI source).
   in progress:** `cortex rerun <c> <s> [--severity/--category/--what] [--owner] [--description]` ✅
   LANDED — the CLI twin of the web/agent rerun via the shared `Backend::mark_rerun`, **dry-run by
   default** (prints the filtered scope), `--yes` to execute; validates severity (exit 2) and
-  corpus/service (exit 1) before touching the DB. **Next:** `extend`, `sandbox` — guarded the same way.
+  corpus/service (exit 1) before touching the DB. `cortex sandbox <parent> <name> --service <s>
+  --severity <sev> [--category/--what]` ✅ LANDED too — the CLI twin of the web/agent sandbox carve
+  via the shared `backend::create_sandbox`, **dry-run by default** (prints the would-be scope),
+  `--yes` creates the first-class sandbox corpus and reports the captured-entry count; validates
+  severity (exit 2), parent/service and name-collision (exit 1) before any write. **Next:** `extend`
+  (the importer/filesystem re-scan path — deferred to owner-watch like the guided init, since it
+  needs real corpus mounts to verify and would mutate `/data` scan state).
 - **B2 — Guided init.** An interactive `cortex init --guided` walking the strategic choices (database,
   admin token, services, dispatcher knobs). **Decision D-B2 (see §5): ratatui rich TUI vs a plain
   guided prompt flow.** Default lazy: ship the plain prompt flow first (no heavy new dep; 90% of the

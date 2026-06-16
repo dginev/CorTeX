@@ -30,7 +30,7 @@ pub(crate) use rollup::{
   category_rollup, category_total, refresh_report_summary, report_summary_refreshed_at,
   severity_total, what_rollup,
 };
-pub(crate) use sandbox::{create_sandbox, SandboxSelection};
+pub use sandbox::{create_sandbox, SandboxOutcome, SandboxSelection};
 
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use diesel::result::Error;

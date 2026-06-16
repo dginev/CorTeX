@@ -15,8 +15,8 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 use cortex::backend::{
-  self, default_db_address, export_html_dataset, task_messages, DatasetExportOutcome, GroupBy,
-  RerunOptions,
+  self, create_sandbox, default_db_address, export_html_dataset, task_messages,
+  DatasetExportOutcome, GroupBy, RerunOptions, SandboxSelection,
 };
 use cortex::bootstrap::{self, DoctorReport};
 use cortex::config::config_file_path;
@@ -130,6 +130,32 @@ enum Command {
     #[arg(long)]
     yes: bool,
   },
+  /// Carve a sandbox corpus out of a parent by a message-condition filter — the CLI twin of the
+  /// web/agent sandbox. A sandbox is a first-class corpus (its own tasks/runs/reports) you can
+  /// then run/rerun to iterate a campaign on a subset. Dry-run by default; pass `--yes` to
+  /// create.
+  Sandbox {
+    /// Parent corpus to carve from.
+    parent: String,
+    /// Name for the new sandbox corpus (must be unique).
+    name: String,
+    /// Service whose conversion results are filtered (e.g. tex_to_html).
+    #[arg(long)]
+    service: String,
+    /// Severity to capture (`no_problem`|`warning`|`error`|`fatal`|`invalid`).
+    #[arg(long)]
+    severity: String,
+    /// Restrict to a message category.
+    #[arg(long)]
+    category: Option<String>,
+    /// Restrict to a message `what` within the category.
+    #[arg(long)]
+    what: Option<String>,
+    /// Actually create the sandbox (without this, the command is a dry run that only prints the
+    /// scope).
+    #[arg(long)]
+    yes: bool,
+  },
   /// Bundle a corpus/service's converted HTML into ZIP datasets (replaces the
   /// bundle-html-dataset*.sh scripts). Reads existing result archives off the filesystem.
   ExportDataset {
@@ -193,6 +219,15 @@ fn main() {
       owner,
       yes,
     ),
+    Command::Sandbox {
+      parent,
+      name,
+      service,
+      severity,
+      category,
+      what,
+      yes,
+    } => run_sandbox(parent, name, service, severity, category, what, yes),
     Command::TuneDb => println!("{}", bootstrap::db_tuning_guidance()),
     Command::SetAdminToken {
       token,
@@ -489,6 +524,83 @@ fn run_rerun(
     Ok(()) => println!("Marked for reconversion: {scope}"),
     Err(error) => {
       eprintln!("rerun failed: {error}");
+      std::process::exit(1);
+    },
+  }
+}
+
+/// Carves a sandbox corpus from a parent by a message-condition filter — the CLI surface of the
+/// web/agent sandbox, via the shared `backend::create_sandbox` (one backend op, three surfaces).
+/// Dry-run by default; `--yes` creates. Exits `1` on an unknown parent/service or a taken sandbox
+/// name, `2` on an invalid severity.
+#[allow(clippy::too_many_arguments)]
+fn run_sandbox(
+  parent_name: String,
+  name: String,
+  service_name: String,
+  severity: String,
+  category: Option<String>,
+  what: Option<String>,
+  yes: bool,
+) {
+  let mut backend = backend::from_address(default_db_address());
+  let parent = match Corpus::find_by_name(&parent_name.to_lowercase(), &mut backend.connection) {
+    Ok(parent) => parent,
+    Err(_) => {
+      eprintln!("No such corpus: {parent_name}");
+      std::process::exit(1);
+    },
+  };
+  let service = match Service::find_by_name(&service_name.to_lowercase(), &mut backend.connection) {
+    Ok(service) => service,
+    Err(_) => {
+      eprintln!("No such service: {service_name}");
+      std::process::exit(1);
+    },
+  };
+  if TaskStatus::from_key(&severity).is_none() {
+    eprintln!("Invalid --severity {severity:?} (use no_problem, warning, error, fatal, invalid)");
+    std::process::exit(2);
+  }
+  if Corpus::find_by_name(&name.to_lowercase(), &mut backend.connection).is_ok() {
+    eprintln!("A corpus named {name:?} already exists — pick a unique sandbox name");
+    std::process::exit(1);
+  }
+
+  let mut scope = format!("{}/{}  severity={severity}", parent.name, service.name);
+  if let Some(cat) = &category {
+    scope.push_str(&format!("  category={cat}"));
+  }
+  if let Some(w) = &what {
+    scope.push_str(&format!("  what={w}"));
+  }
+
+  if !yes {
+    println!("Dry run — would carve sandbox '{name}' from:");
+    println!("  {scope}");
+    println!(
+      "Pass --yes to create the sandbox (a new corpus with one TODO task per matched entry)."
+    );
+    return;
+  }
+  let selection = SandboxSelection {
+    service_id: service.id,
+    severity,
+    category,
+    what,
+  };
+  match create_sandbox(
+    &mut backend.connection,
+    &parent,
+    &name.to_lowercase(),
+    &selection,
+  ) {
+    Ok(outcome) => println!(
+      "Created sandbox '{}' from '{}' — {} entries captured.",
+      outcome.sandbox.name, parent.name, outcome.entry_count
+    ),
+    Err(error) => {
+      eprintln!("sandbox creation failed: {error}");
       std::process::exit(1);
     },
   }
