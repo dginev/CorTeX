@@ -139,39 +139,12 @@ pub fn prune(
   Ok(Redirect::to(format!("/admin/retention?pruned={pruned}")))
 }
 
-/// Acknowledgement of a retention prune: how many `historical_tasks` snapshots were removed.
-#[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct PruneAckDto {
-  /// Per-task snapshots removed (those older than `before`).
-  pub pruned: usize,
-  /// The cutoff date applied (`YYYY-MM-DD`).
-  pub before: String,
-  /// The actor credited for the prune (audit identity).
-  pub actor: String,
-}
+// NOTE (history immutability, owner directive 2026-06-15): the historical tables are append-only as
+// far as the **agent API** is concerned — there is deliberately NO `/api/...` endpoint that deletes
+// or modifies `historical_tasks` / `historical_runs`. Pruning the unbounded-growth snapshot table
+// is a gated, audited, confirm-dialog **human admin** operation only (`prune`, above). History
+// stays immutable and reliable for every programmatic consumer.
 
-/// Prunes per-task snapshots older than `before` (`YYYY-MM-DD`) — the agent twin of the human
-/// retention screen's prune. **Token-gated** (the [`Actor`] guard) and audited. `400` on a
-/// malformed date. Only `historical_tasks` is touched; the per-run `historical_runs` summaries
-/// survive.
-#[rocket_okapi::openapi(tag = "Management")]
-#[post("/api/retention/prune?<before>")]
-pub fn api_prune(
-  actor: Actor,
-  before: &str,
-  pool: &State<DbPool>,
-) -> Result<Json<PruneAckDto>, Status> {
-  let cutoff = parse_cutoff(before).ok_or(Status::BadRequest)?;
-  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
-  let pruned = HistoricalTask::prune_before(&mut connection, cutoff)
-    .map_err(|_| Status::InternalServerError)?;
-  Ok(Json(PruneAckDto {
-    pruned,
-    before: before.to_string(),
-    actor: actor.owner,
-  }))
-}
-
-/// The human retention screen + prune (the agent `api_historical_stats` + `api_prune` are mounted
-/// via `frontend::apidoc`).
+/// The human retention screen + prune (the agent `api_historical_stats` read twin is mounted via
+/// `frontend::apidoc`; there is intentionally no agent mutation twin — see the note above).
 pub fn routes() -> Vec<Route> { routes![retention_page, prune] }
