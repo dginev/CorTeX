@@ -344,6 +344,46 @@ fn all_api_writes_reject_untokened_requests() {
   }
 }
 
+fn all_api_deletes_require_matching_confirm() {
+  // Destructive-op safety invariant (parallel to the auth guard): every DELETE `/api` route must
+  // reject a *tokened* request that lacks a matching `confirm` with 400, so a single accidental or
+  // replayed call can't wipe a corpus / service / pair's data. Auto-discovered from the live table,
+  // so a future destructive DELETE that forgets the confirm gate fails here too.
+  use rocket::http::Method;
+  let client = client();
+  let deletes: Vec<String> = client
+    .rocket()
+    .routes()
+    .filter(|r| r.method == Method::Delete && r.uri.to_string().starts_with("/api/"))
+    .map(|r| r.uri.to_string())
+    .collect();
+  assert!(
+    !deletes.is_empty(),
+    "expected to auto-discover the destructive DELETE /api routes"
+  );
+  for uri in deletes {
+    let path = uri
+      .split('?')
+      .next()
+      .unwrap_or("")
+      .split('/')
+      .map(|seg| if seg.starts_with('<') { "x" } else { seg })
+      .collect::<Vec<_>>()
+      .join("/");
+    // A valid token passes the Actor guard, but with no `confirm` the handler's confirmation check
+    // must reject the destructive action with 400 (no accidental wipe on a single tokened call).
+    let status = client
+      .delete(format!("{path}?token=token1"))
+      .dispatch()
+      .status();
+    assert_eq!(
+      status,
+      Status::BadRequest,
+      "DELETE {path} with a token but no confirm must be 400 (is its confirm gate missing?), got {status}"
+    );
+  }
+}
+
 fn healthz_flags_unreadable_corpus_storage() {
   // A corpus whose configured source directory is missing on disk (a moved/unmounted /data mount)
   // is surfaced in the storage-health section — informational, so it does not flip the status.
@@ -465,6 +505,7 @@ fn main() {
   reindex_is_token_gated();
   put_config_is_token_gated();
   all_api_writes_reject_untokened_requests();
+  all_api_deletes_require_matching_confirm();
   analyze_is_token_gated();
   healthz_flags_unreadable_corpus_storage();
   openapi_spec_and_rapidoc_are_served();
