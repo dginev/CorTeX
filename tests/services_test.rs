@@ -311,12 +311,23 @@ fn worker_fleet_api_and_screen() {
     })
     .expect("add deletable service");
     let svc = Service::find_by_name(DEL_SVC, &mut db.connection).expect("deletable svc");
-    // A task for this service + a log message — the orphan hazard the cascade must clean up (the
-    // log_* tables have no FK to tasks, so a bare `DELETE FROM services` would strand both).
+    // A real corpus for the task's FK (Arm 3 tasks -> corpora), seeded find-or-create.
+    db.add(&NewCorpus {
+      name: String::from("deletable_corpus_xyz"),
+      path: String::new(),
+      complex: false,
+      description: String::from("to be deleted"),
+    })
+    .ok();
+    let del_corpus =
+      Corpus::find_by_name("deletable_corpus_xyz", &mut db.connection).expect("deletable corpus");
+    // A task for this service + a log message — the cascade must remove both. This is now also
+    // FK-enforced (tasks -> services and log_* -> tasks both ON DELETE CASCADE, Arm 3), so a bare
+    // delete would no longer strand them; Service::destroy remains the audited, transactional path.
     diesel::sql_query(format!(
       "INSERT INTO tasks (entry, service_id, corpus_id, status) \
-       VALUES ('/tmp/del_entry', {}, 1, -1)",
-      svc.id
+       VALUES ('/tmp/del_entry', {}, {}, -1)",
+      svc.id, del_corpus.id
     ))
     .execute(&mut db.connection)
     .expect("seed task");

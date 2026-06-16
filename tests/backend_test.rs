@@ -6,29 +6,51 @@
 // except according to those terms.
 use cortex::backend;
 use cortex::backend::RerunOptions;
+use cortex::concerns::CortexInsertable;
 use cortex::helpers::{rand_in_range, random_mark, NewTaskMessage, TaskReport, TaskStatus};
-use cortex::models::{Corpus, NewLogInfo, NewTask, Service, Task};
+use cortex::models::{Corpus, NewCorpus, NewLogInfo, NewService, NewTask, Service, Task};
 use cortex::schema::log_infos::dsl::task_id;
 use cortex::schema::tasks::dsl::{service_id, status};
 use cortex::schema::{log_infos, tasks};
 use diesel::prelude::*;
 
+/// Seeds a real corpus + service so the Arm 3 `tasks -> corpora/services` foreign keys resolve, and
+/// returns the persisted rows. Names are randomized so parallel/repeated runs don't collide. (Tests
+/// used to fabricate `random_mark()` corpus/service ids without inserting the rows — fine before
+/// the FKs, a constraint violation after.)
+fn seed_corpus_service(connection: &mut PgConnection) -> (Corpus, Service) {
+  let tag = random_mark();
+  let corpus_name = format!("backend_test_corpus_{tag}");
+  let service_name = format!("backend_test_svc_{tag}");
+  NewCorpus {
+    name: corpus_name.clone(),
+    path: String::new(),
+    complex: false,
+    description: String::from("backend_test fixture"),
+  }
+  .create(connection)
+  .expect("seed corpus");
+  NewService {
+    name: service_name.clone(),
+    version: 0.1,
+    inputformat: String::from("tex"),
+    outputformat: String::from("tex"),
+    inputconverter: None,
+    complex: false,
+    description: String::from("backend_test fixture"),
+  }
+  .create(connection)
+  .expect("seed service");
+  let corpus = Corpus::find_by_name(&corpus_name, connection).expect("find seeded corpus");
+  let service = Service::find_by_name(&service_name, connection).expect("find seeded service");
+  (corpus, service)
+}
+
 #[test]
 fn task_table_crud() {
   let mut backend = backend::testdb();
-  let mock_service_id = random_mark();
-  let mock_corpus_id = random_mark();
-  let mock_service = Service {
-    id: mock_service_id,
-    name: String::from("mock_service"),
-    complex: false,
-    inputconverter: None,
-    inputformat: String::from("tex"),
-    outputformat: String::from("tex"),
-    description: String::from("mock"),
-    version: 0.1,
-    public_id: uuid::Uuid::nil(),
-  };
+  let (mock_corpus, mock_service) = seed_corpus_service(&mut backend.connection);
+  let mock_corpus_id = mock_corpus.id;
   let mock_task = NewTask {
     entry: String::from("mock_task"),
     service_id: mock_service.id,
@@ -61,19 +83,8 @@ fn task_table_crud() {
 fn task_lifecycle_test() {
   let mut backend = backend::testdb();
   // Add 100 tasks, out of which we will mark 17
-  let mock_service_id = random_mark();
-  let mock_corpus_id = random_mark();
-  let mock_service = Service {
-    id: mock_service_id,
-    name: String::from("mark_tasks"),
-    complex: false,
-    inputconverter: None,
-    description: String::from("mock"),
-    inputformat: String::from("tex"),
-    outputformat: String::from("tex"),
-    version: 0.1,
-    public_id: uuid::Uuid::nil(),
-  };
+  let (mock_corpus, mock_service) = seed_corpus_service(&mut backend.connection);
+  let mock_corpus_id = mock_corpus.id;
   let mock_task = NewTask {
     entry: String::from("mark_task"),
     service_id: mock_service.id,
@@ -125,29 +136,8 @@ fn task_lifecycle_test() {
 #[test]
 fn batch_ops_test() {
   let mut backend = backend::testdb();
-  let mock_service = Service {
-    id: random_mark(),
-    name: String::from("batch_ops_test"),
-    complex: false,
-    inputconverter: None,
-    description: String::from("mock"),
-    inputformat: String::from("tex"),
-    outputformat: String::from("tex"),
-    version: 0.1,
-    public_id: uuid::Uuid::nil(),
-  };
-
-  let mock_corpus_id = random_mark();
-  let mock_corpus = Corpus {
-    id: mock_corpus_id,
-    name: String::from("batch_ops_test_corpus"),
-    path: String::new(),
-    complex: false,
-    description: String::new(),
-    parent_corpus_id: None,
-    selection: None,
-    public_id: uuid::Uuid::nil(),
-  };
+  let (mock_corpus, mock_service) = seed_corpus_service(&mut backend.connection);
+  let mock_corpus_id = mock_corpus.id;
 
   let mock_task_count = rand_in_range(10, 100) as usize;
   let mock_new_task = NewTask {
@@ -291,8 +281,9 @@ fn mark_done_routes_messages_to_severity_tables() {
   use cortex::models::{NewLogError, NewLogFatal, NewLogWarning};
   use cortex::schema::{log_errors, log_fatals, log_warnings};
   let mut backend = backend::testdb();
-  let mock_service_id = random_mark();
-  let mock_corpus_id = random_mark();
+  let (mock_corpus, mock_service) = seed_corpus_service(&mut backend.connection);
+  let mock_service_id = mock_service.id;
+  let mock_corpus_id = mock_corpus.id;
   let mock_task = NewTask {
     entry: String::from("sev_route_task"),
     service_id: mock_service_id,
@@ -388,7 +379,8 @@ fn mark_done_routes_messages_to_severity_tables() {
   assert_eq!(errs, 1, "the error routed to log_errors");
   assert_eq!(fatals, 1, "the fatal routed to log_fatals");
 
-  // Cleanup (log_* have no FK cascade, so remove them explicitly, then the tasks).
+  // Cleanup: deleting the tasks now cascades their log_* rows (the Arm 3 FK), but remove the logs
+  // explicitly too so cleanup is unambiguous regardless of delete order.
   let _ = diesel::delete(log_warnings::table.filter(log_warnings::task_id.eq_any(&ids)))
     .execute(&mut backend.connection);
   let _ = diesel::delete(log_errors::table.filter(log_errors::task_id.eq_any(&ids)))
@@ -404,8 +396,9 @@ fn clear_limbo_except_preserves_in_flight_tasks() {
   // those (held in `progress_queue`) must NOT be reset to TODO, or they get re-leased while their
   // original result is still pending (a double-dispatch). The excluded ids are preserved.
   let mut backend = backend::testdb();
-  let mock_service_id = random_mark();
-  let mock_corpus_id = random_mark();
+  let (mock_corpus, mock_service) = seed_corpus_service(&mut backend.connection);
+  let mock_service_id = mock_service.id;
+  let mock_corpus_id = mock_corpus.id;
   let mock_task = NewTask {
     entry: String::from("limbo_except_task"),
     service_id: mock_service_id,

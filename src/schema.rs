@@ -845,6 +845,8 @@ diesel::joinable!(log_fatals -> tasks (task_id));
 diesel::joinable!(log_infos -> tasks (task_id));
 diesel::joinable!(log_invalids -> tasks (task_id));
 diesel::joinable!(log_warnings -> tasks (task_id));
+diesel::joinable!(tasks -> corpora (corpus_id));
+diesel::joinable!(tasks -> services (service_id));
 diesel::joinable!(webauthn_credentials -> webauthn_users (owner));
 
 diesel::allow_tables_to_appear_in_same_query!(

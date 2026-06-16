@@ -45,15 +45,17 @@ read it before non-trivial work. Active work branch: **`productize-2026`**.
   `Rocket.toml`/`templates/`/`public/` are CWD-relative — **run binaries from the repo root.**
 - **The dispatcher panics on purpose** (mutex poisoning → process abort → external restart). Don't
   "fix" those panics into silent recovery; preserve fail-fast where it's the design (see Arm 4/12).
-- **Referential FKs are landing in Arm 3.** As of migration `…140000`, the five `log_*` tables now
-  have `task_id → tasks(id) ON DELETE CASCADE` (added `NOT VALID` + `VALIDATE` after an orphan-sweep),
-  joining the original `historical_tasks.task_id → tasks` FK — so a raw `DELETE FROM tasks` now
-  cascades its logs safely. **Still missing (Phase 2b): `tasks → corpora`/`services` FKs**, so a raw
-  `DELETE FROM corpora` still orphans its *tasks* — keep deleting a corpus through **`Corpus::destroy`**
-  (removes `log_*` + tasks + corpus in **one transaction**; orphan-free + crash-consistent; the
-  frontend `delete_corpus` path uses it) until that FK lands. **External UUIDv7 handles** (`public_id`,
-  migration `…130000`) exist on `corpora`/`services` — additive, the serial `id` is still the PK + FK
-  target. (The dead `dependencies` table was dropped — migration `…050000`, Arm 12.)
+- **Referential FKs (Arm 3, migrations `…140000` + `…150000`).** The five `log_*` tables have
+  `task_id → tasks(id) ON DELETE CASCADE`, and `tasks` has `corpus_id → corpora(id)` +
+  `service_id → services(id)` ON DELETE CASCADE (each added `NOT VALID` + `VALIDATE` after an
+  orphan-sweep), joining the original `historical_tasks.task_id → tasks` FK. So a raw
+  `DELETE FROM corpora` now cascades corpora → tasks → `log_*` **in the database** — orphan-free even
+  without the app. **`Corpus::destroy`/`Service::destroy` remain the audited, transactional delete
+  path** (one transaction, crash-consistent; the frontend delete routes use them). **Deliberately NO
+  FK from `historical_runs` to corpora/services** → its per-run tallies survive a corpus/service
+  delete (the immutable-history rule). **External UUIDv7 handles** (`public_id`, migration `…130000`)
+  on `corpora`/`services` are additive — the serial `id` is still the PK + FK target. (The dead
+  `dependencies` table was dropped — migration `…050000`, Arm 12.)
 
 ## Build / run
 
