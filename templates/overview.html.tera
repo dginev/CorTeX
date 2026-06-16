@@ -5,6 +5,10 @@
     <p class="hero-tagline">A general-purpose processing framework for corpora of scientific documents</p>
   </header>
 
+  {% if global.deleted %}
+  <p class="flash-saved"><i class="fa fa-check-circle"></i>&nbsp;Corpus <strong>{{ global.deleted }}</strong> was deleted, along with all of its tasks and log messages.</p>
+  {% endif %}
+
   {% if corpora and corpora | length > 0 %}
   <h2 class="section-heading">Corpora</h2>
   <p class="muted"><a href="/api/corpora">view as JSON</a></p>

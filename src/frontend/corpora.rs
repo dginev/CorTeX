@@ -768,7 +768,8 @@ pub fn delete_corpus_human(
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let corpus = Corpus::find_by_name(name, &mut connection).map_err(|_| Status::NotFound)?;
   delete_corpus_cascade(&mut connection, corpus)?;
-  Ok(Redirect::to("/"))
+  // Land on the overview with a confirmation flash (corpus names are URL-safe by construction).
+  Ok(Redirect::to(format!("/?deleted={name}")))
 }
 
 /// Deactivates (retires) a `service` from a `corpus`: deletes that pair's tasks + log messages (the
@@ -851,7 +852,9 @@ pub fn deactivate_service_human(
   service_record
     .deactivate_from_corpus(&corpus_record, &mut connection)
     .map_err(|_| Status::InternalServerError)?;
-  Ok(Redirect::to(format!("/corpus/{corpus}")))
+  Ok(Redirect::to(format!(
+    "/corpus/{corpus}?deactivated={service}"
+  )))
 }
 
 /// Acknowledgement for a save-snapshot: the `(corpus, service)` frozen and how many per-task status
@@ -923,8 +926,8 @@ fn delete_corpus_cascade(connection: &mut PgConnection, corpus: Corpus) -> Resul
 
 /// The overview screen (HTML twin of [`api_corpora`]): the table of registered corpora — the
 /// admin landing page. `503` if the pool is exhausted.
-#[get("/")]
-pub fn overview_page(pool: &State<DbPool>) -> Result<Template, Status> {
+#[get("/?<deleted>")]
+pub fn overview_page(deleted: Option<&str>, pool: &State<DbPool>) -> Result<Template, Status> {
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let counts = Corpus::document_counts(&mut connection);
   let corpora = Corpus::all(&mut connection)
@@ -955,6 +958,11 @@ pub fn overview_page(pool: &State<DbPool>) -> Result<Template, Status> {
   // The landing page carries the full hero wordmark, so the shared nav suppresses its brand logo
   // here (it shows on every *other* page).
   global.insert("is_landing".to_string(), "true".to_string());
+  // `?deleted=<name>` flashes a confirmation after a corpus delete (the post-redirect-get lands
+  // here), so a destructive action gets explicit feedback, not just "it vanished from the list".
+  if let Some(name) = deleted {
+    global.insert("deleted".to_string(), name.to_string());
+  }
   let mut context = TemplateContext {
     global,
     corpora: Some(corpora),
@@ -966,15 +974,20 @@ pub fn overview_page(pool: &State<DbPool>) -> Result<Template, Status> {
 
 /// The corpus screen (HTML twin of [`api_corpus`]): the services registered on a corpus. `404` if
 /// the corpus is unknown, `503` if the pool is exhausted.
-#[get("/corpus/<name>")]
+#[get("/corpus/<name>?<deactivated>")]
 pub fn corpus_page(
   name: &str,
+  deactivated: Option<&str>,
   session: Option<AdminSession>,
   pool: &State<DbPool>,
 ) -> Result<Template, Status> {
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let corpus = Corpus::find_by_name(name, &mut connection).map_err(|_| Status::NotFound)?;
   let mut global = HashMap::new();
+  // `?deactivated=<service>` flashes a confirmation after a service deactivation lands back here.
+  if let Some(service) = deactivated {
+    global.insert("deactivated".to_string(), service.to_string());
+  }
   global.insert(
     "title".to_string(),
     format!("Registered services for {}", corpus.name),
