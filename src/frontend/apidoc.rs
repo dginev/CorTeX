@@ -33,7 +33,7 @@ use crate::frontend::corpora::{
   okapi_add_operation_for_api_corpora_, okapi_add_operation_for_api_corpus_,
   okapi_add_operation_for_create_sandbox_corpus_, okapi_add_operation_for_deactivate_service_,
   okapi_add_operation_for_delete_corpus_, okapi_add_operation_for_extend_corpus_,
-  okapi_add_operation_for_import_corpus_,
+  okapi_add_operation_for_import_corpus_, okapi_add_operation_for_snapshot_tasks_, snapshot_tasks,
 };
 use crate::frontend::jobs::{
   api_job, api_jobs, okapi_add_operation_for_api_job_, okapi_add_operation_for_api_jobs_,
@@ -119,6 +119,7 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
     create_sandbox_corpus,
     activate_service,
     deactivate_service,
+    snapshot_tasks,
     delete_corpus,
     rerun_report,
     refresh_reports,

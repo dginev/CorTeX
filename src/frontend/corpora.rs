@@ -848,6 +848,56 @@ pub fn deactivate_service_human(
   Ok(Redirect::to(format!("/corpus/{corpus}")))
 }
 
+/// Acknowledgement for a save-snapshot: the `(corpus, service)` frozen and how many per-task status
+/// rows were appended to `historical_tasks`.
+#[derive(Serialize, JsonSchema)]
+pub struct SnapshotAckDto {
+  /// Corpus the snapshot froze.
+  pub corpus: String,
+  /// Service the snapshot froze.
+  pub service: String,
+  /// The authenticated initiator the snapshot is attributed to.
+  pub actor: String,
+  /// Per-task status rows appended to `historical_tasks` (the size of the frozen snapshot).
+  pub saved: usize,
+}
+
+/// Freezes the current per-task statuses of a `(corpus, service)` into `historical_tasks` — the
+/// agent twin of the report screen's "save snapshot" action (`POST /savetasks/...`), so an agent
+/// can capture a baseline before a rerun campaign and later diff against it (`GET
+/// /api/runs/.../tasks`). **Token-gated** via the [`Actor`] guard; the snapshot is **append-only**
+/// (history stays immutable over the API — there is deliberately no snapshot delete/modify
+/// endpoint; pruning is a human-admin operation, see [`crate::frontend::retention`]). `401` without
+/// a valid token, `404` on an unknown corpus/service, `202` with the appended-row count on success.
+/// Uses a fresh connection (not the request pool) since the snapshot is a single bulk `INSERT …
+/// SELECT` over every task and shouldn't pin a pooled slot.
+#[rocket_okapi::openapi(tag = "Management")]
+#[post("/api/corpora/<corpus>/services/<service>/snapshot")]
+pub fn snapshot_tasks(
+  corpus: &str,
+  service: &str,
+  actor: Actor,
+  database_url: &State<DatabaseUrl>,
+) -> Result<(Status, Json<SnapshotAckDto>), Status> {
+  let mut backend = from_address(&database_url.0);
+  let corpus_record =
+    Corpus::find_by_name(corpus, &mut backend.connection).map_err(|_| Status::NotFound)?;
+  let service_record =
+    Service::find_by_name(service, &mut backend.connection).map_err(|_| Status::NotFound)?;
+  let saved = backend
+    .save_historical_tasks(&corpus_record, &service_record)
+    .map_err(|_| Status::InternalServerError)?;
+  Ok((
+    Status::Accepted,
+    Json(SnapshotAckDto {
+      corpus: corpus.to_string(),
+      service: service.to_string(),
+      actor: actor.owner,
+      saved,
+    }),
+  ))
+}
+
 /// Removes a corpus's log messages (the `log_*` tables have no FK cascade), then its tasks and the
 /// corpus row itself.
 fn delete_corpus_cascade(connection: &mut PgConnection, corpus: Corpus) -> Result<(), Status> {

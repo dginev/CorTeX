@@ -264,6 +264,18 @@ changes nothing — a safe preview. `--owner <name>` attributes the action in th
 `admin`). These are the same operations as the web forms and `POST /api/…` endpoints, on one shared
 backend, so all three surfaces see the same live + historical state.
 
+**Snapshot — capture a baseline (append-only, runs directly since it's non-destructive):**
+
+```bash
+cortex snapshot arxmliv tex_to_html    # freeze current per-task statuses into historical_tasks
+```
+
+Take a snapshot before a rerun campaign, then compare the run's effect with `cortex runs` (the
+run-over-run deltas) or the run-task-diff screens. The web "save snapshot" button and the agent
+`POST /api/corpora/<corpus>/services/<service>/snapshot` do the same thing; history is **append-only
+over the API** (snapshots are never deleted/modified there — pruning old snapshots is a human-admin
+operation, `/admin/retention`).
+
 ## 15. Troubleshooting
 
 - **`cortex doctor`** first — it pinpoints DB/migration/seed/token problems.

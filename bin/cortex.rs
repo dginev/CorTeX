@@ -133,6 +133,20 @@ enum Command {
     #[arg(long)]
     json: bool,
   },
+  /// Freeze the current per-task statuses of a `(corpus, service)` into `historical_tasks` — the
+  /// CLI twin of the web/agent save-snapshot (`POST /api/corpora/<c>/services/<s>/snapshot`).
+  /// Capture a baseline before a rerun campaign, then diff against it with `cortex runs` /
+  /// `/runs/.../tasks`. Append-only (history stays immutable); executes directly
+  /// (non-destructive).
+  Snapshot {
+    /// Corpus name.
+    corpus: String,
+    /// Service name (e.g. tex_to_html).
+    service: String,
+    /// Emit JSON (the same shape as the agent `SnapshotAckDto`) instead of a text line.
+    #[arg(long)]
+    json: bool,
+  },
   /// Mark a filtered scope of a `(corpus, service)` for reconversion — the CLI twin of the
   /// web/agent rerun. Resets the matching tasks to TODO so the dispatcher re-runs them.
   /// **Dry-run by default** (prints the scope); pass `--yes` to execute.
@@ -250,6 +264,11 @@ fn main() {
       service,
       json,
     } => run_runs(corpus, service, json),
+    Command::Snapshot {
+      corpus,
+      service,
+      json,
+    } => run_snapshot(corpus, service, json),
     Command::Document {
       corpus,
       service,
@@ -714,6 +733,51 @@ fn run_runs(corpus_name: String, service_name: String, json: bool) {
         println!("       {}", r.description.trim());
       }
     }
+  }
+}
+
+/// Freezes the current per-task statuses of a `(corpus, service)` into `historical_tasks` — the CLI
+/// surface of the web/agent save-snapshot, via the shared `Backend::save_historical_tasks`.
+/// Append-only and non-destructive, so it executes directly (no dry-run); `--json` mirrors the
+/// agent `SnapshotAckDto`. Exits `1` on an unknown corpus/service or a save error.
+fn run_snapshot(corpus_name: String, service_name: String, json: bool) {
+  let mut backend = backend::from_address(default_db_address());
+  let corpus = match Corpus::find_by_name(&corpus_name.to_lowercase(), &mut backend.connection) {
+    Ok(corpus) => corpus,
+    Err(_) => {
+      eprintln!("No such corpus: {corpus_name}");
+      std::process::exit(1);
+    },
+  };
+  let service = match Service::find_by_name(&service_name.to_lowercase(), &mut backend.connection) {
+    Ok(service) => service,
+    Err(_) => {
+      eprintln!("No such service: {service_name}");
+      std::process::exit(1);
+    },
+  };
+  let saved = match backend.save_historical_tasks(&corpus, &service) {
+    Ok(count) => count,
+    Err(error) => {
+      eprintln!("Failed to save snapshot: {error}");
+      std::process::exit(1);
+    },
+  };
+  if json {
+    println!(
+      "{}",
+      serde_json::to_string_pretty(&serde_json::json!({
+        "corpus": corpus.name, "service": service.name, "saved": saved,
+      }))
+      .unwrap_or_default()
+    );
+  } else {
+    println!(
+      "Saved a snapshot of {} task statuses for {} / {} into historical_tasks.",
+      group_thousands(saved as i64),
+      corpus.name,
+      service.name
+    );
   }
 }
 

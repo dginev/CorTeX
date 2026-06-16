@@ -13,7 +13,9 @@ use cortex::helpers::TaskStatus;
 use cortex::models::{
   Corpus, NewCorpus, NewLogError, NewLogWarning, NewService, NewTask, Service, Task,
 };
-use cortex::schema::{corpora, historical_runs, log_errors, log_warnings, services, tasks};
+use cortex::schema::{
+  corpora, historical_runs, historical_tasks, log_errors, log_warnings, services, tasks,
+};
 use diesel::prelude::*;
 use rocket::http::{ContentType, Status};
 use rocket::local::blocking::Client;
@@ -990,6 +992,102 @@ fn sandbox_carves_matching_entries_into_a_new_corpus() {
   cleanup_corpus(&mut db, sandbox_name);
 }
 
+/// Save-snapshot freezes the current per-task statuses into `historical_tasks` (the agent twin of
+/// the report screen's "save snapshot"). Token-gated, append-only, attributed to the token owner.
+fn snapshot_tasks_appends_history_and_is_token_gated() {
+  let corpus_name = "snapshot_test_corpus";
+  let service_name = "snapshot_target_svc";
+  let mut db = backend::testdb();
+  cleanup(&mut db, corpus_name, service_name);
+
+  db.add(&NewCorpus {
+    name: corpus_name.to_string(),
+    path: "/tmp/snapshot_test_corpus".to_string(),
+    complex: true,
+    description: "d".to_string(),
+  })
+  .expect("corpus");
+  let corpus = Corpus::find_by_name(corpus_name, &mut db.connection).unwrap();
+  db.add(&NewService {
+    name: service_name.to_string(),
+    version: 0.1,
+    inputformat: "tex".to_string(),
+    outputformat: "html".to_string(),
+    inputconverter: None,
+    complex: true,
+    description: "d".to_string(),
+  })
+  .expect("service");
+  let service = Service::find_by_name(service_name, &mut db.connection).unwrap();
+  // Three converted tasks of mixed status — the snapshot freezes all of them, regardless of status.
+  for (entry, status) in [
+    ("/tmp/snapshot_test_corpus/1/1.zip", TaskStatus::NoProblem),
+    ("/tmp/snapshot_test_corpus/2/2.zip", TaskStatus::Warning),
+    ("/tmp/snapshot_test_corpus/3/3.zip", TaskStatus::Error),
+  ] {
+    db.add(&NewTask {
+      service_id: service.id,
+      corpus_id: corpus.id,
+      status: status.raw(),
+      entry: entry.to_string(),
+    })
+    .expect("task");
+  }
+
+  let client = client();
+  let url = format!("/api/corpora/{corpus_name}/services/{service_name}/snapshot");
+
+  // Token-gated: no token -> 401 (the Actor guard runs before any write).
+  assert_eq!(
+    client.post(url.as_str()).dispatch().status(),
+    Status::Unauthorized,
+    "snapshot without a token is 401"
+  );
+
+  // Tokened -> 202 with the appended-row count, attributed to the token owner.
+  let response = client.post(format!("{url}?token=token1")).dispatch();
+  assert_eq!(response.status(), Status::Accepted);
+  let ack: serde_json::Value = response.into_json().expect("an ack body");
+  assert_eq!(
+    ack["saved"], 3,
+    "every task of the pair is frozen into the snapshot"
+  );
+  assert_eq!(
+    ack["actor"], "username1",
+    "the snapshot is attributed to the token owner"
+  );
+  assert_eq!(ack["corpus"], corpus_name);
+
+  // The append landed: three per-task status rows now reference these tasks in historical_tasks.
+  let task_ids: Vec<i64> = tasks::table
+    .filter(tasks::corpus_id.eq(corpus.id))
+    .select(tasks::id)
+    .load(&mut db.connection)
+    .unwrap();
+  let hist_count: i64 = historical_tasks::table
+    .filter(historical_tasks::task_id.eq_any(&task_ids))
+    .count()
+    .get_result(&mut db.connection)
+    .unwrap();
+  assert_eq!(
+    hist_count, 3,
+    "three per-task status rows were appended to historical_tasks"
+  );
+
+  // Unknown corpus/service -> 404 (no mutation).
+  assert_eq!(
+    client
+      .post("/api/corpora/no_such_c/services/no_such_s/snapshot?token=token1")
+      .dispatch()
+      .status(),
+    Status::NotFound
+  );
+
+  // Deleting the tasks cascades the historical_tasks rows (FK ON DELETE CASCADE), so cleanup is
+  // orphan-free.
+  cleanup(&mut db, corpus_name, service_name);
+}
+
 /// A name collision on the human "Add a corpus" form re-renders the form with a friendly error and
 /// the typed values preserved — not a bare error page that loses the admin's input.
 fn import_form_reshows_friendly_error_on_name_collision() {
@@ -1101,6 +1199,7 @@ fn main() {
   human_corpus_forms_are_session_and_confirm_gated();
   deactivate_service_removes_pair_tasks_and_logs();
   sandbox_carves_matching_entries_into_a_new_corpus();
+  snapshot_tasks_appends_history_and_is_token_gated();
   eprintln!("corpora_test: all cases passed");
   unsafe { libc::_exit(0) }
 }
