@@ -100,6 +100,39 @@ pub fn sessions_page(
   ))
 }
 
+/// Acknowledgement of a session revoke: the identity and how many of its sessions were ended.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct RevokeAckDto {
+  /// The identity whose sessions were revoked.
+  pub owner: String,
+  /// How many active sessions were ended (0 if the identity had none).
+  pub revoked: usize,
+  /// The actor who performed the revoke (audit identity).
+  pub actor: String,
+}
+
+/// Revokes **all** of an identity's sessions (agent twin of the screen's revoke). **Token-gated**
+/// (the [`Actor`] guard) and audited — for automated security response (kick out a compromised
+/// account everywhere). Referenced by the non-secret owner name, never a session id. Idempotent: an
+/// identity with no sessions revokes `0`. Sessions are ephemeral auth state, not historical record,
+/// so this mutation is exposed to agents (unlike the immutable history tables).
+#[rocket_okapi::openapi(tag = "Management")]
+#[post("/api/sessions/revoke?<owner>")]
+pub fn api_revoke_sessions(
+  actor: Actor,
+  owner: String,
+  pool: &State<DbPool>,
+) -> Result<Json<RevokeAckDto>, Status> {
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let revoked =
+    Session::revoke_all_for(&mut connection, &owner).map_err(|_| Status::InternalServerError)?;
+  Ok(Json(RevokeAckDto {
+    owner,
+    revoked,
+    actor: actor.owner,
+  }))
+}
+
 /// Revokes **all** of an identity's sessions (`POST /admin/sessions/revoke?<owner>`) — sign-out-
 /// everywhere, or kicking out a compromised account. Referenced by the non-secret owner name (never
 /// a session id). Redirects back to the screen. Signed-in admins only.

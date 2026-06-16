@@ -65,7 +65,10 @@ use crate::frontend::services::{
   okapi_add_operation_for_api_services_, okapi_add_operation_for_delete_service_,
   okapi_add_operation_for_register_service_, register_service,
 };
-use crate::frontend::sessions::{api_sessions, okapi_add_operation_for_api_sessions_};
+use crate::frontend::sessions::{
+  api_revoke_sessions, api_sessions, okapi_add_operation_for_api_revoke_sessions_,
+  okapi_add_operation_for_api_sessions_,
+};
 
 /// The generated OpenAPI document, serialized once at mount time and served verbatim.
 struct SpecJson(String);
@@ -123,6 +126,7 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
     put_config,
     api_audit,
     api_sessions,
+    api_revoke_sessions,
     api_historical_stats,
   ];
   let spec_json = serde_json::to_string_pretty(&spec).unwrap_or_default();

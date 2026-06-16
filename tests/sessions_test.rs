@@ -106,9 +106,50 @@ fn sessions_view_and_revoke() {
   );
 }
 
-// Custom harness (see KNOWN_ISSUES L-1): run the case then `_exit(0)`.
+/// The agent twin of the revoke action (`POST /api/sessions/revoke?owner=`): token-gated, audited,
+/// idempotent — ends the same sessions the human screen does.
+fn agent_revoke_is_token_gated_and_idempotent() {
+  let client = client();
+  sign_in_as(&client, "token2"); // open a username2 session to revoke in isolation
+
+  // Token-gated: no token -> 401.
+  let response = client
+    .post("/api/sessions/revoke?owner=username2")
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Unauthorized,
+    "revoke is token-gated"
+  );
+
+  // With a token -> 200 ack; the open session is ended.
+  let response = client
+    .post("/api/sessions/revoke?owner=username2")
+    .header(Header::new("X-Cortex-Token", "token1"))
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  assert_eq!(response.content_type(), Some(ContentType::JSON));
+  let ack: serde_json::Value = response.into_json().expect("revoke ack json");
+  assert_eq!(ack["owner"], "username2");
+  assert!(
+    ack["revoked"].as_u64().is_some_and(|n| n >= 1),
+    "the open username2 session was ended"
+  );
+  assert_eq!(ack["actor"], "username1", "attributed to the token's owner");
+
+  // Idempotent: revoking again ends zero (no error, no surprise).
+  let response = client
+    .post("/api/sessions/revoke?owner=username2")
+    .header(Header::new("X-Cortex-Token", "token1"))
+    .dispatch();
+  let ack: serde_json::Value = response.into_json().expect("revoke ack json");
+  assert_eq!(ack["revoked"], 0, "no sessions remain to revoke");
+}
+
+// Custom harness (see KNOWN_ISSUES L-1): run the cases then `_exit(0)`.
 fn main() {
   sessions_view_and_revoke();
+  agent_revoke_is_token_gated_and_idempotent();
   eprintln!("sessions_test: all cases passed");
   unsafe { libc::_exit(0) }
 }
