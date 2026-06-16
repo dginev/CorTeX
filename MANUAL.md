@@ -274,19 +274,20 @@ checks the *install* is healthy. Neither mutates anything.
 /api/corpora`):**
 
 ```bash
-cortex import   arxmliv /data/arxmliv             # walk the path, create one import task per document
-cortex import   my-tikz /data/tikz --complex      # --complex for multi-file documents
-cortex activate arxmliv tex_to_html               # then queue one conversion task per document
+cortex create-service tex_to_html --inputformat tex --outputformat html   # 1. define a conversion service
+cortex import   arxmliv /data/arxmliv             # 2. register a corpus, one import task per document
+cortex activate arxmliv tex_to_html               # 3. queue one conversion task per document
 cortex extend   arxmliv                           # later: re-scan the path, import + queue only NEW documents
 ```
 
-`import` registers a corpus and walks its path (one import task per document); `activate` then
-queues one conversion task per document for the chosen service, so the dispatcher can convert them —
-the usual `import → activate → run the dispatcher` setup flow. Both run synchronously to completion
-(the web/agent run them as background jobs) and print the count. Pre-flighted like the agent: a name
-clash / non-directory path (import) or an already-activated pair / infrastructure service (activate)
-fails fast (exit 1) without side effects — re-activating never wipes results (use `rerun` to
-re-process, or `cortex import` again then `activate` a fresh service).
+`create-service` *defines* a service in the registry (only the built-in `init`/`import` are seeded, so
+a fresh box needs this once per conversion service); `import` registers a corpus and walks its path
+(one import task per document); `activate` then queues one conversion task per document for the
+service, so the dispatcher can convert them — the full `create-service → import → activate → run the
+dispatcher` flow, entirely scriptable. All run synchronously to completion (the web/agent run them as
+background jobs) and print the count. Pre-flighted like the agent: a name clash, a non-directory path,
+an already-activated pair, or an infrastructure service fails fast (exit 1) without side effects —
+re-activating never wipes results (use `rerun` to re-process).
 
 **Read — the report ladder, scriptable:**
 

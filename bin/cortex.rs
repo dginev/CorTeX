@@ -6,8 +6,9 @@
 // except according to those terms.
 
 //! `cortex` — the administration CLI. A thin renderer over the library: self-install (`init`),
-//! diagnostics (`doctor`), DB tuning, token management, the corpus/service lifecycle (`import`,
-//! `extend`, `activate`, `deactivate`, `delete-corpus`, `sandbox`), the `report`/`runs`/`document`
+//! diagnostics (`doctor`), DB tuning, token management, the corpus/service lifecycle
+//! (`create-service`, `import`, `extend`, `activate`, `deactivate`, `delete-corpus`, `sandbox`),
+//! the `report`/`runs`/`document`
 //! read surface (the CLI twins of the web/agent report ladder, run-history, and per-article
 //! forensics — `report` drills overview → severity → category → `what` → affected documents), and
 //! dataset export.
@@ -26,7 +27,7 @@ use cortex::frontend::helpers::group_thousands;
 use cortex::frontend::params::{MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE};
 use cortex::helpers::TaskStatus;
 use cortex::importer::Importer;
-use cortex::models::{Corpus, HistoricalRun, NewCorpus, Service, Task, WorkerMetadata};
+use cortex::models::{Corpus, HistoricalRun, NewCorpus, NewService, Service, Task, WorkerMetadata};
 
 /// Formats a timestamp the same way the web/agent surfaces do (RFC 3339, seconds) so the CLI's run
 /// JSON matches `RunDto`.
@@ -230,6 +231,33 @@ enum Command {
     /// Corpus name to re-scan.
     corpus: String,
   },
+  /// Define a new conversion service in the registry — the CLI twin of the registry screen's
+  /// "Register a service" form and the agent `POST /api/services`. This *defines* a service (e.g.
+  /// tex_to_html); activating it on a corpus (creating tasks) is `cortex activate`. The step a
+  /// fresh-box deploy needs before `activate`, since only the built-in init/import services are
+  /// seeded. Exits `1` if the name already exists.
+  CreateService {
+    /// Service name — the handle used in `activate`/`report`/etc.
+    name: String,
+    /// Expected input format (e.g. tex).
+    #[arg(long)]
+    inputformat: String,
+    /// Produced output format (e.g. html).
+    #[arg(long)]
+    outputformat: String,
+    /// Service version.
+    #[arg(long, default_value_t = 0.1)]
+    version: f32,
+    /// The service needs more than a document's main textual content (mark if unsure).
+    #[arg(long)]
+    complex: bool,
+    /// Prerequisite input-conversion service, if any (a pipeline dependency).
+    #[arg(long)]
+    inputconverter: Option<String>,
+    /// Optional human-readable description.
+    #[arg(long, default_value = "")]
+    description: String,
+  },
   /// Activate a service on a corpus — the CLI twin of the corpus screen's "Register a service"
   /// form and the agent `POST /api/corpora/<c>/services/<s>`. Creates one TODO task per imported
   /// document so the dispatcher converts them (the step after `import`). Refuses an
@@ -372,6 +400,23 @@ fn main() {
       description,
     } => run_import(name, path, complex, description),
     Command::Extend { corpus } => run_extend(corpus),
+    Command::CreateService {
+      name,
+      inputformat,
+      outputformat,
+      version,
+      complex,
+      inputconverter,
+      description,
+    } => run_create_service(
+      name,
+      inputformat,
+      outputformat,
+      version,
+      complex,
+      inputconverter,
+      description,
+    ),
     Command::Activate {
       corpus,
       service,
@@ -1210,6 +1255,43 @@ fn run_import(name: String, path: String, complex: bool, description: String) {
   println!(
     "Imported {} document(s) into corpus {name}. Start the dispatcher (or activate a service) to convert them.",
     group_thousands(imported)
+  );
+}
+
+/// Defines a new conversion service in the registry — the CLI surface of the registry screen's
+/// "Register a service" form and the agent `POST /api/services`. Defines the service (it does *not*
+/// activate it on any corpus — that's `activate`). An empty `--inputconverter` is treated as none.
+/// Exits `1` if the name already exists or the insert fails.
+#[allow(clippy::too_many_arguments)]
+fn run_create_service(
+  name: String,
+  inputformat: String,
+  outputformat: String,
+  version: f32,
+  complex: bool,
+  inputconverter: Option<String>,
+  description: String,
+) {
+  let mut backend = backend::from_address(default_db_address());
+  if Service::find_by_name(&name, &mut backend.connection).is_ok() {
+    eprintln!("A service named {name:?} already exists.");
+    std::process::exit(1);
+  }
+  if let Err(error) = backend.add(&NewService {
+    name: name.clone(),
+    version,
+    inputformat,
+    outputformat,
+    // An empty string means "no prerequisite" (matches the agent/registry-form handling).
+    inputconverter: inputconverter.filter(|value| !value.is_empty()),
+    complex,
+    description,
+  }) {
+    eprintln!("Could not create the service: {error}");
+    std::process::exit(1);
+  }
+  println!(
+    "Created service '{name}'. Activate it on a corpus with:  cortex activate <corpus> {name}"
   );
 }
 
