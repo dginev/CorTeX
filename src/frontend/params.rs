@@ -3,6 +3,18 @@ use crate::models::RunMetadata;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Largest report **page size** any report path (human screen or agent endpoint) will honour. The
+/// deepest report rung is a per-task entry list, so an unbounded `page_size` would `LIMIT` the
+/// whole list into one response/render (the unbounded-load class, principle #6); clamp it
+/// everywhere.
+pub const MAX_REPORT_PAGE_SIZE: i64 = 1000;
+
+/// Largest report **offset** any report path will honour. `OFFSET` is scan-and-discard, so a deep
+/// offset is a multi-second query that pins a connection (KNOWN_ISSUES P-4); cap the paginate
+/// depth. The reports are an inspection surface (look at affected papers) — bulk action uses rerun,
+/// which filters server-side without enumerating.
+pub const MAX_REPORT_OFFSET: i64 = 100_000;
+
 #[derive(FromForm)]
 /// Configuration parameters for a frontend reports page
 pub struct ReportParams {

@@ -28,8 +28,20 @@ pub fn task_report(
   params: &Option<ReportParams>,
 ) -> Vec<HashMap<String, String>> {
   let all_messages = params.as_ref().and_then(|p| p.all).unwrap_or(false);
-  let offset = params.as_ref().and_then(|p| p.offset).unwrap_or(0);
-  let page_size = params.as_ref().and_then(|p| p.page_size).unwrap_or(100);
+  // Clamp the paginate params: an unbounded `page_size` would `LIMIT` a whole entry list into one
+  // render, and a deep `offset` is a multi-second scan-and-discard — both reachable from the public
+  // report screens via the query string. One source of truth in `params` (P-4; also bounds the
+  // agent report endpoints).
+  let offset = params
+    .as_ref()
+    .and_then(|p| p.offset)
+    .unwrap_or(0)
+    .clamp(0, crate::frontend::params::MAX_REPORT_OFFSET);
+  let page_size = params
+    .as_ref()
+    .and_then(|p| p.page_size)
+    .unwrap_or(100)
+    .clamp(1, crate::frontend::params::MAX_REPORT_PAGE_SIZE);
 
   let fetched_report = backend_task_report(
     connection,

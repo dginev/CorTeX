@@ -27,7 +27,7 @@ use crate::backend::{
 };
 use crate::frontend::actor::{require_admin, Actor, AdminReject, AdminSession};
 use crate::frontend::concerns::serve_report;
-use crate::frontend::params::ReportParams;
+use crate::frontend::params::{ReportParams, MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE};
 use crate::helpers::TaskStatus;
 use crate::jobs;
 use crate::models::{Corpus, Service, Task};
@@ -256,7 +256,7 @@ pub fn api_category_report(
   }
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let (corpus, service) = resolve(corpus, service, &mut connection)?;
-  let limit = page_size.unwrap_or(100);
+  let limit = page_size.unwrap_or(100).clamp(1, MAX_REPORT_PAGE_SIZE);
   let offset = offset.unwrap_or(0);
   let categories = category_rollup(
     &mut connection,
@@ -303,7 +303,7 @@ pub fn api_what_report(
   }
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let (corpus, service) = resolve(corpus, service, &mut connection)?;
-  let limit = page_size.unwrap_or(100);
+  let limit = page_size.unwrap_or(100).clamp(1, MAX_REPORT_PAGE_SIZE);
   let offset = offset.unwrap_or(0);
   let whats = what_rollup(
     &mut connection,
@@ -372,18 +372,10 @@ pub struct EntryListDto {
   pub entries: Vec<EntryRowDto>,
 }
 
-/// Deepest paginate offset accepted by the entry list. The underlying query is `OFFSET`-based
-/// (`ORDER BY entry`), so latency grows with depth (≈0.1 s at 0, ~1 s near this bound, ~10 s at 1 M
-/// on the showcase) — past this we reject rather than let a deliberate deep crawl pin a pooled
-/// connection for seconds (KNOWN_ISSUES P-4). This is an **inspection/sampling** endpoint (look at
-/// the affected papers); for bulk action over *all* of them use the rerun endpoint, which filters
-/// server-side without enumerating.
-const ENTRY_LIST_MAX_OFFSET: i64 = 100_000;
-
 /// Lists the documents affected by a `(corpus, service, severity, category, what)` — the agent twin
 /// of the deepest report screen (the entry list). Paginated (`offset`/`page_size`, default 100, max
-/// 1000); `offset` is capped at `ENTRY_LIST_MAX_OFFSET` (a `400` beyond it — see P-4). `400` on an
-/// unknown severity, `404` on an unknown corpus/service.
+/// `MAX_REPORT_PAGE_SIZE`); `offset` is capped at `MAX_REPORT_OFFSET` (a `400` beyond it — see
+/// P-4). `400` on an unknown severity, `404` on an unknown corpus/service.
 #[rocket_okapi::openapi(tag = "Reports")]
 #[get("/api/reports/<corpus>/<service>/<severity>/<category>/<what>?<offset>&<page_size>")]
 #[allow(clippy::too_many_arguments)]
@@ -403,13 +395,13 @@ pub fn api_entry_list(
   let offset = offset.unwrap_or(0).max(0);
   // Bound the paginate depth: a deep `OFFSET` is a multi-second scan-and-discard that pins a pooled
   // connection — so reject it on this scriptable surface rather than risk pool saturation (P-4).
-  if offset > ENTRY_LIST_MAX_OFFSET {
+  if offset > MAX_REPORT_OFFSET {
     return Err(Status::BadRequest);
   }
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let (corpus_record, service_record) = resolve(corpus, service, &mut connection)?;
   // Clamp the page so a `?page_size=0` / huge value can't request an unbounded or empty scan.
-  let page_size = page_size.unwrap_or(100).clamp(1, 1000);
+  let page_size = page_size.unwrap_or(100).clamp(1, MAX_REPORT_PAGE_SIZE);
   // The entry list is per-task (not a rollup grain), so it comes from the live report path — the
   // same one the human entry-list screen renders, paginated identically.
   let rows = task_report(
