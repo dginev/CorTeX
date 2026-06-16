@@ -21,13 +21,18 @@ http://:8181 {
 
 # --- public vhost ------------------------------------------------------------
 # corpora.latexml.rs: the CorTeX reporting UI on the home desktop, reached over a
-# reverse-SSH tunnel (127.0.0.1:8000). Read-mostly + token-gated; the only abuse
-# surface is bot-crawling the combinatorial report URLs, so HTML is walled by the
-# shared Anubis while the agent/JSON API + liveness + assets bypass it.
+# reverse-SSH tunnel (127.0.0.1:8000). Read-mostly + token-gated; the abuse surface
+# is bots crawling the combinatorial report URLs, the JSON API, and the entry/result
+# archives — so ALL of those are walled by the shared Anubis. Only liveness + page
+# assets bypass it (owner 2026-06-16: don't let bots crawl /api or /entry; external
+# agents only need an uptime check, and the main agentic use is on the unguarded
+# localhost — "friendly bots are already our guests"). A future external MCP could
+# add an authed carve-out, but not soon.
 corpora.latexml.rs {
 	encode zstd gzip
-	# Agents/tools/liveness/assets are never challenged (usability).
-	@exempt path /api /api/* /healthz /robots.txt /favicon.ico /public/*
+	# ONLY liveness (/healthz) + page assets bypass the wall. /api/* and /entry/* are
+	# deliberately guarded (no API/archive crawling); agents use localhost.
+	@exempt path /healthz /robots.txt /favicon.ico /public/*
 	handle @exempt {
 		reverse_proxy 127.0.0.1:8000 {
 			header_up X-Real-Ip {remote_host}

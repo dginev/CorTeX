@@ -8,11 +8,11 @@ and kept healthy under `systemctl`. Two halves:
    a shared Anubis bot wall, and a small Host-router.
 
 ```
-                         ┌─ /api/*, /healthz, /public/*, /robots.txt, /favicon.ico ─┐ (exempt: agents/assets,
- PUBLIC ─https─▶ Caddy ──┤                                                          │  never challenged)
+                         ┌─ /healthz, /public/*, /robots.txt, /favicon.ico ─────────┐ (exempt: liveness+assets
+ PUBLIC ─https─▶ Caddy ──┤                                                          │  only, never challenged)
               (:443 TLS) │                                                          ▼
-                         └─ HTML report pages ─▶ Anubis (PoW) ─┐        reverse-SSH tunnel
-                            (anti bot-crawl)     (one shared    │   ┌──────────────────────────┐
+                         └─ HTML pages + /api/* + /entry/* ─▶ Anubis (PoW) ─┐  reverse-SSH tunnel
+                            (anti bot-crawl: API+archives too) (one shared  │   ┌──────────────────────────┐
                                                   instance)     ▼   ▼                          │
                                               Caddy router :8181 ── corpora ─▶ 127.0.0.1:8000 ──┤
                                                (split by Host)  └── else ────▶ 127.0.0.1:3000   │  (edge loopback)
@@ -30,8 +30,12 @@ and kept healthy under `systemctl`. Two halves:
   re-point. The frontend stays bound to `127.0.0.1` (smallest blast radius).
 - **One shared Anubis:** the edge VM is RAM-tight and Anubis is single-`TARGET`, so we reuse the
   editor's instance via a Host-router (`:8181`) instead of running a second. cortex's report URLs
-  (`/corpus/<c>/<s>/<sev>/<cat>/<what>?…`) are a combinatorial bot-crawl DB-load trap, so HTML is
-  PoW-walled; the agent JSON API + liveness + assets bypass the wall so tools never see a challenge.
+  (`/corpus/<c>/<s>/<sev>/<cat>/<what>?…`) are a combinatorial bot-crawl DB-load trap, so HTML —
+  **plus `/api/*` and `/entry/*`** (owner 2026-06-16: don't let bots crawl the API or the source/
+  result archives) — is PoW-walled; **only `/healthz` + page assets bypass** the wall (external agents
+  just need an uptime check; the main agentic use is on the unguarded localhost). This closes the
+  `KNOWN_ISSUES.md` X-4 un-walled-`/api` gap once the edge Caddyfile is reloaded (`deploy/edge/
+  corpora.caddy`).
 
 ## Local install (this desktop)
 
