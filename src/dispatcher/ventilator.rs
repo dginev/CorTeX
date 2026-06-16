@@ -74,7 +74,14 @@ impl Ventilator {
     )?;
 
     let address = format!("tcp://*:{}", self.port);
-    ventilator.bind(&address).unwrap();
+    // Propagate a bind failure (e.g. `EADDRINUSE` when the port is still held by a just-restarted
+    // dispatcher in TIME_WAIT, or a second instance) instead of an opaque `.unwrap()` panic — same
+    // fail-fast (the manager aborts the thread → external restart), but with a diagnosable cause
+    // and consistent with every other fallible call here + the sink's bind (KNOWN_ISSUES
+    // robustness: no bare `unwrap` on the dispatch path).
+    ventilator.bind(&address).map_err(|e| {
+      std::io::Error::other(format!("ventilator: zeromq bind {address} failed: {e}"))
+    })?;
     let mut source_job_count: usize = 0;
     // Reap timed-out in-flight tasks on a cadence rather than only on refetch (KNOWN_ISSUES D-6),
     // so the in-flight set drains even under sustained backpressure (when refetch never runs). The
