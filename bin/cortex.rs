@@ -7,8 +7,8 @@
 
 //! `cortex` — the administration CLI. A thin renderer over the library: self-install (`init`),
 //! diagnostics (`doctor`), DB tuning, token management, the `report`/`runs`/`document` read surface
-//! (the CLI twins of the web/agent overview, run-history, and per-article forensics), and dataset
-//! export.
+//! (the CLI twins of the web/agent report ladder, run-history, and per-article forensics — `report`
+//! drills overview → severity → category → `what` → affected documents), and dataset export.
 
 use std::path::PathBuf;
 
@@ -16,11 +16,12 @@ use clap::{Parser, Subcommand};
 
 use cortex::backend::{
   self, create_sandbox, default_db_address, export_html_dataset, task_messages,
-  DatasetExportOutcome, GroupBy, RerunOptions, SandboxSelection,
+  DatasetExportOutcome, GroupBy, RerunOptions, SandboxSelection, TaskReportOptions,
 };
 use cortex::bootstrap::{self, DoctorReport};
 use cortex::config::config_file_path;
 use cortex::frontend::helpers::group_thousands;
+use cortex::frontend::params::{MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE};
 use cortex::helpers::TaskStatus;
 use cortex::models::{Corpus, HistoricalRun, Service, Task, WorkerMetadata};
 
@@ -71,15 +72,35 @@ enum Command {
     #[arg(long, default_value = "admin")]
     owner: String,
   },
-  /// Print the conversion-status overview for a `(corpus, service)` — the CLI twin of the
-  /// web/agent service overview (`GET /api/reports/<c>/<s>`): the valid-task total + per-status
-  /// counts/shares.
+  /// Print the conversion report for a `(corpus, service)` — the CLI twin of the web/agent report
+  /// ladder. With no drill flags: the service overview (valid-task total + per-status shares,
+  /// `GET /api/reports/<c>/<s>`). Add `--severity` for the category breakdown, `--severity
+  /// --category` for the `what` breakdown, and `--severity --category --what` for the affected-
+  /// document list (paper ids to feed `cortex document`) — the same rollup-backed grains the agent
+  /// `/api/reports/...` rungs serve.
   Report {
     /// Corpus name.
     corpus: String,
     /// Service name (e.g. tex_to_html).
     service: String,
-    /// Emit JSON (the same shape as the agent `ServiceOverviewDto`) instead of a text table.
+    /// Drill into a severity (`warning`|`error`|`fatal`|`invalid`|`info`): the category breakdown.
+    #[arg(long)]
+    severity: Option<String>,
+    /// Drill into a category within the severity: the `what` breakdown (requires `--severity`).
+    #[arg(long, requires = "severity")]
+    category: Option<String>,
+    /// Drill into a `what` within the category: the affected-document list (requires
+    /// `--category`).
+    #[arg(long, requires = "category")]
+    what: Option<String>,
+    /// Page offset for the drill-down rungs (default 0).
+    #[arg(long)]
+    offset: Option<i64>,
+    /// Max rows for the drill-down rungs (default 100, capped at 1000).
+    #[arg(long)]
+    limit: Option<i64>,
+    /// Emit JSON (matching the corresponding agent report DTO for the chosen rung) instead of
+    /// text.
     #[arg(long)]
     json: bool,
   },
@@ -208,8 +229,22 @@ fn main() {
     Command::Report {
       corpus,
       service,
+      severity,
+      category,
+      what,
+      offset,
+      limit,
       json,
-    } => run_report(corpus, service, json),
+    } => run_report(ReportArgs {
+      corpus,
+      service,
+      severity,
+      category,
+      what,
+      offset,
+      limit,
+      json,
+    }),
     Command::Runs {
       corpus,
       service,
@@ -271,23 +306,83 @@ fn main() {
 /// web report top + agent `GET /api/reports/<c>/<s>` show (via the shared
 /// `Backend::progress_report`). `--json` mirrors the agent `ServiceOverviewDto`. Exits `1` on an
 /// unknown corpus/service.
-fn run_report(corpus_name: String, service_name: String, json: bool) {
+/// Inputs for the `report` command's drill-down ladder (struct-passed to keep one argument).
+struct ReportArgs {
+  /// Corpus name.
+  corpus: String,
+  /// Service name.
+  service: String,
+  /// Drill severity; `None` = service overview.
+  severity: Option<String>,
+  /// Drill category (within the severity).
+  category: Option<String>,
+  /// Drill `what` (within the category).
+  what: Option<String>,
+  /// Page offset for the drill rungs.
+  offset: Option<i64>,
+  /// Page size for the drill rungs.
+  limit: Option<i64>,
+  /// Emit JSON instead of text.
+  json: bool,
+}
+
+/// Severities that carry log messages and so have a category/`what` breakdown — matches the agent
+/// report endpoints' `is_rollup_severity` (`no_problem` has no messages, so no drill-down).
+fn is_drillable_severity(severity: &str) -> bool {
+  matches!(severity, "warning" | "error" | "fatal" | "invalid" | "info")
+}
+
+/// `cortex report` — the CLI report ladder, the twin of the web `/corpus/...` screens and the agent
+/// `GET /api/reports/...` rungs. Dispatches on the drill flags: none → service overview;
+/// `severity` → category breakdown; `severity + category` → `what` breakdown; `severity + category
+/// + what` → the affected-document list. The breakdown rungs read the same `report_summary` rollup
+/// the agent serves; the document list uses the live per-task path (bounded by `--offset/--limit`).
+/// Exits `1` on an unknown corpus/service or an un-drillable severity.
+fn run_report(args: ReportArgs) {
   let mut backend = backend::from_address(default_db_address());
-  let corpus = match Corpus::find_by_name(&corpus_name.to_lowercase(), &mut backend.connection) {
+  let corpus = match Corpus::find_by_name(&args.corpus.to_lowercase(), &mut backend.connection) {
     Ok(corpus) => corpus,
     Err(_) => {
-      eprintln!("No such corpus: {corpus_name}");
+      eprintln!("No such corpus: {}", args.corpus);
       std::process::exit(1);
     },
   };
-  let service = match Service::find_by_name(&service_name.to_lowercase(), &mut backend.connection) {
+  let service = match Service::find_by_name(&args.service.to_lowercase(), &mut backend.connection) {
     Ok(service) => service,
     Err(_) => {
-      eprintln!("No such service: {service_name}");
+      eprintln!("No such service: {}", args.service);
       std::process::exit(1);
     },
   };
-  let stats = backend.progress_report(&corpus, &service);
+  // `clap` `requires` guarantees category⊆severity and what⊆category, so these four arms are the
+  // only reachable combinations.
+  match (
+    args.severity.as_deref(),
+    args.category.as_deref(),
+    args.what.as_deref(),
+  ) {
+    (None, _, _) => report_overview(&mut backend, &corpus, &service, args.json),
+    (Some(severity), None, _) => {
+      report_categories(&mut backend, &corpus, &service, severity, &args)
+    },
+    (Some(severity), Some(category), None) => {
+      report_whats(&mut backend, &corpus, &service, severity, category, &args)
+    },
+    (Some(severity), Some(category), Some(what)) => report_entries(
+      &mut backend,
+      &corpus,
+      &service,
+      severity,
+      category,
+      what,
+      &args,
+    ),
+  }
+}
+
+/// The service overview rung (no drill flags): valid-task total + per-status counts/shares.
+fn report_overview(backend: &mut backend::Backend, corpus: &Corpus, service: &Service, json: bool) {
+  let stats = backend.progress_report(corpus, service);
   let count = |key: &str| stats.get(key).copied().unwrap_or(0.0) as i64;
   let percent = |key: &str| stats.get(&format!("{key}_percent")).copied().unwrap_or(0.0);
   let total = count("total");
@@ -312,6 +407,224 @@ fn run_report(corpus_name: String, service_name: String, json: bool) {
     println!("{} / {}  —  {total} valid tasks", corpus.name, service.name);
     for key in TaskStatus::keys() {
       println!("  {:<12} {:>10}  ({:.2}%)", key, count(&key), percent(&key));
+    }
+  }
+}
+
+/// Clamps `--offset/--limit` to the shared report bounds (one source of truth with the web + agent
+/// surfaces — an unbounded page or deep offset is a connection-pinning scan).
+fn drill_window(args: &ReportArgs) -> (i64, i64) {
+  let offset = args.offset.unwrap_or(0).clamp(0, MAX_REPORT_OFFSET);
+  let limit = args.limit.unwrap_or(100).clamp(1, MAX_REPORT_PAGE_SIZE);
+  (offset, limit)
+}
+
+/// Exits `1` with a helpful message if the severity has no message breakdown.
+fn require_drillable(severity: &str) {
+  if !is_drillable_severity(severity) {
+    eprintln!(
+      "Severity {severity:?} has no message breakdown. Drillable: warning, error, fatal, invalid, info."
+    );
+    std::process::exit(1);
+  }
+}
+
+/// Prints a breakdown rung (category or `what`): a totals line then one row per grain (`tasks`,
+/// `messages`, name), ordered by descending task count — the text twin of the agent's
+/// `CategoryReportDto`/`WhatReportDto`.
+fn print_breakdown(
+  title: &str,
+  total_tasks: i64,
+  total_messages: i64,
+  rows: &[(String, i64, i64)],
+) {
+  println!("{title}");
+  println!(
+    "  totals: {} tasks · {} messages   ({} row(s) shown, by task count)",
+    group_thousands(total_tasks),
+    group_thousands(total_messages),
+    rows.len()
+  );
+  for (name, tasks, messages) in rows {
+    let label = if name.is_empty() {
+      "(none)"
+    } else {
+      name.as_str()
+    };
+    println!(
+      "  {:>12} tasks  {:>16} msgs   {label}",
+      group_thousands(*tasks),
+      group_thousands(*messages)
+    );
+  }
+}
+
+/// The category breakdown rung (`--severity`): one row per message category.
+fn report_categories(
+  backend: &mut backend::Backend,
+  corpus: &Corpus,
+  service: &Service,
+  severity: &str,
+  args: &ReportArgs,
+) {
+  require_drillable(severity);
+  let (offset, limit) = drill_window(args);
+  let rows: Vec<(String, i64, i64)> = backend
+    .category_rollup(corpus, service, severity, limit, offset)
+    .into_iter()
+    .map(|row| (row.category, row.task_count, row.message_count))
+    .collect();
+  let (total_tasks, total_messages) = backend.severity_totals(corpus, service, severity);
+  if args.json {
+    let categories: Vec<_> = rows
+      .iter()
+      .map(|(name, tasks, messages)| {
+        serde_json::json!({ "name": name, "tasks": tasks, "messages": messages })
+      })
+      .collect();
+    println!(
+      "{}",
+      serde_json::to_string_pretty(&serde_json::json!({
+        "severity": severity, "total_tasks": total_tasks,
+        "total_messages": total_messages, "categories": categories,
+      }))
+      .unwrap_or_default()
+    );
+  } else {
+    print_breakdown(
+      &format!(
+        "{} / {} — {severity} category breakdown",
+        corpus.name, service.name
+      ),
+      total_tasks,
+      total_messages,
+      &rows,
+    );
+  }
+}
+
+/// The `what` breakdown rung (`--severity --category`): one row per `what` within the category.
+fn report_whats(
+  backend: &mut backend::Backend,
+  corpus: &Corpus,
+  service: &Service,
+  severity: &str,
+  category: &str,
+  args: &ReportArgs,
+) {
+  require_drillable(severity);
+  let (offset, limit) = drill_window(args);
+  let rows: Vec<(String, i64, i64)> = backend
+    .what_rollup(corpus, service, severity, category, limit, offset)
+    .into_iter()
+    .map(|row| {
+      (
+        row.what.unwrap_or_default(),
+        row.task_count,
+        row.message_count,
+      )
+    })
+    .collect();
+  let (total_tasks, total_messages) = backend.category_totals(corpus, service, severity, category);
+  if args.json {
+    let whats: Vec<_> = rows
+      .iter()
+      .map(|(name, tasks, messages)| {
+        serde_json::json!({ "name": name, "tasks": tasks, "messages": messages })
+      })
+      .collect();
+    println!(
+      "{}",
+      serde_json::to_string_pretty(&serde_json::json!({
+        "severity": severity, "category": category, "total_tasks": total_tasks,
+        "total_messages": total_messages, "whats": whats,
+      }))
+      .unwrap_or_default()
+    );
+  } else {
+    print_breakdown(
+      &format!(
+        "{} / {} — {severity} / {category} what breakdown",
+        corpus.name, service.name
+      ),
+      total_tasks,
+      total_messages,
+      &rows,
+    );
+  }
+}
+
+/// The deepest rung (`--severity --category --what`): the affected-document list — paper ids (feed
+/// `cortex document`) + task id + the message detail. Live per-task path, bounded by the window;
+/// the text twin of the agent's `EntryListDto`.
+fn report_entries(
+  backend: &mut backend::Backend,
+  corpus: &Corpus,
+  service: &Service,
+  severity: &str,
+  category: &str,
+  what: &str,
+  args: &ReportArgs,
+) {
+  require_drillable(severity);
+  let (offset, page_size) = drill_window(args);
+  let rows = backend.task_report(TaskReportOptions {
+    corpus,
+    service,
+    severity_opt: Some(severity.to_string()),
+    category_opt: Some(category.to_string()),
+    what_opt: Some(what.to_string()),
+    all_messages: false,
+    offset,
+    page_size,
+  });
+  let entries: Vec<(String, i64, String)> = rows
+    .iter()
+    .map(|row| {
+      (
+        row.get("entry_name").cloned().unwrap_or_default(),
+        row
+          .get("entry_taskid")
+          .and_then(|id| id.parse().ok())
+          .unwrap_or(0),
+        row.get("details").cloned().unwrap_or_default(),
+      )
+    })
+    .collect();
+  if args.json {
+    let json_entries: Vec<_> = entries
+      .iter()
+      .map(|(name, task_id, details)| {
+        serde_json::json!({ "name": name, "task_id": task_id, "details": details })
+      })
+      .collect();
+    println!(
+      "{}",
+      serde_json::to_string_pretty(&serde_json::json!({
+        "corpus": corpus.name, "service": service.name, "severity": severity,
+        "category": category, "what": what, "offset": offset, "page_size": page_size,
+        "entries": json_entries,
+      }))
+      .unwrap_or_default()
+    );
+  } else {
+    println!(
+      "{} / {} — {severity} / {category} / {what}: affected documents (offset {offset}, {} shown)",
+      corpus.name,
+      service.name,
+      entries.len()
+    );
+    for (name, task_id, details) in &entries {
+      let label = if name.is_empty() {
+        "(unnamed)"
+      } else {
+        name.as_str()
+      };
+      if details.trim().is_empty() {
+        println!("  {label}  #{task_id}");
+      } else {
+        println!("  {label}  #{task_id}   {}", details.trim());
+      }
     }
   }
 }

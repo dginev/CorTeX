@@ -239,9 +239,17 @@ checks the *install* is healthy. Neither mutates anything.
 
 ```bash
 cortex report   arxmliv tex_to_html             # service overview: valid-task total + per-status counts/shares
+# …then drill the same ladder the web/agent report screens expose (rollup-backed, fast):
+cortex report   arxmliv tex_to_html --severity warning                         # category breakdown
+cortex report   arxmliv tex_to_html --severity warning --category not_parsed   # what breakdown
+cortex report   arxmliv tex_to_html --severity warning --category not_parsed --what '>OPEN'  # affected docs (paper ids → feed `document`)
 cortex runs     arxmliv tex_to_html             # run history: per-severity tallies + run-over-run delta vs the previous run (live for the open run)
 cortex document arxmliv tex_to_html 2105.13573  # per-article forensics: status + every worker-log message
 ```
+
+The drill rungs page with `--offset`/`--limit` (default 100, capped 1000) and emit the matching
+agent DTO under `--json`, so a script can walk overview → severity → category → `what` → affected
+paper ids → `cortex document <id>` — the same path an agent walks over `/api/reports/...`.
 
 **Mutations — consequential, so dry-run by default; pass `--yes` to execute:**
 

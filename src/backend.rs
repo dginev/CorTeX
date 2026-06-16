@@ -321,4 +321,37 @@ impl Backend {
     )
     .unwrap_or_default()
   }
+  /// The per-severity grand totals `(distinct tasks, total messages)` for `(corpus, service,
+  /// severity)`, read from the rollup — the denominators the category-grain report shows. `(0, 0)`
+  /// when the severity has no logged messages.
+  pub fn severity_totals(
+    &mut self,
+    corpus: &Corpus,
+    service: &Service,
+    severity: &str,
+  ) -> (i64, i64) {
+    rollup::severity_total(&mut self.connection, corpus.id, service.id, severity)
+      .unwrap_or_default()
+      .map_or((0, 0), |row| (row.task_count, row.message_count))
+  }
+  /// The category-grain totals `(distinct tasks, total messages)` for `(corpus, service, severity,
+  /// category)` — the denominators the `what` drill-down shows. `(0, 0)` when the category is
+  /// empty.
+  pub fn category_totals(
+    &mut self,
+    corpus: &Corpus,
+    service: &Service,
+    severity: &str,
+    category: &str,
+  ) -> (i64, i64) {
+    rollup::category_total(
+      &mut self.connection,
+      corpus.id,
+      service.id,
+      severity,
+      category,
+    )
+    .unwrap_or_default()
+    .map_or((0, 0), |row| (row.task_count, row.message_count))
+  }
 }
