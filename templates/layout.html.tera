@@ -20,17 +20,13 @@
     <meta charset="utf-8" />
     <title> {% if global.title %} {{global.title}} | CorTeX Framework {% endif %}</title>
 
-    <!-- Sprinkle some jQuery : -->
-    <script src='//code.jquery.com/jquery-2.1.4.min.js'></script>
-    <!-- Bootstrap, the modern mother of all design: -->
-    <!-- Latest compiled and minified CSS -->
-    <link rel='stylesheet' type='text/css' href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.1/css/bootstrap.min.css">
-    <!-- Latest compiled and minified JavaScript -->
-    <script src="//maxcdn.bootstrapcdn.com/bootstrap/3.3.1/js/bootstrap.min.js"></script>
-    <!-- And some Awesome Font sauce: -->
-    <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.4.0/css/font-awesome.min.css">
-    <!-- Robot slab font: -->
-    <link rel='stylesheet' type='text/css' href='//fonts.googleapis.com/css?family=Roboto+Slab:400,700'>
+    <!-- Vendored locally (no external CDNs — self-contained, resilient, private; KNOWN_ISSUES X-6). -->
+    <script src='/public/vendor/js/jquery-2.1.4.min.js'></script>
+    <link rel='stylesheet' type='text/css' href="/public/vendor/css/bootstrap-3.3.1.min.css">
+    <script src="/public/vendor/js/bootstrap-3.3.1.min.js"></script>
+    <link rel="stylesheet" href="/public/vendor/css/font-awesome-4.4.0.min.css">
+    <!-- Roboto Slab (self-hosted woff2 + @font-face; falls back to the --serif system stack). -->
+    <link rel='stylesheet' type='text/css' href='/public/vendor/css/fonts.css'>
 
     <link rel="stylesheet" type='text/css' href='/public/css/cortex.css'>
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
