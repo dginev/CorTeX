@@ -478,13 +478,20 @@ hr {
 .gap-bottom {
   margin-bottom: var(--space-md);
 }
-/* Full-width content wrapper that replaces the dead `.row`/`.col-md-1`/`.col-md-10` Bootstrap no-ops
-   — one canonical scaffold for every tabular page. Report tables centre WITHIN it via the unified
-   `.table { margin-inline: auto }` rule; deliberately NOT a `max-width` reading-column, which clipped
-   and off-centred wide tables (e.g. the 10-column /jobs table). */
-.report-layout {
+/* The report/table content column — 85% wide and centred (owner's pick). One canonical scaffold for
+   every tabular page; `.col-md-10` is a transitional alias so existing templates get the layout
+   without markup surgery (migrate them to `.report-layout` over time), and the empty `.col-md-1`
+   grid spacers are hidden. A table still centres within the column via `.table { margin-inline: auto }`,
+   and a too-wide one scrolls within it rather than overflowing the page. */
+.report-layout,
+.col-md-10 {
+  max-width: 85%;
   margin-left: auto;
   margin-right: auto;
+  overflow-x: auto;
+}
+.col-md-1 {
+  display: none;
 }
 .narrow-form {
   max-width: 30rem;
