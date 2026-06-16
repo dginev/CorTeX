@@ -58,6 +58,27 @@
   --bad: #f06363;
 }
 
+/* Accessibility — the "Skip to main content" link (first focusable element in <body>). Visually
+   hidden off the top of the page until it receives keyboard focus, then it slides into view, so
+   keyboard and screen-reader users can bypass the nav and jump straight to <main id="body">.
+   Theme-aware (uses the shared tokens, so it reads correctly in paper and midnight). */
+.skip-link {
+  position: absolute;
+  top: -4rem;
+  left: var(--space-sm);
+  z-index: 2000;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-elev);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  transition: top 0.15s ease;
+}
+.skip-link:focus {
+  top: var(--space-sm);
+  outline: 2px solid var(--accent);
+}
+
 /* Type scale + line-heights (theme-independent — one vocabulary for every font-size, so sizes are
    consistent and tunable in one place instead of scattered ad-hoc rem/em values). */
 :root {
