@@ -92,6 +92,17 @@ impl From<WorkerMetadata> for HashMap<String, String> {
       "total_returned".to_string(),
       worker.total_returned.to_string(),
     );
+    // Per-worker outstanding = dispatched − returned: tasks this worker took but hasn't returned a
+    // result for. The actionable per-worker signal the fleet summary deliberately omits as an
+    // aggregate (KNOWN_ISSUES P-3) — a stale row with a large outstanding is a worker that died or
+    // stopped returning results. `saturating_sub` guards the impossible returned>dispatched case.
+    wh.insert(
+      "outstanding".to_string(),
+      worker
+        .total_dispatched
+        .saturating_sub(worker.total_returned)
+        .to_string(),
+    );
 
     // Absolute UTC timestamps (RFC 3339); the UI localizes them to the viewer's zone with its code
     // (public/js/localtime.js), and the fresh/stale row coloring still conveys liveness at a

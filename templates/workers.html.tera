@@ -22,6 +22,7 @@
           <th class="center">First Seen</th>
           <th class="center" width="90px;">Total Tasks Dispatched</th>
           <th class="center" width="90px;">Total Tasks Returned</th>
+          <th class="center" width="90px;" title="Tasks dispatched but not yet returned (dispatched − returned). A stale worker with a large outstanding count took work it never returned a result for.">Outstanding</th>
         </tr>
       </thead>
       <tbody>
@@ -31,8 +32,9 @@
           <td class="recent-time"><time datetime="{{worker.time_last_dispatch}}">{{worker.time_last_dispatch}}</time></td>
           <td class="recent-time"><time datetime="{{worker.time_last_return}}">{{worker.time_last_return}}</time></td>
           <td><time datetime="{{worker.first_seen}}">{{worker.first_seen}}</time></td>
-          <td>{{worker.total_dispatched}}</td>
-          <td>{{worker.total_returned}}</td>
+          <td>{{ worker.total_dispatched | group_thousands }}</td>
+          <td>{{ worker.total_returned | group_thousands }}</td>
+          <td class="worker-outstanding{% if worker.outstanding != "0" %} has-outstanding{% endif %}">{{ worker.outstanding | group_thousands }}</td>
         </tr>
         {% endfor %}
       </tbody>

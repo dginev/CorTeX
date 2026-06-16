@@ -719,6 +719,17 @@ tr.fresh > td {
   background-color: color-mix(in srgb, var(--ok) 18%, transparent);
 }
 
+/* Per-worker outstanding (dispatched − returned). Neutral when the worker is fresh (normal in-flight
+   work); flagged red when the worker is STALE yet still holds unreturned tasks — it took work and
+   stopped returning results, the actionable "stuck / dead worker" case. */
+.worker-outstanding {
+  font-variant-numeric: tabular-nums;
+}
+tr.stale .has-outstanding {
+  color: var(--bad);
+  font-weight: 600;
+}
+
 .switch {
   position: relative;
   display: inline-block;
