@@ -277,6 +277,45 @@ fn category_and_what_reports_match_seed() {
   );
 }
 
+/// The service-overview hub (`GET /api/reports/<c>/<svc>`): the macro status breakdown an agent
+/// reads before drilling into a severity.
+fn service_overview_reports_the_status_breakdown() {
+  seed(); // 3 warning tasks (a, b, c), no invalids
+  let client = client();
+
+  let response = client
+    .get(format!("/api/reports/{CORPUS_NAME}/{SERVICE_NAME}"))
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok, "overview renders");
+  assert_eq!(response.content_type(), Some(ContentType::JSON));
+  let overview: Value = response.into_json().expect("overview json");
+  assert_eq!(overview["total"], 3, "3 valid tasks (no invalids)");
+  let statuses = overview["statuses"].as_array().expect("statuses array");
+  let bucket = |key: &str| {
+    statuses
+      .iter()
+      .find(|s| s["status"] == key)
+      .unwrap_or_else(|| panic!("status bucket {key:?} present"))
+  };
+  assert_eq!(
+    bucket("warning")["tasks"],
+    3,
+    "all 3 seeded tasks are warnings"
+  );
+  assert_eq!(
+    bucket("warning")["percent"].as_f64(),
+    Some(100.0),
+    "warnings are 100% of the valid total"
+  );
+  assert_eq!(bucket("no_problem")["tasks"], 0);
+
+  // Unknown corpus -> 404.
+  let response = client
+    .get("/api/reports/no-such-corpus-xyz/no_svc")
+    .dispatch();
+  assert_eq!(response.status(), Status::NotFound, "unknown corpus -> 404");
+}
+
 /// The per-article forensic endpoint (`GET /api/corpus/<c>/<svc>/document/<name>`): a document's
 /// status plus every worker-log message behind it — "what are the errors of this article?".
 fn document_forensics_reports_status_and_messages() {
@@ -372,6 +411,7 @@ fn document_forensics_reports_status_and_messages() {
 // failure still fails CI.
 fn main() {
   category_and_what_reports_match_seed();
+  service_overview_reports_the_status_breakdown();
   document_forensics_reports_status_and_messages();
   eprintln!("reports_api_test: all cases passed");
   unsafe { libc::_exit(0) }

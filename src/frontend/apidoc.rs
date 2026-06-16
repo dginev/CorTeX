@@ -45,8 +45,9 @@ use crate::frontend::management::{
   okapi_add_operation_for_put_config_, okapi_add_operation_for_reindex_, put_config, reindex,
 };
 use crate::frontend::reports::{
-  api_category_report, api_document, api_what_report, okapi_add_operation_for_api_category_report_,
-  okapi_add_operation_for_api_document_, okapi_add_operation_for_api_what_report_,
+  api_category_report, api_document, api_service_overview, api_what_report,
+  okapi_add_operation_for_api_category_report_, okapi_add_operation_for_api_document_,
+  okapi_add_operation_for_api_service_overview_, okapi_add_operation_for_api_what_report_,
   okapi_add_operation_for_refresh_reports_, okapi_add_operation_for_rerun_report_, refresh_reports,
   rerun_report,
 };
@@ -99,6 +100,7 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
     api_run_current,
     api_run_diff,
     api_run_task_diffs,
+    api_service_overview,
     api_category_report,
     api_what_report,
     api_document,

@@ -20,8 +20,8 @@ use rocket_dyn_templates::Template;
 use serde::Serialize;
 
 use crate::backend::{
-  category_rollup, category_total, from_address, severity_total, task_messages, what_rollup,
-  DatabaseUrl, DbPool, ReportSummaryRow, RerunOptions,
+  category_rollup, category_total, from_address, progress_report, severity_total, task_messages,
+  what_rollup, DatabaseUrl, DbPool, ReportSummaryRow, RerunOptions,
 };
 use crate::frontend::actor::{require_admin, Actor, AdminReject, AdminSession};
 use crate::frontend::concerns::serve_report;
@@ -29,6 +29,35 @@ use crate::frontend::params::ReportParams;
 use crate::helpers::TaskStatus;
 use crate::jobs;
 use crate::models::{Corpus, Service, Task};
+
+/// One status bucket in the service overview: a conversion-status key with its task count and its
+/// share of the valid-task total.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct StatusCountDto {
+  /// Status key: `no_problem` | `warning` | `error` | `fatal` | `invalid` | `todo` | `blocked` |
+  /// `queued`.
+  pub status: String,
+  /// Tasks currently in this status.
+  pub tasks: i64,
+  /// Percentage of the valid-task total (invalids excluded from the denominator), 2-dp.
+  pub percent: f64,
+}
+
+/// The service-overview hub (the macro top rung of the report ladder): the `(corpus, service)`
+/// conversion-status breakdown an agent reads first, before drilling into a severity. The `status`
+/// keys double as the `<severity>` path segment for the category report
+/// (`GET /api/reports/<corpus>/<service>/<severity>`).
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ServiceOverviewDto {
+  /// Corpus name.
+  pub corpus: String,
+  /// Service name.
+  pub service: String,
+  /// Valid-task total (invalids excluded), the percentage denominator.
+  pub total: i64,
+  /// One bucket per conversion status, in canonical severity order.
+  pub statuses: Vec<StatusCountDto>,
+}
 
 /// One report row: a category (in the category report) or a `what` class (in the drill-down), with
 /// its distinct-task and message counts.
@@ -132,6 +161,43 @@ fn resolve(
 /// Grand totals (distinct tasks, messages) from an optional rollup total row.
 fn totals(row: Option<ReportSummaryRow>) -> (i64, i64) {
   row.map_or((0, 0), |total| (total.task_count, total.message_count))
+}
+
+/// The service-overview hub (agent twin of the top report screen): the `(corpus, service)`
+/// conversion-status breakdown — total + per-status counts/percentages — the macro entry point an
+/// agent reads before drilling into a severity. Shares `backend::progress_report` with the HTML top
+/// screen, so the numbers match. `404` on an unknown corpus/service.
+#[rocket_okapi::openapi(tag = "Reports")]
+#[get("/api/reports/<corpus>/<service>")]
+pub fn api_service_overview(
+  corpus: &str,
+  service: &str,
+  pool: &State<DbPool>,
+) -> Result<Json<ServiceOverviewDto>, Status> {
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let (corpus, service) = resolve(corpus, service, &mut connection)?;
+  let stats = progress_report(&mut connection, corpus.id, service.id);
+  let statuses = TaskStatus::keys()
+    .into_iter()
+    .map(|status| {
+      let percent = stats
+        .get(&format!("{status}_percent"))
+        .copied()
+        .unwrap_or(0.0);
+      let tasks = stats.get(&status).copied().unwrap_or(0.0) as i64;
+      StatusCountDto {
+        status,
+        tasks,
+        percent,
+      }
+    })
+    .collect();
+  Ok(Json(ServiceOverviewDto {
+    corpus: corpus.name,
+    service: service.name,
+    total: stats.get("total").copied().unwrap_or(0.0) as i64,
+    statuses,
+  }))
 }
 
 /// The category report (agent twin of the severity screen): one row per category, descending by
