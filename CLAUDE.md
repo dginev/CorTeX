@@ -45,11 +45,15 @@ read it before non-trivial work. Active work branch: **`productize-2026`**.
   `Rocket.toml`/`templates/`/`public/` are CWD-relative — **run binaries from the repo root.**
 - **The dispatcher panics on purpose** (mutex poisoning → process abort → external restart). Don't
   "fix" those panics into silent recovery; preserve fail-fast where it's the design (see Arm 4/12).
-- **Only one FK exists** (`historical_tasks.task_id → tasks ON DELETE CASCADE`). The `log_*` tables
-  have no FK to `tasks`, so a **raw** `DELETE FROM corpora`/`tasks` orphans their rows — always delete
-  a corpus through **`Corpus::destroy`**, which removes `log_*` + tasks + corpus in **one
-  transaction** (orphan-free + crash-consistent; the frontend `delete_corpus` path uses it). (The dead
-  `dependencies` table was dropped — migration `…050000`, Arm 12.)
+- **Referential FKs are landing in Arm 3.** As of migration `…140000`, the five `log_*` tables now
+  have `task_id → tasks(id) ON DELETE CASCADE` (added `NOT VALID` + `VALIDATE` after an orphan-sweep),
+  joining the original `historical_tasks.task_id → tasks` FK — so a raw `DELETE FROM tasks` now
+  cascades its logs safely. **Still missing (Phase 2b): `tasks → corpora`/`services` FKs**, so a raw
+  `DELETE FROM corpora` still orphans its *tasks* — keep deleting a corpus through **`Corpus::destroy`**
+  (removes `log_*` + tasks + corpus in **one transaction**; orphan-free + crash-consistent; the
+  frontend `delete_corpus` path uses it) until that FK lands. **External UUIDv7 handles** (`public_id`,
+  migration `…130000`) exist on `corpora`/`services` — additive, the serial `id` is still the PK + FK
+  target. (The dead `dependencies` table was dropped — migration `…050000`, Arm 12.)
 
 ## Build / run
 
