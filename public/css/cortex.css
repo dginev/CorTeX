@@ -402,6 +402,19 @@ hr {
   }
 }
 
+/* Per-article forensic screen — severity summary line + the collapsed `info` noise. */
+.severity-summary {
+  margin: 0.25rem 0 1rem;
+}
+details.info-messages {
+  margin-top: 1.5rem;
+}
+details.info-messages > summary {
+  cursor: pointer;
+  color: var(--ink-muted);
+  padding: 0.4rem 0;
+}
+
 /* The theme toggle is an `<a id="theme-toggle">` in the nav action group — it inherits the
    `.cortex-admin-nav` pill styling like Overview / Admin (no ID-specific override that would strip
    the pill border). */

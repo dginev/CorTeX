@@ -11,7 +11,7 @@
 use cortex::backend::{self, test_db_address};
 use cortex::frontend::server::mount_api_with;
 use cortex::models::{Corpus, NewCorpus, NewService, Service};
-use cortex::schema::{corpora, log_errors, log_warnings, services, tasks};
+use cortex::schema::{corpora, log_errors, log_infos, log_warnings, services, tasks};
 use diesel::prelude::*;
 use rocket::http::{ContentType, Status};
 use rocket::local::blocking::Client;
@@ -347,6 +347,16 @@ fn document_forensics_reports_status_and_messages() {
     ))
     .execute(&mut backend.connection)
     .expect("insert log_error");
+  // An info message: it must be tucked into the collapsed `<details>`, not the lead table.
+  diesel::insert_into(log_infos::table)
+    .values((
+      log_infos::task_id.eq(task_id),
+      log_infos::category.eq("io"),
+      log_infos::what.eq("loaded_file"),
+      log_infos::details.eq("TeX.pool.ltxml"),
+    ))
+    .execute(&mut backend.connection)
+    .expect("insert log_info");
 
   let client = client();
   let response = client
@@ -367,7 +377,7 @@ fn document_forensics_reports_status_and_messages() {
     "carries a result-download URL keyed by the task id"
   );
   let messages = doc["messages"].as_array().expect("messages array");
-  assert_eq!(messages.len(), 2, "the seeded warning + error");
+  assert_eq!(messages.len(), 3, "the seeded warning + error + info");
   assert!(
     messages.iter().any(|m| m["severity"] == "warning"
       && m["category"] == "math"
@@ -402,7 +412,13 @@ fn document_forensics_reports_status_and_messages() {
   let body = response.into_string().expect("html body");
   assert!(
     body.contains("undefined_control_sequence") && body.contains("undefined_macro"),
-    "the forensic screen lists the document's messages server-side"
+    "the forensic screen leads with the actionable error + warning"
+  );
+  // The info message is collapsed into a <details> disclosure (not in the lead table) so the noise
+  // never buries the warnings/errors.
+  assert!(
+    body.contains("<details") && body.contains("info message") && body.contains("loaded_file"),
+    "info messages are tucked into a collapsed <details>, out of the lead table"
   );
 
   // Clean up the extra task + its logs.
@@ -410,6 +426,9 @@ fn document_forensics_reports_status_and_messages() {
     .execute(&mut backend.connection)
     .ok();
   diesel::delete(log_errors::table.filter(log_errors::task_id.eq(task_id)))
+    .execute(&mut backend.connection)
+    .ok();
+  diesel::delete(log_infos::table.filter(log_infos::task_id.eq(task_id)))
     .execute(&mut backend.connection)
     .ok();
   diesel::delete(tasks::table.filter(tasks::id.eq(task_id)))

@@ -18,8 +18,26 @@
     &nbsp;·&nbsp; <a href="{{ report.result_url }}">download result</a>
   </p>
 
-  <h3>Messages <span class="muted">({{ report.messages | length }})</span></h3>
-  {% if report.messages | length > 0 %}
+  {# Counts at a glance, then lead with the actionable messages; the info noise (loaded files,
+     debug) is collapsed into a native <details> so it never buries the warnings/errors. #}
+  {% set total = report.messages | length %}
+  {% set fatal = report.messages | filter(attribute="severity", value="fatal") | length %}
+  {% set error = report.messages | filter(attribute="severity", value="error") | length %}
+  {% set invalid = report.messages | filter(attribute="severity", value="invalid") | length %}
+  {% set warning = report.messages | filter(attribute="severity", value="warning") | length %}
+  {% set info = report.messages | filter(attribute="severity", value="info") | length %}
+  {% set actionable = total - info %}
+
+  <h3>Messages <span class="muted">({{ total }})</span></h3>
+  <p class="severity-summary">
+    {% if fatal > 0 %}<span class="status-bad">{{ fatal }} fatal</span>&nbsp;·&nbsp;{% endif %}
+    {% if error > 0 %}<span class="status-bad">{{ error }} error</span>&nbsp;·&nbsp;{% endif %}
+    {% if invalid > 0 %}<span class="status-bad">{{ invalid }} invalid</span>&nbsp;·&nbsp;{% endif %}
+    {% if warning > 0 %}<span class="status-warn">{{ warning }} warning</span>&nbsp;·&nbsp;{% endif %}
+    <span class="muted">{{ info }} info</span>
+  </p>
+
+  {% if actionable > 0 %}
   <table class="table" id="document-messages">
     <thead>
       <tr>
@@ -30,18 +48,42 @@
       </tr>
     </thead>
     <tbody>
-      {% for m in report.messages %}
+      {% for m in report.messages %}{% if m.severity != "info" %}
       <tr>
-        <td class="left">{% if m.severity == "warning" %}<span class="status-warn">{{ m.severity }}</span>{% elif m.severity == "error" or m.severity == "fatal" or m.severity == "invalid" %}<span class="status-bad">{{ m.severity }}</span>{% else %}<span class="muted">{{ m.severity }}</span>{% endif %}</td>
+        <td class="left">{% if m.severity == "warning" %}<span class="status-warn">{{ m.severity }}</span>{% else %}<span class="status-bad">{{ m.severity }}</span>{% endif %}</td>
         <td class="left">{{ m.category }}</td>
         <td class="left">{{ m.what }}</td>
         <td class="left"><code>{{ m.details }}</code></td>
       </tr>
-      {% endfor %}
+      {% endif %}{% endfor %}
     </tbody>
   </table>
   {% else %}
-  <p class="muted">No messages were logged for this document — a clean conversion.</p>
+  <p class="muted">No warnings, errors, or fatals — a clean conversion.</p>
+  {% endif %}
+
+  {% if info > 0 %}
+  <details class="info-messages">
+    <summary>{{ info }} info message{{ info | pluralize }} <span class="muted">(loaded files, debug)</span></summary>
+    <table class="table">
+      <thead>
+        <tr>
+          <th class="left">Category</th>
+          <th class="left">What</th>
+          <th class="left">Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in report.messages %}{% if m.severity == "info" %}
+        <tr>
+          <td class="left">{{ m.category }}</td>
+          <td class="left">{{ m.what }}</td>
+          <td class="left"><code>{{ m.details }}</code></td>
+        </tr>
+        {% endif %}{% endfor %}
+      </tbody>
+    </table>
+  </details>
   {% endif %}
 </div>
 <div class="col-md-1"></div>
