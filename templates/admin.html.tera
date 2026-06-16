@@ -17,31 +17,31 @@
 
   <div class="admin-status">
     <div class="admin-card">
-      <div class="stat-number" id="stat-corpora">{{ status.corpus_count }}</div>
+      <div class="stat-number" id="stat-corpora">{{ status.corpus_count | group_thousands }}</div>
       <div class="muted"><a href="/">corpora</a></div>
     </div>
     <div class="admin-card">
-      <div class="stat-number {% if status.active_jobs > 0 %}status-ok{% endif %}" id="stat-jobs">{{ status.active_jobs }}</div>
+      <div class="stat-number {% if status.active_jobs > 0 %}status-ok{% endif %}" id="stat-jobs">{{ status.active_jobs | group_thousands }}</div>
       <div class="muted"><a href="/jobs">active jobs</a></div>
     </div>
     <div class="admin-card">
-      <div class="stat-number" id="stat-workers">{{ status.workers_total }}</div>
-      <div class="muted"><a href="/services">workers</a> · <span id="stat-leased">{{ status.workers_in_flight }}</span>&nbsp;<abbr title="Tasks dispatched but not yet returned (leased to workers). ≈ in-flight while the dispatcher is running; a cumulative lifetime shortfall on an idle deployment, so don't read it as live in-flight work.">leased</abbr></div>
+      <div class="stat-number" id="stat-workers">{{ status.workers_total | group_thousands }}</div>
+      <div class="muted"><a href="/services">workers</a> · <span id="stat-leased">{{ status.workers_in_flight | group_thousands }}</span>&nbsp;<abbr title="Tasks dispatched but not yet returned (leased to workers). ≈ in-flight while the dispatcher is running; a cumulative lifetime shortfall on an idle deployment, so don't read it as live in-flight work.">leased</abbr></div>
     </div>
     <div class="admin-card">
-      <div class="stat-number" id="stat-todo">{{ status.tasks_todo }}</div>
+      <div class="stat-number" id="stat-todo">{{ status.tasks_todo | group_thousands }}</div>
       <div class="muted"><a href="/" title="Tasks awaiting conversion (TODO, not yet dispatched)">pending&nbsp;tasks</a></div>
     </div>
     <div class="admin-card">
-      <div class="stat-number {% if status.jobs_failed_recent > 0 %}status-warn{% endif %}" id="stat-failed">{{ status.jobs_failed_recent }}</div>
+      <div class="stat-number {% if status.jobs_failed_recent > 0 %}status-warn{% endif %}" id="stat-failed">{{ status.jobs_failed_recent | group_thousands }}</div>
       <div class="muted"><a href="/jobs">failed (24h)</a></div>
     </div>
     <div class="admin-card">
-      <div class="stat-number" id="stat-sessions">{{ status.active_sessions }}</div>
+      <div class="stat-number" id="stat-sessions">{{ status.active_sessions | group_thousands }}</div>
       <div class="muted"><a href="/admin/sessions">sessions</a></div>
     </div>
     <div class="admin-card">
-      <div class="stat-number" id="stat-pool">{{ status.pool_in_use }} / {{ status.pool_max }}</div>
+      <div class="stat-number" id="stat-pool">{{ status.pool_in_use | group_thousands }} / {{ status.pool_max | group_thousands }}</div>
       <div class="muted"><a href="/health">pool in&nbsp;use</a></div>
     </div>
   </div>
@@ -50,9 +50,9 @@
     <div class="muted">Last run &nbsp;<a href="/admin/runs">(all runs)</a></div>
     <div id="stat-lastrun">
       {% if status.last_run %}
-      <div><strong><time datetime="{{ status.last_run.when }}">{{ status.last_run.when }}</time></strong>{% if status.last_run.open %} <span class="status-ok">· open{% if status.last_run.in_progress > 0 %} · {{ status.last_run.in_progress }} in&nbsp;progress{% endif %}</span>{% endif %}
+      <div><strong><time datetime="{{ status.last_run.when }}">{{ status.last_run.when }}</time></strong>{% if status.last_run.open %} <span class="status-ok">· open{% if status.last_run.in_progress > 0 %} · {{ status.last_run.in_progress | group_thousands }} in&nbsp;progress{% endif %}</span>{% endif %}
         &nbsp;by {{ status.last_run.owner }}</div>
-      <div class="muted run-meta">{{ status.last_run.total }} tasks — {{ status.last_run.description }}</div>
+      <div class="muted run-meta">{{ status.last_run.total | group_thousands }} tasks — {{ status.last_run.description }}</div>
       {% else %}
       <div class="muted">no runs yet</div>
       {% endif %}
@@ -87,16 +87,19 @@
   var FEED = '/admin/status.json', PERIOD = 5000;
   var dot = document.getElementById('live-dot'), label = document.getElementById('live-label');
   function set(id, text) { var el = document.getElementById(id); if (el) el.textContent = text; }
+  // Group integer digits in threes with commas (matches the server-side `group_thousands` filter), so
+  // live updates render large counts as "2,925,766". Reusable for any live numeric cell.
+  function group(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
   function flag(id, cls, on) { var el = document.getElementById(id); if (el) el.classList.toggle(cls, on); }
   function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
   function renderLastRun(r) {
     var box = document.getElementById('stat-lastrun');
     if (!box) return;
     if (!r) { box.innerHTML = '<div class="muted">no runs yet</div>'; return; }
-    var openBit = r.open ? ' <span class="status-ok">· open' + (r.in_progress > 0 ? ' · ' + r.in_progress + ' in&nbsp;progress' : '') + '</span>' : '';
+    var openBit = r.open ? ' <span class="status-ok">· open' + (r.in_progress > 0 ? ' · ' + group(r.in_progress) + ' in&nbsp;progress' : '') + '</span>' : '';
     box.innerHTML = '<div><strong><time datetime="' + esc(r.when) + '">' + esc(r.when) + '</time></strong>' + openBit +
       '&nbsp;by ' + esc(r.owner) + '</div>' +
-      '<div class="muted run-meta">' + r.total + ' tasks — ' + esc(r.description) + '</div>';
+      '<div class="muted run-meta">' + group(r.total) + ' tasks — ' + esc(r.description) + '</div>';
   }
   function beat() { if (!dot) return; dot.classList.remove('beat'); void dot.offsetWidth; dot.classList.add('beat'); }
   async function poll() {
@@ -107,13 +110,13 @@
     var s = await resp.json();
     if (dot) dot.classList.remove('stale');
     if (label) label.textContent = 'live';
-    set('stat-corpora', s.corpus_count);
-    set('stat-jobs', s.active_jobs); flag('stat-jobs', 'status-ok', s.active_jobs > 0);
-    set('stat-workers', s.workers_total); set('stat-leased', s.workers_in_flight);
-    set('stat-todo', s.tasks_todo);
-    set('stat-failed', s.jobs_failed_recent); flag('stat-failed', 'status-warn', s.jobs_failed_recent > 0);
-    set('stat-sessions', s.active_sessions);
-    set('stat-pool', s.pool_in_use + ' / ' + s.pool_max);
+    set('stat-corpora', group(s.corpus_count));
+    set('stat-jobs', group(s.active_jobs)); flag('stat-jobs', 'status-ok', s.active_jobs > 0);
+    set('stat-workers', group(s.workers_total)); set('stat-leased', group(s.workers_in_flight));
+    set('stat-todo', group(s.tasks_todo));
+    set('stat-failed', group(s.jobs_failed_recent)); flag('stat-failed', 'status-warn', s.jobs_failed_recent > 0);
+    set('stat-sessions', group(s.active_sessions));
+    set('stat-pool', group(s.pool_in_use) + ' / ' + group(s.pool_max));
     renderLastRun(s.last_run);
     beat();
   }
