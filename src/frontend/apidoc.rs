@@ -91,7 +91,7 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
   let settings = OpenApiSettings::default();
   // Every `#[openapi]` agent handler is listed here; the macro returns the routes + the spec built
   // from them. (Expand this list as more endpoints are annotated.)
-  let (routes, spec) = openapi_get_routes_spec![
+  let (routes, mut spec) = openapi_get_routes_spec![
     settings:
     api_corpora,
     api_corpus,
@@ -133,6 +133,10 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
     api_revoke_sessions,
     api_historical_stats,
   ];
+  // Give every operation a short one-line `summary` for the RapiDoc left-nav; the full doc comment
+  // stays as the `description` in the detail panel. Without a summary RapiDoc fell back to the long
+  // description, making the nav unreadable (U-2).
+  add_nav_summaries(&mut spec);
   let spec_json = serde_json::to_string_pretty(&spec).unwrap_or_default();
   rocket
     .manage(SpecJson(spec_json))
@@ -149,4 +153,95 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
         ..Default::default()
       }),
     )
+}
+
+/// Give every operation in `spec` a short one-line `summary` (for the RapiDoc left-nav) derived
+/// from its long `description`, leaving the description intact for the detail panel. Idempotent —
+/// only fills an empty summary.
+fn add_nav_summaries(spec: &mut rocket_okapi::okapi::openapi3::OpenApi) {
+  for path_item in spec.paths.values_mut() {
+    for op in [
+      path_item.get.as_mut(),
+      path_item.post.as_mut(),
+      path_item.put.as_mut(),
+      path_item.delete.as_mut(),
+      path_item.patch.as_mut(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+      if op.summary.is_none() {
+        if let Some(description) = op.description.as_deref() {
+          op.summary = Some(short_summary(description));
+        }
+      }
+    }
+  }
+}
+
+/// A terse nav label from a long description: drops a leading `` `METHOD /path` `` code-span (the
+/// nav already shows the method + path) and markdown emphasis, keeps the first sentence, and caps
+/// the length so the RapiDoc left-nav stays readable.
+fn short_summary(description: &str) -> String {
+  let mut text = description.trim();
+  // Strip a leading backtick code span (e.g. "`GET /api/status`") + a following em-dash/colon/dash.
+  if let Some(after_tick) = text.strip_prefix('`') {
+    if let Some(end) = after_tick.find('`') {
+      let rest = after_tick[end + 1..].trim_start();
+      let rest = rest
+        .strip_prefix('—')
+        .or_else(|| rest.strip_prefix(':'))
+        .or_else(|| rest.strip_prefix('-'))
+        .unwrap_or(rest)
+        .trim_start();
+      if !rest.is_empty() {
+        text = rest;
+      }
+    }
+  }
+  // First sentence / line, minus trailing punctuation and markdown emphasis.
+  let first = text
+    .split(['.', '\n'])
+    .next()
+    .unwrap_or(text)
+    .trim()
+    .trim_end_matches([',', ';', ':']);
+  let cleaned: String = first
+    .chars()
+    .filter(|c| !matches!(c, '`' | '*' | '_'))
+    .collect();
+  let cleaned = cleaned.trim();
+  const CAP: usize = 64;
+  if cleaned.chars().count() > CAP {
+    let truncated: String = cleaned.chars().take(CAP - 1).collect();
+    format!("{}…", truncated.trim_end())
+  } else {
+    cleaned.to_string()
+  }
+}
+
+#[cfg(test)]
+mod summary_tests {
+  use super::short_summary;
+
+  #[test]
+  fn derives_terse_nav_labels() {
+    // A leading "`GET /path` — …" code span is dropped (the nav already shows the path).
+    assert_eq!(
+      short_summary("`GET /api/status` — the agent twin of the dashboard feed. More detail here."),
+      "the agent twin of the dashboard feed"
+    );
+    // A short plain description keeps its first sentence.
+    assert_eq!(
+      short_summary("Lists all registered corpora."),
+      "Lists all registered corpora"
+    );
+    // A long first sentence is capped with an ellipsis.
+    let long = "Lists every single registered corpus across the whole deployment with all of its many associated services";
+    let summary = short_summary(long);
+    assert!(
+      summary.chars().count() <= 64 && summary.ends_with('…'),
+      "got {summary:?}"
+    );
+  }
 }
