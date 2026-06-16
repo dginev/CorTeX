@@ -3,12 +3,13 @@
 <div class="col-md-8">
   <h1>Add a corpus</h1>
   <p><a href="/admin">&larr; back to the admin dashboard</a></p>
+  {% if global.error %}<p class="status-bad"><strong>{{ global.error }}</strong></p>{% endif %}
   <form method="post" action="/corpus/import">
-    <p><label>Name <input type="text" name="name" required placeholder="e.g. arxmliv-2024"></label></p>
+    <p><label>Name <input type="text" name="name" required placeholder="e.g. arxmliv-2024" value="{{ global.name }}"></label></p>
     <p><label>Path <span class="muted">(server-side corpus root)</span>
-        <input type="text" name="path" size="52" required placeholder="/data/&hellip;"></label></p>
-    <p><label>Description <input type="text" name="description" size="60"></label></p>
-    <p><label><input type="checkbox" name="complex" value="true"> Multi-file documents (complex)</label></p>
+        <input type="text" name="path" size="52" required placeholder="/data/&hellip;" value="{{ global.path }}"></label></p>
+    <p><label>Description <input type="text" name="description" size="60" value="{{ global.corpus_description }}"></label></p>
+    <p><label><input type="checkbox" name="complex" value="true"{% if global.complex == "true" %} checked{% endif %}> Multi-file documents (complex)</label></p>
     <p class="muted">Registers the corpus and starts a background import job — track it on
       <a href="/jobs">Background jobs</a>.</p>
     <p><button type="submit">Register &amp; import</button></p>

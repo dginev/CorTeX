@@ -245,27 +245,51 @@ pub struct ImportForm {
 /// signed-in [`AdminSession`] cookie** (no token typed in the form — an anonymous browser is
 /// redirected to sign-in); registers + imports the corpus off the request path and redirects to
 /// `/jobs`. `409` if the name is taken.
+// The Err variant is a re-rendered form `Template` (the friendly-error path), which is chunky —
+// fine for a one-shot request handler.
+#[allow(clippy::result_large_err)]
 #[post("/corpus/import", data = "<form>")]
 pub fn import_corpus_human(
   form: Form<ImportForm>,
   session: Option<AdminSession>,
   pool: &State<DbPool>,
   database_url: &State<DatabaseUrl>,
-) -> Result<Redirect, Status> {
+) -> Result<Redirect, Template> {
   let Some(session) = session else {
     return Ok(Redirect::to("/admin/login"));
   };
   let form = form.into_inner();
-  let uuid = start_import(
+  let description = form.description.clone().unwrap_or_default();
+  match start_import(
     pool,
     &database_url.0,
     &session.owner,
-    form.name,
-    form.path,
+    form.name.clone(),
+    form.path.clone(),
     form.complex,
-    form.description.unwrap_or_default(),
-  )?;
-  Ok(Redirect::to(format!("/jobs/{uuid}")))
+    description.clone(),
+  ) {
+    Ok(uuid) => Ok(Redirect::to(format!("/jobs/{uuid}"))),
+    // A failed submit re-renders the form with a friendly message + the values preserved, rather
+    // than a bare error page that loses the admin's input.
+    Err(status) => {
+      let message = match status.code {
+        409 => format!(
+          "A corpus named “{}” already exists — choose a different name.",
+          form.name
+        ),
+        503 => "The database is temporarily unavailable — please try again.".to_string(),
+        _ => "Could not register the corpus — check the values and try again.".to_string(),
+      };
+      Err(render_corpora_new(
+        Some(&message),
+        &form.name,
+        &form.path,
+        &description,
+        form.complex,
+      ))
+    },
+  }
 }
 
 /// The body of a `corpus_import` job: run the importer in-process against `corpus`, reporting
@@ -919,23 +943,49 @@ pub fn corpus_page(
 /// page, linked from the admin dashboard. **Signed-in admins only** (anonymous → sign-in); the form
 /// posts to the existing `POST /corpus/import`.
 #[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
-#[get("/corpora/new")]
-pub fn new_corpus_page(
-  session: Option<AdminSession>,
-  return_to: ReturnTo,
-) -> Result<Template, AdminReject> {
-  require_admin_to(session, &return_to)?;
+/// Renders the "Add a corpus" form. Shared by the GET page and the POST error path, so a failed
+/// submit (e.g. a name collision) re-renders the form with a friendly `error` and the typed values
+/// preserved instead of a bare error page. The `corpus_*` keys carry the form values (the page meta
+/// `description` is separate). Admin-only page, so `is_admin` is set.
+fn render_corpora_new(
+  error: Option<&str>,
+  name: &str,
+  path: &str,
+  description: &str,
+  complex: bool,
+) -> Template {
   let mut global = HashMap::new();
   global.insert("title".to_string(), "Add a corpus".to_string());
   global.insert(
     "description".to_string(),
     "Register a new corpus and import its documents".to_string(),
   );
-  let context = TemplateContext {
-    global,
-    ..TemplateContext::default()
-  };
-  Ok(Template::render("corpora-new", context))
+  if let Some(message) = error {
+    global.insert("error".to_string(), message.to_string());
+  }
+  global.insert("name".to_string(), name.to_string());
+  global.insert("path".to_string(), path.to_string());
+  global.insert("corpus_description".to_string(), description.to_string());
+  global.insert("complex".to_string(), complex.to_string());
+  Template::render(
+    "corpora-new",
+    TemplateContext {
+      global,
+      is_admin: true,
+      ..TemplateContext::default()
+    },
+  )
+}
+
+/// The "Add a corpus" form (`GET /corpora/new`). Signed-in admins only (anonymous → sign-in).
+#[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
+#[get("/corpora/new")]
+pub fn new_corpus_page(
+  session: Option<AdminSession>,
+  return_to: ReturnTo,
+) -> Result<Template, AdminReject> {
+  require_admin_to(session, &return_to)?;
+  Ok(render_corpora_new(None, "", "", "", false))
 }
 
 /// The route set for the corpus-management capability (API + human screens).

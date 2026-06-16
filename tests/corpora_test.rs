@@ -960,8 +960,51 @@ fn sandbox_carves_matching_entries_into_a_new_corpus() {
   cleanup_corpus(&mut db, sandbox_name);
 }
 
+/// A name collision on the human "Add a corpus" form re-renders the form with a friendly error and
+/// the typed values preserved — not a bare error page that loses the admin's input.
+fn import_form_reshows_friendly_error_on_name_collision() {
+  let name = "collide-corpus-xyz";
+  let mut db = backend::testdb();
+  let _ = diesel::delete(corpora::table.filter(corpora::name.eq(name))).execute(&mut db.connection);
+  db.add(&NewCorpus {
+    name: name.to_string(),
+    path: "/tmp/collide".to_string(),
+    complex: false,
+    description: "d".to_string(),
+  })
+  .expect("seed the colliding corpus");
+
+  let client = client();
+  sign_in(&client);
+  let response = client
+    .post("/corpus/import")
+    .header(ContentType::Form)
+    .body(format!("name={name}&path=/tmp/typed-path&complex=true"))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Ok,
+    "a name collision re-renders the form (200), not an error page or a redirect"
+  );
+  let body = response.into_string().expect("html body");
+  assert!(
+    body.contains("already exists"),
+    "shows a friendly name-collision message"
+  );
+  assert!(
+    body.contains(&format!("value=\"{name}\"")),
+    "preserves the typed name"
+  );
+  // The path's `/` are HTML-escaped (`&#x2F;`) by Tera — the distinctive segment survives.
+  assert!(body.contains("typed-path"), "preserves the typed path");
+  assert!(body.contains("checked"), "preserves the complex checkbox");
+
+  let _ = diesel::delete(corpora::table.filter(corpora::name.eq(name))).execute(&mut db.connection);
+}
+
 fn main() {
   api_corpora_lists_registered_corpora();
+  import_form_reshows_friendly_error_on_name_collision();
   api_corpus_detail_reports_services_and_counts();
   api_corpus_detail_is_404_for_unknown_corpus();
   activate_service_requires_a_token();
