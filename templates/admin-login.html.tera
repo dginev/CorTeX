@@ -4,7 +4,7 @@
   <div class="center">
     <h1>Admin sign-in</h1>
     {% if bad %}
-    <p style="color:var(--bad);"><strong>That token was not recognized.</strong> Please try again.</p>
+    <p class="status-bad"><strong>That token was not recognized.</strong> Please try again.</p>
     {% endif %}
     <p>Enter a CorTeX admin token to reach the administration dashboard.</p>
     <form method="post" action="/admin/login">
@@ -18,7 +18,7 @@
       <p>or sign in with a passkey:</p>
       <p><input type="text" id="passkey-owner" placeholder="your name" autocomplete="username webauthn"></p>
       <button type="button" id="signin-passkey" {% if next %}data-next="{{ next }}"{% endif %}><i class="fa fa-key"></i>&nbsp; Sign in with a passkey</button>
-      <p id="passkey-error" style="color:var(--bad); margin-top:0.5rem;"></p>
+      <p id="passkey-error" class="status-bad" style="margin-top:0.5rem;"></p>
     </div>
     {% endif %}
 

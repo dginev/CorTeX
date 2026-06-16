@@ -34,7 +34,7 @@
   <form method="post" action="/admin/retention/prune" style="display:inline; margin-left:0.5rem;"
     onsubmit="return confirm('Permanently delete {{ preview.count }} per-task snapshots older than {{ preview.before }}? This cannot be undone.');">
     <input type="hidden" name="before" value="{{ preview.before }}">
-    <button type="submit" style="color:var(--bad);">Delete {{ preview.count }} snapshot(s) permanently</button>
+    <button type="submit" class="status-bad">Delete {{ preview.count }} snapshot(s) permanently</button>
   </form>
   {% else %}
   <span class="muted">nothing to prune.</span>

@@ -444,6 +444,17 @@ details.info-messages > summary {
   overflow-wrap: break-word;
 }
 
+/* Destructive link-style buttons (remove / revoke) — the `.btn-link` look in the bad color. */
+.btn-link-danger {
+  color: var(--bad);
+  padding: 0;
+}
+/* A narrow, centered content block — the System Health tables/panels. */
+.narrow-centered {
+  max-width: 34rem;
+  margin: 1rem auto;
+}
+
 /* The theme toggle is an `<a id="theme-toggle">` in the nav action group — it inherits the
    `.cortex-admin-nav` pill styling like Overview / Admin (no ID-specific override that would strip
    the pill border). */

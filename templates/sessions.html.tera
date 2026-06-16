@@ -28,7 +28,7 @@
         <td class="right">
           <form method="post" action="/admin/sessions/revoke?owner={{ s.owner }}" style="display:inline;"
             onsubmit="return confirm('Revoke ALL sessions for &quot;{{ s.owner }}&quot;? They will have to sign in again{% if s.current %} — including you, on this device{% endif %}.');">
-            <button type="submit" class="btn btn-link" style="color:var(--bad); padding:0;">revoke {{ s.owner }}</button>
+            <button type="submit" class="btn btn-link btn-link-danger">revoke {{ s.owner }}</button>
           </form>
         </td>
       </tr>

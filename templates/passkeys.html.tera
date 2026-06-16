@@ -34,7 +34,7 @@
         <td class="right">
           <form method="post" action="/admin/passkeys/{{ key.id }}/delete" style="display:inline;"
             onsubmit="return confirm('Remove the passkey &quot;{{ key.label }}&quot;? You will not be able to sign in with it again.');">
-            <button type="submit" class="btn btn-link" style="color:var(--bad); padding:0;">remove</button>
+            <button type="submit" class="btn btn-link btn-link-danger">remove</button>
           </form>
         </td>
       </tr>

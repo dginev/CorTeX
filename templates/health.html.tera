@@ -2,7 +2,7 @@
 <div class="center">
   <h1>System health</h1>
   <p class="lead">Overall status: <strong>{{ health.status }}</strong></p>
-  <table class="table" style="max-width: 34rem; margin: 0 auto;">
+  <table class="table narrow-centered">
     <tbody>
       <tr>
         <td class="left">Database reachable</td>
@@ -31,7 +31,7 @@
     </tbody>
   </table>
   {% if health.storage.unreadable | length > 0 %}
-  <div class="row" style="max-width: 34rem; margin: 0 auto;">
+  <div class="row narrow-centered">
     <p><strong>Unreadable corpus source directories</strong> (missing / unmounted / wrong permissions —
       conversions and re-imports for these corpora will fail until restored):</p>
     <ul class="left">
@@ -42,7 +42,7 @@
   </div>
   {% endif %}
   {% if health.remediations | length > 0 %}
-  <div class="row" style="max-width: 34rem; margin: 1rem auto;">
+  <div class="row narrow-centered">
     <p><strong>Recommended actions</strong> — how to clear each red/amber signal above:</p>
     <ul class="left">
       {% for hint in health.remediations %}
