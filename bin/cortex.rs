@@ -50,6 +50,18 @@ enum Command {
     #[arg(long, default_value = "admin")]
     owner: String,
   },
+  /// Print the conversion-status overview for a `(corpus, service)` — the CLI twin of the
+  /// web/agent service overview (`GET /api/reports/<c>/<s>`): the valid-task total + per-status
+  /// counts/shares.
+  Report {
+    /// Corpus name.
+    corpus: String,
+    /// Service name (e.g. tex_to_html).
+    service: String,
+    /// Emit JSON (the same shape as the agent `ServiceOverviewDto`) instead of a text table.
+    #[arg(long)]
+    json: bool,
+  },
   /// Bundle a corpus/service's converted HTML into ZIP datasets (replaces the
   /// bundle-html-dataset*.sh scripts). Reads existing result archives off the filesystem.
   ExportDataset {
@@ -77,6 +89,11 @@ fn main() {
   match Cli::parse().command {
     Command::Init => run_init(),
     Command::Doctor { json } => run_doctor(json),
+    Command::Report {
+      corpus,
+      service,
+      json,
+    } => run_report(corpus, service, json),
     Command::TuneDb => println!("{}", bootstrap::db_tuning_guidance()),
     Command::SetAdminToken {
       token,
@@ -90,6 +107,55 @@ fn main() {
       group_by,
       severity,
     } => run_export_dataset(corpus, service, out, group_by, severity),
+  }
+}
+
+/// Prints the `(corpus, service)` conversion-status overview — the CLI surface of the same data the
+/// web report top + agent `GET /api/reports/<c>/<s>` show (via the shared
+/// `Backend::progress_report`). `--json` mirrors the agent `ServiceOverviewDto`. Exits `1` on an
+/// unknown corpus/service.
+fn run_report(corpus_name: String, service_name: String, json: bool) {
+  let mut backend = backend::from_address(default_db_address());
+  let corpus = match Corpus::find_by_name(&corpus_name.to_lowercase(), &mut backend.connection) {
+    Ok(corpus) => corpus,
+    Err(_) => {
+      eprintln!("No such corpus: {corpus_name}");
+      std::process::exit(1);
+    },
+  };
+  let service = match Service::find_by_name(&service_name.to_lowercase(), &mut backend.connection) {
+    Ok(service) => service,
+    Err(_) => {
+      eprintln!("No such service: {service_name}");
+      std::process::exit(1);
+    },
+  };
+  let stats = backend.progress_report(&corpus, &service);
+  let count = |key: &str| stats.get(key).copied().unwrap_or(0.0) as i64;
+  let percent = |key: &str| stats.get(&format!("{key}_percent")).copied().unwrap_or(0.0);
+  let total = count("total");
+  if json {
+    let statuses: Vec<_> = TaskStatus::keys()
+      .into_iter()
+      .map(
+        |key| serde_json::json!({ "status": key, "tasks": count(&key), "percent": percent(&key) }),
+      )
+      .collect();
+    let overview = serde_json::json!({
+      "corpus": corpus.name,
+      "service": service.name,
+      "total": total,
+      "statuses": statuses,
+    });
+    println!(
+      "{}",
+      serde_json::to_string_pretty(&overview).unwrap_or_default()
+    );
+  } else {
+    println!("{} / {}  —  {total} valid tasks", corpus.name, service.name);
+    for key in TaskStatus::keys() {
+      println!("  {:<12} {:>10}  ({:.2}%)", key, count(&key), percent(&key));
+    }
   }
 }
 
