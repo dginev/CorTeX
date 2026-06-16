@@ -239,16 +239,21 @@ baseline, re-queue a filtered slice for reconversion, watch the run fill in, the
 the macro effect — the owner's "how did this development change move the conversion rates" loop.
 
 ```bash
-# 1. Snapshot the current per-task statuses as a baseline (append-only; enables the per-task diff later).
+# 1. Snapshot the current per-task statuses as the BASELINE ("before") comparison point.
 curl -s -X POST -H "X-Cortex-Token: $TOKEN" localhost:8000/api/corpora/$C/services/$S/snapshot | jq .
 # 2. Re-queue a slice — opens a NEW historical run and marks the matching tasks TODO for the fleet.
 curl -s -X POST -H "X-Cortex-Token: $TOKEN" \
   "localhost:8000/api/reports/$C/$S/rerun?severity=fatal&description=retry+fatals+after+parser+fix" | jq .
 # 3. Watch the open run fill in as the dispatcher reconverts (live tallies).
 curl -s localhost:8000/api/runs/$C/$S/current | jq '{total, no_problem, error, fatal, in_progress}'
-# 4. Once complete, diff the new run against the prior one to see what moved (did fatals drop?).
-curl -s localhost:8000/api/runs/$C/$S | jq 'map(.id) | .[0:2]'                    # the two newest run ids
-curl -s "localhost:8000/api/runs/$C/$S/diff?previous=<old>&current=<new>" | jq .
+# 4. Once it completes, snapshot AGAIN — the "after" comparison point.
+curl -s -X POST -H "X-Cortex-Token: $TOKEN" localhost:8000/api/corpora/$C/services/$S/snapshot | jq .
+# 5. Diff the two snapshots to see what moved. The diff compares snapshot TIMESTAMPS (from
+#    `available_dates`), NOT run ids; the timestamps carry spaces, so let curl -G url-encode them.
+curl -s localhost:8000/api/runs/$C/$S/diff | jq '.available_dates'   # the snapshots you can compare
+curl -s -G localhost:8000/api/runs/$C/$S/diff \
+  --data-urlencode "previous=<before-timestamp>" \
+  --data-urlencode "current=<after-timestamp>" | jq '.transitions'
 ```
 
 The CLI (§14) mirrors every step one-to-one (`cortex report … --json`, `cortex document`,
