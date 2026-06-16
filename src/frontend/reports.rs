@@ -295,6 +295,42 @@ pub fn api_what_report(
   }))
 }
 
+/// Builds the [`DocumentReportDto`] for one `(corpus, service, document-name)` — the shared backend
+/// of the agent endpoint and the human forensic screen, so both show identical status + messages.
+/// `404` on an unknown corpus / service / document.
+fn document_report(
+  corpus: &str,
+  service: &str,
+  name: &str,
+  connection: &mut diesel::PgConnection,
+) -> Result<DocumentReportDto, Status> {
+  let (corpus, service) = resolve(corpus, service, connection)?;
+  let task =
+    Task::find_by_name(name, &corpus, &service, connection).map_err(|_| Status::NotFound)?;
+  let status = TaskStatus::from_raw(task.status);
+  let messages = task_messages(connection, &task)
+    .iter()
+    .map(|message| MessageDto {
+      severity: message.severity().to_string(),
+      category: message.category().to_string(),
+      what: message.what().to_string(),
+      details: message.details().to_string(),
+    })
+    .collect();
+  Ok(DocumentReportDto {
+    corpus: corpus.name.clone(),
+    service: service.name.clone(),
+    name: name.to_string(),
+    entry: task.entry.trim_end().to_string(),
+    task_id: task.id,
+    status: status.to_key(),
+    status_code: status.raw(),
+    messages,
+    result_url: format!("/entry/{}/{}", service.name, task.id),
+    preview_url: format!("/preview/{}/{}/{}", corpus.name, service.name, name),
+  })
+}
+
 /// The per-article forensic report (agent micro-drill-down): a single document's status for a
 /// service plus every worker-log message behind it — "what are the errors of this article?".
 /// `<name>` is the document's short name as it appears in reports (e.g. `0801.1234`). `404` on an
@@ -308,31 +344,37 @@ pub fn api_document(
   pool: &State<DbPool>,
 ) -> Result<Json<DocumentReportDto>, Status> {
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
-  let (corpus, service) = resolve(corpus, service, &mut connection)?;
-  let task =
-    Task::find_by_name(name, &corpus, &service, &mut connection).map_err(|_| Status::NotFound)?;
-  let status = TaskStatus::from_raw(task.status);
-  let messages = task_messages(&mut connection, &task)
-    .iter()
-    .map(|message| MessageDto {
-      severity: message.severity().to_string(),
-      category: message.category().to_string(),
-      what: message.what().to_string(),
-      details: message.details().to_string(),
-    })
-    .collect();
-  Ok(Json(DocumentReportDto {
-    corpus: corpus.name.clone(),
-    service: service.name.clone(),
-    name: name.to_string(),
-    entry: task.entry.trim_end().to_string(),
-    task_id: task.id,
-    status: status.to_key(),
-    status_code: status.raw(),
-    messages,
-    result_url: format!("/entry/{}/{}", service.name, task.id),
-    preview_url: format!("/preview/{}/{}/{}", corpus.name, service.name, name),
-  }))
+  Ok(Json(document_report(
+    corpus,
+    service,
+    name,
+    &mut connection,
+  )?))
+}
+
+/// The per-article forensic **screen** (HTML twin of [`api_document`]): a document's status and the
+/// table of every worker-log message behind it. The fast structured view of "what are the errors of
+/// this article?" — straight from the parsed `log_*` rows (no result-archive fetch), complementing
+/// the rendered `/preview`. `404` on an unknown corpus / service / document. Lives at a top-level
+/// `/document/...` path (a sibling of `/preview/...`) so it never collides with the same-shape
+/// severity/category report route.
+#[get("/document/<corpus>/<service>/<name>")]
+pub fn document_report_page(
+  corpus: &str,
+  service: &str,
+  name: &str,
+  pool: &State<DbPool>,
+) -> Result<Template, Status> {
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let report = document_report(corpus, service, name, &mut connection)?;
+  let global = serde_json::json!({
+    "title": format!("{} — {}/{}", report.name, report.corpus, report.service),
+    "description": "Per-article conversion forensics",
+  });
+  Ok(Template::render(
+    "document-report",
+    rocket_dyn_templates::context! { global, report },
+  ))
 }
 
 /// Acknowledgement of a rerun: the scope that was marked and who marked it.
@@ -673,6 +715,7 @@ pub fn routes() -> Vec<Route> {
     category_service_report,
     category_service_report_all,
     what_service_report,
-    what_service_report_all
+    what_service_report_all,
+    document_report_page
   ]
 }

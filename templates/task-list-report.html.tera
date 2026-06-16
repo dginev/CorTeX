@@ -17,7 +17,7 @@
       <tbody>
         {% for this in entries %}
         <tr class="{{global.highlight}} corpus-report-task-list">
-          <td class="left">{{this.entry_name}}</td>
+          <td class="left"><a href="/document/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{this.entry_name}}">{{this.entry_name}}</a></td>
           <td class="left task-source">
             <a class="entry-submit" data-action="download" href="/entry/{{global.inputconverter_uri}}/{{this.entry_taskid}}">{{global.inputformat}}</a>
           </td>

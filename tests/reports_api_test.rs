@@ -393,6 +393,18 @@ fn document_forensics_reports_status_and_messages() {
     "unknown document -> 404"
   );
 
+  // The human forensic screen (HTML twin) renders the same status + messages from the shared DTO.
+  let response = client
+    .get(format!("/document/{CORPUS_NAME}/{SERVICE_NAME}/0801.1234"))
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok, "forensic screen renders");
+  assert_eq!(response.content_type(), Some(ContentType::HTML));
+  let body = response.into_string().expect("html body");
+  assert!(
+    body.contains("undefined_control_sequence") && body.contains("undefined_macro"),
+    "the forensic screen lists the document's messages server-side"
+  );
+
   // Clean up the extra task + its logs.
   diesel::delete(log_warnings::table.filter(log_warnings::task_id.eq(task_id)))
     .execute(&mut backend.connection)

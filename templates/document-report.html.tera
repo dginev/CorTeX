@@ -1,0 +1,48 @@
+{% extends "layout" %} {% block content %}
+<div class="col-md-1"></div>
+<div class="col-md-10">
+  <h1>{{ report.name }}</h1>
+  <p class="muted">
+    <a href="/corpus/{{ report.corpus }}/{{ report.service }}">{{ report.corpus }}</a>
+    &nbsp;·&nbsp; {{ report.service }}
+    &nbsp;·&nbsp; task #{{ report.task_id }}
+    &nbsp;·&nbsp; <code>{{ report.entry }}</code>
+  </p>
+  <p>
+    Status:
+    {% if report.status == "no_problem" %}<strong class="status-ok">no problem</strong>
+    {% elif report.status == "warning" %}<strong class="status-warn">warning</strong>
+    {% elif report.status == "error" or report.status == "fatal" or report.status == "invalid" %}<strong class="status-bad">{{ report.status }}</strong>
+    {% else %}<strong class="muted">{{ report.status }}</strong>{% endif %}
+    &nbsp;·&nbsp; <a href="{{ report.preview_url }}" target="_blank">preview rendered document</a>
+    &nbsp;·&nbsp; <a href="{{ report.result_url }}">download result</a>
+  </p>
+
+  <h3>Messages <span class="muted">({{ report.messages | length }})</span></h3>
+  {% if report.messages | length > 0 %}
+  <table class="table" id="document-messages">
+    <thead>
+      <tr>
+        <th class="left">Severity</th>
+        <th class="left">Category</th>
+        <th class="left">What</th>
+        <th class="left">Details</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in report.messages %}
+      <tr>
+        <td class="left">{% if m.severity == "warning" %}<span class="status-warn">{{ m.severity }}</span>{% elif m.severity == "error" or m.severity == "fatal" or m.severity == "invalid" %}<span class="status-bad">{{ m.severity }}</span>{% else %}<span class="muted">{{ m.severity }}</span>{% endif %}</td>
+        <td class="left">{{ m.category }}</td>
+        <td class="left">{{ m.what }}</td>
+        <td class="left"><code>{{ m.details }}</code></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No messages were logged for this document — a clean conversion.</p>
+  {% endif %}
+</div>
+<div class="col-md-1"></div>
+{% endblock content %}
