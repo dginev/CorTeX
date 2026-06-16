@@ -1,6 +1,5 @@
 {% extends "layout" %} {% block content %}
-<div class="col-md-1"></div>
-<div class="col-md-10">
+<div class="document-report-page">
   <h1>{{ report.name }}</h1>
   <p class="muted">
     <a href="/corpus/{{ report.corpus }}/{{ report.service }}">{{ report.corpus }}</a>
@@ -38,7 +37,10 @@
   </p>
 
   {% if actionable > 0 %}
-  <table class="table" id="document-messages">
+  <table class="table report-table message-table" id="document-messages">
+    <colgroup>
+      <col style="width:7rem"><col style="width:9rem"><col style="width:16rem"><col>
+    </colgroup>
     <thead>
       <tr>
         <th class="left">Severity</th>
@@ -65,7 +67,10 @@
   {% if info > 0 %}
   <details class="info-messages">
     <summary>{{ info }} info message{{ info | pluralize }} <span class="muted">(loaded files, debug)</span></summary>
-    <table class="table">
+    <table class="table report-table message-table">
+      <colgroup>
+        <col style="width:9rem"><col style="width:16rem"><col>
+      </colgroup>
       <thead>
         <tr>
           <th class="left">Category</th>
@@ -86,5 +91,4 @@
   </details>
   {% endif %}
 </div>
-<div class="col-md-1"></div>
 {% endblock content %}

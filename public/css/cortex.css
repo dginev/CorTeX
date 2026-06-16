@@ -402,7 +402,13 @@ hr {
   }
 }
 
-/* Per-article forensic screen — severity summary line + the collapsed `info` noise. */
+/* Per-article forensic screen — a wider centered column than `.report` (the message tables carry
+   long `details`), plus the severity summary line + the collapsed `info` noise. */
+.document-report-page {
+  width: 85%;
+  margin: 0 auto;
+  padding: 1rem;
+}
 .severity-summary {
   margin: 0.25rem 0 1rem;
 }
@@ -413,6 +419,23 @@ details.info-messages > summary {
   cursor: pointer;
   color: var(--ink-muted);
   padding: 0.4rem 0;
+}
+/* Forensic message tables: the base `.table` is `white-space: nowrap`, so the long `details` text
+   would blow the table past the centered column. Use a fixed layout (column widths come from the
+   `<colgroup>` in the template) so the short severity/category/what columns stay tight and the
+   `details` column takes the remaining width and wraps. */
+.message-table {
+  table-layout: fixed;
+  width: 100%;
+}
+.message-table > thead > tr > th,
+.message-table > tbody > tr > td {
+  white-space: normal;
+  vertical-align: top;
+}
+.message-table td code {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 /* The theme toggle is an `<a id="theme-toggle">` in the nav action group — it inherits the
