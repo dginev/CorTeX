@@ -90,11 +90,13 @@ discoverable JSON DTOs (each also the future HTML/CLI source).
 ### Arm B — CLI as a first-class surface (direction 4)
 - **B1 — Management subcommands.** `cortex report|runs|document|rerun|extend|sandbox …` — thin
   clients over the **same backend ops/DTOs** as Arm A (no new logic; render the DTO as a table/JSON).
-  Makes the CLI scriptable for the same questions and mutations. **Started (read surface):** `cortex
-  report <c> <s>` (the overview, via `Backend::progress_report`) and `cortex document <c> <s> <name>`
-  (per-article forensics, via `Task::find_by_name` + `backend::task_messages`) — the CLI twins of the
-  web/agent overview + forensic screen, all three surfaces sharing one backend so the numbers agree;
-  `--json` mirrors `ServiceOverviewDto`/`DocumentReportDto`. Next: `runs` + the mutations (rerun/extend/sandbox).
+  Makes the CLI scriptable for the same questions and mutations. **Read surface DONE** — the CLI
+  report ladder is complete across magnifications: `cortex report <c> <s>` (overview, via
+  `Backend::progress_report`), `cortex runs <c> <s>` (run-history macro trend, via
+  `HistoricalRun::find_by`+`with_live_tallies`), and `cortex document <c> <s> <name>` (per-article
+  forensics, via `Task::find_by_name`+`backend::task_messages`) — each the CLI twin of the web/agent
+  surface, all sharing one backend so the numbers agree; `--json` mirrors the agent DTOs. **Next:** the
+  CLI mutations (rerun/extend/sandbox) — guarded the same way (these are consequential writes).
 - **B2 — Guided init.** An interactive `cortex init --guided` walking the strategic choices (database,
   admin token, services, dispatcher knobs). **Decision D-B2 (see §5): ratatui rich TUI vs a plain
   guided prompt flow.** Default lazy: ship the plain prompt flow first (no heavy new dep; 90% of the

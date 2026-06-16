@@ -6,8 +6,9 @@
 // except according to those terms.
 
 //! `cortex` — the administration CLI. A thin renderer over the library: self-install (`init`),
-//! diagnostics (`doctor`), DB tuning, token management, the `report`/`document` query surface (the
-//! CLI twins of the web/agent service overview + per-article forensics), and dataset export.
+//! diagnostics (`doctor`), DB tuning, token management, the `report`/`runs`/`document` read surface
+//! (the CLI twins of the web/agent overview, run-history, and per-article forensics), and dataset
+//! export.
 
 use std::path::PathBuf;
 
@@ -19,7 +20,15 @@ use cortex::backend::{
 use cortex::bootstrap::{self, DoctorReport};
 use cortex::config::config_file_path;
 use cortex::helpers::TaskStatus;
-use cortex::models::{Corpus, Service, Task};
+use cortex::models::{Corpus, HistoricalRun, Service, Task};
+
+/// Formats a timestamp the same way the web/agent surfaces do (RFC 3339, seconds) so the CLI's run
+/// JSON matches `RunDto`.
+fn iso(time: chrono::NaiveDateTime) -> String {
+  time
+    .and_utc()
+    .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
 
 #[derive(Parser)]
 #[command(name = "cortex", version, about = "CorTeX administration CLI")]
@@ -60,6 +69,18 @@ enum Command {
     /// Service name (e.g. tex_to_html).
     service: String,
     /// Emit JSON (the same shape as the agent `ServiceOverviewDto`) instead of a text table.
+    #[arg(long)]
+    json: bool,
+  },
+  /// Run history for a `(corpus, service)` — the CLI twin of the web run-history screen + agent
+  /// `GET /api/runs/<c>/<s>`: each conversion run with its per-severity tallies (live for the open
+  /// run). The macro view of how conversion quality moved over time.
+  Runs {
+    /// Corpus name.
+    corpus: String,
+    /// Service name (e.g. tex_to_html).
+    service: String,
+    /// Emit JSON (the same shape as the agent `RunDto` list) instead of a text table.
     #[arg(long)]
     json: bool,
   },
@@ -112,6 +133,11 @@ fn main() {
       service,
       json,
     } => run_report(corpus, service, json),
+    Command::Runs {
+      corpus,
+      service,
+      json,
+    } => run_runs(corpus, service, json),
     Command::Document {
       corpus,
       service,
@@ -180,6 +206,79 @@ fn run_report(corpus_name: String, service_name: String, json: bool) {
     println!("{} / {}  —  {total} valid tasks", corpus.name, service.name);
     for key in TaskStatus::keys() {
       println!("  {:<12} {:>10}  ({:.2}%)", key, count(&key), percent(&key));
+    }
+  }
+}
+
+/// Prints the run history for a `(corpus, service)` — the CLI surface of the web run-history screen
+/// and the agent `GET /api/runs/<c>/<s>`, via `HistoricalRun::find_by` then `with_live_tallies`
+/// (live for the open run). `--json` mirrors the agent `RunDto` list. Exits `1` on an unknown pair.
+fn run_runs(corpus_name: String, service_name: String, json: bool) {
+  let mut backend = backend::from_address(default_db_address());
+  let corpus = match Corpus::find_by_name(&corpus_name.to_lowercase(), &mut backend.connection) {
+    Ok(corpus) => corpus,
+    Err(_) => {
+      eprintln!("No such corpus: {corpus_name}");
+      std::process::exit(1);
+    },
+  };
+  let service = match Service::find_by_name(&service_name.to_lowercase(), &mut backend.connection) {
+    Ok(service) => service,
+    Err(_) => {
+      eprintln!("No such service: {service_name}");
+      std::process::exit(1);
+    },
+  };
+  let stored =
+    HistoricalRun::find_by(&corpus, &service, &mut backend.connection).unwrap_or_default();
+  let runs: Vec<HistoricalRun> = stored
+    .into_iter()
+    .map(|run| run.with_live_tallies(&mut backend.connection))
+    .collect();
+  if json {
+    let array: Vec<_> = runs
+      .iter()
+      .map(|r| {
+        serde_json::json!({
+          "id": r.id, "owner": r.owner, "description": r.description,
+          "start_time": iso(r.start_time), "end_time": r.end_time.map(iso),
+          "completed": r.end_time.is_some(), "total": r.total,
+          "no_problem": r.no_problem, "warning": r.warning, "error": r.error,
+          "fatal": r.fatal, "invalid": r.invalid, "in_progress": r.in_progress,
+        })
+      })
+      .collect();
+    println!(
+      "{}",
+      serde_json::to_string_pretty(&array).unwrap_or_default()
+    );
+  } else {
+    println!(
+      "Run history: {} / {}  ({} run(s))",
+      corpus.name,
+      service.name,
+      runs.len()
+    );
+    for r in &runs {
+      let state = if r.end_time.is_some() {
+        "completed"
+      } else {
+        "open"
+      };
+      println!(
+        "  #{}  {}  [{}]  by {}",
+        r.id,
+        iso(r.start_time),
+        state,
+        r.owner
+      );
+      println!(
+        "       {} tasks: {} ok · {} warn · {} err · {} fatal · {} inv · {} in-prog",
+        r.total, r.no_problem, r.warning, r.error, r.fatal, r.invalid, r.in_progress
+      );
+      if !r.description.trim().is_empty() {
+        println!("       {}", r.description.trim());
+      }
     }
   }
 }
