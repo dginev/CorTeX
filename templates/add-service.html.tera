@@ -19,7 +19,7 @@
     {% if corpora and corpora | length > 0 %}
     <p class="muted">Each checked corpus is registered as a background job (one TODO task per document — a
       large corpus can run for a while); track them on <a href="/jobs">Background jobs</a>.</p>
-    <ul style="list-style:none; padding-left:0; line-height:1.8;">
+    <ul class="plain-list">
       {% for corpus in corpora %}
       <li><label><input type="checkbox" name="corpora" value="{{corpus.name}}"{% if corpus.checked == "true" %} checked{% endif %}> {{corpus.name}}{% if corpus.description %}
           <span class="muted">— {{corpus.description}}</span>{% endif %}</label></li>

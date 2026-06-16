@@ -40,7 +40,7 @@
               {% else %}
               <a href="/services/{{service.name_uri}}/activate">register on corpus</a>
               &nbsp;&middot;&nbsp;
-              <form method="post" action="/services/{{service.name_uri}}/delete" style="display:inline"
+              <form method="post" action="/services/{{service.name_uri}}/delete" class="inline-form"
                 onsubmit="return confirm('Permanently delete service &quot;{{service.name}}&quot; and ALL of its tasks + log messages across every corpus? This cannot be undone.');">
                 <input type="hidden" name="confirm" value="{{service.name}}">
                 <button type="submit" class="danger">Delete</button>

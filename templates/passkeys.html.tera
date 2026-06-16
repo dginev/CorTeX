@@ -32,7 +32,7 @@
         <td class="left"><time datetime="{{ key.created_at }}">{{ key.created_at }}</time></td>
         <td class="left"><time datetime="{{ key.last_used }}">{{ key.last_used }}</time></td>
         <td class="right">
-          <form method="post" action="/admin/passkeys/{{ key.id }}/delete" style="display:inline;"
+          <form method="post" action="/admin/passkeys/{{ key.id }}/delete" class="inline-form"
             onsubmit="return confirm('Remove the passkey &quot;{{ key.label }}&quot;? You will not be able to sign in with it again.');">
             <button type="submit" class="btn btn-link btn-link-danger">remove</button>
           </form>

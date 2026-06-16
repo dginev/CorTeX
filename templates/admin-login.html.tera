@@ -14,15 +14,15 @@
     </form>
 
     {% if passkeys_enabled %}
-    <div style="margin-top:1.5rem; border-top:1px solid var(--rule); padding-top:1rem;">
+    <div class="divided-section">
       <p>or sign in with a passkey:</p>
       <p><input type="text" id="passkey-owner" placeholder="your name" aria-label="Your name (for passkey sign-in)" autocomplete="username webauthn"></p>
       <button type="button" id="signin-passkey" {% if next %}data-next="{{ next }}"{% endif %}><i class="fa fa-key"></i>&nbsp; Sign in with a passkey</button>
-      <p id="passkey-error" class="status-bad" style="margin-top:0.5rem;"></p>
+      <p id="passkey-error" class="status-bad gap-top-sm"></p>
     </div>
     {% endif %}
 
-    <p style="margin-top:1.5rem;"><a href="/">&larr; back to the public overview</a></p>
+    <p class="gap-top-lg"><a href="/">&larr; back to the public overview</a></p>
   </div>
 </div>
 <div class="col-md-4"></div>

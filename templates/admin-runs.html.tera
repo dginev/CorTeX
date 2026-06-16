@@ -8,7 +8,7 @@
       per-service history, run-to-run diff, and per-task drill-down.</p>
   </div>
 
-  <form method="get" action="/admin/runs" class="center" style="margin-bottom:1rem;">
+  <form method="get" action="/admin/runs" class="center gap-bottom">
     <label>Corpus
       <select name="corpus">
         <option value="">(any)</option>
@@ -29,7 +29,7 @@
       <input type="text" name="owner" value="{{ filter_owner | default(value='') }}" placeholder="(any)" size="12">
     </label>
     <button type="submit">Filter</button>
-    {% if filter_corpus or filter_service or filter_owner %}<a href="/admin/runs" style="margin-left:0.5rem;">clear</a>{% endif %}
+    {% if filter_corpus or filter_service or filter_owner %}<a href="/admin/runs" class="gap-left">clear</a>{% endif %}
   </form>
 
   <table id="historical-runs" class="table">

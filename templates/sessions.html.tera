@@ -26,7 +26,7 @@
         <td class="left"><time datetime="{{ s.created_at }}">{{ s.created_at }}</time></td>
         <td class="left"><time datetime="{{ s.expires_at }}">{{ s.expires_at }}</time></td>
         <td class="right">
-          <form method="post" action="/admin/sessions/revoke?owner={{ s.owner }}" style="display:inline;"
+          <form method="post" action="/admin/sessions/revoke?owner={{ s.owner }}" class="inline-form"
             onsubmit="return confirm('Revoke ALL sessions for &quot;{{ s.owner }}&quot;? They will have to sign in again{% if s.current %} — including you, on this device{% endif %}.');">
             <button type="submit" class="btn btn-link btn-link-danger">revoke {{ s.owner }}</button>
           </form>

@@ -435,6 +435,42 @@ hr {
 .run-meta {
   font-size: 0.9em;
 }
+
+/* Small admin-screen layout utilities, drained from per-element inline styles into named classes so
+   the values live in one place (a tokenised spacing scale is a future refinement). `.inline-form` is
+   the inline action-form pattern (a delete/revoke button sitting beside text); the `gap-*` helpers
+   are literal spacing steps. */
+.inline-form {
+  display: inline;
+}
+.gap-left {
+  margin-left: 0.5rem;
+}
+.gap-top-sm {
+  margin-top: 0.5rem;
+}
+.gap-top {
+  margin-top: 1rem;
+}
+.gap-top-lg {
+  margin-top: 1.5rem;
+}
+.gap-bottom {
+  margin-bottom: 1rem;
+}
+.narrow-form {
+  max-width: 30rem;
+}
+.plain-list {
+  list-style: none;
+  padding-left: 0;
+  line-height: 1.8;
+}
+.divided-section {
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--rule);
+  padding-top: 1rem;
+}
 .live-indicator {
   display: inline-flex;
   align-items: center;

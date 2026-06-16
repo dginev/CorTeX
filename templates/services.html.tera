@@ -40,7 +40,7 @@
             {% if is_admin and service.id != "1" and service.id != "2" %}
             <form method="post"
               action="/corpus/{{global.corpus_name_uri}}/services/{{service.name_uri}}/deactivate"
-              style="display:inline; margin-left:0.5rem;"
+              class="inline-form gap-left"
               onsubmit="return confirm('Deactivate {{service.name}} from {{global.corpus_name}}? This deletes its tasks and log messages for this corpus.');">
               <input type="hidden" name="confirm" value="{{service.name}}">
               <button type="submit" title="Retire this service from this corpus (delete its tasks + logs)">deactivate</button>

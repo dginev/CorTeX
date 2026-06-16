@@ -7,12 +7,12 @@
     <p>Recent admin actions and who took them. An empty actor is an unauthenticated attempt.</p>
   </div>
 
-  <form method="get" action="/admin/audit" class="center" style="margin-bottom:1rem;">
+  <form method="get" action="/admin/audit" class="center gap-bottom">
     <label>Filter by actor
       <input type="text" name="actor" value="{{ actor_filter | default(value='') }}" placeholder="(all actors)">
     </label>
     <button type="submit">Filter</button>
-    {% if actor_filter %}<a href="/admin/audit" style="margin-left:0.5rem;">clear</a>{% endif %}
+    {% if actor_filter %}<a href="/admin/audit" class="gap-left">clear</a>{% endif %}
   </form>
 
   <table id="audit-log" class="table">
