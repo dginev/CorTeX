@@ -177,6 +177,7 @@ fn admin_status_feed_is_cookie_gated_and_returns_the_snapshot() {
     "active_sessions",
     "workers_total",
     "workers_in_flight",
+    "tasks_todo",
     "jobs_failed_recent",
     "pool_in_use",
     "pool_max",
@@ -186,6 +187,12 @@ fn admin_status_feed_is_cookie_gated_and_returns_the_snapshot() {
       "the snapshot DTO carries `{field}`"
     );
   }
+  // The pending-conversion backlog is a valid non-negative count (the human twin of the
+  // `cortex_tasks_todo` /metrics gauge).
+  assert!(
+    body["tasks_todo"].as_i64().is_some_and(|todo| todo >= 0),
+    "tasks_todo is a non-negative backlog count"
+  );
 }
 
 // Custom harness (see KNOWN_ISSUES L-1): run the cases then `_exit(0)`.

@@ -10,6 +10,7 @@
 //! previously sprinkled the public homepage. Access uses the lightweight token scheme — an
 //! [`AdminSession`] cookie (`frontend::actor`), set on the sign-in page below.
 
+use diesel::prelude::*;
 use rocket::form::Form;
 use rocket::http::{Cookie, CookieJar, SameSite, Status};
 use rocket::response::Redirect;
@@ -23,14 +24,16 @@ use crate::backend::DbPool;
 use crate::frontend::actor::{
   owner_for_token, safe_next, sign_in_url, AdminSession, ReturnTo, ADMIN_COOKIE,
 };
+use crate::helpers::TaskStatus;
 use crate::models::{Corpus, HistoricalRun, Session, WorkerMetadata};
+use crate::schema::tasks;
 
-/// At-a-glance operational snapshot for the admin **live ops console** — the cheap, small-table
-/// signals the dashboard polls every few seconds (and renders server-side on first paint). Every
-/// field is best-effort: a database hiccup degrades it to `0`/`None` rather than failing the
-/// screen. Deliberately excludes the dispatcher-port / corpus-storage probes (those are the System
-/// Health screen's job — and too slow to poll); for the agent equivalent of these gauges, scrape
-/// `/metrics`.
+/// At-a-glance operational snapshot for the admin **live ops console** — the small-table signals
+/// (plus the one pending-task backlog count) the dashboard polls every few seconds and renders
+/// server-side on first paint. Every field is best-effort: a database hiccup degrades it to
+/// `0`/`None` rather than failing the screen. Deliberately excludes the dispatcher-port /
+/// corpus-storage probes (those are the System Health screen's job — and too slow to poll); for the
+/// agent equivalent of these gauges, scrape `/metrics`.
 #[derive(Serialize, JsonSchema)]
 pub struct AdminStatusDto {
   /// Registered corpora.
@@ -43,6 +46,9 @@ pub struct AdminStatusDto {
   pub workers_total: i64,
   /// Dispatched-but-not-yet-returned tasks summed across the fleet (backlog signal).
   pub workers_in_flight: i64,
+  /// Tasks awaiting conversion (status TODO, not yet dispatched) — the pending-work backlog, the
+  /// human twin of the `cortex_tasks_todo` `/metrics` gauge.
+  pub tasks_todo: i64,
   /// Background jobs that ended `failed` within the last 24h (rolling window).
   pub jobs_failed_recent: usize,
   /// Pooled connections currently checked out (saturation signal).
@@ -73,7 +79,8 @@ pub struct LastRunDto {
 
 /// Gathers the [`AdminStatusDto`] over one pooled connection (plus the in-memory pool counters).
 /// Shared by the HTML dashboard's first paint and the `/admin/status.json` poll feed so both show
-/// identical state. Kept to cheap queries on small tables — no dispatcher/storage probe.
+/// identical state. Mostly cheap small-table reads (plus the one `tasks_todo` backlog count) — no
+/// dispatcher/storage probe.
 pub fn admin_status(pool: &DbPool) -> AdminStatusDto {
   // Pool counters are in-memory — available even if the database is unreachable.
   let state = pool.state();
@@ -83,6 +90,7 @@ pub fn admin_status(pool: &DbPool) -> AdminStatusDto {
     active_sessions: 0,
     workers_total: 0,
     workers_in_flight: 0,
+    tasks_todo: 0,
     jobs_failed_recent: 0,
     pool_in_use: state.connections.saturating_sub(state.idle_connections),
     pool_max: pool.max_size(),
@@ -98,6 +106,15 @@ pub fn admin_status(pool: &DbPool) -> AdminStatusDto {
       status.workers_total = workers;
       status.workers_in_flight = in_flight;
     }
+    // Pending-conversion backlog (the unleased work waiting for the fleet). The one full-table
+    // count here — bounded (~tens-to-hundreds of ms at arXiv scale, and fast via the partial
+    // todo_index once a running dispatcher drains it); degrades to 0 on error like its
+    // siblings.
+    status.tasks_todo = tasks::table
+      .filter(tasks::status.eq(TaskStatus::TODO.raw()))
+      .count()
+      .get_result::<i64>(&mut connection)
+      .unwrap_or(0);
     status.last_run = HistoricalRun::recent_all(&mut connection, 1)
       .ok()
       .and_then(|runs| runs.into_iter().next())

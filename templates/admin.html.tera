@@ -29,6 +29,10 @@
       <div class="muted"><a href="/services">workers in&nbsp;flight</a></div>
     </div>
     <div class="admin-card">
+      <div class="stat-number" id="stat-todo">{{ status.tasks_todo }}</div>
+      <div class="muted"><a href="/" title="Tasks awaiting conversion (TODO, not yet dispatched)">pending&nbsp;tasks</a></div>
+    </div>
+    <div class="admin-card">
       <div class="stat-number {% if status.jobs_failed_recent > 0 %}status-warn{% endif %}" id="stat-failed">{{ status.jobs_failed_recent }}</div>
       <div class="muted"><a href="/jobs">failed (24h)</a></div>
     </div>
@@ -106,6 +110,7 @@
     set('stat-corpora', s.corpus_count);
     set('stat-jobs', s.active_jobs); flag('stat-jobs', 'status-ok', s.active_jobs > 0);
     set('stat-workers', s.workers_in_flight + ' / ' + s.workers_total);
+    set('stat-todo', s.tasks_todo);
     set('stat-failed', s.jobs_failed_recent); flag('stat-failed', 'status-warn', s.jobs_failed_recent > 0);
     set('stat-sessions', s.active_sessions);
     set('stat-pool', s.pool_in_use + ' / ' + s.pool_max);
