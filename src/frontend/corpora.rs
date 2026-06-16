@@ -63,7 +63,8 @@ pub struct CorpusDto {
 
 impl CorpusDto {
   /// Builds the DTO, attaching the document count looked up from the batched per-corpus map.
-  fn build(corpus: Corpus, document_count: i64) -> Self {
+  /// Public so the `cortex` CLI can emit the identical shape (web ↔ CLI ↔ agent parity).
+  pub fn build(corpus: Corpus, document_count: i64) -> Self {
     CorpusDto {
       public_id: corpus.public_id.to_string(),
       name: corpus.name,

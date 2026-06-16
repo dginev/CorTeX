@@ -23,9 +23,11 @@ use cortex::backend::{
 use cortex::bootstrap::{self, DoctorReport};
 use cortex::config::config_file_path;
 use cortex::frontend::audit::AuditDto;
+use cortex::frontend::corpora::CorpusDto;
 use cortex::frontend::helpers::group_thousands;
 use cortex::frontend::jobs::JobDto;
 use cortex::frontend::params::{MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE};
+use cortex::frontend::services::ServiceDto;
 use cortex::helpers::TaskStatus;
 use cortex::importer::Importer;
 use cortex::models::{
@@ -91,6 +93,25 @@ enum Command {
     #[arg(long)]
     limit: Option<i64>,
     /// Emit JSON (the same shape as the agent `AuditDto` list) instead of a text table.
+    #[arg(long)]
+    json: bool,
+  },
+  /// List all registered corpora — the CLI twin of the overview screen and the agent
+  /// `GET /api/corpora`, sharing the `CorpusDto`. Shows each corpus's stable `public_id` handle,
+  /// name, ingested-document count, and path — the handles/names the other `cortex` subcommands
+  /// take as input (so this is how you discover them). `--json` mirrors the agent `CorpusDto`
+  /// list.
+  Corpora {
+    /// Emit JSON (the same shape as the agent `CorpusDto` list) instead of a text table.
+    #[arg(long)]
+    json: bool,
+  },
+  /// List the service registry — the CLI twin of the registry screen and the agent
+  /// `GET /api/services`, sharing the `ServiceDto`. Shows each service's `public_id`, name,
+  /// version, and input→output formats (incl. the magic `init`/`import` services). `--json`
+  /// mirrors the agent `ServiceDto` list.
+  Services {
+    /// Emit JSON (the same shape as the agent `ServiceDto` list) instead of a text table.
     #[arg(long)]
     json: bool,
   },
@@ -378,6 +399,8 @@ fn main() {
       json,
     } => run_jobs(active, limit, json),
     Command::Audit { actor, limit, json } => run_audit(actor, limit, json),
+    Command::Corpora { json } => run_corpora(json),
+    Command::Services { json } => run_services(json),
     Command::Report {
       corpus,
       service,
@@ -1936,5 +1959,82 @@ fn run_audit(actor: Option<String>, limit: Option<i64>, json: bool) {
     if !entry.details.trim().is_empty() {
       println!("        {}", entry.details.trim());
     }
+  }
+}
+
+/// Lists all registered corpora — the CLI surface of the overview screen and the agent
+/// `GET /api/corpora`, sharing `Corpus::all` + `Corpus::document_counts` + the `CorpusDto`. The
+/// text view leads with each corpus's `public_id` (the stable external handle), then name · doc
+/// count · path — the handles/names the other subcommands take as input; `--json` mirrors the agent
+/// list.
+fn run_corpora(json: bool) {
+  let mut backend = backend::from_address(default_db_address());
+  let connection = &mut backend.connection;
+  let counts = Corpus::document_counts(connection);
+  let dtos: Vec<CorpusDto> = Corpus::all(connection)
+    .unwrap_or_default()
+    .into_iter()
+    .map(|corpus| {
+      let count = counts.get(&corpus.id).copied().unwrap_or(0);
+      CorpusDto::build(corpus, count)
+    })
+    .collect();
+  if json {
+    println!(
+      "{}",
+      serde_json::to_string_pretty(&dtos).unwrap_or_default()
+    );
+    return;
+  }
+  if dtos.is_empty() {
+    println!("No corpora registered. Import one with `cortex import <name> <path>`.");
+    return;
+  }
+  println!("{} corpus(es):", dtos.len());
+  for corpus in &dtos {
+    println!(
+      "  {}  {}  ·  {} docs{}  ·  {}",
+      corpus.public_id,
+      corpus.name,
+      group_thousands(corpus.document_count),
+      if corpus.complex { " (complex)" } else { "" },
+      corpus.path
+    );
+  }
+}
+
+/// Lists the service registry — the CLI surface of the registry screen and the agent
+/// `GET /api/services`, sharing `Service::all` + the `ServiceDto`. The text view leads with each
+/// service's `public_id`, then name · version · input→output (incl. the magic init/import
+/// services); `--json` mirrors the agent list.
+fn run_services(json: bool) {
+  let mut backend = backend::from_address(default_db_address());
+  let dtos: Vec<ServiceDto> = Service::all(&mut backend.connection)
+    .unwrap_or_default()
+    .into_iter()
+    .map(ServiceDto::from)
+    .collect();
+  if json {
+    println!(
+      "{}",
+      serde_json::to_string_pretty(&dtos).unwrap_or_default()
+    );
+    return;
+  }
+  if dtos.is_empty() {
+    println!("No services registered.");
+    return;
+  }
+  println!("{} service(s):", dtos.len());
+  for service in &dtos {
+    println!(
+      "  {}  {}  v{}  ·  {} → {}{}",
+      service.public_id,
+      service.name,
+      service.version,
+      service.inputformat,
+      service.outputformat,
+      if service.complex { " (complex)" } else { "" }
+    );
   }
 }
