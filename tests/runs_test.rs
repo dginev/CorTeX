@@ -573,6 +573,36 @@ fn api_task_diff_over_real_snapshots(client: &Client) {
       "only the requested current snapshot is paired"
     );
   }
+
+  // --- Summary matrix: now aggregated in SQL (KNOWN_ISSUES R-8) instead of loading every snapshot
+  // row. With 2 tasks error->warning and 2 staying error->error, the transition matrix must report
+  // exactly those counts — pinning the rewrite to the prior load-and-count-in-Rust behaviour.
+  let response = client
+    .get(format!(
+      "/api/runs/{CORPUS_NAME}/{SERVICE_NAME}/diff?previous=2025-01-01%2000:00:00&current=2025-06-01%2000:00:00"
+    ))
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  let diff: Value = response.into_json().expect("diff json");
+  let transitions = diff["transitions"].as_array().expect("transitions array");
+  let cell = |prev: &str, cur: &str| -> i64 {
+    transitions
+      .iter()
+      .find(|t| t["previous_status"] == prev && t["current_status"] == cur)
+      .and_then(|t| t["task_count"].as_i64())
+      .unwrap_or(-1)
+  };
+  assert_eq!(
+    cell("error", "warning"),
+    2,
+    "two tasks moved error->warning"
+  );
+  assert_eq!(cell("error", "error"), 2, "two tasks stayed error->error");
+  assert_eq!(
+    cell("warning", "error"),
+    0,
+    "no task moved warning->error in this seed"
+  );
 }
 
 fn api_runs_is_404_for_unknown_corpus(client: &Client) {

@@ -856,56 +856,46 @@ pub fn summary_task_diffs(
   previous_date: Option<NaiveDateTime>,
   current_date: Option<NaiveDateTime>,
 ) -> (Vec<String>, Vec<DiffStatusRow>) {
-  let filters = if previous_date.is_some() || current_date.is_some() {
-    Some(DiffStatusFilter {
-      previous_date,
-      current_date,
-      ..DiffStatusFilter::default()
-    })
-  } else {
-    None
-  };
-
-  match HistoricalTask::report_for(corpus, service, filters, connection) {
-    Ok((dates, report)) => {
-      let mut summary = HashMap::new();
-      for row in report {
-        let prev_status = row.0.status;
-        let current_status = row.1.status;
-        let count = summary
-          .entry(prev_status)
-          .or_insert_with(HashMap::new)
-          .entry(current_status)
-          .or_insert(0);
-        *count += 1;
-      }
-      // Here we are only interested to rpeort on the 4 "completed" severities
-      // we could add invalid, but not yet a focus
-      use TaskStatus::*;
-      let mut tabular = Vec::new();
-      for prev in [NoProblem, Warning, Error, Fatal].iter() {
-        for current in [NoProblem, Warning, Error, Fatal].iter() {
-          let previous_status = prev.to_key();
-          let current_status = current.to_key();
-          let previous_highlight = severity_highlight(&previous_status).to_owned();
-          let current_highlight = severity_highlight(&current_status).to_owned();
-          tabular.push(DiffStatusRow {
-            previous_status,
-            current_status,
-            previous_highlight,
-            current_highlight,
-            task_count: *summary
-              .entry(prev.raw())
-              .or_insert_with(HashMap::new)
-              .entry(current.raw())
-              .or_insert(0),
-          });
-        }
-      }
-      (dates, tabular)
-    },
-    _ => (Vec::new(), Vec::new()),
+  // Aggregate the (previous → current) status transitions **in SQL** (one row per status pair),
+  // never loading the per-task snapshots into the application — a corpus with two
+  // multi-million-task snapshots is summarized in constant application memory (KNOWN_ISSUES R-8).
+  // Degrades to an empty matrix (→ all-zero table) on any DB error, like the rest of this report
+  // path.
+  let (dates, matrix) =
+    HistoricalTask::status_change_matrix(corpus, service, previous_date, current_date, connection)
+      .unwrap_or_default();
+  let mut summary: HashMap<i32, HashMap<i32, i64>> = HashMap::new();
+  for (prev_status, current_status, count) in matrix {
+    summary
+      .entry(prev_status)
+      .or_default()
+      .insert(current_status, count);
   }
+  // Here we are only interested to report on the 4 "completed" severities; we could add invalid,
+  // but not yet a focus.
+  use TaskStatus::*;
+  let mut tabular = Vec::new();
+  for prev in [NoProblem, Warning, Error, Fatal].iter() {
+    for current in [NoProblem, Warning, Error, Fatal].iter() {
+      let previous_status = prev.to_key();
+      let current_status = current.to_key();
+      let previous_highlight = severity_highlight(&previous_status).to_owned();
+      let current_highlight = severity_highlight(&current_status).to_owned();
+      let task_count = summary
+        .get(&prev.raw())
+        .and_then(|row| row.get(&current.raw()))
+        .copied()
+        .unwrap_or(0) as usize;
+      tabular.push(DiffStatusRow {
+        previous_status,
+        current_status,
+        previous_highlight,
+        current_highlight,
+        task_count,
+      });
+    }
+  }
+  (dates, tabular)
 }
 
 #[cfg(test)]

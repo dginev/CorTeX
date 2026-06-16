@@ -475,7 +475,9 @@ pub fn api_run_task_diffs(
     previous_date: parse_snapshot_date(previous)?,
     current_date: parse_snapshot_date(current)?,
     offset: offset.unwrap_or(0),
-    page_size: page_size.unwrap_or(100),
+    // Clamp to ≥1 so `?page_size=0` can't request an unbounded, unpaginated snapshot diff; the
+    // human route clamps the same way. KNOWN_ISSUES R-8.
+    page_size: page_size.unwrap_or(100).max(1),
   };
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let (corpus, service) = resolve(corpus, service, &mut connection)?;
