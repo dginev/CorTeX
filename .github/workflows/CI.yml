@@ -35,11 +35,22 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install system dependencies
+      - name: Install system dependencies (PostgreSQL 18 for uuidv7())
         run: |
+          # Migrations use PostgreSQL 18's built-in uuidv7() (the deployment floor; INSTALL.md), but
+          # the runner preinstalls PG16. Purge any existing PostgreSQL so only PG18 owns :5432, then
+          # install it from the PGDG apt repository.
+          sudo systemctl stop postgresql || true
+          sudo apt-get remove --purge -y 'postgresql.*' || true
+          sudo rm -rf /var/lib/postgresql /etc/postgresql
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            postgresql postgresql-contrib libpq-dev \
+            postgresql-18 libpq-dev \
             libarchive-dev libsodium-dev libzmq3-dev pkg-config
 
       - name: Start PostgreSQL
