@@ -6,7 +6,8 @@
 // except according to those terms.
 
 //! `cortex` — the administration CLI. A thin renderer over the library: self-install (`init`),
-//! diagnostics (`doctor`), DB tuning, token management, corpus `import`, the `report`/`runs`/
+//! diagnostics (`doctor`), DB tuning, token management, corpus `import` + service `activate`, the
+//! `report`/`runs`/
 //! `document` read surface (the CLI twins of the web/agent report ladder, run-history, and
 //! per-article forensics — `report` drills overview → severity → category → `what` → affected
 //! documents), and dataset export.
@@ -220,6 +221,23 @@ enum Command {
     #[arg(long, default_value = "")]
     description: String,
   },
+  /// Activate a service on a corpus — the CLI twin of the corpus screen's "Register a service"
+  /// form and the agent `POST /api/corpora/<c>/services/<s>`. Creates one TODO task per imported
+  /// document so the dispatcher converts them (the step after `import`). Refuses an
+  /// already-activated pair (use `rerun` to re-process) and the infrastructure init/import
+  /// services.
+  Activate {
+    /// Corpus name.
+    corpus: String,
+    /// Service name to activate (e.g. tex_to_html).
+    service: String,
+    /// Owner credited for the activation run (audit identity).
+    #[arg(long, default_value = "admin")]
+    owner: String,
+    /// Description recorded for the activation run (audit trail).
+    #[arg(long, default_value = "activated via cortex CLI")]
+    description: String,
+  },
   /// Delete a corpus (or sandbox) and all of its tasks + log messages — the CLI twin of the
   /// web/agent `DELETE /api/corpora/<name>`, via the transactional, orphan-free `Corpus::destroy`.
   /// Dry-run by default (prints the blast radius); pass `--yes` to delete. Historical run tallies
@@ -329,6 +347,12 @@ fn main() {
       complex,
       description,
     } => run_import(name, path, complex, description),
+    Command::Activate {
+      corpus,
+      service,
+      owner,
+      description,
+    } => run_activate(corpus, service, owner, description),
     Command::DeleteCorpus { name, yes } => run_delete_corpus(name, yes),
     Command::TuneDb => println!("{}", bootstrap::db_tuning_guidance()),
     Command::SetAdminToken {
@@ -1156,6 +1180,58 @@ fn run_import(name: String, path: String, complex: bool, description: String) {
   println!(
     "Imported {} document(s) into corpus {name}. Start the dispatcher (or activate a service) to convert them.",
     group_thousands(imported)
+  );
+}
+
+/// Activates a `service` on a `corpus` synchronously — the CLI surface of the corpus screen's
+/// "Register a service" form and the agent `POST /api/corpora/<c>/services/<s>`, driving the same
+/// `Backend::register_service` (which is idempotent-neutral: it *refuses* an already-activated pair
+/// rather than wiping its results). Creates one TODO task per imported document, then prints the
+/// count. Exits `1` on an unknown corpus/service, an infrastructure service, or an activation
+/// error.
+fn run_activate(corpus_name: String, service_name: String, owner: String, description: String) {
+  let mut backend = backend::from_address(default_db_address());
+  let corpus = match Corpus::find_by_name(&corpus_name.to_lowercase(), &mut backend.connection) {
+    Ok(corpus) => corpus,
+    Err(_) => {
+      eprintln!("No such corpus: {corpus_name}");
+      std::process::exit(1);
+    },
+  };
+  let service = match Service::find_by_name(&service_name.to_lowercase(), &mut backend.connection) {
+    Ok(service) => service,
+    Err(_) => {
+      eprintln!("No such service: {service_name}");
+      std::process::exit(1);
+    },
+  };
+  // Magic ids 1=init, 2=import are infrastructure (CLAUDE.md); activating them is nonsensical and
+  // the backend would otherwise reject it as "already registered" — give a clear reason instead.
+  if service.id <= 2 {
+    eprintln!(
+      "'{}' is an infrastructure service (init/import) and cannot be activated on a corpus.",
+      service.name
+    );
+    std::process::exit(1);
+  }
+  println!("Activating {} on {} …", service.name, corpus.name);
+  // `register_service` looks the corpus up by path and creates a TODO task per imported document.
+  // It is idempotent-neutral: an already-activated pair returns a descriptive Err (no wipe).
+  if let Err(error) = backend.register_service(&service, &corpus.path, owner, description) {
+    eprintln!("Activation failed: {error}");
+    std::process::exit(1);
+  }
+  // Each activated pair gets one task per imported document, so the corpus's document count is the
+  // number just queued.
+  let queued = Corpus::document_counts(&mut backend.connection)
+    .get(&corpus.id)
+    .copied()
+    .unwrap_or(0);
+  println!(
+    "Activated {} on {} — {} task(s) queued. Start the dispatcher to convert them.",
+    service.name,
+    corpus.name,
+    group_thousands(queued)
   );
 }
 

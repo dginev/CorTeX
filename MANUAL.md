@@ -274,13 +274,18 @@ checks the *install* is healthy. Neither mutates anything.
 /api/corpora`):**
 
 ```bash
-cortex import arxmliv /data/arxmliv               # walk the path, create one import task per document
-cortex import my-tikz /data/tikz --complex        # --complex for multi-file documents
+cortex import   arxmliv /data/arxmliv             # walk the path, create one import task per document
+cortex import   my-tikz /data/tikz --complex      # --complex for multi-file documents
+cortex activate arxmliv tex_to_html               # then queue one conversion task per document
 ```
 
-Runs synchronously to completion (the web/agent run it as a background job), printing the imported
-document count. Pre-flighted like the agent: a name clash or a non-directory path fails fast (exit 1)
-without half-registering the corpus.
+`import` registers a corpus and walks its path (one import task per document); `activate` then
+queues one conversion task per document for the chosen service, so the dispatcher can convert them —
+the usual `import → activate → run the dispatcher` setup flow. Both run synchronously to completion
+(the web/agent run them as background jobs) and print the count. Pre-flighted like the agent: a name
+clash / non-directory path (import) or an already-activated pair / infrastructure service (activate)
+fails fast (exit 1) without side effects — re-activating never wipes results (use `rerun` to
+re-process, or `cortex import` again then `activate` a fresh service).
 
 **Read — the report ladder, scriptable:**
 
