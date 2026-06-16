@@ -256,7 +256,7 @@ pub fn import_corpus_human(
     return Ok(Redirect::to("/admin/login"));
   };
   let form = form.into_inner();
-  start_import(
+  let uuid = start_import(
     pool,
     &database_url.0,
     &session.owner,
@@ -265,7 +265,7 @@ pub fn import_corpus_human(
     form.complex,
     form.description.unwrap_or_default(),
   )?;
-  Ok(Redirect::to("/jobs"))
+  Ok(Redirect::to(format!("/jobs/{uuid}")))
 }
 
 /// The body of a `corpus_import` job: run the importer in-process against `corpus`, reporting
@@ -417,8 +417,8 @@ pub fn create_sandbox_human(
     category: blank_to_none(form.category),
     what: blank_to_none(form.what),
   };
-  start_sandbox(pool, &database_url.0, &session.owner, parent, &request)?;
-  Ok(Redirect::to("/jobs"))
+  let uuid = start_sandbox(pool, &database_url.0, &session.owner, parent, &request)?;
+  Ok(Redirect::to(format!("/jobs/{uuid}")))
 }
 
 /// The body of a `corpus_sandbox` job: carve the sandbox in-process and report the captured-entry
@@ -492,8 +492,8 @@ pub fn extend_corpus_human(
   let Some(session) = session else {
     return Ok(Redirect::to("/admin/login"));
   };
-  start_extend(pool, &database_url.0, &session.owner, name)?;
-  Ok(Redirect::to("/jobs"))
+  let uuid = start_extend(pool, &database_url.0, &session.owner, name)?;
+  Ok(Redirect::to(format!("/jobs/{uuid}")))
 }
 
 /// The body of a `corpus_extend` job: import newly-arrived entries and propagate them to the real
@@ -615,8 +615,8 @@ pub fn activate_service_human(
   let Some(session) = session else {
     return Ok(Redirect::to("/admin/login"));
   };
-  start_activate(pool, &database_url.0, &session.owner, corpus, &form.service)?;
-  Ok(Redirect::to("/jobs"))
+  let uuid = start_activate(pool, &database_url.0, &session.owner, corpus, &form.service)?;
+  Ok(Redirect::to(format!("/jobs/{uuid}")))
 }
 
 /// The body of a `service_activate` job: register `service` on `corpus` (creating a TODO task per

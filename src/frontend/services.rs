@@ -432,8 +432,8 @@ pub fn activate_on_corpus_human(
   let Some(session) = session else {
     return Ok(Redirect::to("/admin/login"));
   };
-  start_activate(pool, &database_url.0, &session.owner, &form.corpus, service)?;
-  Ok(Redirect::to("/jobs"))
+  let uuid = start_activate(pool, &database_url.0, &session.owner, &form.corpus, service)?;
+  Ok(Redirect::to(format!("/jobs/{uuid}")))
 }
 
 /// The service-registry screen (HTML twin of [`api_services`]): the table of registered services,

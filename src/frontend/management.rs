@@ -586,9 +586,9 @@ pub fn reindex_human(
   pool: &State<DbPool>,
 ) -> Result<rocket::response::Redirect, AdminReject> {
   let session = require_admin(session)?;
-  crate::jobs::spawn_reindex(pool.inner().clone(), &session.owner)
+  let uuid = crate::jobs::spawn_reindex(pool.inner().clone(), &session.owner)
     .map_err(|_| Status::InternalServerError)?;
-  Ok(rocket::response::Redirect::to("/jobs"))
+  Ok(rocket::response::Redirect::to(format!("/jobs/{uuid}")))
 }
 
 /// Triggers a planner-statistics refresh (`ANALYZE` over the high-churn tables) as a background job
@@ -624,9 +624,9 @@ pub fn analyze_human(
   pool: &State<DbPool>,
 ) -> Result<rocket::response::Redirect, AdminReject> {
   let session = require_admin(session)?;
-  crate::jobs::spawn_analyze(pool.inner().clone(), &session.owner)
+  let uuid = crate::jobs::spawn_analyze(pool.inner().clone(), &session.owner)
     .map_err(|_| Status::InternalServerError)?;
-  Ok(rocket::response::Redirect::to("/jobs"))
+  Ok(rocket::response::Redirect::to(format!("/jobs/{uuid}")))
 }
 
 /// The route set for the management/health/settings capability.

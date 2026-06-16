@@ -7,6 +7,7 @@
   <progress id="bar" max="1" value="0"></progress>
   <p id="message" class="muted"></p>
   <pre id="result" hidden></pre>
+  <p id="next-step" class="status-ok"></p>
   <p><a href="/jobs">&larr; all background jobs</a></p>
 
   <script>
@@ -14,6 +15,22 @@
     const uuid = document.getElementById('uuid').textContent;
     const terminal = ['succeeded', 'failed', 'interrupted'];
     let timer = null;
+    function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+    // What to do next once a job succeeds — turns "submit → wait" into a guided flow.
+    function nextStep(job) {
+      const p = job.params || {};
+      const link = (href, text) => 'Next → <a href="' + href + '">' + text + '</a>';
+      const corpus = (name) => '/corpus/' + encodeURIComponent(name);
+      switch (job.kind) {
+        case 'corpus_import': return p.name ? link(corpus(p.name), 'register a service on ' + esc(p.name)) : '';
+        case 'corpus_extend': return p.name ? link(corpus(p.name), 'view ' + esc(p.name)) : '';
+        case 'corpus_sandbox': return p.name ? link(corpus(p.name), 'view the sandbox ' + esc(p.name)) : '';
+        case 'service_activate': return (p.corpus && p.service)
+          ? link(corpus(p.corpus) + '/' + encodeURIComponent(p.service), 'watch the conversion report') : '';
+        case 'refresh_reports': case 'reindex': case 'analyze': return link('/health', 'back to system health');
+        default: return '';
+      }
+    }
     async function poll() {
       let resp;
       try { resp = await fetch('/api/jobs/' + uuid); } catch (e) { return; }
@@ -29,6 +46,7 @@
       if (terminal.includes(job.status)) {
         if (timer) clearInterval(timer);
         if (job.result) { const r = document.getElementById('result'); r.hidden = false; r.textContent = JSON.stringify(job.result, null, 2); }
+        if (job.status === 'succeeded') { document.getElementById('next-step').innerHTML = nextStep(job); }
       }
     }
     timer = setInterval(poll, 1000);

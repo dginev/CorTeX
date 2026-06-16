@@ -608,7 +608,13 @@ fn service_activation_flows() {
     .body(format!("corpus={CORPUS}"))
     .dispatch();
   assert_eq!(activated.status(), Status::SeeOther);
-  assert_eq!(activated.headers().get_one("Location"), Some("/jobs"));
+  assert!(
+    activated
+      .headers()
+      .get_one("Location")
+      .is_some_and(|loc| loc.starts_with("/jobs/")),
+    "activation lands on the specific job's live-progress page, not the general list"
+  );
 
   // --- Corpus-side mirror: the corpus page offers a <select> of not-yet-registered services
   // -------

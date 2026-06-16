@@ -495,9 +495,9 @@ pub fn refresh_reports_human(
   pool: &State<DbPool>,
 ) -> Result<rocket::response::Redirect, AdminReject> {
   let session = require_admin(session)?;
-  jobs::spawn_report_refresh(pool.inner().clone(), &session.owner)
+  let uuid = jobs::spawn_report_refresh(pool.inner().clone(), &session.owner)
     .map_err(|_| Status::InternalServerError)?;
-  Ok(rocket::response::Redirect::to("/jobs"))
+  Ok(rocket::response::Redirect::to(format!("/jobs/{uuid}")))
 }
 
 /// Acknowledgement for the report-footer "Force refresh": the spawned rebuild job's uuid, for the
