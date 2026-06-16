@@ -257,6 +257,37 @@ fn reindex_is_token_gated() {
   );
 }
 
+fn put_config_is_token_gated() {
+  // Rewriting the running configuration (dispatcher ports/sizes, asset dirs, the job stall
+  // threshold) is a consequential mutation, so PUT /api/config must require a token exactly like
+  // every other agent write — regression guard for the auth hole where it had no Actor guard.
+  let client = client();
+  let patch = r#"{"jobs":{"stale_timeout_seconds":7200}}"#;
+  // No token -> 401 (no unauthenticated config rewrite).
+  let denied = client
+    .put("/api/config")
+    .header(ContentType::JSON)
+    .body(patch)
+    .dispatch();
+  assert_eq!(
+    denied.status(),
+    Status::Unauthorized,
+    "PUT /api/config without a token is 401 (no unauthenticated config rewrite)"
+  );
+  // A valid token -> 200 with the masked config (the gate admits authenticated writes + still
+  // merges).
+  let ok = client
+    .put("/api/config?token=token1")
+    .header(ContentType::JSON)
+    .body(patch)
+    .dispatch();
+  assert_eq!(
+    ok.status(),
+    Status::Ok,
+    "PUT /api/config with a valid token succeeds"
+  );
+}
+
 fn healthz_flags_unreadable_corpus_storage() {
   // A corpus whose configured source directory is missing on disk (a moved/unmounted /data mount)
   // is surfaced in the storage-health section — informational, so it does not flip the status.
@@ -376,6 +407,7 @@ fn main() {
   healthz_reports_ok_when_db_reachable();
   api_index_lists_the_agent_surface();
   reindex_is_token_gated();
+  put_config_is_token_gated();
   analyze_is_token_gated();
   healthz_flags_unreadable_corpus_storage();
   openapi_spec_and_rapidoc_are_served();

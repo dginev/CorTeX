@@ -525,13 +525,26 @@ pub fn settings(
 }
 
 /// Agent write path: deep-merge a partial config patch, persist it, and return the masked result.
+/// **Token-gated** via the [`Actor`] guard — rewriting the running configuration (dispatcher ports,
+/// queue/result sizes, asset dirs, the job stall threshold) is a consequential mutation, so it
+/// requires a valid `X-Cortex-Token` exactly like every other agent write (the human twin
+/// `post_settings` is `AdminSession`-gated). `401` without a token.
 #[rocket_okapi::openapi(tag = "Management")]
 #[put("/api/config", format = "json", data = "<patch>")]
 pub fn put_config(
   patch: Json<serde_json::Value>,
+  actor: Actor,
   config_file: &State<ConfigFile>,
 ) -> Result<Json<ConfigDto>, Status> {
-  let merged = merge_and_persist(&patch.into_inner(), &config_file.0)?;
+  let patch = patch.into_inner();
+  // The changed top-level sections (keys only — never the values, which can carry secrets) for the
+  // operational journal; the audit fairing records the full action + actor to the DB.
+  let sections: Vec<&str> = patch
+    .as_object()
+    .map(|o| o.keys().map(String::as_str).collect())
+    .unwrap_or_default();
+  let merged = merge_and_persist(&patch, &config_file.0)?;
+  tracing::info!(actor = %actor.owner, sections = ?sections, "config updated via API");
   Ok(Json(ConfigDto::from_config(&merged)))
 }
 

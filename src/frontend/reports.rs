@@ -606,6 +606,7 @@ pub fn rerun_report(
       owner_opt: Some(actor.owner.clone()),
     })
     .map_err(|_| Status::InternalServerError)?;
+  tracing::info!(actor = %actor.owner, corpus, service, severity = ?severity, category = ?category, what = ?what, "rerun via API");
   // Reflect the rerun in reports without blocking this request: spawn the rollup refresh off the
   // request path (debounced, observable via `/api/jobs`). Best-effort — the rerun already
   // committed.

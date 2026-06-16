@@ -718,7 +718,7 @@ fn run_activate(
 pub fn delete_corpus(
   name: &str,
   confirm: Option<&str>,
-  _actor: Actor,
+  actor: Actor,
   pool: &State<DbPool>,
 ) -> Status {
   if confirm != Some(name) {
@@ -733,7 +733,10 @@ pub fn delete_corpus(
     Err(_) => return Status::NotFound,
   };
   match delete_corpus_cascade(&mut connection, corpus) {
-    Ok(()) => Status::NoContent,
+    Ok(()) => {
+      tracing::info!(actor = %actor.owner, corpus = name, "corpus deleted via API");
+      Status::NoContent
+    },
     Err(status) => status,
   }
 }
@@ -779,7 +782,7 @@ pub fn deactivate_service(
   corpus: &str,
   service: &str,
   confirm: Option<&str>,
-  _actor: Actor,
+  actor: Actor,
   pool: &State<DbPool>,
 ) -> Status {
   if confirm != Some(service) {
@@ -803,7 +806,10 @@ pub fn deactivate_service(
     return Status::Forbidden;
   }
   match service_record.deactivate_from_corpus(&corpus_record, &mut connection) {
-    Ok(_) => Status::NoContent,
+    Ok(_) => {
+      tracing::info!(actor = %actor.owner, corpus, service, "service deactivated from corpus via API");
+      Status::NoContent
+    },
     Err(_) => Status::InternalServerError,
   }
 }
@@ -887,6 +893,7 @@ pub fn snapshot_tasks(
   let saved = backend
     .save_historical_tasks(&corpus_record, &service_record)
     .map_err(|_| Status::InternalServerError)?;
+  tracing::info!(actor = %actor.owner, corpus, service, saved, "snapshot via API");
   Ok((
     Status::Accepted,
     Json(SnapshotAckDto {

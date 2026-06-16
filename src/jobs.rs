@@ -105,8 +105,17 @@ where
     .map_err(|e| e.to_string())?;
   drop(connection);
 
+  // Structured operational journal for the whole job lifecycle (the jobs table is the durable
+  // record; this is the leveled `tracing` stream an operator tails alongside the dispatcher, so
+  // background activity — imports, reruns, reindex — is visible and correlatable in one place).
+  // Captured (owned) for the worker thread, which can't borrow these `&str`s.
+  let log_kind = kind.to_string();
+  let log_actor = actor.to_string();
+  tracing::info!(kind = %log_kind, actor = %log_actor, job = %job_uuid, "background job spawned");
+
   let worker_pool = pool.clone();
   thread::spawn(move || {
+    let started = std::time::Instant::now();
     set_running(&worker_pool, job_id);
     let progress = JobProgress {
       pool: worker_pool.clone(),
@@ -115,16 +124,27 @@ where
     // Catch a panicking body so a job is never stranded `running` forever (e.g. an importer panic,
     // or `from_address`/`connection_at` panicking when the DB is briefly unreachable). A panic
     // becomes a terminal `failed` with a message — the job reaches a real health state.
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| body(&progress))) {
-      Ok(Ok(result)) => finish(&worker_pool, job_id, "succeeded", "", Some(result)),
-      Ok(Err(message)) => finish(&worker_pool, job_id, "failed", &message, None),
-      Err(panic) => finish(
-        &worker_pool,
-        job_id,
-        "failed",
-        &format!("job panicked: {}", panic_message(&*panic)),
-        None,
-      ),
+    let (status, message) =
+      match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| body(&progress))) {
+        Ok(Ok(result)) => {
+          finish(&worker_pool, job_id, "succeeded", "", Some(result));
+          ("succeeded", String::new())
+        },
+        Ok(Err(message)) => {
+          finish(&worker_pool, job_id, "failed", &message, None);
+          ("failed", message)
+        },
+        Err(panic) => {
+          let message = format!("job panicked: {}", panic_message(&*panic));
+          finish(&worker_pool, job_id, "failed", &message, None);
+          ("failed", message)
+        },
+      };
+    let elapsed_ms = started.elapsed().as_millis();
+    if status == "succeeded" {
+      tracing::info!(kind = %log_kind, actor = %log_actor, job = %job_uuid, elapsed_ms, "background job succeeded");
+    } else {
+      tracing::warn!(kind = %log_kind, actor = %log_actor, job = %job_uuid, elapsed_ms, error = %message, "background job failed");
     }
   });
   Ok(job_uuid)
