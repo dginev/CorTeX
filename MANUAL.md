@@ -4,10 +4,12 @@ How to install, run, and operate CorTeX day-to-day — from a fresh box through 
 runs. This is the **admin journey**; for the *why* behind the architecture see
 [`docs/PRODUCTIZING_PLAN.md`](docs/PRODUCTIZING_PLAN.md) and the rationalization docs.
 
-> **Every human screen has a 1:1 agent API twin** (the symmetry contract): the same controller serves
-> an HTML page to a browser and schema'd JSON to API clients. Anything you can do in the UI you can
-> script — see [Agent API](#13-agent-api). Machine-readable docs live at **`/api/docs`** (RapiDoc) and
-> **`/api/openapi.json`**.
+> **Every capability is available on three surfaces** (the symmetry contract): the web UI, the agent
+> API, and the `cortex` CLI — one controller and one backbone behind each, so all three see the same
+> live + historical state. The same handler serves an HTML page to a browser and schema'd JSON to API
+> clients; anything you can do in the UI you can script via the [Agent API](#13-agent-api) or the
+> [`cortex` CLI](#14-command-line-management-cli). Machine-readable docs live at **`/api/docs`**
+> (RapiDoc) and **`/api/openapi.json`**.
 
 ## 1. The pieces
 
@@ -15,7 +17,7 @@ CorTeX is three binaries over one Postgres database and a shared `/data` filesys
 
 | Binary | Role | Start (from the repo root) |
 | --- | --- | --- |
-| **`cortex`** | admin CLI — install, diagnose, tokens | `cargo run --bin cortex -- <subcommand>` |
+| **`cortex`** | admin CLI — install, diagnose, tokens + scriptable management (reports, runs, rerun, sandbox, delete, export); see [§14](#14-command-line-management-cli) | `cargo run --bin cortex -- <subcommand>` |
 | **`frontend`** | Rocket web app + agent API (default `127.0.0.1:8000`) | `cargo run --bin frontend` |
 | **`dispatcher`** | leases tasks to workers over ZeroMQ (ventilator `:51695`, sink `:51696`) | `cargo run --bin dispatcher` |
 
@@ -211,7 +213,36 @@ curl -s -X DELETE "localhost:8000/api/services/old_svc?confirm=old_svc&token=$TO
 
 Browse the full, generated contract at **`/api/docs`**.
 
-## 14. Troubleshooting
+## 14. Command-line management (CLI)
+
+The `cortex` binary is the **third surface** — a scriptable twin of the web screens and the agent API,
+running against the same database (`DATABASE_URL` / config precedence, §3). Install & ops commands
+(`init`, `doctor`, `set-admin-token`, `tune-db`, `export-dataset`) are covered above; the management
+commands below mirror the web/agent capabilities one-to-one. Add `--json` to any **read** command to
+emit the same shape as the corresponding agent DTO (so a script gets identical numbers to the screen).
+
+**Read — the report ladder, scriptable:**
+
+```bash
+cortex report   arxmliv tex_to_html             # service overview: valid-task total + per-status counts/shares
+cortex runs     arxmliv tex_to_html             # run history: each run's per-severity tallies (live for the open run)
+cortex document arxmliv tex_to_html 2105.13573  # per-article forensics: status + every worker-log message
+```
+
+**Mutations — consequential, so dry-run by default; pass `--yes` to execute:**
+
+```bash
+cortex rerun         arxmliv tex_to_html --severity error            # re-queue a filtered slice (→ TODO) for reconversion
+cortex sandbox       arxmliv err-set --service tex_to_html --severity error  # carve a sandbox corpus by a message filter
+cortex delete-corpus old-sandbox                                     # orphan-free cascade delete (run tallies survive)
+```
+
+Without `--yes`, a mutation prints exactly what it *would* do (the matched scope / blast radius) and
+changes nothing — a safe preview. `--owner <name>` attributes the action in the audit log (default
+`admin`). These are the same operations as the web forms and `POST /api/…` endpoints, on one shared
+backend, so all three surfaces see the same live + historical state.
+
+## 15. Troubleshooting
 
 - **`cortex doctor`** first — it pinpoints DB/migration/seed/token problems.
 - **Frontend won't start / wrong DB** — check the CWD (run from repo root) and the config precedence
