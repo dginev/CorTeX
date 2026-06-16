@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use crate::backend::{list_task_diffs, summary_task_diffs, DbPool};
 use crate::frontend::actor::{require_admin_to, AdminReject, AdminSession, ReturnTo};
 use crate::frontend::helpers::decorate_uri_encodings;
-use crate::frontend::params::TemplateContext;
+use crate::frontend::params::{TemplateContext, MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE};
 use crate::helpers::TaskStatus;
 use crate::models::{
   Corpus, DiffStatusFilter, HistoricalRun, RunMetadata, RunMetadataStack, Service, TaskRunMetadata,
@@ -473,10 +473,13 @@ pub fn api_run_task_diffs(
     current_status: parse_status(current_status)?,
     previous_date: parse_snapshot_date(previous)?,
     current_date: parse_snapshot_date(current)?,
-    offset: offset.unwrap_or(0),
-    // Clamp to ≥1 so `?page_size=0` can't request an unbounded, unpaginated snapshot diff; the
-    // human route clamps the same way. KNOWN_ISSUES R-8.
-    page_size: page_size.unwrap_or(100).max(1),
+    // Bound both: `?page_size=0` would request an unpaginated diff (R-8) and a huge value would
+    // `LIMIT` a whole task-diff set into one response; a deep `offset` is a scan-and-discard (P-4).
+    // Same bounds as the report paths.
+    offset: offset.unwrap_or(0).min(MAX_REPORT_OFFSET as usize),
+    page_size: page_size
+      .unwrap_or(100)
+      .clamp(1, MAX_REPORT_PAGE_SIZE as usize),
   };
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let (corpus, service) = resolve(corpus, service, &mut connection)?;
@@ -515,8 +518,11 @@ pub fn runs_tasks_page(
   let current_status_filter = parse_status(current_status)?;
   let previous_date = parse_snapshot_date(previous)?;
   let current_date = parse_snapshot_date(current)?;
-  let offset = offset.unwrap_or(0);
-  let page_size = page_size.unwrap_or(100).max(1);
+  // Bound the paginate params (R-8: no `page_size=0`; P-4: no huge page / deep `OFFSET` scan).
+  let offset = offset.unwrap_or(0).min(MAX_REPORT_OFFSET as usize);
+  let page_size = page_size
+    .unwrap_or(100)
+    .clamp(1, MAX_REPORT_PAGE_SIZE as usize);
 
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let (corpus_record, service_record) = resolve(corpus, service, &mut connection)?;

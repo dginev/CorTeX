@@ -257,7 +257,7 @@ pub fn api_category_report(
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let (corpus, service) = resolve(corpus, service, &mut connection)?;
   let limit = page_size.unwrap_or(100).clamp(1, MAX_REPORT_PAGE_SIZE);
-  let offset = offset.unwrap_or(0);
+  let offset = offset.unwrap_or(0).clamp(0, MAX_REPORT_OFFSET);
   let categories = category_rollup(
     &mut connection,
     corpus.id,
@@ -304,7 +304,7 @@ pub fn api_what_report(
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let (corpus, service) = resolve(corpus, service, &mut connection)?;
   let limit = page_size.unwrap_or(100).clamp(1, MAX_REPORT_PAGE_SIZE);
-  let offset = offset.unwrap_or(0);
+  let offset = offset.unwrap_or(0).clamp(0, MAX_REPORT_OFFSET);
   let whats = what_rollup(
     &mut connection,
     corpus.id,
