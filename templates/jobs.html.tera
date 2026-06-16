@@ -21,16 +21,16 @@
     <table id="jobs-report" class="table table-striped">
         <thead>
           <tr>
-            <th class="left">Kind</th>
-            <th class="left">Actor</th>
-            <th class="left">Health</th>
-            <th class="right">Progress</th>
-            <th class="right">Duration (s)</th>
-            <th class="left">Started</th>
-            <th class="left">Updated</th>
-            <th class="right" title="Seconds since the last progress update; for a running job this is its heartbeat age — a large value flags a stalled job.">Idle (s)</th>
-            <th class="left">Message</th>
-            <th class="left">Detail</th>
+            <th scope="col" class="left">Kind</th>
+            <th scope="col" class="left">Actor</th>
+            <th scope="col" class="left">Health</th>
+            <th scope="col" class="right">Progress</th>
+            <th scope="col" class="right">Duration (s)</th>
+            <th scope="col" class="left">Started</th>
+            <th scope="col" class="left">Updated</th>
+            <th scope="col" class="right" title="Seconds since the last progress update; for a running job this is its heartbeat age — a large value flags a stalled job.">Idle (s)</th>
+            <th scope="col" class="left">Message</th>
+            <th scope="col" class="left">Detail</th>
           </tr>
         </thead>
         <tbody>

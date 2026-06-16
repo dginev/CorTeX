@@ -9,14 +9,14 @@
     <table id="service-report" class="table">
       <thead>
         <tr>
-          <th class="left">Service</th>
-          <th class="right">Total</th>
-          <th class="right">No&nbsp;problem</th>
-          <th class="right">Warning</th>
-          <th class="right">Error</th>
-          <th class="right">Fatal</th>
-          <th class="right">TODO</th>
-          <th class="left">Run history</th>
+          <th scope="col" class="left">Service</th>
+          <th scope="col" class="right">Total</th>
+          <th scope="col" class="right">No&nbsp;problem</th>
+          <th scope="col" class="right">Warning</th>
+          <th scope="col" class="right">Error</th>
+          <th scope="col" class="right">Fatal</th>
+          <th scope="col" class="right">TODO</th>
+          <th scope="col" class="left">Run history</th>
         </tr>
       </thead>
       <tbody>

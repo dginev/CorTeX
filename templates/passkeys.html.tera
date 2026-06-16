@@ -19,10 +19,10 @@
   <table id="passkeys" class="table">
     <thead>
       <tr>
-        <th class="left">Authenticator</th>
-        <th class="left">Enrolled</th>
-        <th class="left">Last used</th>
-        <th class="right"></th>
+        <th scope="col" class="left">Authenticator</th>
+        <th scope="col" class="left">Enrolled</th>
+        <th scope="col" class="left">Last used</th>
+        <th scope="col" class="right"></th>
       </tr>
     </thead>
     <tbody>

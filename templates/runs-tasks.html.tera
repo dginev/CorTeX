@@ -42,13 +42,13 @@
       <table id="task-diff-report" class="table table-striped">
         <thead>
           <tr>
-            <th class="left">Entry</th>
-            <th class="left">Preview</th>
-            <th class="left">Source</th>
-            <th class="left">Previous status</th>
-            <th class="left">Current status</th>
-            <th class="left">Previous save</th>
-            <th class="left">Current save</th>
+            <th scope="col" class="left">Entry</th>
+            <th scope="col" class="left">Preview</th>
+            <th scope="col" class="left">Source</th>
+            <th scope="col" class="left">Previous status</th>
+            <th scope="col" class="left">Current status</th>
+            <th scope="col" class="left">Previous save</th>
+            <th scope="col" class="left">Current save</th>
           </tr>
         </thead>
         <tbody>

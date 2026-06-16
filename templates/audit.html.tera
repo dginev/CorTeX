@@ -18,11 +18,11 @@
   <table id="audit-log" class="table">
     <thead>
       <tr>
-        <th class="left">When</th>
-        <th class="left">Actor</th>
-        <th class="left">Action</th>
-        <th class="left">Target</th>
-        <th class="right">Outcome</th>
+        <th scope="col" class="left">When</th>
+        <th scope="col" class="left">Actor</th>
+        <th scope="col" class="left">Action</th>
+        <th scope="col" class="left">Target</th>
+        <th scope="col" class="right">Outcome</th>
       </tr>
     </thead>
     <tbody>

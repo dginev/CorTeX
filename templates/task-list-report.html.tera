@@ -8,11 +8,11 @@
     <table id="corpus-report" class="table">
       <thead>
         <tr>
-          <th class="left">Entry</th>
-          <th class="left">Source</th>
-          <th class="left">Result</th>
-          <th class="left">Preview</th>
-          <th class="left">Details</th>
+          <th scope="col" class="left">Entry</th>
+          <th scope="col" class="left">Source</th>
+          <th scope="col" class="left">Result</th>
+          <th scope="col" class="left">Preview</th>
+          <th scope="col" class="left">Details</th>
         </tr>
       </thead>
       <tbody>

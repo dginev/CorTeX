@@ -10,10 +10,10 @@
     <table id="corpus-report" class="table report-table">
       <thead>
         <tr>
-          <th class="left">Status</th>
-          <th class="left bar-col">Share</th>
-          <th class="right">%</th>
-          <th class="right">Tasks</th>
+          <th scope="col" class="left">Status</th>
+          <th scope="col" class="left bar-col">Share</th>
+          <th scope="col" class="right">%</th>
+          <th scope="col" class="right">Tasks</th>
         </tr>
       </thead>
       <tbody>

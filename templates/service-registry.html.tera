@@ -14,14 +14,14 @@
       <table id="service-registry" class="table table-striped">
         <thead>
           <tr>
-            <th class="left">Service</th>
-            <th class="right">Version</th>
-            <th class="left">Input &rarr; Output</th>
-            <th class="left">Input converter</th>
-            <th class="center">Complex</th>
-            <th class="left">Description</th>
-            <th class="left">Workers</th>
-            <th class="left">Manage</th>
+            <th scope="col" class="left">Service</th>
+            <th scope="col" class="right">Version</th>
+            <th scope="col" class="left">Input &rarr; Output</th>
+            <th scope="col" class="left">Input converter</th>
+            <th scope="col" class="center">Complex</th>
+            <th scope="col" class="left">Description</th>
+            <th scope="col" class="left">Workers</th>
+            <th scope="col" class="left">Manage</th>
           </tr>
         </thead>
         <tbody>

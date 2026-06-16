@@ -11,11 +11,11 @@
   <table id="sessions" class="table">
     <thead>
       <tr>
-        <th class="left">Who</th>
-        <th class="left">Method</th>
-        <th class="left">Signed in</th>
-        <th class="left">Expires</th>
-        <th class="right"></th>
+        <th scope="col" class="left">Who</th>
+        <th scope="col" class="left">Method</th>
+        <th scope="col" class="left">Signed in</th>
+        <th scope="col" class="left">Expires</th>
+        <th scope="col" class="right"></th>
       </tr>
     </thead>
     <tbody>

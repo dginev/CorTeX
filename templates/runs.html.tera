@@ -24,15 +24,15 @@
         <caption class="muted">Coloured numbers are each run's change vs the previous (older) run — <span class="delta delta-good">green = improvement</span>, <span class="delta delta-bad">red = regression</span>.</caption>
         <thead>
           <tr>
-            <th class="left">Started</th>
-            <th class="left">Ended</th>
-            <th class="left">Owner</th>
-            <th class="left">Description</th>
-            <th class="right">Total</th>
-            <th class="right">No problem</th>
-            <th class="right">Warning</th>
-            <th class="right">Error</th>
-            <th class="right">Fatal</th>
+            <th scope="col" class="left">Started</th>
+            <th scope="col" class="left">Ended</th>
+            <th scope="col" class="left">Owner</th>
+            <th scope="col" class="left">Description</th>
+            <th scope="col" class="right">Total</th>
+            <th scope="col" class="right">No problem</th>
+            <th scope="col" class="right">Warning</th>
+            <th scope="col" class="right">Error</th>
+            <th scope="col" class="right">Fatal</th>
           </tr>
         </thead>
         <tbody>

@@ -51,10 +51,10 @@
     </colgroup>
     <thead>
       <tr>
-        <th class="left">Severity</th>
-        <th class="left">Category</th>
-        <th class="left">What</th>
-        <th class="left">Details</th>
+        <th scope="col" class="left">Severity</th>
+        <th scope="col" class="left">Category</th>
+        <th scope="col" class="left">What</th>
+        <th scope="col" class="left">Details</th>
       </tr>
     </thead>
     <tbody>
@@ -81,9 +81,9 @@
       </colgroup>
       <thead>
         <tr>
-          <th class="left">Category</th>
-          <th class="left">What</th>
-          <th class="left">Details</th>
+          <th scope="col" class="left">Category</th>
+          <th scope="col" class="left">What</th>
+          <th scope="col" class="left">Details</th>
         </tr>
       </thead>
       <tbody>

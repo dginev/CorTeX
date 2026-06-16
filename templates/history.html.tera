@@ -26,17 +26,17 @@
     <table class="table table-striped history-report">
       <thead>
         <tr>
-          <th style="width:8%" class="right">No problem</th>
-          <th style="width:5%" class="right">Warning</th>
-          <th style="width:5%" class="right">Error</th>
-          <th style="width:5%" class="right">Fatal</th>
-          <th style="width:8%" class="right">In progress</th>
-          <th style="width:5%" class="right">Total</th>
-          <th style="width:5%" class="right">Invalid</th>
-          <th style="width:10%" class="center">Start time</th>
-          <th style="width:10%" class="center">End time</th>
-          <th style="width:5%" class="left">Owner</th>
-          <th style="width:34%" class="left">Description</th>
+          <th scope="col" style="width:8%" class="right">No problem</th>
+          <th scope="col" style="width:5%" class="right">Warning</th>
+          <th scope="col" style="width:5%" class="right">Error</th>
+          <th scope="col" style="width:5%" class="right">Fatal</th>
+          <th scope="col" style="width:8%" class="right">In progress</th>
+          <th scope="col" style="width:5%" class="right">Total</th>
+          <th scope="col" style="width:5%" class="right">Invalid</th>
+          <th scope="col" style="width:10%" class="center">Start time</th>
+          <th scope="col" style="width:10%" class="center">End time</th>
+          <th scope="col" style="width:5%" class="left">Owner</th>
+          <th scope="col" style="width:34%" class="left">Description</th>
         </tr>
       </thead>
       <tbody>

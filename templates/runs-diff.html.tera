@@ -42,10 +42,10 @@
       <table id="run-diff-matrix" class="table table-striped">
         <thead>
           <tr>
-            <th class="left">Previous status</th>
-            <th class="left">Current status</th>
-            <th class="right">Tasks</th>
-            <th class="center">Drill down</th>
+            <th scope="col" class="left">Previous status</th>
+            <th scope="col" class="left">Current status</th>
+            <th scope="col" class="right">Tasks</th>
+            <th scope="col" class="center">Drill down</th>
           </tr>
         </thead>
         <tbody>
