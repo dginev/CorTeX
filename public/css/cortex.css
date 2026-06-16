@@ -683,6 +683,19 @@ h1 {
 .rerun-banner-segment:empty {
   visibility: hidden;
 }
+/* Blast-radius warning on the rerun-all (top-level) modal: a warn-tinted callout so the admin sees
+   the full task count + that already-converted tasks are included before re-queuing the corpus. */
+.rerun-blast-radius {
+  margin: 0.75rem 20px 0;
+  padding: 0.6rem 0.75rem;
+  border-left: 3px solid var(--warn);
+  background-color: color-mix(in srgb, var(--warn) 12%, var(--bg-elev));
+  border-radius: 3px;
+  font-size: 0.95em;
+}
+.rerun-blast-radius .fa-exclamation-triangle {
+  color: var(--warn);
+}
 
 /* #report-div is visible by default (graceful degradation — the report shows even if the CDN jQuery
    that drives the live rerun-progress overlay fails to load); progress_report.js only *adds* to it. */
