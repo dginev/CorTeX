@@ -5,7 +5,6 @@
     <h1 class="report-title">{{global.severity}} <span class="report-sep">·</span> categories</h1>
     <p class="report-sub">{{global.corpus_name}} <span class="report-sep">/</span> {{global.service_name}}</p>
   </header>
-  <p class="report-sub"><a href="/api/reports/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}">view as JSON</a></p>
 
   {% if global.severity != "info" %}
   <p class="report-toggle">
