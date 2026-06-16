@@ -85,8 +85,35 @@
       <a href="/history/{{global.corpus_name_uri}}/{{global.service_name_uri}}"><i class="fa fa-line-chart"></i>History chart</a>
       <a href="/runs/{{global.corpus_name_uri}}/{{global.service_name_uri}}/diff"><i class="fa fa-exchange"></i>Diff previous runs</a>
     </nav>
+
+    {# Direct article forensics — the human twin of the agent's GET /api/corpus/<c>/<svc>/document/<name>
+       and `cortex document <c> <s> <name>`: jump straight to one article's per-message report by id,
+       instead of drilling the whole severity→category→what ladder. The plain-GET action degrades to a
+       no-JS redirect (document_lookup_redirect → 303); the script upgrades it to the clean path URL. #}
+    <form class="document-lookup" id="document-lookup" method="get"
+          action="/document/{{global.corpus_name_uri}}/{{global.service_name_uri}}"
+          data-base="/document/{{global.corpus_name_uri}}/{{global.service_name_uri}}/">
+      <label for="document-lookup-id"><i class="fa fa-search"></i>&nbsp;Look up an article</label>
+      <input type="text" id="document-lookup-id" name="name" placeholder="paper id, e.g. 0801.1234" aria-label="Article paper id" required>
+      <button type="submit" class="btn btn-primary btn-sm">Open forensics</button>
+    </form>
   </div>
 </div>
+<script>
+  // Upgrade the lookup to the clean path URL (/document/<c>/<s>/<id>) when JS is on. With JS off the
+  // form's plain GET hits /document/<c>/<s>?name=<id>, which 303-redirects to the same place — so the
+  // shortcut works either way. Vanilla, progressive enhancement — same idiom as the rest of the UI.
+  (function () {
+    var form = document.getElementById('document-lookup');
+    if (!form) return;
+    form.addEventListener('submit', function (event) {
+      var id = document.getElementById('document-lookup-id').value.trim();
+      if (!id) { event.preventDefault(); return; }
+      event.preventDefault();
+      window.location = form.getAttribute('data-base') + encodeURIComponent(id);
+    });
+  })();
+</script>
 <script src="/public/js/progress_report.js"></script> {% endblock content %}
 
 {% block footer_extra %} {% if global.corpus_description %}

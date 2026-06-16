@@ -1165,6 +1165,36 @@ h3 {
   color: var(--accent);
 }
 
+/* Direct "look up an article" shortcut under the report links — the human entry to per-article
+   forensics by id (the twin of the agent API + `cortex document`). */
+.document-lookup {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+.document-lookup label {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+.document-lookup input {
+  flex: 1 1 14rem;
+  max-width: 22rem;
+  padding: 0.35rem 0.7rem;
+  font-size: var(--fs-sm);
+  color: var(--ink);
+  background-color: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+.document-lookup input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 /* Clickable report rows: a drill-in chevron after the label (only real <a> links get it), so a row
    reads as navigable even though the label is neutral ink. The whole row highlights on hover. */
 .report-table td.left a::after {

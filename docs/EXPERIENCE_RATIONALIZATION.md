@@ -124,7 +124,13 @@ discoverable JSON DTOs (each also the future HTML/CLI source).
 - **C2 — Smoother workflows.** Corpus add/import, service activation, rerun: inline progress +
   validation + next-step guidance, building on the live-feed pattern from direction 1.
 - **C3 — Render the new magnifications.** Web views for A1 (per-article forensics) and A2 (macro
-  trend), consuming the Arm-A DTOs — closing the symmetry loop the other way.
+  trend), consuming the Arm-A DTOs — closing the symmetry loop the other way. **Forensic screen +
+  entry points DONE:** the `/document/<c>/<s>/<name>` screen renders the `DocumentReportDto`; the
+  report entry-list links each row to it; and the **service-overview now carries a "Look up an
+  article" shortcut** — the human twin of the agent `GET /api/corpus/<c>/<svc>/document/<name>` +
+  `cortex document`, so a human can jump straight to one article's forensics by id instead of
+  drilling the severity→category→what ladder. The shortcut degrades without JS (a plain-GET
+  `/document/<c>/<s>?name=<id>` → **303** to the canonical path URL, `document_lookup_redirect`).
 
 **Why this order:** A unlocks B1 and C3 for free (shared DTOs), and A1 is both the highest-value
 agent question and the single biggest current gap. B2 and C1/C2 are independent polish that can

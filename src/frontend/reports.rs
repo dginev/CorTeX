@@ -14,6 +14,7 @@
 //! both reflect the same rollup, so humans and agents see the same numbers.
 
 use rocket::http::Status;
+use rocket::response::Redirect;
 use rocket::serde::json::Json;
 use rocket::{Route, State};
 use rocket_dyn_templates::Template;
@@ -377,6 +378,30 @@ pub fn document_report_page(
   ))
 }
 
+/// Query-style entry to the per-article forensic screen: `GET
+/// /document/<corpus>/<service>?name=<id>` → **303** to the canonical path URL
+/// `/document/<corpus>/<service>/<id>`. This is the **no-JS fallback** target for the
+/// service-overview "look up an article" form (the JS enhancement navigates to the path URL
+/// directly), so a human can jump to one article's forensics by id without drilling the report
+/// ladder — even with scripting off. `400` on a blank `name`; the document itself is validated at
+/// the path route (`404` there if unknown).
+#[get("/document/<corpus>/<service>?<name>")]
+pub fn document_lookup_redirect(
+  corpus: &str,
+  service: &str,
+  name: Option<&str>,
+) -> Result<Redirect, Status> {
+  let trimmed = name.unwrap_or("").trim();
+  if trimmed.is_empty() {
+    return Err(Status::BadRequest);
+  }
+  Ok(Redirect::to(uri!(document_report_page(
+    corpus = corpus,
+    service = service,
+    name = trimmed
+  ))))
+}
+
 /// Acknowledgement of a rerun: the scope that was marked and who marked it.
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct RerunAckDto {
@@ -716,6 +741,7 @@ pub fn routes() -> Vec<Route> {
     category_service_report_all,
     what_service_report,
     what_service_report_all,
-    document_report_page
+    document_report_page,
+    document_lookup_redirect
   ]
 }

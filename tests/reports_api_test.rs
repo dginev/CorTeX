@@ -421,6 +421,30 @@ fn document_forensics_reports_status_and_messages() {
     "info messages are tucked into a collapsed <details>, out of the lead table"
   );
 
+  // The no-JS lookup shortcut: GET /document/<c>/<s>?name=<id> redirects to the canonical path URL,
+  // so the service-overview "look up an article" form reaches the forensic screen with scripting
+  // off.
+  let response = client
+    .get(format!(
+      "/document/{CORPUS_NAME}/{SERVICE_NAME}?name=0801.1234"
+    ))
+    .dispatch();
+  assert!(
+    (300..400).contains(&response.status().code),
+    "document lookup redirects (3xx), got {}",
+    response.status().code
+  );
+  assert_eq!(
+    response.headers().get_one("Location"),
+    Some(format!("/document/{CORPUS_NAME}/{SERVICE_NAME}/0801.1234").as_str()),
+    "redirect points at the canonical path URL"
+  );
+  // A blank id is a 400 — no silent redirect to an empty document path.
+  let response = client
+    .get(format!("/document/{CORPUS_NAME}/{SERVICE_NAME}?name="))
+    .dispatch();
+  assert_eq!(response.status(), Status::BadRequest, "blank lookup -> 400");
+
   // Clean up the extra task + its logs.
   diesel::delete(log_warnings::table.filter(log_warnings::task_id.eq(task_id)))
     .execute(&mut backend.connection)
