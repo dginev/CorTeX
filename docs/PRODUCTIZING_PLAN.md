@@ -463,7 +463,8 @@ screen. Status fields are point-in-time as of this draft.
   scoped), and an **Audit log** of who did what. An embedded **API docs** page (RapiDoc over the
   generated OpenAPI).
 - **Agent API:** the whole `/api/**` surface, documented via `utoipa` (`GET /openapi.json`); auth via
-  `Authorization: Bearer <api-token>` for agents and session cookies for humans;
+  an `X-Cortex-Token` header / `?token=` query for agents (the planned `Authorization: Bearer` was
+  simplified to this in the tokens-first implementation) and session cookies for humans;
   `GET /api/me` (current actor); `GET/POST/DELETE /api/tokens`.
 - **Data model:** harvest `admin-ui`'s schema — `users`, `api_tokens` (hashed via `argon2`/
   `password-hash`; or JWT via `jsonwebtoken`), `user_permissions(owner/developer/viewer per

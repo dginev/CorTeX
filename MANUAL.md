@@ -75,7 +75,8 @@ Two ways to authenticate as an admin; both resolve to a **server-side session** 
   **`/admin/passkeys`** once signed in; thereafter sign in with your device authenticator. See
   [`docs/archive/WEBAUTHN_DESIGN.md`](docs/archive/WEBAUTHN_DESIGN.md).
 - **Admin token** — the bootstrap / break-glass path (and the credential agents use). Created by
-  `set-admin-token`; presented as a `?token=…` query param or `Authorization` header. Each token maps
+  `set-admin-token`; presented as an **`X-Cortex-Token: <token>`** header **or** a `?token=…` query
+  param (these are the only two the guard reads — *not* `Authorization`/`Bearer`). Each token maps
   to an **owner** that is threaded into the audit log as the actor.
 
 Sign in at **`/admin/login`**. A GET screen that needs authorization redirects an anonymous visitor to

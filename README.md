@@ -36,7 +36,8 @@ cargo run --bin cortex -- doctor                                # verify: => hea
 cargo run --bin frontend                                        # serves http://127.0.0.1:8000
 ```
 
-**Admin token & secrets**: writes and the `/admin` sign-in are gated by a bearer token mapped to an
+**Admin token & secrets**: writes and the `/admin` sign-in are gated by an admin token (sent as an
+`X-Cortex-Token` header or `?token=` query) mapped to an
 owner (`rerun_tokens`). Tokens live in a **gitignored token file** — the default is `config.json` in
 the working directory (the tracked `config.default.json` is a *demo template only*, never your real
 token), scaffolded/managed by `cortex set-admin-token`. To keep a **production** token out of the

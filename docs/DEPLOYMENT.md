@@ -102,7 +102,7 @@ scrape_configs:
   - job_name: cortex
     metrics_path: /metrics
     params:
-      token: ["<an admin token>"]   # or set an Authorization-style X-Cortex-Token header
+      token: ["<an admin token>"]   # or send it as an "X-Cortex-Token: <token>" header
     static_configs:
       - targets: ["cortex:8000"]
 ```
