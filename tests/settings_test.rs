@@ -73,17 +73,25 @@ fn put_api_config_merges_and_persists() {
   let response = client
     .put("/api/config")
     .header(ContentType::JSON)
-    .body(r#"{"dispatcher":{"queue_size":4242}}"#)
+    .body(r#"{"dispatcher":{"queue_size":4242},"jobs":{"stale_timeout_seconds":12345}}"#)
     .dispatch();
   assert_eq!(response.status(), Status::Ok);
 
   let body: serde_json::Value = response.into_json().expect("a JSON body");
   assert_eq!(body["dispatcher"]["queue_size"], 4242);
+  assert_eq!(
+    body["jobs"]["stale_timeout_seconds"], 12345,
+    "the jobs stall-reap threshold merges + is returned (agent write path)"
+  );
 
   let written = std::fs::read_to_string(&path).expect("config file written");
   assert!(
     written.contains("4242"),
     "persisted toml must contain the new value"
+  );
+  assert!(
+    written.contains("12345"),
+    "the jobs stall-reap threshold is persisted"
   );
   assert!(
     !written.contains("rerun_tokens"),
@@ -99,6 +107,7 @@ fn post_settings_form_persists_and_redirects() {
   let form = "dispatcher_source_port=51695&dispatcher_result_port=51696\
               &dispatcher_queue_size=4242&dispatcher_message_size=100000\
               &dispatcher_max_in_flight=5000&dispatcher_report_refresh_interval_seconds=7200\
+              &jobs_stale_timeout_seconds=10800\
               &assets_template_dir=templates&assets_public_dir=public";
   let response = client
     .post("/settings")
@@ -118,6 +127,10 @@ fn post_settings_form_persists_and_redirects() {
   assert!(
     written.contains("7200"),
     "the report-refresh interval is editable + persisted"
+  );
+  assert!(
+    written.contains("10800"),
+    "the jobs stall-reap threshold is editable from the form + persisted"
   );
 }
 

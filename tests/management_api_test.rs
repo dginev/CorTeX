@@ -55,6 +55,12 @@ fn get_api_config_returns_masked_contract() {
   );
   assert!(body["assets"]["template_dir"].is_string());
   assert!(body["assets"]["public_dir"].is_string());
+  // The operator-tunable background-job stall-reap threshold is exposed (so the agent + settings UI
+  // can read/manage it, not just hand-edit the file — KNOWN_ISSUES W-4 is fully surfaced).
+  assert!(
+    body["jobs"]["stale_timeout_seconds"].is_number(),
+    "jobs.stale_timeout_seconds must be in the config contract"
+  );
   assert!(body["auth"]["rerun_token_count"].is_number());
   // The removed captcha secret is gone from the contract (bot protection is a deployment concern).
   assert!(

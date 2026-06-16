@@ -28,7 +28,7 @@ use rocket_dyn_templates::{context, Template};
 use serde::Serialize;
 
 use crate::backend::DbPool;
-use crate::config::{config, AssetsConfig, CortexConfig, DispatcherConfig};
+use crate::config::{config, AssetsConfig, CortexConfig, DispatcherConfig, JobsConfig};
 use crate::frontend::actor::{
   require_admin, require_admin_to, Actor, AdminReject, AdminSession, ReturnTo,
 };
@@ -59,6 +59,8 @@ pub struct ConfigDto {
   pub dispatcher: DispatcherConfig,
   /// On-disk asset locations.
   pub assets: AssetsConfig,
+  /// Background-job lifecycle settings (the stall-reap threshold).
+  pub jobs: JobsConfig,
   /// Auth settings (secrets masked).
   pub auth: AuthDto,
   /// Passkey (WebAuthn) sign-in settings (non-secret: enabled flag + relying-party id/origin).
@@ -74,6 +76,7 @@ impl ConfigDto {
       },
       dispatcher: cfg.dispatcher.clone(),
       assets: cfg.assets.clone(),
+      jobs: cfg.jobs.clone(),
       auth: AuthDto {
         rerun_token_count: cfg.auth.rerun_tokens.len(),
       },
@@ -252,6 +255,8 @@ pub struct SettingsForm {
   /// How often (seconds) the finalize thread refreshes the report rollup (the freshness
   /// guarantee).
   pub dispatcher_report_refresh_interval_seconds: u64,
+  /// Job stall-reap threshold (seconds): a non-terminal job silent this long is reaped as hung.
+  pub jobs_stale_timeout_seconds: i64,
   /// Template directory.
   pub assets_template_dir: String,
   /// Public assets directory.
@@ -537,6 +542,7 @@ pub fn post_settings(
       "max_in_flight": f.dispatcher_max_in_flight,
       "report_refresh_interval_seconds": f.dispatcher_report_refresh_interval_seconds,
     },
+    "jobs": { "stale_timeout_seconds": f.jobs_stale_timeout_seconds },
     "assets": { "template_dir": f.assets_template_dir, "public_dir": f.assets_public_dir },
   });
   merge_and_persist(&patch, &config_file.0)?;

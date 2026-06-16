@@ -29,6 +29,16 @@
     </fieldset>
 
     <fieldset>
+      <legend>Background jobs</legend>
+      <label for="jst">Stall-reap threshold (seconds)</label>
+      <input id="jst" name="jobs_stale_timeout_seconds" type="number" min="1"
+        value="{{ config.jobs.stale_timeout_seconds }}">
+      <p class="muted">A non-terminal job whose progress heartbeat stays silent this long is reaped as
+        hung (marked <code>interrupted</code>). Raise it if you run long single-statement jobs (e.g. a
+        multi-hour <code>REINDEX</code>) that don't heartbeat between steps.</p>
+    </fieldset>
+
+    <fieldset>
       <legend>Assets</legend>
       <label for="tpl">Template directory</label>
       <input id="tpl" name="assets_template_dir" type="text" value="{{ config.assets.template_dir }}">
