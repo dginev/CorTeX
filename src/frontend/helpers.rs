@@ -174,7 +174,7 @@ pub fn decorate_uri_encodings(context: &mut TemplateContext) {
   for (subkey, subval) in &context.global {
     uri_decorations.push((
       subkey.to_string() + "_uri",
-      uri_escape(Some(subval.to_string())).unwrap(),
+      uri_escape(Some(subval.to_string())).unwrap_or_default(),
     ));
   }
   for (decoration_key, decoration_val) in uri_decorations {

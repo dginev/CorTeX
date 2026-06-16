@@ -168,10 +168,10 @@ pub fn serve_report(
         template = "report";
       } else if category.is_none() {
         // Severity-level report
-        global.insert("severity".to_string(), severity.clone().unwrap());
+        global.insert("severity".to_string(), severity.clone().unwrap_or_default());
         global.insert(
           "highlight".to_string(),
-          severity_highlight(&severity.clone().unwrap()).to_string(),
+          severity_highlight(&severity.clone().unwrap_or_default()).to_string(),
         );
         let no_problem_kind = match severity {
           Some(ref s) => s == "no_problem",
@@ -200,13 +200,13 @@ pub fn serve_report(
         };
       } else if what.is_none() {
         // Category-level report
-        global.insert("severity".to_string(), severity.clone().unwrap());
+        global.insert("severity".to_string(), severity.clone().unwrap_or_default());
         global.insert(
           "highlight".to_string(),
-          severity_highlight(&severity.clone().unwrap()).to_string(),
+          severity_highlight(&severity.clone().unwrap_or_default()).to_string(),
         );
-        global.insert("category".to_string(), category.clone().unwrap());
-        let no_messages_kind = category.is_some() && (category.as_ref().unwrap() == "no_messages");
+        global.insert("category".to_string(), category.clone().unwrap_or_default());
+        let no_messages_kind = category.as_deref() == Some("no_messages");
         let fetched_report = task_report(
           connection,
           &mut global,
@@ -230,13 +230,13 @@ pub fn serve_report(
         };
       } else {
         // What-level report
-        global.insert("severity".to_string(), severity.clone().unwrap());
+        global.insert("severity".to_string(), severity.clone().unwrap_or_default());
         global.insert(
           "highlight".to_string(),
-          severity_highlight(&severity.clone().unwrap()).to_string(),
+          severity_highlight(&severity.clone().unwrap_or_default()).to_string(),
         );
-        global.insert("category".to_string(), category.clone().unwrap());
-        global.insert("what".to_string(), what.clone().unwrap());
+        global.insert("category".to_string(), category.clone().unwrap_or_default());
+        global.insert("what".to_string(), what.clone().unwrap_or_default());
         let entries = task_report(
           connection,
           &mut global,
