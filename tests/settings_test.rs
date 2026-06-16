@@ -123,7 +123,11 @@ fn post_settings_form_persists_and_redirects() {
     "a form save should redirect, got {}",
     response.status()
   );
-  assert_eq!(response.headers().get_one("Location"), Some("/settings"));
+  // The post-redirect-get carries `?saved=true` so the reloaded screen flashes a save confirmation.
+  assert_eq!(
+    response.headers().get_one("Location"),
+    Some("/settings?saved=true")
+  );
 
   let written = std::fs::read_to_string(&path).expect("config file written");
   assert!(written.contains("4242"));

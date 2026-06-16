@@ -2,6 +2,9 @@
 <div class="col-md-2"></div>
 <div class="col-md-8 config-page">
   <h1>Configuration</h1>
+  {% if saved %}
+  <p class="flash-saved"><i class="fa fa-check-circle"></i>&nbsp;Configuration saved — restart the affected process(es) for the changes to take effect.</p>
+  {% endif %}
   <p class="muted">Changes are saved to the configuration file and take effect on restart. Secrets
     are masked and edited out-of-band (<code>.env</code> / <code>config.json</code>).</p>
 
@@ -14,27 +17,27 @@
     <fieldset>
       <legend>Dispatcher</legend>
       <label for="src">Source port</label>
-      <input id="src" name="dispatcher_source_port" type="number" value="{{ config.dispatcher.source_port }}">
+      <input id="src" name="dispatcher_source_port" type="number" min="1" max="65535" required value="{{ config.dispatcher.source_port }}">
       <label for="res">Result port</label>
-      <input id="res" name="dispatcher_result_port" type="number" value="{{ config.dispatcher.result_port }}">
+      <input id="res" name="dispatcher_result_port" type="number" min="1" max="65535" required value="{{ config.dispatcher.result_port }}">
       <label for="q">Queue size</label>
-      <input id="q" name="dispatcher_queue_size" type="number" value="{{ config.dispatcher.queue_size }}">
+      <input id="q" name="dispatcher_queue_size" type="number" min="1" required value="{{ config.dispatcher.queue_size }}">
       <label for="m">Message size (bytes)</label>
-      <input id="m" name="dispatcher_message_size" type="number" value="{{ config.dispatcher.message_size }}">
+      <input id="m" name="dispatcher_message_size" type="number" min="1" required value="{{ config.dispatcher.message_size }}">
       <label for="mif">Max in-flight (backpressure threshold)</label>
-      <input id="mif" name="dispatcher_max_in_flight" type="number" value="{{ config.dispatcher.max_in_flight }}">
+      <input id="mif" name="dispatcher_max_in_flight" type="number" min="1" required value="{{ config.dispatcher.max_in_flight }}">
       <label for="mrb">Max result archive size (bytes)</label>
-      <input id="mrb" name="dispatcher_max_result_bytes" type="number" min="1"
+      <input id="mrb" name="dispatcher_max_result_bytes" type="number" min="1" required
         value="{{ config.dispatcher.max_result_bytes }}">
       <label for="rri">Report refresh interval (seconds)</label>
-      <input id="rri" name="dispatcher_report_refresh_interval_seconds" type="number"
+      <input id="rri" name="dispatcher_report_refresh_interval_seconds" type="number" min="1" required
         value="{{ config.dispatcher.report_refresh_interval_seconds }}">
     </fieldset>
 
     <fieldset>
       <legend>Background jobs</legend>
       <label for="jst">Stall-reap threshold (seconds)</label>
-      <input id="jst" name="jobs_stale_timeout_seconds" type="number" min="1"
+      <input id="jst" name="jobs_stale_timeout_seconds" type="number" min="1" required
         value="{{ config.jobs.stale_timeout_seconds }}">
       <p class="muted">A non-terminal job whose progress heartbeat stays silent this long is reaped as
         hung (marked <code>interrupted</code>). Raise it if you run long single-statement jobs (e.g. a
@@ -44,9 +47,9 @@
     <fieldset>
       <legend>Assets</legend>
       <label for="tpl">Template directory</label>
-      <input id="tpl" name="assets_template_dir" type="text" value="{{ config.assets.template_dir }}">
+      <input id="tpl" name="assets_template_dir" type="text" required value="{{ config.assets.template_dir }}">
       <label for="pubdir">Public directory</label>
-      <input id="pubdir" name="assets_public_dir" type="text" value="{{ config.assets.public_dir }}">
+      <input id="pubdir" name="assets_public_dir" type="text" required value="{{ config.assets.public_dir }}">
     </fieldset>
 
     <button type="submit">Save configuration</button>

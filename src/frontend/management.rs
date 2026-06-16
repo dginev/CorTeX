@@ -508,8 +508,9 @@ pub fn health_page(
 /// The Settings page: the human (HTML) twin of `GET /api/config`. **Signed-in admins only**
 /// (unauthenticated → sign-in page); the agent twin keeps the token guard.
 #[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
-#[get("/settings")]
+#[get("/settings?<saved>")]
 pub fn settings(
+  saved: Option<bool>,
   session: Option<AdminSession>,
   return_to: ReturnTo,
 ) -> Result<Template, AdminReject> {
@@ -518,9 +519,12 @@ pub fn settings(
     "title": "Configuration",
     "description": "CorTeX framework configuration",
   });
+  // `?saved=true` (set by the post-redirect-get after a successful save) flashes a confirmation, so
+  // the admin gets feedback on the write instead of a silent reload — the same pattern as the
+  // retention screen's `?pruned`.
   Ok(Template::render(
     "settings",
-    context! { global, config: ConfigDto::from_config(config()) },
+    context! { global, config: ConfigDto::from_config(config()), saved: saved.unwrap_or(false) },
   ))
 }
 
@@ -574,7 +578,7 @@ pub fn post_settings(
     "assets": { "template_dir": f.assets_template_dir, "public_dir": f.assets_public_dir },
   });
   merge_and_persist(&patch, &config_file.0)?;
-  Ok(Redirect::to("/settings"))
+  Ok(Redirect::to("/settings?saved=true"))
 }
 
 /// Acknowledgement for a maintenance job: the background [`crate::jobs`] handle to poll.

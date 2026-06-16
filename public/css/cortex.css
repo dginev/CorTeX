@@ -697,6 +697,20 @@ h1 {
   color: var(--warn);
 }
 
+/* Success flash (e.g. "Configuration saved") — an ok-tinted callout confirming a write, the feedback
+   half of a post-redirect-get so a consequential save isn't a silent reload. */
+.flash-saved {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.85rem;
+  border-left: 3px solid var(--ok);
+  background-color: color-mix(in srgb, var(--ok) 12%, var(--bg-elev));
+  border-radius: 3px;
+  color: var(--ink);
+}
+.flash-saved .fa-check-circle {
+  color: var(--ok);
+}
+
 /* #report-div is visible by default (graceful degradation — the report shows even if the CDN jQuery
    that drives the live rerun-progress overlay fails to load); progress_report.js only *adds* to it. */
 
