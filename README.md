@@ -20,7 +20,7 @@
  - [x] Centralized storage, with distributed computing, motivated to enable collaborations across institutional and national borders.
  - [x] Routinely tested on 1 million scientific TeX papers from arXiv.org
  - [x] **Self-installing**: `cortex init` / `doctor` (embedded migrations, runtime config, health check)
- - [x] **Agent-first API**: every human screen has a 1:1 JSON twin, with generated OpenAPI docs at `/api/docs`
+ - [x] **Agent-first & symmetric**: every capability on three surfaces — web UI, agent JSON API (OpenAPI at `/api/docs`), and the scriptable `cortex` CLI — from one shared backend, so all see the same live + historical state
  - [x] **Observability**: background-job health, `/health` + Prometheus `/metrics`, an audit log of every admin action
  - [x] **Local authentication**: passkeys (WebAuthn) + admin tokens, server-side sessions
  - [ ] Annotations backend and workflow (TODO)
