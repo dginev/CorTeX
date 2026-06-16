@@ -270,6 +270,8 @@ cortex jobs              # list recent background jobs (imports/reruns/reindex) 
 cortex jobs --active     # only pending/running jobs; --json mirrors the agent /api/jobs JobDto list
 cortex audit             # the accountability log: who did what, when (rerun/import/delete/config…) + outcome
 cortex audit --actor bob # filter to one actor; --json mirrors the agent /api/audit AuditDto list
+cortex corpora           # list registered corpora (public_id handle, name, doc count) — discover the names other commands take
+cortex services          # list the service registry (public_id, name, version, in→out); --json mirrors the agent /api/{corpora,services}
 ```
 
 `status` shows *what's happening now* (the same numbers as the dashboard + `/metrics`); `doctor`
