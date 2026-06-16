@@ -205,17 +205,49 @@ separately; delete a corpus only through the app (orphan-free cascade), never a 
 
 ## 13. Agent API
 
-Tokens carry an owner identity into the audit log. Examples:
+Every human screen has a 1:1 JSON twin under `/api`. **Reads are open; mutations need a token**
+(`X-Cortex-Token: $TOKEN` header or `?token=$TOKEN`, carrying an owner identity into the audit log).
+Enumerate the surface at **`/api`**, browse the generated typed contract at **`/api/docs`** (raw spec
+at `/api/openapi.json`).
 
 ```bash
 TOKEN=…   # an admin/API token from `set-admin-token`
+curl -s localhost:8000/api | jq .                                  # capability index (every endpoint)
 curl -s localhost:8000/api/jobs?active=true | jq .                 # pending background jobs
 curl -s localhost:8000/api/runs?limit=20 | jq .                    # recent runs across the system
-curl -s "localhost:8000/api/runs/arxiv/tex_to_html/diff?previous=3&current=4" | jq .
-curl -s -X DELETE "localhost:8000/api/services/old_svc?confirm=old_svc&token=$TOKEN"
 ```
 
-Browse the full, generated contract at **`/api/docs`**.
+**Workflow A — forensic drill-down (macro → micro).** Walk the report ladder to find *which* papers
+carry an issue, then read one paper's messages — the agent twin of clicking down the report screens.
+
+```bash
+C=arxmliv S=tex_to_html
+curl -s localhost:8000/api/reports/$C/$S | jq '{total, statuses}'                 # overview: per-status totals
+curl -s localhost:8000/api/reports/$C/$S/warning | jq '.categories[:5]'           # severity → top categories
+curl -s localhost:8000/api/reports/$C/$S/warning/not_parsed | jq '.whats[:5]'     # category → top `what`s
+curl -s "localhost:8000/api/reports/$C/$S/warning/not_parsed/%3EOPEN" | jq '.entries[:5]'  # → affected paper ids
+curl -s localhost:8000/api/corpus/$C/$S/document/astro-ph0001001 | jq '{status, message_counts}'  # one paper's forensics
+```
+
+**Workflow B — improvement campaign (measure a change's effect on conversion rates).** Capture a
+baseline, re-queue a filtered slice for reconversion, watch the run fill in, then diff to quantify
+the macro effect — the owner's "how did this development change move the conversion rates" loop.
+
+```bash
+# 1. Snapshot the current per-task statuses as a baseline (append-only; enables the per-task diff later).
+curl -s -X POST -H "X-Cortex-Token: $TOKEN" localhost:8000/api/corpora/$C/services/$S/snapshot | jq .
+# 2. Re-queue a slice — opens a NEW historical run and marks the matching tasks TODO for the fleet.
+curl -s -X POST -H "X-Cortex-Token: $TOKEN" \
+  "localhost:8000/api/reports/$C/$S/rerun?severity=fatal&description=retry+fatals+after+parser+fix" | jq .
+# 3. Watch the open run fill in as the dispatcher reconverts (live tallies).
+curl -s localhost:8000/api/runs/$C/$S/current | jq '{total, no_problem, error, fatal, in_progress}'
+# 4. Once complete, diff the new run against the prior one to see what moved (did fatals drop?).
+curl -s localhost:8000/api/runs/$C/$S | jq 'map(.id) | .[0:2]'                    # the two newest run ids
+curl -s "localhost:8000/api/runs/$C/$S/diff?previous=<old>&current=<new>" | jq .
+```
+
+The CLI (§14) mirrors every step one-to-one (`cortex report … --json`, `cortex document`,
+`cortex snapshot`, `cortex rerun --yes`, `cortex runs`), so the same workflows run from a terminal.
 
 ## 14. Command-line management (CLI)
 
