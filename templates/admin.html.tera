@@ -25,8 +25,8 @@
       <div class="muted"><a href="/jobs">active jobs</a></div>
     </div>
     <div class="admin-card">
-      <div class="stat-number" id="stat-workers">{{ status.workers_in_flight }} / {{ status.workers_total }}</div>
-      <div class="muted"><a href="/services">workers in&nbsp;flight</a></div>
+      <div class="stat-number" id="stat-workers">{{ status.workers_total }}</div>
+      <div class="muted"><a href="/services">workers</a> · <span id="stat-leased">{{ status.workers_in_flight }}</span>&nbsp;<abbr title="Tasks dispatched but not yet returned (leased to workers). ≈ in-flight while the dispatcher is running; a cumulative lifetime shortfall on an idle deployment, so don't read it as live in-flight work.">leased</abbr></div>
     </div>
     <div class="admin-card">
       <div class="stat-number" id="stat-todo">{{ status.tasks_todo }}</div>
@@ -109,7 +109,7 @@
     if (label) label.textContent = 'live';
     set('stat-corpora', s.corpus_count);
     set('stat-jobs', s.active_jobs); flag('stat-jobs', 'status-ok', s.active_jobs > 0);
-    set('stat-workers', s.workers_in_flight + ' / ' + s.workers_total);
+    set('stat-workers', s.workers_total); set('stat-leased', s.workers_in_flight);
     set('stat-todo', s.tasks_todo);
     set('stat-failed', s.jobs_failed_recent); flag('stat-failed', 'status-warn', s.jobs_failed_recent > 0);
     set('stat-sessions', s.active_sessions);

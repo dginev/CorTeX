@@ -131,8 +131,12 @@ pub fn metrics(_caller: Actor, pool: &State<DbPool>) -> (ContentType, String) {
         );
         gauge(
           &mut out,
+          // NB: metric name kept stable for existing scrapers/dashboards even though it overstates
+          // the semantics — this is the lifetime dispatched−returned gap (KNOWN_ISSUES P-3), ≈
+          // in-flight only while the dispatcher is live; on an idle deployment it is a cumulative
+          // lifetime shortfall, not current work. The human surfaces label it "leased" accordingly.
           "cortex_workers_in_flight_total",
-          "Dispatched-but-not-yet-returned tasks summed across the fleet (backlog signal).",
+          "Tasks dispatched but not yet returned (leased), summed across the fleet. ~= in-flight while the dispatcher runs; a cumulative lifetime shortfall on an idle deployment.",
           in_flight,
         );
       }
