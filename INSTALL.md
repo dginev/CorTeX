@@ -25,6 +25,10 @@ CorTeX is three cooperating processes plus two backing services:
 Document **bytes** live on a shared filesystem (a task's `entry` is an absolute path); the database
 stores only metadata and pointers.
 
+Administration — install, corpus/service setup, reports, reruns, snapshots, dataset export — is
+driven by the **`cortex` CLI** (`cargo run --bin cortex -- <command>`), and every command is equally
+available as a web dashboard action and a `/api` endpoint. See [`MANUAL.md`](MANUAL.md).
+
 ## 1. Prerequisites
 
 - **OS:** Linux (tested on Ubuntu 26.04). `sudo` access for the system packages.
@@ -182,9 +186,25 @@ cargo run --release --example tex_to_html_worker
 ```
 
 Open the frontend (default Rocket address `http://127.0.0.1:8000`) to see the corpora overview.
-To stand up your first corpus and service today, see the example drivers in `examples/`
-(`tex_to_html_import.rs`, `register_service.rs`) — these CLI workflows are being promoted to
-first-class screens + API in the productization sprint (plan Arms 5–6).
+
+**Stand up your first corpus + service** — entirely from the `cortex` CLI (this supersedes the old
+`examples/` drivers; the CLI is now the supported, first-class path, equally available as web screens
+and `/api` endpoints):
+
+```bash
+# 1) define a conversion service (only the built-in init/import services are seeded)
+cargo run --release --bin cortex -- create-service tex_to_html --inputformat tex --outputformat html
+# 2) register a corpus and import its documents (one import task per document)
+cargo run --release --bin cortex -- import arxmliv /data/arxmliv
+# 3) queue one conversion task per document for the service
+cargo run --release --bin cortex -- activate arxmliv tex_to_html
+```
+
+With the dispatcher + at least one worker running (above), the queued tasks now convert. Watch
+progress with `cortex status` (or `cortex report arxmliv tex_to_html`), or the dashboard at `/admin`.
+As the corpus grows, `cortex extend arxmliv` re-scans the path for newly-arrived documents. The full
+command surface — reports, reruns, snapshots, sandboxes, dataset export, teardown — is in
+[`MANUAL.md`](MANUAL.md) §14; every command has a 1:1 web screen and `/api` endpoint.
 
 ## 8. Database tuning for large datasets
 
