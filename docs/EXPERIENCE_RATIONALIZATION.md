@@ -50,9 +50,9 @@ from *two* surfaces to *three* (add the CLI). The corollary that drives sequenci
 |---|---|---|---|
 | Reports: severity → category → `what` | ✓ | ✓ JSON | ✗ |
 | Run list / current / **diff** / changed-tasks | ✓ | ✓ JSON | ✗ |
-| **Per-article forensics** ("errors of this article") | partial (`/preview`) | **✗ gap** | ✗ |
-| **Macro history trend** (rate over time) | ✓ Vega chart | partial (per-run only) | ✗ |
-| Top-of-service severity summary (`progress_report`) | ✓ | **✗ gap** (`/api/reports/<c>/<s>`) | ✗ |
+| **Per-article forensics** ("errors of this article") | partial (`/preview`) | ✓ **A1 landed** | ✗ |
+| **Macro history trend** (rate over time) | ✓ Vega chart | ✓ (via `/api/runs/<c>/<s>` tallies) | ✗ |
+| Top-of-service severity summary (`progress_report`) | ✓ | ✓ **A3 landed** (`/api/reports/<c>/<s>`) | ✗ |
 | Rerun / reconvert (filtered) | ✓ | ✓ | ✗ |
 | Extend corpus | ✓ | ✓ | ✗ |
 | Sandbox via filter | ✓ | ✓ | ✗ |
@@ -70,18 +70,19 @@ already shipped — the work is *projection + gap-fill*, not new pipelines.
 ### Arm A — Agent forensic + trend completeness (direction 5 core; the keystone)
 Make the agentic loop tight: transparent overview → drill to forensic detail → act, all as
 discoverable JSON DTOs (each also the future HTML/CLI source).
-- **A1 — Per-article forensics (L2, highest value).** `GET /api/corpus/<c>/<service>/document/<id>`
-  → the article's status across the service + **the specific log messages** (severity/category/what +
-  the `cortex.log` evidence). Answers "what are the errors of this article?" in one call. Shares the
-  backend with the web `serve_entry`/`/preview` path. (Decision D-A1: address a document by its
-  `tasks.entry` path vs a stable id — see §5.)
-- **A2 — Macro trend series (L0).** `GET /api/corpus/<c>/<service>/history/stats` → the typed
-  time-series of per-run severity tallies + conversion rate the Vega page already plots. Answers
-  "how have rates moved over time?".
-- **A3 — Service overview entry point (L1 top).** `GET /api/reports/<c>/<service>` → the
-  `progress_report` severity summary (the missing top rung of the report ladder), so an agent gets
-  "how is this (corpus, service) doing?" without guessing a severity. The discoverable hub that links
-  down to A1 and across to runs/diffs.
+- **A1 — Per-article forensics (L2, highest value). ✅ LANDED.** `GET
+  /api/corpus/<c>/<service>/document/<name>` → `DocumentReportDto`: the article's status + every log
+  message (`MessageDto`: severity/category/what/details) + result/preview links. Answers "what are the
+  errors of this article?" in one call. `<name>` is the document short name (D-A1 resolved, §5).
+- **A2 — Macro trend series (L0). ✅ ALREADY COVERED — no new endpoint.** `GET
+  /api/runs/<c>/<service>` already returns each run's full per-severity tallies (`RunDto`: total /
+  no_problem / warning / error / fatal / invalid / in_progress) + start/end timestamps + description.
+  That **is** the historical conversion-rate series ("what was done → resulting rates", per run); an
+  agent reads the trend (and the per-run rates, one division off the tallies) straight from it.
+- **A3 — Service overview entry point (L1 top). ✅ LANDED.** `GET /api/reports/<c>/<service>` →
+  `ServiceOverviewDto` (total + per-status `StatusCountDto{tasks, percent}`), the missing top rung —
+  "how is this (corpus, service) doing?" without guessing a severity. The status keys double as the
+  `<severity>` drill-down segment. Shares `progress_report` with the HTML top screen (same numbers).
 - **A4 — Management ergonomics + discoverability.** Confirm rerun/extend/sandbox are ergonomic and
   documented in the OpenAPI; add a filtered-reconvert shorthand if the report→rerun round-trip is
   clumsy. Export dataset gets an agent endpoint (currently CLI-only).
