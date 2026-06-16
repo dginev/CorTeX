@@ -405,9 +405,15 @@ hr {
 /* Per-article forensic screen — a wider centered column than `.report` (the message tables carry
    long `details`), plus the severity summary line + the collapsed `info` noise. */
 .document-report-page {
-  width: 85%;
-  margin: 0 auto;
-  padding: 1rem;
+  /* Break out of the Bootstrap `.container` (~1170px cap) — a forensic log table wants the width.
+     `left:50%` + `translateX(-50%)` centres a 92vw (≤1700px) block on the viewport regardless of the
+     narrower centred container it lives in. */
+  width: 92vw;
+  max-width: 1700px;
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1rem 1.5rem;
 }
 .severity-summary {
   margin: 0.25rem 0 1rem;
@@ -420,10 +426,9 @@ details.info-messages > summary {
   color: var(--ink-muted);
   padding: 0.4rem 0;
 }
-/* Forensic message tables: the base `.table` is `white-space: nowrap`, so the long `details` text
-   would blow the table past the centered column. Use a fixed layout (column widths come from the
-   `<colgroup>` in the template) so the short severity/category/what columns stay tight and the
-   `details` column takes the remaining width and wraps. */
+/* Forensic message tables: fixed layout with percentage column widths (from the `<colgroup>` in the
+   template) so they fill the wide column predictably — `details` gets ~two-thirds and wraps within
+   it, while the auto-sizing-to-max-content overflow (long log lines) is avoided. */
 .message-table {
   table-layout: fixed;
   width: 100%;
@@ -432,8 +437,9 @@ details.info-messages > summary {
 .message-table > tbody > tr > td {
   white-space: normal;
   vertical-align: top;
+  overflow-wrap: break-word;
 }
-.message-table td code {
+.message-table td:last-child code {
   white-space: pre-wrap;
   overflow-wrap: break-word;
 }

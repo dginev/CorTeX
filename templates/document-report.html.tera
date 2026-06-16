@@ -39,7 +39,7 @@
   {% if actionable > 0 %}
   <table class="table report-table message-table" id="document-messages">
     <colgroup>
-      <col style="width:7rem"><col style="width:9rem"><col style="width:16rem"><col>
+      <col style="width:8%"><col style="width:11%"><col style="width:17%"><col style="width:64%">
     </colgroup>
     <thead>
       <tr>
@@ -69,7 +69,7 @@
     <summary>{{ info }} info message{{ info | pluralize }} <span class="muted">(loaded files, debug)</span></summary>
     <table class="table report-table message-table">
       <colgroup>
-        <col style="width:9rem"><col style="width:16rem"><col>
+        <col style="width:13%"><col style="width:22%"><col style="width:65%">
       </colgroup>
       <thead>
         <tr>
