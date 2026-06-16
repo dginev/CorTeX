@@ -11,6 +11,24 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](../PRODUCTIZING_PLAN.md); the
 
 ## 2026-06-15
 
+- **Arm 15 continued — agent report ladder completed + admin UX (loop active, cron every 5m).**
+  After the live-ops console + plan (below): (2) **A1 per-article forensics** (`c161e15`) — `GET
+  /api/corpus/<c>/<svc>/document/<name>` → `DocumentReportDto`; building it exposed a real ORM bug
+  (the `log_*` row structs declared `String` over `Nullable<Varchar>` columns, so were unloadable) →
+  fixed to `Option<String>` + loaded through `belongs_to(Task)`. (3) **ORM audit + FK associations**
+  (`cd25e78`) on `Task`/`HistoricalRun`/`WorkerMetadata` (code-level, not DB FKs). (4) **A3
+  service-overview hub** (`960a2d1`) — `GET /api/reports/<c>/<svc>` → `ServiceOverviewDto`; A2 (macro
+  trend) already served by `/api/runs` tallies, no new endpoint. (5) **C3 forensic web screen**
+  (`59aeeab`) — HTML twin of A1, info-noise collapsed into a native `<details>`, full-bleed centered
+  wide layout breaking the Bootstrap `.container` cap (layout fixes `3d1d75b`→`175052a`). (6) **C1
+  cohesion** (`7bf9a34`) — repeated inline styles → shared classes; attrs 62→51. (7) **C2 guided
+  workflows** (`f7d991b`) — all 8 job-spawning human handlers redirect to `/jobs/<uuid>` + the job
+  page shows a kind-aware next-step on success. **Also applied the pending
+  `2026-06-15-120000_sandbox_corpora` migration to the prod `cortex_load` showcase DB** (it was one
+  migration behind the branch, so the new build's `Corpus` Queryable failed there — caught by browser
+  test-driving; additive nullable columns, instant, running old prod build verified unaffected). The
+  agent report ladder is now complete: overview → severity → category → what → per-article forensics,
+  each with a human twin. See [[experience-rationalization-program]].
 - **Live ops console (Arm 15 / direction 1) + the five-direction program plan.** Owner expanded the
   "rich admin UX" steer into **five directions** (live ops console, design-system polish, smoother
   workflows, a rich guided CLI, rich agentic workflows) and asked to *rationalize + plan carefully*.
