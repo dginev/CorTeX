@@ -151,8 +151,12 @@ See [`docs/archive/JOB_MODEL.md`](docs/archive/JOB_MODEL.md).
 ## 10. Reports
 
 A corpus/service report drills down by severity and category: corpus overview → severity → category →
-the individual entries and their messages, with a single-entry preview. The agent twin is
-`GET /api/reports/<corpus>/<service>/<severity>[/<category>]` returning the same typed DTO.
+**`what`** → the individual affected documents and their messages, with a single-entry preview. The
+agent mirrors the whole ladder, each rung a typed, paginated DTO:
+`GET /api/reports/<corpus>/<service>` (overview) → `…/<severity>` (categories) → `…/<severity>/<category>`
+(whats) → `…/<severity>/<category>/<what>` (**the entry list — which documents have this issue**), then
+`GET /api/corpus/<corpus>/<service>/document/<name>` for one document's full forensics. So an agent can
+go from a macro count straight to the affected papers and into each one, same as a human clicking through.
 
 ## 11. Managing historical runs
 

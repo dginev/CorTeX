@@ -22,7 +22,8 @@ use serde::Serialize;
 
 use crate::backend::{
   category_rollup, category_total, from_address, progress_report, severity_total, task_messages,
-  what_rollup, DatabaseUrl, DbPool, MessageCounts, ReportSummaryRow, RerunOptions,
+  task_report, what_rollup, DatabaseUrl, DbPool, MessageCounts, ReportSummaryRow, RerunOptions,
+  TaskReportOptions,
 };
 use crate::frontend::actor::{require_admin, Actor, AdminReject, AdminSession};
 use crate::frontend::concerns::serve_report;
@@ -330,6 +331,106 @@ pub fn api_what_report(
     total_tasks,
     total_messages,
     whats,
+  }))
+}
+
+/// One affected document in the entry list: its short name (paper id), task id, and the message
+/// detail that placed it under the queried `(severity, category, what)`.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct EntryRowDto {
+  /// The document's short name (e.g. `0801.1234`) — feed it to
+  /// `GET /api/corpus/<c>/<svc>/document/<name>` for per-article forensics.
+  pub name: String,
+  /// The task id for this document under this service.
+  pub task_id: i64,
+  /// Technical detail of this entry's message for the queried `what` (e.g. localization context).
+  pub details: String,
+}
+
+/// The deepest report rung: the **paginated list of documents** (paper ids) affected by a specific
+/// `(severity, category, what)`. The agent twin of the entry-list screen and the bridge from the
+/// macro `what`-breakdown counts to per-article forensics — "*which* papers have this issue?", so
+/// an agent can enumerate and then drill into each via the document endpoint. Page with
+/// `offset`/`page_size` (default 100, max 1000).
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct EntryListDto {
+  /// Corpus name.
+  pub corpus: String,
+  /// Service name.
+  pub service: String,
+  /// The severity reported on.
+  pub severity: String,
+  /// The category drilled into.
+  pub category: String,
+  /// The `what` drilled into.
+  pub what: String,
+  /// Pagination offset echoed back.
+  pub offset: i64,
+  /// Page size echoed back (the cap actually applied).
+  pub page_size: i64,
+  /// The affected documents for this page.
+  pub entries: Vec<EntryRowDto>,
+}
+
+/// Lists the documents affected by a `(corpus, service, severity, category, what)` — the agent twin
+/// of the deepest report screen (the entry list). Paginated (`offset`/`page_size`, default 100, max
+/// 1000). `400` on an unknown severity, `404` on an unknown corpus/service.
+#[rocket_okapi::openapi(tag = "Reports")]
+#[get("/api/reports/<corpus>/<service>/<severity>/<category>/<what>?<offset>&<page_size>")]
+#[allow(clippy::too_many_arguments)]
+pub fn api_entry_list(
+  corpus: &str,
+  service: &str,
+  severity: &str,
+  category: &str,
+  what: &str,
+  offset: Option<i64>,
+  page_size: Option<i64>,
+  pool: &State<DbPool>,
+) -> Result<Json<EntryListDto>, Status> {
+  if !is_rollup_severity(severity) {
+    return Err(Status::BadRequest);
+  }
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let (corpus_record, service_record) = resolve(corpus, service, &mut connection)?;
+  // Clamp the page so a `?page_size=0` / huge value can't request an unbounded or empty scan.
+  let page_size = page_size.unwrap_or(100).clamp(1, 1000);
+  let offset = offset.unwrap_or(0).max(0);
+  // The entry list is per-task (not a rollup grain), so it comes from the live report path — the
+  // same one the human entry-list screen renders, paginated identically.
+  let rows = task_report(
+    &mut connection,
+    TaskReportOptions {
+      corpus: &corpus_record,
+      service: &service_record,
+      severity_opt: Some(severity.to_string()),
+      category_opt: Some(category.to_string()),
+      what_opt: Some(what.to_string()),
+      all_messages: false,
+      offset,
+      page_size,
+    },
+  );
+  let entries = rows
+    .iter()
+    .map(|row| EntryRowDto {
+      name: row.get("entry_name").cloned().unwrap_or_default(),
+      task_id: row
+        .get("entry_taskid")
+        .and_then(|id| id.parse().ok())
+        .unwrap_or(0),
+      details: row.get("details").cloned().unwrap_or_default(),
+    })
+    .collect();
+  Ok(Json(EntryListDto {
+    corpus: corpus_record.name,
+    service: service_record.name,
+    severity: severity.to_string(),
+    category: category.to_string(),
+    what: what.to_string(),
+    offset,
+    page_size,
+    entries,
   }))
 }
 

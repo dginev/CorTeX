@@ -157,6 +157,45 @@ fn category_and_what_reports_match_seed() {
   assert_eq!(find(whats, "undefined_x")["messages"], 2);
   assert_eq!(find(whats, "undefined_y")["tasks"], 1);
 
+  // --- Entry list: the deepest rung — enumerate the affected documents (the agent's macro→micro
+  // bridge). undefined_x is on tasks A and B, so the list has exactly those 2 documents, each with
+  // a real task id. Was human-only (no agent twin); now `GET …/<severity>/<category>/<what>`.
+  let response = client
+    .get(format!(
+      "/api/reports/{CORPUS_NAME}/{SERVICE_NAME}/warning/math/undefined_x"
+    ))
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  let list: Value = response.into_json().expect("entry list json");
+  assert_eq!(list["what"], "undefined_x");
+  let entries = list["entries"].as_array().expect("entries array");
+  assert_eq!(
+    entries.len(),
+    2,
+    "exactly the two documents (A, B) carrying warning/math/undefined_x"
+  );
+  for entry in entries {
+    assert!(
+      entry["name"].as_str().is_some_and(|name| !name.is_empty()),
+      "each entry has a document name"
+    );
+    assert!(
+      entry["task_id"].as_i64().is_some_and(|id| id > 0),
+      "each entry has a real task id (drill into it via the document endpoint)"
+    );
+  }
+  // An unknown severity at this depth is still a 400, not a silent empty list.
+  assert_eq!(
+    client
+      .get(format!(
+        "/api/reports/{CORPUS_NAME}/{SERVICE_NAME}/bogus/math/undefined_x"
+      ))
+      .dispatch()
+      .status(),
+    Status::BadRequest,
+    "unknown severity on the entry list -> 400"
+  );
+
   // --- Guards ----------------------------------------------------------------------------------
   let response = client
     .get(format!("/api/reports/{CORPUS_NAME}/{SERVICE_NAME}/bogus"))
