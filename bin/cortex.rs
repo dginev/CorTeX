@@ -14,12 +14,12 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 use cortex::backend::{
-  self, default_db_address, export_html_dataset, DatasetExportOutcome, GroupBy,
+  self, default_db_address, export_html_dataset, task_messages, DatasetExportOutcome, GroupBy,
 };
 use cortex::bootstrap::{self, DoctorReport};
 use cortex::config::config_file_path;
 use cortex::helpers::TaskStatus;
-use cortex::models::{Corpus, Service};
+use cortex::models::{Corpus, Service, Task};
 
 #[derive(Parser)]
 #[command(name = "cortex", version, about = "CorTeX administration CLI")]
@@ -63,6 +63,23 @@ enum Command {
     #[arg(long)]
     json: bool,
   },
+  /// Per-article forensics for one document — the CLI twin of the web forensic screen + agent
+  /// `GET /api/corpus/<c>/<svc>/document/<name>`: the document's status + every worker-log
+  /// message.
+  Document {
+    /// Corpus name.
+    corpus: String,
+    /// Service name (e.g. tex_to_html).
+    service: String,
+    /// The document's short name as it appears in reports (e.g. 0801.1234).
+    name: String,
+    /// Include info-level messages (loaded files / debug noise), hidden by default.
+    #[arg(long)]
+    all: bool,
+    /// Emit JSON (the same shape as the agent `DocumentReportDto`) instead of a text table.
+    #[arg(long)]
+    json: bool,
+  },
   /// Bundle a corpus/service's converted HTML into ZIP datasets (replaces the
   /// bundle-html-dataset*.sh scripts). Reads existing result archives off the filesystem.
   ExportDataset {
@@ -95,6 +112,13 @@ fn main() {
       service,
       json,
     } => run_report(corpus, service, json),
+    Command::Document {
+      corpus,
+      service,
+      name,
+      all,
+      json,
+    } => run_document(corpus, service, name, all, json),
     Command::TuneDb => println!("{}", bootstrap::db_tuning_guidance()),
     Command::SetAdminToken {
       token,
@@ -156,6 +180,99 @@ fn run_report(corpus_name: String, service_name: String, json: bool) {
     println!("{} / {}  —  {total} valid tasks", corpus.name, service.name);
     for key in TaskStatus::keys() {
       println!("  {:<12} {:>10}  ({:.2}%)", key, count(&key), percent(&key));
+    }
+  }
+}
+
+/// Prints one document's per-article forensics — the CLI surface of the web forensic screen + agent
+/// `GET /api/corpus/<c>/<svc>/document/<name>` (via the shared `Task::find_by_name` +
+/// `backend::task_messages`). Leads with the status + a severity-count summary, then the actionable
+/// messages; info noise is hidden unless `--all`. `--json` mirrors `DocumentReportDto`. Exits `1`
+/// on an unknown corpus / service / document.
+fn run_document(corpus_name: String, service_name: String, name: String, all: bool, json: bool) {
+  let mut backend = backend::from_address(default_db_address());
+  let corpus = match Corpus::find_by_name(&corpus_name.to_lowercase(), &mut backend.connection) {
+    Ok(corpus) => corpus,
+    Err(_) => {
+      eprintln!("No such corpus: {corpus_name}");
+      std::process::exit(1);
+    },
+  };
+  let service = match Service::find_by_name(&service_name.to_lowercase(), &mut backend.connection) {
+    Ok(service) => service,
+    Err(_) => {
+      eprintln!("No such service: {service_name}");
+      std::process::exit(1);
+    },
+  };
+  let task = match Task::find_by_name(&name, &corpus, &service, &mut backend.connection) {
+    Ok(task) => task,
+    Err(_) => {
+      eprintln!(
+        "No such document: {name} in {}/{}",
+        corpus.name, service.name
+      );
+      std::process::exit(1);
+    },
+  };
+  let status = TaskStatus::from_raw(task.status);
+  let messages = task_messages(&mut backend.connection, &task);
+  if json {
+    let msgs: Vec<_> = messages
+      .iter()
+      .map(|m| {
+        serde_json::json!({
+          "severity": m.severity(), "category": m.category(), "what": m.what(), "details": m.details(),
+        })
+      })
+      .collect();
+    let document = serde_json::json!({
+      "corpus": corpus.name,
+      "service": service.name,
+      "name": name,
+      "entry": task.entry.trim_end(),
+      "task_id": task.id,
+      "status": status.to_key(),
+      "status_code": status.raw(),
+      "messages": msgs,
+    });
+    println!(
+      "{}",
+      serde_json::to_string_pretty(&document).unwrap_or_default()
+    );
+  } else {
+    let count_sev = |sev: &str| messages.iter().filter(|m| m.severity() == sev).count();
+    println!(
+      "{}  ({}/{})  —  status: {}",
+      name,
+      corpus.name,
+      service.name,
+      status.to_key()
+    );
+    println!(
+      "  {} message(s): {} fatal · {} error · {} warning · {} invalid · {} info",
+      messages.len(),
+      count_sev("fatal"),
+      count_sev("error"),
+      count_sev("warning"),
+      count_sev("invalid"),
+      count_sev("info"),
+    );
+    for message in &messages {
+      if message.severity() == "info" && !all {
+        continue;
+      }
+      println!(
+        "  {:<8} {:<18} {:<28} {}",
+        message.severity(),
+        message.category(),
+        message.what(),
+        message.details()
+      );
+    }
+    let info_n = count_sev("info");
+    if info_n > 0 && !all {
+      println!("  … {info_n} info message(s) hidden — use --all to show");
     }
   }
 }
