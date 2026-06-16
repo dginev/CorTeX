@@ -575,8 +575,29 @@ details.info-messages {
 }
 details.info-messages > summary {
   cursor: pointer;
-  color: var(--ink-muted);
+  /* Clickable, not muted — it reads as an expandable control, with a large chevron that rotates
+     open. (The parenthetical "(loaded files, debug)" keeps its own `.muted` as a secondary hint.) */
+  color: var(--link);
+  font-weight: 600;
   padding: 0.4rem 0;
+  list-style: none;
+}
+details.info-messages > summary:hover {
+  color: var(--link-hover);
+}
+details.info-messages > summary::-webkit-details-marker {
+  display: none;
+}
+details.info-messages > summary::before {
+  content: "\25B8"; /* ▸ */
+  display: inline-block;
+  margin-right: 0.45rem;
+  font-size: 1.2em;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+details.info-messages[open] > summary::before {
+  transform: rotate(90deg);
 }
 /* Forensic message tables: fixed layout with percentage column widths (from the `<colgroup>` in the
    template) so they fill the wide column predictably — `details` gets ~two-thirds and wraps within
