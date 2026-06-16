@@ -141,6 +141,11 @@ a:focus {
 /* Tables (reports, registries, job lists). */
 .table {
   color: var(--ink);
+  /* Centre a content-width report table within its column rather than letting a `text-align: center`
+     wrapper leave it left-aligned (a block table ignores text-align). No-op for full-width tables;
+     gives every report tabular (jobs / sessions / audit / runs / …) the same centred layout. */
+  margin-left: auto;
+  margin-right: auto;
 }
 /* Localized timestamps (<time>, see public/js/localtime.js) stay on one line — a date like
    "Jun 15, 2026, 5:46 AM EDT" should never reflow mid-value in a table cell. */
