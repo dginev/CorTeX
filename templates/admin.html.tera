@@ -4,8 +4,8 @@
   <div class="center">
     <h1>Admin dashboard</h1>
     <p>Signed in as <strong>{{ owner }}</strong> &nbsp;·&nbsp;
-      <form method="post" action="/admin/logout" style="display:inline;">
-        <button type="submit" class="btn btn-link" style="padding:0; vertical-align:baseline;">Sign out</button>
+      <form method="post" action="/admin/logout" class="admin-signout">
+        <button type="submit" class="btn btn-link">Sign out</button>
       </form>
     </p>
     <p><a href="/">view public overview</a></p>
@@ -52,7 +52,7 @@
       {% if status.last_run %}
       <div><strong><time datetime="{{ status.last_run.when }}">{{ status.last_run.when }}</time></strong>{% if status.last_run.open %} <span class="status-ok">· open{% if status.last_run.in_progress > 0 %} · {{ status.last_run.in_progress }} in&nbsp;progress{% endif %}</span>{% endif %}
         &nbsp;by {{ status.last_run.owner }}</div>
-      <div class="muted" style="font-size:0.9em;">{{ status.last_run.total }} tasks — {{ status.last_run.description }}</div>
+      <div class="muted run-meta">{{ status.last_run.total }} tasks — {{ status.last_run.description }}</div>
       {% else %}
       <div class="muted">no runs yet</div>
       {% endif %}
@@ -61,7 +61,7 @@
 
   <hr>
   <h3>Manage</h3>
-  <ul class="admin-actions" style="line-height:1.9;">
+  <ul class="admin-actions">
     <li><a href="/corpora/new"><i class="fa fa-plus-circle"></i>&nbsp; Add a corpus</a> — register a new corpus &amp; import its documents</li>
     <li><a href="/services"><i class="fa fa-cogs"></i>&nbsp; Registered services</a> — the service registry &amp; worker fleets</li>
     <li><a href="/services/new"><i class="fa fa-plus-circle"></i>&nbsp; Add a service</a> — define a new service &amp; register it on corpora</li>
@@ -96,7 +96,7 @@
     var openBit = r.open ? ' <span class="status-ok">· open' + (r.in_progress > 0 ? ' · ' + r.in_progress + ' in&nbsp;progress' : '') + '</span>' : '';
     box.innerHTML = '<div><strong><time datetime="' + esc(r.when) + '">' + esc(r.when) + '</time></strong>' + openBit +
       '&nbsp;by ' + esc(r.owner) + '</div>' +
-      '<div class="muted" style="font-size:0.9em;">' + r.total + ' tasks — ' + esc(r.description) + '</div>';
+      '<div class="muted run-meta">' + r.total + ' tasks — ' + esc(r.description) + '</div>';
   }
   function beat() { if (!dot) return; dot.classList.remove('beat'); void dot.offsetWidth; dot.classList.add('beat'); }
   async function poll() {

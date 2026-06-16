@@ -421,6 +421,20 @@ hr {
 .admin-card.wide {
   margin: 0 0 1rem;
 }
+/* Admin dashboard chrome drained from per-element inline styles into tokenised classes. */
+.admin-signout {
+  display: inline;
+}
+.admin-signout button {
+  padding: 0;
+  vertical-align: baseline;
+}
+.admin-actions {
+  line-height: 1.9;
+}
+.run-meta {
+  font-size: 0.9em;
+}
 .live-indicator {
   display: inline-flex;
   align-items: center;
