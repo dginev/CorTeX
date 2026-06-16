@@ -10,7 +10,6 @@
 //! previously sprinkled the public homepage. Access uses the lightweight token scheme — an
 //! [`AdminSession`] cookie (`frontend::actor`), set on the sign-in page below.
 
-use diesel::prelude::*;
 use rocket::form::Form;
 use rocket::http::{Cookie, CookieJar, SameSite, Status};
 use rocket::response::Redirect;
@@ -24,9 +23,7 @@ use crate::backend::DbPool;
 use crate::frontend::actor::{
   owner_for_token, safe_next, sign_in_url, AdminSession, ReturnTo, ADMIN_COOKIE,
 };
-use crate::helpers::TaskStatus;
-use crate::models::{Corpus, HistoricalRun, Session, WorkerMetadata};
-use crate::schema::tasks;
+use crate::models::{Corpus, HistoricalRun, Session, Task, WorkerMetadata};
 
 /// At-a-glance operational snapshot for the admin **live ops console** — the small-table signals
 /// (plus the one pending-task backlog count) the dashboard polls every few seconds and renders
@@ -106,15 +103,9 @@ pub fn admin_status(pool: &DbPool) -> AdminStatusDto {
       status.workers_total = workers;
       status.workers_in_flight = in_flight;
     }
-    // Pending-conversion backlog (the unleased work waiting for the fleet). The one full-table
-    // count here — bounded (~tens-to-hundreds of ms at arXiv scale, and fast via the partial
-    // todo_index once a running dispatcher drains it); degrades to 0 on error like its
-    // siblings.
-    status.tasks_todo = tasks::table
-      .filter(tasks::status.eq(TaskStatus::TODO.raw()))
-      .count()
-      .get_result::<i64>(&mut connection)
-      .unwrap_or(0);
+    // Pending-conversion backlog (the unleased work waiting for the fleet) — the one full-table
+    // count here, degrading to 0 on error like its siblings.
+    status.tasks_todo = Task::count_todo(&mut connection);
     status.last_run = HistoricalRun::recent_all(&mut connection, 1)
       .ok()
       .and_then(|runs| runs.into_iter().next())

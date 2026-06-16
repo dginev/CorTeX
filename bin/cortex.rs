@@ -20,8 +20,9 @@ use cortex::backend::{
 };
 use cortex::bootstrap::{self, DoctorReport};
 use cortex::config::config_file_path;
+use cortex::frontend::helpers::group_thousands;
 use cortex::helpers::TaskStatus;
-use cortex::models::{Corpus, HistoricalRun, Service, Task};
+use cortex::models::{Corpus, HistoricalRun, Service, Task, WorkerMetadata};
 
 /// Formats a timestamp the same way the web/agent surfaces do (RFC 3339, seconds) so the CLI's run
 /// JSON matches `RunDto`.
@@ -45,6 +46,15 @@ enum Command {
   /// Diagnose the installation (database reachable, migrations current, services seeded).
   Doctor {
     /// Emit the report as JSON instead of text.
+    #[arg(long)]
+    json: bool,
+  },
+  /// Operational snapshot — the CLI twin of the admin dashboard's live-ops console: pending-task
+  /// backlog, worker fleet, background jobs, and the latest run. (`doctor` checks the install is
+  /// healthy; `status` shows what's happening now.)
+  Status {
+    /// Emit JSON (the same shape as the admin `/admin/status.json` feed) instead of a text
+    /// summary.
     #[arg(long)]
     json: bool,
   },
@@ -194,6 +204,7 @@ fn main() {
   match Cli::parse().command {
     Command::Init => run_init(),
     Command::Doctor { json } => run_doctor(json),
+    Command::Status { json } => run_status(json),
     Command::Report {
       corpus,
       service,
@@ -870,6 +881,78 @@ fn print_doctor_text(report: &DoctorReport) {
     println!("\nNext steps:");
     for hint in &remediations {
       println!("  → {hint}");
+    }
+  }
+}
+
+/// `cortex status` — the operational snapshot (the CLI twin of the admin dashboard's live-ops
+/// console). Reuses the same library queries the dashboard and `/metrics` run, so all three
+/// surfaces agree. `--json` mirrors the `/admin/status.json` `AdminStatusDto` shape (minus the
+/// server-only connection-pool counters). Never prints the DB URL (it carries the password).
+fn run_status(json: bool) {
+  let mut backend = backend::from_address(default_db_address());
+  let connection = &mut backend.connection;
+
+  let corpus_count = Corpus::all(connection).map_or(0, |corpora| corpora.len());
+  let active_jobs = cortex::jobs::list_recent(connection, true, 200).len();
+  let jobs_failed_recent = cortex::jobs::count_recent_with_status(connection, "failed", 24);
+  let (workers_total, workers_in_flight) =
+    WorkerMetadata::fleet_summary(connection).unwrap_or((0, 0));
+  let tasks_todo = Task::count_todo(connection);
+  let last_run = HistoricalRun::recent_all(connection, 1)
+    .ok()
+    .and_then(|runs| runs.into_iter().next())
+    .map(|run| run.with_live_tallies(connection));
+
+  if json {
+    let last = last_run.as_ref().map(|run| {
+      serde_json::json!({
+        "when": iso(run.start_time),
+        "owner": run.owner,
+        "description": run.description,
+        "total": run.total,
+        "in_progress": run.in_progress,
+        "open": run.end_time.is_none(),
+      })
+    });
+    let status = serde_json::json!({
+      "corpus_count": corpus_count,
+      "tasks_todo": tasks_todo,
+      "workers_total": workers_total,
+      "workers_in_flight": workers_in_flight,
+      "active_jobs": active_jobs,
+      "jobs_failed_recent": jobs_failed_recent,
+      "last_run": last,
+    });
+    println!(
+      "{}",
+      serde_json::to_string_pretty(&status).unwrap_or_default()
+    );
+  } else {
+    println!("CorTeX status:");
+    println!("  corpora:          {corpus_count}");
+    println!(
+      "  pending tasks:    {}   (awaiting conversion / TODO)",
+      group_thousands(tasks_todo)
+    );
+    // `workers_in_flight` is the *lifetime* `dispatched − returned` gap (inflated by reaps/
+    // redispatches over a corpus's life), not currently-in-flight work — so label it plainly here
+    // (KNOWN_ISSUES P-3); the value matches the dashboard/`/metrics` for cross-checking.
+    println!(
+      "  workers:          {workers_total} registered · {} dispatched−unreturned (lifetime)",
+      group_thousands(workers_in_flight)
+    );
+    println!("  background jobs:  {active_jobs} active · {jobs_failed_recent} failed (24h)");
+    match &last_run {
+      Some(run) => println!(
+        "  last run:         {}  by {}  —  {}  ({} tasks{})",
+        iso(run.start_time),
+        run.owner,
+        run.description,
+        run.total,
+        if run.end_time.is_none() { ", open" } else { "" }
+      ),
+      None => println!("  last run:         none yet"),
     }
   }
 }

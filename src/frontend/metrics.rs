@@ -19,15 +19,12 @@
 //! instrumentation and are a follow-on — this gives the operationally-critical saturation/backlog
 //! signals today, cheaply.
 
-use diesel::prelude::*;
 use rocket::http::ContentType;
 use rocket::{Route, State};
 
 use crate::backend::DbPool;
 use crate::frontend::actor::Actor;
-use crate::helpers::TaskStatus;
-use crate::models::{Corpus, Service, Session, WorkerMetadata};
-use crate::schema::tasks;
+use crate::models::{Corpus, Service, Session, Task, WorkerMetadata};
 
 /// Appends one Prometheus gauge (HELP + TYPE + value lines) to `out`.
 fn gauge(out: &mut String, name: &str, help: &str, value: impl std::fmt::Display) {
@@ -148,11 +145,7 @@ pub fn metrics(_caller: Actor, pool: &State<DbPool>) -> (ContentType, String) {
         &mut out,
         "cortex_tasks_todo",
         "Tasks awaiting conversion (status TODO, not yet dispatched) — the pending-work backlog.",
-        tasks::table
-          .filter(tasks::status.eq(TaskStatus::TODO.raw()))
-          .count()
-          .get_result::<i64>(&mut connection)
-          .unwrap_or(0),
+        Task::count_todo(&mut connection),
       );
     },
     Err(_) => gauge(

@@ -221,6 +221,16 @@ running against the same database (`DATABASE_URL` / config precedence, §3). Ins
 commands below mirror the web/agent capabilities one-to-one. Add `--json` to any **read** command to
 emit the same shape as the corresponding agent DTO (so a script gets identical numbers to the screen).
 
+**Status — the operational snapshot (CLI twin of the `/admin` live-ops console):**
+
+```bash
+cortex status            # pending-task backlog, worker fleet, background jobs, latest run
+cortex status --json     # same shape as the /admin/status.json feed
+```
+
+`status` shows *what's happening now* (the same numbers as the dashboard + `/metrics`); `doctor`
+checks the *install* is healthy. Neither mutates anything.
+
 **Read — the report ladder, scriptable:**
 
 ```bash
