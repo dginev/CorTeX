@@ -51,7 +51,7 @@
     </ul>
   </div>
   {% endif %}
-  <p>&nbsp;·&nbsp; <a href="/healthz">JSON</a> &nbsp;·&nbsp; <a href="/settings">Settings</a></p>
+  <p>&nbsp;·&nbsp; <a href="/api/health">view as JSON</a> &nbsp;·&nbsp; <a href="/healthz">liveness</a> &nbsp;·&nbsp; <a href="/settings">Settings</a></p>
 
   <hr>
   <h3>Maintenance</h3>

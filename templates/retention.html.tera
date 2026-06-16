@@ -3,7 +3,7 @@
 <div class="col-md-10">
   <div class="center">
     <h1>Historical data retention</h1>
-    <p>Signed in as <strong>{{ owner }}</strong> &nbsp;·&nbsp; <a href="/admin">back to dashboard</a></p>
+    <p>Signed in as <strong>{{ owner }}</strong> &nbsp;·&nbsp; <a href="/admin">back to dashboard</a> &nbsp;·&nbsp; <a href="/api/historical/stats">view as JSON</a></p>
   </div>
 
   {% if pruned is defined and pruned %}

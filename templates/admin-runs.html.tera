@@ -3,7 +3,7 @@
 <div class="col-md-10">
   <div class="center">
     <h1>Historical runs</h1>
-    <p>Signed in as <strong>{{ owner }}</strong> &nbsp;·&nbsp; <a href="/admin">back to dashboard</a></p>
+    <p>Signed in as <strong>{{ owner }}</strong> &nbsp;·&nbsp; <a href="/admin">back to dashboard</a> &nbsp;·&nbsp; <a href="/api/runs">view as JSON</a></p>
     <p>The most recent conversion runs across every corpus and service. Follow a row into its
       per-service history, run-to-run diff, and per-task drill-down.</p>
   </div>

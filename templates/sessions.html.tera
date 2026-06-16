@@ -3,7 +3,7 @@
 <div class="col-md-10">
   <div class="center">
     <h1>Active sessions</h1>
-    <p>Signed in as <strong>{{ owner }}</strong> &nbsp;·&nbsp; <a href="/admin">back to dashboard</a></p>
+    <p>Signed in as <strong>{{ owner }}</strong> &nbsp;·&nbsp; <a href="/admin">back to dashboard</a> &nbsp;·&nbsp; <a href="/api/sessions">view as JSON</a></p>
     <p>Admins currently signed in (by admin token or passkey). Revoking an identity ends every one of
       its sessions immediately — use it to sign yourself out everywhere, or to lock out a compromised account.</p>
   </div>
