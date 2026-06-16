@@ -46,6 +46,9 @@ const IMPORT_SERVICE_ID: i32 = 2;
 /// A corpus as exposed over the API/UI. `name` is the stable external handle used by every route.
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct CorpusDto {
+  /// Stable external handle (UUIDv7) — survives a rename, unlike `name`. Use for durable
+  /// references.
+  pub public_id: String,
   /// Human-readable corpus name (its external handle).
   pub name: String,
   /// Filesystem path to the corpus root.
@@ -62,6 +65,7 @@ impl CorpusDto {
   /// Builds the DTO, attaching the document count looked up from the batched per-corpus map.
   fn build(corpus: Corpus, document_count: i64) -> Self {
     CorpusDto {
+      public_id: corpus.public_id.to_string(),
       name: corpus.name,
       path: corpus.path,
       description: corpus.description,

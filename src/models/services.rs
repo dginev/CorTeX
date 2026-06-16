@@ -33,6 +33,9 @@ pub struct Service {
   pub complex: bool,
   /// a human-readable description
   pub description: String,
+  /// Stable external handle (UUIDv7, DB-generated), independent of the mutable `name` — for
+  /// public/API references that must survive a rename. Immutable once assigned (Arm 3 / D8).
+  pub public_id: uuid::Uuid,
 }
 /// Insertable struct for `Service`
 #[derive(Insertable, Clone, Debug)]

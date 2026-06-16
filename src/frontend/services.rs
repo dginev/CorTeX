@@ -41,6 +41,9 @@ const IMPORT_SERVICE_ID: i32 = 2;
 /// stable external handle used by every service route.
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct ServiceDto {
+  /// Stable external handle (UUIDv7) — survives a rename, unlike `name`. Use for durable
+  /// references.
+  pub public_id: String,
   /// Service name (its external handle); `init`/`import` are the magic internal services.
   pub name: String,
   /// Service version.
@@ -60,6 +63,7 @@ pub struct ServiceDto {
 impl From<Service> for ServiceDto {
   fn from(service: Service) -> ServiceDto {
     ServiceDto {
+      public_id: service.public_id.to_string(),
       name: service.name,
       version: service.version,
       inputformat: service.inputformat,

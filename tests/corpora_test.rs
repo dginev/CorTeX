@@ -71,6 +71,12 @@ fn api_corpora_lists_registered_corpora() {
   assert!(ours["path"].is_string());
   assert!(ours["description"].is_string());
   assert!(ours["complex"].is_boolean());
+  // The stable external handle (UUIDv7) is present and well-formed (Arm 3 / D8).
+  let public_id = ours["public_id"].as_str().expect("a public_id handle");
+  assert!(
+    uuid::Uuid::parse_str(public_id).is_ok(),
+    "public_id is a valid UUID, got {public_id:?}"
+  );
   assert_eq!(
     ours["document_count"], 2,
     "the agent corpus list reports the ingested-document count (batched, no N+1)"

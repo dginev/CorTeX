@@ -52,7 +52,8 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
   pkg-config
 ```
 
-- `postgresql` — the database server (installs PostgreSQL 18 on Ubuntu 26.04).
+- `postgresql` — the database server (installs PostgreSQL 18 on Ubuntu 26.04). **PostgreSQL 18+ is
+  required**: a migration uses the built-in `uuidv7()` to mint corpus/service external handles.
 - `libpq-dev` — PostgreSQL client headers (needed to build Diesel and `diesel_cli`).
 - `libzmq3-dev`, `libsodium-dev` — ZeroMQ transport for the dispatcher/workers.
 

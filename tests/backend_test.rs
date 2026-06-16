@@ -27,6 +27,7 @@ fn task_table_crud() {
     outputformat: String::from("tex"),
     description: String::from("mock"),
     version: 0.1,
+    public_id: uuid::Uuid::nil(),
   };
   let mock_task = NewTask {
     entry: String::from("mock_task"),
@@ -71,6 +72,7 @@ fn task_lifecycle_test() {
     inputformat: String::from("tex"),
     outputformat: String::from("tex"),
     version: 0.1,
+    public_id: uuid::Uuid::nil(),
   };
   let mock_task = NewTask {
     entry: String::from("mark_task"),
@@ -132,6 +134,7 @@ fn batch_ops_test() {
     inputformat: String::from("tex"),
     outputformat: String::from("tex"),
     version: 0.1,
+    public_id: uuid::Uuid::nil(),
   };
 
   let mock_corpus_id = random_mark();
@@ -143,6 +146,7 @@ fn batch_ops_test() {
     description: String::new(),
     parent_corpus_id: None,
     selection: None,
+    public_id: uuid::Uuid::nil(),
   };
 
   let mock_task_count = rand_in_range(10, 100) as usize;

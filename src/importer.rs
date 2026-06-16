@@ -47,6 +47,9 @@ impl Default for Importer {
         description: String::new(),
         parent_corpus_id: None,
         selection: None,
+        // A nil sentinel: this mock corpus is never registered in the DB, so it carries no real
+        // external handle (a registered corpus gets its UUIDv7 from the column default).
+        public_id: uuid::Uuid::nil(),
       },
       backend: default_backend,
       cwd: Importer::cwd(),

@@ -37,6 +37,9 @@ pub struct Corpus {
   /// `{service, severity, category, what}` selection over the parent. This IS the sandbox's
   /// provenance ("why these entries"), so no per-task origin link is kept.
   pub selection: Option<serde_json::Value>,
+  /// Stable external handle (UUIDv7, DB-generated), independent of the mutable `name` — for
+  /// public/API references that must survive a rename. Immutable once assigned (Arm 3 / D8).
+  pub public_id: uuid::Uuid,
 }
 
 impl Corpus {
