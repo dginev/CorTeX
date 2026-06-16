@@ -291,6 +291,70 @@ pub struct AddServiceForm {
 /// unauthenticated browser is redirected to the sign-in page). The agent equivalent composes the
 /// two documented primitives — `POST /api/services` (define) then `POST
 /// /api/corpora/<c>/services/<s>` (activate) per corpus.
+/// Renders the "Add a service" form. Shared by the GET page and the POST error path, so a failed
+/// submit (e.g. a name collision) re-renders with a friendly `error` and every typed value
+/// preserved — including which corpora were checked — instead of a bare error page. `svc_*` keys
+/// carry the form values (the page meta `title`/`description` are separate). Admin-only page
+/// (`is_admin`).
+#[allow(clippy::too_many_arguments)]
+fn render_add_service(
+  pool: &DbPool,
+  error: Option<&str>,
+  name: &str,
+  version: &str,
+  inputformat: &str,
+  outputformat: &str,
+  inputconverter: &str,
+  description: &str,
+  complex: bool,
+  selected: &[String],
+) -> Template {
+  let mut corpora: Vec<HashMap<String, String>> = match pool.get() {
+    Ok(mut connection) => Corpus::all(&mut connection)
+      .unwrap_or_default()
+      .iter()
+      .map(Corpus::to_hash)
+      .collect(),
+    Err(_) => Vec::new(),
+  };
+  // Mark every corpus checked/unchecked (the key must always exist so the template's
+  // `corpus.checked` lookup never errors), re-checking the ones the admin had selected.
+  for corpus in &mut corpora {
+    let is_selected = corpus
+      .get("name")
+      .is_some_and(|cname| selected.iter().any(|s| s == cname));
+    corpus.insert("checked".to_string(), is_selected.to_string());
+  }
+  let mut global = HashMap::new();
+  global.insert("title".to_string(), "Add a service".to_string());
+  global.insert(
+    "description".to_string(),
+    "Define a new processing service and optionally activate it on existing corpora".to_string(),
+  );
+  if let Some(message) = error {
+    global.insert("error".to_string(), message.to_string());
+  }
+  global.insert("svc_name".to_string(), name.to_string());
+  global.insert("svc_version".to_string(), version.to_string());
+  global.insert("svc_inputformat".to_string(), inputformat.to_string());
+  global.insert("svc_outputformat".to_string(), outputformat.to_string());
+  global.insert("svc_inputconverter".to_string(), inputconverter.to_string());
+  global.insert("svc_description".to_string(), description.to_string());
+  global.insert("svc_complex".to_string(), complex.to_string());
+  let mut context = TemplateContext {
+    global,
+    corpora: Some(corpora),
+    is_admin: true,
+    ..TemplateContext::default()
+  };
+  decorate_uri_encodings(&mut context);
+  Template::render("add-service", context)
+}
+
+/// The "Add a service" screen (`GET /services/new`): the full new-service form + a checkbox list of
+/// corpora to activate it on. **Signed-in admins only** (anonymous → sign-in). The agent equivalent
+/// composes `POST /api/services` (define) + `POST /api/corpora/<c>/services/<s>` (activate) per
+/// corpus.
 #[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
 #[get("/services/new")]
 pub fn add_service_page(
@@ -299,25 +363,19 @@ pub fn add_service_page(
   pool: &State<DbPool>,
 ) -> Result<Template, AdminReject> {
   require_admin_to(session, &return_to)?;
-  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
-  let corpora: Vec<HashMap<String, String>> = Corpus::all(&mut connection)
-    .unwrap_or_default()
-    .iter()
-    .map(Corpus::to_hash)
-    .collect();
-  let mut global = HashMap::new();
-  global.insert("title".to_string(), "Add a service".to_string());
-  global.insert(
-    "description".to_string(),
-    "Define a new processing service and optionally activate it on existing corpora".to_string(),
-  );
-  let mut context = TemplateContext {
-    global,
-    corpora: Some(corpora),
-    ..TemplateContext::default()
-  };
-  decorate_uri_encodings(&mut context);
-  Ok(Template::render("add-service", context))
+  // Sensible defaults for a fresh form.
+  Ok(render_add_service(
+    pool,
+    None,
+    "",
+    "0.1",
+    "tex",
+    "html",
+    "",
+    "",
+    true,
+    &[],
+  ))
 }
 
 /// Defines a new service and activates it on each checked corpus — one **background** activation
@@ -326,35 +384,64 @@ pub fn add_service_page(
 /// (anonymous → sign-in). Redirects to `/jobs` when any corpus was selected (so the in-flight
 /// registrations are immediately visible), else back to `/services`. `409` if the name already
 /// exists.
+// The Err variant is a re-rendered form `Template` (the friendly-error path), which is chunky —
+// fine for a one-shot request handler.
+#[allow(clippy::result_large_err)]
 #[post("/services/create", data = "<form>")]
 pub fn create_service_human(
   form: Form<AddServiceForm>,
   session: Option<AdminSession>,
   pool: &State<DbPool>,
   database_url: &State<DatabaseUrl>,
-) -> Result<Redirect, Status> {
+) -> Result<Redirect, Template> {
   let Some(session) = session else {
     return Ok(Redirect::to("/admin/login"));
   };
   let form = form.into_inner();
-  insert_service(
+  if let Err(status) = insert_service(
     pool,
     NewService {
       name: form.name.clone(),
       version: form.version,
-      inputformat: form.inputformat,
-      outputformat: form.outputformat,
-      inputconverter: form.inputconverter,
+      inputformat: form.inputformat.clone(),
+      outputformat: form.outputformat.clone(),
+      inputconverter: form.inputconverter.clone(),
       complex: form.complex,
-      description: form.description.unwrap_or_default(),
+      description: form.description.clone().unwrap_or_default(),
     },
-  )?;
-  // Activate on each selected corpus (a blank value defensively skipped). Each spawns its own
-  // background `service_activate` job, attributed to the signed-in admin.
+  ) {
+    // A failed definition re-renders the form with a friendly message + every value preserved
+    // (including the checked corpora), rather than a bare error page that loses the admin's input.
+    let message = match status.code {
+      409 => format!(
+        "A service named “{}” already exists — choose a different name.",
+        form.name
+      ),
+      503 => "The database is temporarily unavailable — please try again.".to_string(),
+      _ => "Could not define the service — check the values and try again.".to_string(),
+    };
+    return Err(render_add_service(
+      pool,
+      Some(&message),
+      &form.name,
+      &form.version.to_string(),
+      &form.inputformat,
+      &form.outputformat,
+      form.inputconverter.as_deref().unwrap_or(""),
+      form.description.as_deref().unwrap_or(""),
+      form.complex,
+      &form.corpora,
+    ));
+  }
+  // The service is defined; activate it on each selected corpus (a blank value defensively
+  // skipped). Each spawns its own background `service_activate` job, attributed to the signed-in
+  // admin. Best-effort: a failed activation on one corpus doesn't undo the (already-created)
+  // service.
   let mut activated_any = false;
   for corpus in form.corpora.iter().filter(|name| !name.is_empty()) {
-    start_activate(pool, &database_url.0, &session.owner, corpus, &form.name)?;
-    activated_any = true;
+    if start_activate(pool, &database_url.0, &session.owner, corpus, &form.name).is_ok() {
+      activated_any = true;
+    }
   }
   Ok(Redirect::to(if activated_any {
     "/jobs"

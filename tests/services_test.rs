@@ -695,9 +695,60 @@ fn service_activation_flows() {
 // is still alive — skipping the racy libpq/OpenSSL `atexit` teardown that SIGSEGVs a
 // default-harness exit (KNOWN_ISSUES L-1). A panic still aborts non-zero, so a real assertion
 // failure still fails CI.
+/// A name collision on the human "Add a service" form re-renders the form (200) with a friendly
+/// error + every typed value preserved, not a bare error page.
+fn service_create_reshows_friendly_error_on_name_collision() {
+  let name = "collide-svc-xyz";
+  let mut db = backend::testdb();
+  let _ =
+    diesel::delete(services::table.filter(services::name.eq(name))).execute(&mut db.connection);
+  db.add(&NewService {
+    name: name.to_string(),
+    version: 0.1,
+    inputformat: "tex".to_string(),
+    outputformat: "html".to_string(),
+    inputconverter: Some("import".to_string()),
+    complex: false,
+    description: "x".to_string(),
+  })
+  .expect("seed the colliding service");
+
+  let client = client();
+  sign_in(&client);
+  let response = client
+    .post("/services/create")
+    .header(ContentType::Form)
+    .body(format!(
+      "name={name}&version=0.7&inputformat=mytex&outputformat=myhtml&description=mydesc"
+    ))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Ok,
+    "a name collision re-renders the form (200), not an error page or redirect"
+  );
+  let body = response.into_string().expect("html body");
+  assert!(
+    body.contains("already exists"),
+    "shows a friendly name-collision message"
+  );
+  assert!(
+    body.contains(&format!("value=\"{name}\"")) && body.contains("value=\"0.7\""),
+    "preserves the typed name + version"
+  );
+  assert!(
+    body.contains("value=\"mytex\"") && body.contains("value=\"myhtml\""),
+    "preserves the typed formats"
+  );
+
+  let _ =
+    diesel::delete(services::table.filter(services::name.eq(name))).execute(&mut db.connection);
+}
+
 fn main() {
   worker_fleet_api_and_screen();
   service_activation_flows();
+  service_create_reshows_friendly_error_on_name_collision();
   eprintln!("services_test: all cases passed");
   unsafe { libc::_exit(0) }
 }
