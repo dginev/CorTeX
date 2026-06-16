@@ -103,9 +103,15 @@ discoverable JSON DTOs (each also the future HTML/CLI source).
   --severity <sev> [--category/--what]` ✅ LANDED too — the CLI twin of the web/agent sandbox carve
   via the shared `backend::create_sandbox`, **dry-run by default** (prints the would-be scope),
   `--yes` creates the first-class sandbox corpus and reports the captured-entry count; validates
-  severity (exit 2), parent/service and name-collision (exit 1) before any write. **Next:** `extend`
-  (the importer/filesystem re-scan path — deferred to owner-watch like the guided init, since it
-  needs real corpus mounts to verify and would mutate `/data` scan state).
+  severity (exit 2), parent/service and name-collision (exit 1) before any write. `cortex
+  delete-corpus <name>` ✅ LANDED — the CLI twin of the web/agent `DELETE /api/corpora/<name>` via
+  the transactional, orphan-free `Corpus::destroy`, **dry-run by default** (prints the blast radius:
+  the task count + which kind, sandbox vs corpus), `--yes` to delete; closes the **sandbox lifecycle**
+  (create → iterate → delete) end-to-end on the CLI (previously a sandbox could only be removed via
+  the web or raw SQL). Historical run tallies are immutable and survive. Verified end-to-end (CLI
+  create → CLI delete → zero orphaned tasks, parent untouched). **Next:** `extend` (the
+  importer/filesystem re-scan path — deferred to owner-watch like the guided init, since it needs
+  real corpus mounts to verify and would mutate `/data` scan state).
 - **B2 — Guided init.** An interactive `cortex init --guided` walking the strategic choices (database,
   admin token, services, dispatcher knobs). **Decision D-B2 (see §5): ratatui rich TUI vs a plain
   guided prompt flow.** Default lazy: ship the plain prompt flow first (no heavy new dep; 90% of the

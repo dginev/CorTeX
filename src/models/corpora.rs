@@ -54,6 +54,14 @@ impl Corpus {
   /// so a rerun can't clobber the parent's archives — see [`crate::helpers::result_archive_path`]
   /// (F-6).
   pub fn sandbox_id(&self) -> Option<i32> { self.parent_corpus_id.map(|_| self.id) }
+  /// Total number of tasks registered under this corpus (across all services) — the blast radius a
+  /// [`Corpus::destroy`] would remove. Used to preview a destructive delete before committing.
+  pub fn task_count(&self, connection: &mut PgConnection) -> Result<i64, Error> {
+    tasks::table
+      .filter(tasks::corpus_id.eq(self.id))
+      .count()
+      .get_result(connection)
+  }
   /// ORM-like until diesel.rs introduces finders for more fields
   pub fn find_by_path(path_query: &str, connection: &mut PgConnection) -> Result<Self, Error> {
     use crate::schema::corpora::path;

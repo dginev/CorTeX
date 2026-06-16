@@ -156,6 +156,17 @@ enum Command {
     #[arg(long)]
     yes: bool,
   },
+  /// Delete a corpus (or sandbox) and all of its tasks + log messages — the CLI twin of the
+  /// web/agent `DELETE /api/corpora/<name>`, via the transactional, orphan-free `Corpus::destroy`.
+  /// Dry-run by default (prints the blast radius); pass `--yes` to delete. Historical run tallies
+  /// are immutable and survive.
+  DeleteCorpus {
+    /// Corpus name to delete.
+    name: String,
+    /// Actually delete (without this, the command is a dry run that only prints the blast radius).
+    #[arg(long)]
+    yes: bool,
+  },
   /// Bundle a corpus/service's converted HTML into ZIP datasets (replaces the
   /// bundle-html-dataset*.sh scripts). Reads existing result archives off the filesystem.
   ExportDataset {
@@ -228,6 +239,7 @@ fn main() {
       what,
       yes,
     } => run_sandbox(parent, name, service, severity, category, what, yes),
+    Command::DeleteCorpus { name, yes } => run_delete_corpus(name, yes),
     Command::TuneDb => println!("{}", bootstrap::db_tuning_guidance()),
     Command::SetAdminToken {
       token,
@@ -601,6 +613,44 @@ fn run_sandbox(
     ),
     Err(error) => {
       eprintln!("sandbox creation failed: {error}");
+      std::process::exit(1);
+    },
+  }
+}
+
+/// Deletes a corpus and all dependent rows via the transactional, orphan-free `Corpus::destroy`
+/// (the same primitive the web/agent delete uses) — the CLI surface of corpus removal, completing
+/// the sandbox lifecycle (create → iterate → delete). Dry-run by default; `--yes` deletes. Exits
+/// `1` on an unknown corpus or a delete failure.
+fn run_delete_corpus(name: String, yes: bool) {
+  let mut backend = backend::from_address(default_db_address());
+  let corpus = match Corpus::find_by_name(&name.to_lowercase(), &mut backend.connection) {
+    Ok(corpus) => corpus,
+    Err(_) => {
+      eprintln!("No such corpus: {name}");
+      std::process::exit(1);
+    },
+  };
+  let task_count = corpus.task_count(&mut backend.connection).unwrap_or(-1);
+  let kind = if corpus.sandbox_id().is_some() {
+    "sandbox"
+  } else {
+    "corpus"
+  };
+
+  if !yes {
+    println!(
+      "Dry run — would delete {kind} '{}' and all its tasks + log messages:",
+      corpus.name
+    );
+    println!("  {task_count} tasks (historical run tallies are immutable and preserved).");
+    println!("Pass --yes to delete.");
+    return;
+  }
+  match corpus.destroy(&mut backend.connection) {
+    Ok(_) => println!("Deleted {kind} '{name}' ({task_count} tasks removed)."),
+    Err(error) => {
+      eprintln!("delete failed: {error}");
       std::process::exit(1);
     },
   }
