@@ -6,8 +6,8 @@
 // except according to those terms.
 
 //! `cortex` — the administration CLI. A thin renderer over the library: self-install (`init`),
-//! diagnostics (`doctor`), DB tuning, token management, the `report` query surface (the CLI twin of
-//! the web/agent service overview), and dataset export.
+//! diagnostics (`doctor`), DB tuning, token management, the `report`/`document` query surface (the
+//! CLI twins of the web/agent service overview + per-article forensics), and dataset export.
 
 use std::path::PathBuf;
 
