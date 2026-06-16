@@ -726,14 +726,25 @@ refactors*:
    fallback**, or replace the report cache with an in-process cache? Affects the "one command, no
    extra daemons" self-install promise.
 4. **`dependencies` table (Arm 6):** finally implement automatic service dependency management
-   (revive the table with FKs), or drop it as dead weight for now?
+   (revive the table with FKs), or drop it as dead weight for now? ✅ **RESOLVED — stays dropped**
+   (already removed in migration `…050000`, Arm 12). No automatic dependency management for now; the
+   `inputconverter` string covers the one real pipeline link. Revive only if a concrete need appears.
 5. **`libarchive-sys` → pure-Rust archives (Arm 10):** worth dropping the C dependency for portable
    bundles, or keep the battle-tested C path given the arXiv-scale corpus already depends on it?
 6. **UUID external handles (D8):** adopt now (cleaner API/public-view story) or defer (serial PKs
-   are simpler short-term)?
+   are simpler short-term)? ✅ **RESOLVED 2026-06-16 — adopt now, additively.** Serial `id` STAYS
+   the primary key and the FK target; the UUID is an *additional* stable external handle
+   (`public_id`), not a replacement — internal joins keep `bigserial`, only public/API references
+   use the UUID. Generated DB-side via PostgreSQL 18's built-in `uuidv7()` (time-ordered) on the
+   **small** external-handle tables only (`corpora`, `services`, later `historical_runs`); never on
+   `tasks`/`log_*`. **Phase 1 landed** (corpora + services, surfaced on `CorpusDto`/`ServiceDto`).
+   Raises the deployment floor to **PostgreSQL 18**.
 7. **Scope of "stop":** several operations are intentionally destructive (`register_service` wipes
    tasks, import deletes source `.gz`, `Corpus::destroy`). Confirm we want **soft-delete / undo**
-   semantics in the productized versions, not just confirmation dialogs.
+   semantics in the productized versions, not just confirmation dialogs. ✅ **RESOLVED 2026-06-16 —
+   keep hard-delete + confirm.** The existing dry-run + `--yes` / confirm-dialog guards over the
+   transactional, orphan-free `Corpus::destroy`/`Service::destroy` are sufficient; no `deleted_at`
+   soft-delete / retention layer (avoids filtered-read + purge complexity across all three surfaces).
 
 ---
 
