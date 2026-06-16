@@ -113,6 +113,22 @@ impl Service {
     Ok(workers)
   }
 
+  /// Counts this service's tasks on a given corpus — the size of what
+  /// [`Self::deactivate_from_corpus`] would delete. Used to preview the blast radius of a
+  /// destructive deactivation before executing.
+  pub fn task_count_for_corpus(
+    &self,
+    corpus: &super::Corpus,
+    connection: &mut PgConnection,
+  ) -> Result<i64, Error> {
+    use crate::schema::tasks;
+    tasks::table
+      .filter(tasks::service_id.eq(self.id))
+      .filter(tasks::corpus_id.eq(corpus.id))
+      .count()
+      .get_result(connection)
+  }
+
   /// Deactivates (retires) this service from a single corpus: deletes the `(corpus, service)`
   /// pair's tasks **and their `log_*` rows** in one transaction, returning the number of tasks
   /// removed. The service *definition* and its work on other corpora are untouched. The `log_*`

@@ -70,8 +70,10 @@ fn settings_page_renders_masked_html() {
 fn put_api_config_merges_and_persists() {
   let path = temp_config_path("put");
   let client = client(path.clone());
+  // Token-gated since X-5 (rewriting the running config is a consequential mutation), so the agent
+  // PUT carries a token exactly like the management_api_test gate asserts.
   let response = client
-    .put("/api/config")
+    .put("/api/config?token=token1")
     .header(ContentType::JSON)
     .body(r#"{"dispatcher":{"queue_size":4242},"jobs":{"stale_timeout_seconds":12345}}"#)
     .dispatch();

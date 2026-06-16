@@ -307,6 +307,7 @@ paper ids → `cortex document <id>` — the same path an agent walks over `/api
 
 ```bash
 cortex rerun         arxmliv tex_to_html --severity error            # re-queue a filtered slice (→ TODO) for reconversion
+cortex deactivate    arxmliv tex_to_html                             # retire a service from a corpus (inverse of activate; deletes the pair's tasks+logs)
 cortex sandbox       arxmliv err-set --service tex_to_html --severity error  # carve a sandbox corpus by a message filter
 cortex delete-corpus old-sandbox                                     # orphan-free cascade delete (run tallies survive)
 ```

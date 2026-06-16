@@ -6,11 +6,11 @@
 // except according to those terms.
 
 //! `cortex` — the administration CLI. A thin renderer over the library: self-install (`init`),
-//! diagnostics (`doctor`), DB tuning, token management, corpus `import` + service `activate`, the
-//! `report`/`runs`/
-//! `document` read surface (the CLI twins of the web/agent report ladder, run-history, and
-//! per-article forensics — `report` drills overview → severity → category → `what` → affected
-//! documents), and dataset export.
+//! diagnostics (`doctor`), DB tuning, token management, the corpus/service lifecycle (`import`,
+//! `activate`, `deactivate`, `delete-corpus`, `sandbox`), the `report`/`runs`/`document` read
+//! surface (the CLI twins of the web/agent report ladder, run-history, and per-article forensics —
+//! `report` drills overview → severity → category → `what` → affected documents), and dataset
+//! export.
 
 use std::path::PathBuf;
 
@@ -238,6 +238,21 @@ enum Command {
     #[arg(long, default_value = "activated via cortex CLI")]
     description: String,
   },
+  /// Deactivate (retire) a service from a corpus — the CLI twin of the corpus screen's per-service
+  /// "deactivate" form and the agent `DELETE /api/corpora/<c>/services/<s>`. Deletes the pair's
+  /// tasks + log messages for this corpus (the service definition and its work elsewhere survive;
+  /// run tallies are immutable). The inverse of `activate`. Dry-run by default (prints the blast
+  /// radius); pass `--yes` to deactivate.
+  Deactivate {
+    /// Corpus name.
+    corpus: String,
+    /// Service name to retire from the corpus.
+    service: String,
+    /// Actually deactivate (without this, the command is a dry run that only prints the blast
+    /// radius).
+    #[arg(long)]
+    yes: bool,
+  },
   /// Delete a corpus (or sandbox) and all of its tasks + log messages — the CLI twin of the
   /// web/agent `DELETE /api/corpora/<name>`, via the transactional, orphan-free `Corpus::destroy`.
   /// Dry-run by default (prints the blast radius); pass `--yes` to delete. Historical run tallies
@@ -353,6 +368,11 @@ fn main() {
       owner,
       description,
     } => run_activate(corpus, service, owner, description),
+    Command::Deactivate {
+      corpus,
+      service,
+      yes,
+    } => run_deactivate(corpus, service, yes),
     Command::DeleteCorpus { name, yes } => run_delete_corpus(name, yes),
     Command::TuneDb => println!("{}", bootstrap::db_tuning_guidance()),
     Command::SetAdminToken {
@@ -1233,6 +1253,66 @@ fn run_activate(corpus_name: String, service_name: String, owner: String, descri
     corpus.name,
     group_thousands(queued)
   );
+}
+
+/// Deactivates (retires) a `service` from a `corpus` — the CLI surface of the corpus screen's
+/// per-service deactivate form and the agent `DELETE /api/corpora/<c>/services/<s>`, via the
+/// transactional, orphan-free `Service::deactivate_from_corpus`. The inverse of `activate`. Dry-run
+/// by default (prints the pair's task count); `--yes` executes. Refuses the infrastructure
+/// init/import services. Exits `1` on an unknown corpus/service or a deactivation error.
+fn run_deactivate(corpus_name: String, service_name: String, yes: bool) {
+  let mut backend = backend::from_address(default_db_address());
+  let corpus = match Corpus::find_by_name(&corpus_name.to_lowercase(), &mut backend.connection) {
+    Ok(corpus) => corpus,
+    Err(_) => {
+      eprintln!("No such corpus: {corpus_name}");
+      std::process::exit(1);
+    },
+  };
+  let service = match Service::find_by_name(&service_name.to_lowercase(), &mut backend.connection) {
+    Ok(service) => service,
+    Err(_) => {
+      eprintln!("No such service: {service_name}");
+      std::process::exit(1);
+    },
+  };
+  // Deactivating `import` (2) would wipe the corpus's document registry; `init` (1) is
+  // infrastructure too. The web screen never offers these — refuse them here as well.
+  if service.id <= 2 {
+    eprintln!(
+      "'{}' is an infrastructure service (init/import) and cannot be deactivated from a corpus.",
+      service.name
+    );
+    std::process::exit(1);
+  }
+  let task_count = service
+    .task_count_for_corpus(&corpus, &mut backend.connection)
+    .unwrap_or(-1);
+
+  if !yes {
+    println!(
+      "Dry run — would deactivate '{}' from '{}', deleting its tasks + log messages for this corpus:",
+      service.name, corpus.name
+    );
+    println!(
+      "  {} task(s) (the service definition + its work on other corpora survive; run tallies are immutable).",
+      group_thousands(task_count)
+    );
+    println!("Pass --yes to deactivate.");
+    return;
+  }
+  match service.deactivate_from_corpus(&corpus, &mut backend.connection) {
+    Ok(removed) => println!(
+      "Deactivated '{}' from '{}' ({} task(s) removed).",
+      service.name,
+      corpus.name,
+      group_thousands(removed as i64)
+    ),
+    Err(error) => {
+      eprintln!("Deactivation failed: {error}");
+      std::process::exit(1);
+    },
+  }
 }
 
 fn run_export_dataset(
