@@ -7,7 +7,14 @@
 
 {% block content %}
 <div class="center">
-  <h1>Historical Runs</h1>
+  <h1>Historical runs</h1>
+  <p class="report-sub">{{global.corpus_name}} <span class="report-sep">/</span> {{global.service_name}} <span class="report-sep">·</span> success-rate trend over time</p>
+  <p class="report-sub">
+    <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}">&larr; Report</a>
+    &nbsp;·&nbsp; <a href="/runs/{{global.corpus_name_uri}}/{{global.service_name_uri}}">Run-history table (per-run deltas)</a>
+    &nbsp;·&nbsp; <a href="/runs/{{global.corpus_name_uri}}/{{global.service_name_uri}}/diff">Run differences</a>
+    &nbsp;·&nbsp; <a href="/api/runs/{{global.corpus_name_uri}}/{{global.service_name_uri}}">JSON</a>
+  </p>
   <br>
   {% if global.service_name == "import" %}
   Import runs are not recorded separately.
@@ -36,13 +43,13 @@
         {% for run in history %}
         <tr>
           {% if run.end_time %}
-          <td class="right">{{run.no_problem}}</td>
-          <td class="right">{{run.warning}}</td>
-          <td class="right">{{run.error}}</td>
-          <td class="right">{{run.fatal}}</td>
-          <td class="right">{{run.in_progress}}</td>
-          <td class="right">{{run.total}}</td>
-          <td class="right">{{run.invalid}}</td>
+          <td class="right">{{ run.no_problem | group_thousands }}</td>
+          <td class="right">{{ run.warning | group_thousands }}</td>
+          <td class="right">{{ run.error | group_thousands }}</td>
+          <td class="right">{{ run.fatal | group_thousands }}</td>
+          <td class="right">{{ run.in_progress | group_thousands }}</td>
+          <td class="right">{{ run.total | group_thousands }}</td>
+          <td class="right">{{ run.invalid | group_thousands }}</td>
           <td class="center">{{run.start_time}}</td>
           <td class="center">{{run.end_time}} </td>
           <td class="left">{{run.owner}}</td>
@@ -64,8 +71,8 @@
         {% endfor %}
       </tbody>
     </table>
-    <div class="text-left"">
-      <span class=" history-footnote">Note: <strong>invalid</strong> counts are not included in <strong>total</strong>,
+    <div class="text-left">
+      <span class="history-footnote">Note: <strong>invalid</strong> counts are not included in <strong>total</strong>,
       and do not
       play part in any ratios.</span><br>
       <span class="history-footnote">Note: <strong>in_progress</strong> counts are included, and are non-zero when a

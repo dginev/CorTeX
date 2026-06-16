@@ -5,6 +5,8 @@
   <p>
     <a href="/corpus/{{corpus}}/{{service}}">&larr; Report</a>
     &nbsp;·&nbsp;
+    <a href="/history/{{corpus}}/{{service}}">History chart</a>
+    &nbsp;·&nbsp;
     <a href="/runs/{{corpus}}/{{service}}/diff">Run differences</a>
     &nbsp;·&nbsp;
     <a href="/runs/{{corpus}}/{{service}}/tasks">Task severity changes</a>
