@@ -53,7 +53,7 @@ from *two* surfaces to *three* (add the CLI). The corollary that drives sequenci
 | **Per-article forensics** ("errors of this article") | partial (`/preview`) | ✓ **A1 landed** | ✗ |
 | **Macro history trend** (rate over time) | ✓ Vega chart | ✓ (via `/api/runs/<c>/<s>` tallies) | ✗ |
 | Top-of-service severity summary (`progress_report`) | ✓ | ✓ **A3 landed** (`/api/reports/<c>/<s>`) | ✗ |
-| Rerun / reconvert (filtered) | ✓ | ✓ | ✗ |
+| Rerun / reconvert (filtered) | ✓ | ✓ | ✓ (`cortex rerun`, dry-run+`--yes`) |
 | Extend corpus | ✓ | ✓ | ✗ |
 | Sandbox via filter | ✓ | ✓ | ✗ |
 | Service register / activate / delete | ✓ | ✓ | ✗ |
@@ -95,8 +95,11 @@ discoverable JSON DTOs (each also the future HTML/CLI source).
   `Backend::progress_report`), `cortex runs <c> <s>` (run-history macro trend, via
   `HistoricalRun::find_by`+`with_live_tallies`), and `cortex document <c> <s> <name>` (per-article
   forensics, via `Task::find_by_name`+`backend::task_messages`) — each the CLI twin of the web/agent
-  surface, all sharing one backend so the numbers agree; `--json` mirrors the agent DTOs. **Next:** the
-  CLI mutations (rerun/extend/sandbox) — guarded the same way (these are consequential writes).
+  surface, all sharing one backend so the numbers agree; `--json` mirrors the agent DTOs. **Mutations
+  in progress:** `cortex rerun <c> <s> [--severity/--category/--what] [--owner] [--description]` ✅
+  LANDED — the CLI twin of the web/agent rerun via the shared `Backend::mark_rerun`, **dry-run by
+  default** (prints the filtered scope), `--yes` to execute; validates severity (exit 2) and
+  corpus/service (exit 1) before touching the DB. **Next:** `extend`, `sandbox` — guarded the same way.
 - **B2 — Guided init.** An interactive `cortex init --guided` walking the strategic choices (database,
   admin token, services, dispatcher knobs). **Decision D-B2 (see §5): ratatui rich TUI vs a plain
   guided prompt flow.** Default lazy: ship the plain prompt flow first (no heavy new dep; 90% of the

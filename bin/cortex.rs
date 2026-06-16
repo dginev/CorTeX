@@ -16,6 +16,7 @@ use clap::{Parser, Subcommand};
 
 use cortex::backend::{
   self, default_db_address, export_html_dataset, task_messages, DatasetExportOutcome, GroupBy,
+  RerunOptions,
 };
 use cortex::bootstrap::{self, DoctorReport};
 use cortex::config::config_file_path;
@@ -101,6 +102,34 @@ enum Command {
     #[arg(long)]
     json: bool,
   },
+  /// Mark a filtered scope of a `(corpus, service)` for reconversion — the CLI twin of the
+  /// web/agent rerun. Resets the matching tasks to TODO so the dispatcher re-runs them.
+  /// **Dry-run by default** (prints the scope); pass `--yes` to execute.
+  Rerun {
+    /// Corpus name.
+    corpus: String,
+    /// Service name (e.g. tex_to_html).
+    service: String,
+    /// Restrict to a severity (`no_problem`|`warning`|`error`|`fatal`|`invalid`). Omit = all.
+    #[arg(long)]
+    severity: Option<String>,
+    /// Restrict to a message category (requires `--severity`).
+    #[arg(long)]
+    category: Option<String>,
+    /// Restrict to a message `what` (requires `--severity --category`).
+    #[arg(long)]
+    what: Option<String>,
+    /// Description recorded for the run (audit trail).
+    #[arg(long)]
+    description: Option<String>,
+    /// Owner credited for the run (audit identity).
+    #[arg(long, default_value = "admin")]
+    owner: String,
+    /// Actually execute the rerun (without this, the command is a dry run that only prints the
+    /// scope).
+    #[arg(long)]
+    yes: bool,
+  },
   /// Bundle a corpus/service's converted HTML into ZIP datasets (replaces the
   /// bundle-html-dataset*.sh scripts). Reads existing result archives off the filesystem.
   ExportDataset {
@@ -145,6 +174,25 @@ fn main() {
       all,
       json,
     } => run_document(corpus, service, name, all, json),
+    Command::Rerun {
+      corpus,
+      service,
+      severity,
+      category,
+      what,
+      description,
+      owner,
+      yes,
+    } => run_rerun(
+      corpus,
+      service,
+      severity,
+      category,
+      what,
+      description,
+      owner,
+      yes,
+    ),
     Command::TuneDb => println!("{}", bootstrap::db_tuning_guidance()),
     Command::SetAdminToken {
       token,
@@ -373,6 +421,76 @@ fn run_document(corpus_name: String, service_name: String, name: String, all: bo
     if info_n > 0 && !all {
       println!("  … {info_n} info message(s) hidden — use --all to show");
     }
+  }
+}
+
+/// Marks a filtered scope for reconversion — the CLI surface of the web/agent rerun, via the shared
+/// `Backend::mark_rerun` (resets the matching tasks to TODO for the dispatcher). Dry-run by
+/// default; `--yes` executes. Exits `1` on an unknown corpus/service, `2` on an invalid severity.
+#[allow(clippy::too_many_arguments)]
+fn run_rerun(
+  corpus_name: String,
+  service_name: String,
+  severity: Option<String>,
+  category: Option<String>,
+  what: Option<String>,
+  description: Option<String>,
+  owner: String,
+  yes: bool,
+) {
+  let mut backend = backend::from_address(default_db_address());
+  let corpus = match Corpus::find_by_name(&corpus_name.to_lowercase(), &mut backend.connection) {
+    Ok(corpus) => corpus,
+    Err(_) => {
+      eprintln!("No such corpus: {corpus_name}");
+      std::process::exit(1);
+    },
+  };
+  let service = match Service::find_by_name(&service_name.to_lowercase(), &mut backend.connection) {
+    Ok(service) => service,
+    Err(_) => {
+      eprintln!("No such service: {service_name}");
+      std::process::exit(1);
+    },
+  };
+  if let Some(sev) = &severity {
+    if TaskStatus::from_key(sev).is_none() {
+      eprintln!("Invalid --severity {sev:?} (use no_problem, warning, error, fatal, invalid)");
+      std::process::exit(2);
+    }
+  }
+  let mut scope = format!("{}/{}", corpus.name, service.name);
+  if let Some(sev) = &severity {
+    scope.push_str(&format!("  severity={sev}"));
+  }
+  if let Some(cat) = &category {
+    scope.push_str(&format!("  category={cat}"));
+  }
+  if let Some(w) = &what {
+    scope.push_str(&format!("  what={w}"));
+  }
+
+  if !yes {
+    println!("Dry run — would mark for reconversion:");
+    println!("  {scope}");
+    println!("Pass --yes to execute (resets the matching tasks to TODO for the dispatcher).");
+    return;
+  }
+  let options = RerunOptions {
+    corpus: &corpus,
+    service: &service,
+    severity_opt: severity,
+    category_opt: category,
+    what_opt: what,
+    owner_opt: Some(owner),
+    description_opt: Some(description.unwrap_or_else(|| "cli rerun".to_string())),
+  };
+  match backend.mark_rerun(options) {
+    Ok(()) => println!("Marked for reconversion: {scope}"),
+    Err(error) => {
+      eprintln!("rerun failed: {error}");
+      std::process::exit(1);
+    },
   }
 }
 
