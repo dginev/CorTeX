@@ -23,9 +23,13 @@
   --code-bg: #cdccc3;
   --shadow: 0 1px 2px rgba(40, 30, 20, 0.06);
   --shadow-lg: 0 6px 24px rgba(40, 30, 20, 0.1);
-  --ok: #2f7d3f;
-  --warn: #c47e1a;
-  --orange-deep: #b5530e;
+  /* Status colors double as readable text (.status-ok/.status-warn etc.). Darkened to clear WCAG AA
+     (4.5:1) on --bg in the light theme: --ok 3.66→4.59, --warn (amber) 2.38→4.57, --orange 3.59→4.58.
+     --bad already passed (4.73). The 16–24% color-mix tint backgrounds barely shift; midnight's
+     status colors already pass AA, so they're unchanged. */
+  --ok: #286c36;
+  --warn: #855511;
+  --orange-deep: #9b470c;
   --bad: #b32424;
   --serif: "Roboto Slab", "Iowan Old Style", Charter, Georgia, serif;
   --sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
