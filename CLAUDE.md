@@ -53,8 +53,9 @@ read it before non-trivial work. Active work branch: **`productize-2026`**.
   without the app. **`Corpus::destroy`/`Service::destroy` remain the audited, transactional delete
   path** (one transaction, crash-consistent; the frontend delete routes use them). **Deliberately NO
   FK from `historical_runs` to corpora/services** → its per-run tallies survive a corpus/service
-  delete (the immutable-history rule). **External UUIDv7 handles** (`public_id`, migration `…130000`)
-  on `corpora`/`services` are additive — the serial `id` is still the PK + FK target. (The dead
+  delete (the immutable-history rule). **External UUIDv7 handles** (`public_id`,
+  migrations `…130000` + `…160000`) on `corpora`/`services`/`historical_runs` are additive — the
+  serial `id` is still the PK + FK target. (The dead
   `dependencies` table was dropped — migration `…050000`, Arm 12.)
 
 ## Build / run

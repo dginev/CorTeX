@@ -299,6 +299,12 @@ fn overview_overlays_live_tallies_via_batch(client: &Client) {
     .iter()
     .find(|run| run["corpus"] == CORPUS_NAME && run["completed"] == false)
     .expect("the open run for the seeded corpus");
+  assert!(
+    open["public_id"]
+      .as_str()
+      .is_some_and(|h| uuid::Uuid::parse_str(h).is_ok()),
+    "the system-wide run overview also carries the UUIDv7 handle"
+  );
   assert_eq!(
     open["no_problem"], 3,
     "batched overlay surfaces live no_problem"
@@ -337,6 +343,13 @@ fn api_lists_runs_and_reports_current(client: &Client) {
   assert_eq!(current["description"], "second run");
   assert_eq!(current["owner"], "tester");
   assert!(current["id"].is_number(), "runs carry a stable id handle");
+  // The run also carries a UUIDv7 external handle (Arm 3 / D8).
+  assert!(
+    current["public_id"]
+      .as_str()
+      .is_some_and(|h| uuid::Uuid::parse_str(h).is_ok()),
+    "runs carry a valid UUIDv7 public_id handle"
+  );
   assert_eq!(current["end_time"], Value::Null, "open run has no end_time");
   assert!(
     done[0]["end_time"].is_string(),

@@ -48,6 +48,9 @@ pub struct HistoricalRun {
   pub owner: String,
   /// description of the purpose of this run
   pub description: String,
+  /// Stable external handle (UUIDv7, DB-generated) for referencing this specific run independently
+  /// of its (corpus, service, start_time) coordinates. Immutable once assigned (Arm 3 / D8).
+  pub public_id: uuid::Uuid,
 }
 
 #[derive(Debug, Serialize, Clone)]

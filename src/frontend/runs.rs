@@ -39,7 +39,9 @@ use crate::models::{
 /// completion — so an in-progress run reports its real state, not zeros.
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct RunDto {
-  /// Stable run identifier (the external handle for managing a specific run).
+  /// Stable external handle (UUIDv7) for this run — the durable token for referencing it.
+  pub public_id: String,
+  /// Internal serial run id.
   pub id: i32,
   /// Who initiated the run.
   pub owner: String,
@@ -70,6 +72,7 @@ pub struct RunDto {
 impl From<HistoricalRun> for RunDto {
   fn from(run: HistoricalRun) -> RunDto {
     RunDto {
+      public_id: run.public_id.to_string(),
       id: run.id,
       owner: run.owner,
       description: run.description,
@@ -159,6 +162,8 @@ impl RunDelta {
 /// screen.
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct RunOverviewDto {
+  /// Stable external handle (UUIDv7) for this run — the durable token for referencing it.
+  pub public_id: String,
   /// The corpus the run targeted.
   pub corpus: String,
   /// The service the run targeted.
@@ -198,6 +203,7 @@ impl RunOverviewDto {
     services: &HashMap<i32, String>,
   ) -> RunOverviewDto {
     RunOverviewDto {
+      public_id: run.public_id.to_string(),
       corpus: corpora
         .get(&run.corpus_id)
         .cloned()
