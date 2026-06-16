@@ -513,17 +513,47 @@ pub fn document_report_page(
   service: &str,
   name: &str,
   pool: &State<DbPool>,
-) -> Result<Template, Status> {
+) -> Result<(Status, Template), Status> {
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
-  let report = document_report(corpus, service, name, &mut connection)?;
-  let global = serde_json::json!({
-    "title": format!("{} — {}/{}", report.name, report.corpus, report.service),
-    "description": "Per-article conversion forensics",
-  });
-  Ok(Template::render(
-    "document-report",
-    rocket_dyn_templates::context! { global, report },
-  ))
+  match document_report(corpus, service, name, &mut connection) {
+    Ok(report) => {
+      let global = serde_json::json!({
+        "title": format!("{} — {}/{}", report.name, report.corpus, report.service),
+        "description": "Per-article conversion forensics",
+      });
+      Ok((
+        Status::Ok,
+        Template::render(
+          "document-report",
+          rocket_dyn_templates::context! { global, report },
+        ),
+      ))
+    },
+    // A human looking up an article by id should get a clear "not found" with a way back to the
+    // report (and its search box), not the bare 404 catcher. (The agent twin keeps its plain 404.)
+    Err(status) if status == Status::NotFound => {
+      let message =
+        format!("No article “{name}” in {corpus} / {service}. Check the paper id and try again.");
+      let global = serde_json::json!({
+        "title": format!("404 · {message}"),
+        "description": message.clone(),
+      });
+      Ok((
+        Status::NotFound,
+        Template::render(
+          "error",
+          rocket_dyn_templates::context! {
+            global,
+            status: 404,
+            message,
+            back_url: format!("/corpus/{corpus}/{service}"),
+            back_label: format!("Back to the {service} report"),
+          },
+        ),
+      ))
+    },
+    Err(status) => Err(status),
+  }
 }
 
 /// Query-style entry to the per-article forensic screen: `GET

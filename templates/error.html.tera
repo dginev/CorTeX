@@ -2,6 +2,6 @@
 <div class="center">
   <h1>{{ status }}</h1>
   <p class="lead">{{ message }}</p>
-  <p><a href="/">&larr; Back to the corpora overview</a></p>
+  <p><a href="{{ back_url | default(value='/') }}">&larr; {{ back_label | default(value='Back to the corpora overview') }}</a></p>
 </div>
 {% endblock content %}

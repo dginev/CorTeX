@@ -93,7 +93,7 @@
           action="/document/{{global.corpus_name_uri}}/{{global.service_name_uri}}"
           data-base="/document/{{global.corpus_name_uri}}/{{global.service_name_uri}}/">
       <label for="document-lookup-id"><i class="fa fa-search"></i>&nbsp;Look up an article</label>
-      <input type="text" id="document-lookup-id" name="name" placeholder="paper id, e.g. 0801.1234" aria-label="Article paper id" required>
+      <input type="text" id="document-lookup-id" name="name" placeholder="paper id, e.g. 1308.3966" aria-label="Article paper id" required>
       <button type="submit" class="btn btn-primary btn-sm">Open forensics</button>
     </form>
   </div>
