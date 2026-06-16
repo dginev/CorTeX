@@ -243,6 +243,35 @@ fn api_index_lists_the_agent_surface() {
   );
 }
 
+fn api_status_is_token_gated_agent_twin() {
+  // `GET /api/status` is the agent twin of the dashboard's cookie-gated `/admin/status.json`:
+  // token-gated, returns the same AdminStatusDto snapshot. A monitoring agent gets system state
+  // over `/api` without an admin cookie.
+  let client = client();
+  assert_eq!(
+    client.get("/api/status").dispatch().status(),
+    Status::Unauthorized,
+    "/api/status without a token is 401 (system status is not public)"
+  );
+  let body: serde_json::Value = client
+    .get("/api/status?token=token1")
+    .dispatch()
+    .into_json()
+    .expect("status json");
+  for field in [
+    "corpus_count",
+    "active_jobs",
+    "workers_total",
+    "tasks_todo",
+    "pool_max",
+  ] {
+    assert!(
+      body[field].is_number(),
+      "/api/status snapshot carries `{field}`"
+    );
+  }
+}
+
 fn reindex_is_token_gated() {
   // The online-reindex maintenance trigger is a token-gated write. We assert *only* the 401 path
   // here so the test never spawns a real REINDEX (which `_exit` would interrupt, leaving an
@@ -503,6 +532,7 @@ fn main() {
   healthz_reports_ok_when_db_reachable();
   api_index_lists_the_agent_surface();
   reindex_is_token_gated();
+  api_status_is_token_gated_agent_twin();
   put_config_is_token_gated();
   all_api_writes_reject_untokened_requests();
   all_api_deletes_require_matching_confirm();

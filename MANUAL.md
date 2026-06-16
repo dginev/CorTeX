@@ -216,6 +216,7 @@ at `/api/openapi.json`).
 ```bash
 TOKEN=…   # an admin/API token from `set-admin-token`
 curl -s localhost:8000/api | jq .                                  # capability index (every endpoint)
+curl -s -H "X-Cortex-Token: $TOKEN" localhost:8000/api/status | jq .  # system snapshot (the dashboard's data: backlog, fleet, jobs, last run)
 curl -s localhost:8000/api/jobs?active=true | jq .                 # pending background jobs
 curl -s localhost:8000/api/runs?limit=20 | jq .                    # recent runs across the system
 ```

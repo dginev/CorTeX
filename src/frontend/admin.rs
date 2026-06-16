@@ -21,7 +21,7 @@ use serde::Serialize;
 
 use crate::backend::DbPool;
 use crate::frontend::actor::{
-  owner_for_token, safe_next, sign_in_url, AdminSession, ReturnTo, ADMIN_COOKIE,
+  owner_for_token, safe_next, sign_in_url, Actor, AdminSession, ReturnTo, ADMIN_COOKIE,
 };
 use crate::models::{Corpus, HistoricalRun, Session, Task, WorkerMetadata};
 
@@ -29,8 +29,9 @@ use crate::models::{Corpus, HistoricalRun, Session, Task, WorkerMetadata};
 /// (plus the one pending-task backlog count) the dashboard polls every few seconds and renders
 /// server-side on first paint. Every field is best-effort: a database hiccup degrades it to
 /// `0`/`None` rather than failing the screen. Deliberately excludes the dispatcher-port /
-/// corpus-storage probes (those are the System Health screen's job — and too slow to poll); for the
-/// agent equivalent of these gauges, scrape `/metrics`.
+/// corpus-storage probes (those are the System Health screen's job — and too slow to poll). Agents
+/// get this same snapshot from the token-gated `GET /api/status` ([`api_status`]) or the Prometheus
+/// gauges at `/metrics`.
 #[derive(Serialize, JsonSchema)]
 pub struct AdminStatusDto {
   /// Registered corpora.
@@ -155,8 +156,8 @@ pub fn admin_page(
 /// `GET /admin/status.json` — the live ops console's poll feed: the [`AdminStatusDto`] as JSON, for
 /// the dashboard's few-second auto-refresh. **Cookie-gated** (a signed-in [`AdminSession`]); an
 /// expired session returns `401` so the page simply keeps its last-good values rather than
-/// redirecting an XHR. Same-origin only — the agent equivalent of these gauges is the token-gated
-/// `/metrics`.
+/// redirecting an XHR. Same-origin only — the agent twin (token-gated, same DTO) is
+/// [`api_status`] (`GET /api/status`); the Prometheus gauges are at `/metrics`.
 #[get("/admin/status.json")]
 pub fn admin_status_feed(
   session: Option<AdminSession>,
@@ -164,6 +165,18 @@ pub fn admin_status_feed(
 ) -> Result<Json<AdminStatusDto>, Status> {
   let _session = session.ok_or(Status::Unauthorized)?;
   Ok(Json(admin_status(pool)))
+}
+
+/// `GET /api/status` — the **agent twin** of the dashboard's `/admin/status.json` feed: the
+/// [`AdminStatusDto`] system snapshot (corpus count, the worker fleet, background-job activity, the
+/// pending-conversion backlog, and the latest run) as one structured JSON call a monitoring agent
+/// can poll. Complements the Prometheus `/metrics` gauges — it carries the structured `last_run`
+/// detail (owner / description / timing) the gauges can't, and matches `cortex status --json`.
+/// **Token-gated** via the [`Actor`] guard (`401` without a valid token).
+#[rocket_okapi::openapi(tag = "Management")]
+#[get("/api/status")]
+pub fn api_status(_actor: Actor, pool: &State<DbPool>) -> Json<AdminStatusDto> {
+  Json(admin_status(pool))
 }
 
 /// The sign-in page (`GET /admin/login?<bad>&<next>`): a form to enter an admin token, plus a "sign
