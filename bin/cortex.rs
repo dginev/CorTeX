@@ -29,7 +29,7 @@ use cortex::frontend::params::{MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE};
 use cortex::helpers::TaskStatus;
 use cortex::importer::Importer;
 use cortex::models::{
-  AuditEntry, Corpus, HistoricalRun, NewCorpus, NewService, Service, Task, WorkerMetadata,
+  AuditEntry, Corpus, HistoricalRun, NewCorpus, NewService, Service, Session, Task, WorkerMetadata,
 };
 
 /// Formats a timestamp the same way the web/agent surfaces do (RFC 3339, seconds) so the CLI's run
@@ -1780,6 +1780,7 @@ fn run_status(json: bool) {
   let connection = &mut backend.connection;
 
   let corpus_count = Corpus::all(connection).map_or(0, |corpora| corpora.len());
+  let active_sessions = Session::active(connection).map_or(0, |sessions| sessions.len());
   let active_jobs = cortex::jobs::list_recent(connection, true, 200).len();
   let jobs_failed_recent = cortex::jobs::count_recent_with_status(connection, "failed", 24);
   let (workers_total, workers_in_flight) =
@@ -1806,6 +1807,7 @@ fn run_status(json: bool) {
       "tasks_todo": tasks_todo,
       "workers_total": workers_total,
       "workers_in_flight": workers_in_flight,
+      "active_sessions": active_sessions,
       "active_jobs": active_jobs,
       "jobs_failed_recent": jobs_failed_recent,
       "last_run": last,
@@ -1829,6 +1831,7 @@ fn run_status(json: bool) {
       group_thousands(workers_in_flight)
     );
     println!("  background jobs:  {active_jobs} active · {jobs_failed_recent} failed (24h)");
+    println!("  admin sessions:   {active_sessions} active");
     match &last_run {
       Some(run) => println!(
         "  last run:         {}  by {}  —  {}  ({} tasks{})",
