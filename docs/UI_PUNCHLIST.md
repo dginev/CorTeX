@@ -25,3 +25,7 @@ Status: 🔴 open · 🟡 in progress · 🟢 done (kept for history).
 - 🟢 **Admin stat-card widening** — large corpus counts no longer break mid-number (2b2f67d).
 - 🟢 **U-2: API-docs nav summaries** — short per-operation summary derived in `apidoc::mount` so the RapiDoc left-nav is readable (7c15f7c).
 - 🟢 **U-7: "view as JSON" off the public report ladder** — removed from report/severity/category (public overview flagged in U-7 above).
+- 🟢 **U-4: progress-bar widths → `--bar-width` custom property** (c698c11, deployed).
+- 🟢 **U-5: `scripts/deploy.sh`** — the recurring deploy (build → migrate online → restart → verify).
+- 🟢 **"Look up an article" fixes** (4882e6f, deployed): real placeholder example (`1308.3966`), and the human `/document/…/<name>` renders a friendly "no such article + back to report" page on a miss instead of the bare 404 catcher (agent twin keeps its plain 404).
+- 🟢 **Forensics info-messages accordion** (672d32a, deployed): the collapsed `<details>` summary is now link-coloured + bold with a large rotating ▸ chevron, so it reads as expandable.
