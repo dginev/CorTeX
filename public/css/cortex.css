@@ -1309,6 +1309,10 @@ h3 {
   height: 100%;
   border-radius: 999px;
   background-color: var(--accent);
+  /* The fill fraction is the only data-driven value, passed as the `--bar-width` custom property
+     (e.g. style="--bar-width: 73%") instead of a full inline `width:` rule — the last inline-CSS
+     property drained out of the templates (U-4). Defaults to 0 if unset. */
+  width: var(--bar-width, 0);
 }
 .bar.ok {
   background-color: var(--ok);
