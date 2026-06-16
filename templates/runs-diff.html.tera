@@ -53,7 +53,7 @@
           <tr>
             <td class="left">{{t.previous_status}}</td>
             <td class="left">{{t.current_status}}</td>
-            <td class="right">{{t.task_count}}</td>
+            <td class="right">{{ t.task_count | group_thousands }}</td>
             <td class="center">
               <a href="/runs/{{corpus}}/{{service}}/tasks?previous_status={{t.previous_status}}&current_status={{t.current_status}}&previous={{previous_date}}&current={{current_date}}">Task list</a>
             </td>

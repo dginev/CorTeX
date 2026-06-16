@@ -22,12 +22,12 @@
           <td class="left">
             <a href="/corpus/{{global.corpus_name_uri}}/{{service.name_uri}}">{{service.name}}</a>
           </td>
-          <td class="right">{{service.total}}</td>
-          <td class="right {% if service.no_problem == '0' %}count-zero{% else %}count-ok{% endif %}">{{service.no_problem}}</td>
-          <td class="right {% if service.warning == '0' %}count-zero{% else %}count-warn{% endif %}">{{service.warning}}</td>
-          <td class="right {% if service.error == '0' %}count-zero{% else %}count-error{% endif %}">{{service.error}}</td>
-          <td class="right {% if service.fatal == '0' %}count-zero{% else %}count-fatal{% endif %}">{{service.fatal}}</td>
-          <td class="right {% if service.todo == '0' %}count-zero{% else %}count-todo{% endif %}">{{service.todo}}</td>
+          <td class="right">{{ service.total | group_thousands }}</td>
+          <td class="right {% if service.no_problem == '0' %}count-zero{% else %}count-ok{% endif %}">{{ service.no_problem | group_thousands }}</td>
+          <td class="right {% if service.warning == '0' %}count-zero{% else %}count-warn{% endif %}">{{ service.warning | group_thousands }}</td>
+          <td class="right {% if service.error == '0' %}count-zero{% else %}count-error{% endif %}">{{ service.error | group_thousands }}</td>
+          <td class="right {% if service.fatal == '0' %}count-zero{% else %}count-fatal{% endif %}">{{ service.fatal | group_thousands }}</td>
+          <td class="right {% if service.todo == '0' %}count-zero{% else %}count-todo{% endif %}">{{ service.todo | group_thousands }}</td>
           <td class="left">
             <a href="/runs/{{global.corpus_name_uri}}/{{service.name_uri}}">runs</a> &middot;
             <a href="/runs/{{global.corpus_name_uri}}/{{service.name_uri}}/diff">diff</a> &middot;

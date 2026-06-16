@@ -30,13 +30,13 @@
   {% set info = report.message_counts.info %}
   {% set actionable = total - info %}
 
-  <h3>Messages <span class="muted">({{ total }})</span></h3>
+  <h3>Messages <span class="muted">({{ total | group_thousands }})</span></h3>
   <p class="severity-summary">
-    {% if fatal > 0 %}<span class="status-bad">{{ fatal }} fatal</span>&nbsp;·&nbsp;{% endif %}
-    {% if error > 0 %}<span class="status-bad">{{ error }} error</span>&nbsp;·&nbsp;{% endif %}
-    {% if invalid > 0 %}<span class="status-bad">{{ invalid }} invalid</span>&nbsp;·&nbsp;{% endif %}
-    {% if warning > 0 %}<span class="status-warn">{{ warning }} warning</span>&nbsp;·&nbsp;{% endif %}
-    <span class="muted">{{ info }} info</span>
+    {% if fatal > 0 %}<span class="status-bad">{{ fatal | group_thousands }} fatal</span>&nbsp;·&nbsp;{% endif %}
+    {% if error > 0 %}<span class="status-bad">{{ error | group_thousands }} error</span>&nbsp;·&nbsp;{% endif %}
+    {% if invalid > 0 %}<span class="status-bad">{{ invalid | group_thousands }} invalid</span>&nbsp;·&nbsp;{% endif %}
+    {% if warning > 0 %}<span class="status-warn">{{ warning | group_thousands }} warning</span>&nbsp;·&nbsp;{% endif %}
+    <span class="muted">{{ info | group_thousands }} info</span>
   </p>
   {% if report.messages_truncated %}
   <p class="truncation-note"><i class="fa fa-exclamation-triangle"></i>&nbsp;This document has an
