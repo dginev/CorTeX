@@ -28,6 +28,15 @@
   --serif: "Roboto Slab", "Iowan Old Style", Charter, Georgia, serif;
   --sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  /* Spacing scale (design tokens) — prefer these over ad-hoc rem values so spacing stays consistent
+     and tunable from one place (variant-independent, so only defined here). */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  /* The centered main-content column width for report layouts (replaces the dead Bootstrap grid). */
+  --report-col-width: 83.333%;
 }
 :root[data-theme="midnight"] {
   --bg: #161618;
@@ -419,9 +428,14 @@ hr {
   margin: 0.5rem 0 1rem;
 }
 .admin-status .admin-card {
-  flex: 1 1 7rem;
-  min-width: 7rem;
+  flex: 1 1 9.5rem;
+  min-width: 9.5rem;
   text-align: center;
+  /* Stat cards hold large corpus counts (e.g. 2,925,766 pending tasks) — keep numbers/words intact
+     (wrap only at spaces) rather than breaking mid-value like the base `.admin-card` does for long
+     run descriptions. Paired with `.stat-number { white-space: nowrap }` so the headline never
+     breaks and the card grows to fit it. */
+  overflow-wrap: normal;
 }
 .admin-card.wide {
   margin: 0 0 1rem;
@@ -441,27 +455,34 @@ hr {
   font-size: 0.9em;
 }
 
-/* Small admin-screen layout utilities, drained from per-element inline styles into named classes so
-   the values live in one place (a tokenised spacing scale is a future refinement). `.inline-form` is
-   the inline action-form pattern (a delete/revoke button sitting beside text); the `gap-*` helpers
-   are literal spacing steps. */
+/* Small layout utilities, drained from per-element inline styles into named classes. `.inline-form`
+   is the inline action-form pattern (a delete/revoke button beside text); the `gap-*` helpers map to
+   the spacing design tokens (`--space-*`) so spacing stays consistent and tunable from one place. */
 .inline-form {
   display: inline;
 }
 .gap-left {
-  margin-left: 0.5rem;
+  margin-left: var(--space-sm);
 }
 .gap-top-sm {
-  margin-top: 0.5rem;
+  margin-top: var(--space-sm);
 }
 .gap-top {
-  margin-top: 1rem;
+  margin-top: var(--space-md);
 }
 .gap-top-lg {
-  margin-top: 1.5rem;
+  margin-top: var(--space-lg);
 }
 .gap-bottom {
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-md);
+}
+/* The centered main-content column for report layouts — a real replacement for the dead
+   `.row`/`.col-md-1`/`.col-md-10` Bootstrap classes (undefined no-ops). One canonical scaffold for
+   every tabular page (the tabular DRY pass). */
+.report-layout {
+  max-width: var(--report-col-width);
+  margin-left: auto;
+  margin-right: auto;
 }
 .narrow-form {
   max-width: 30rem;
@@ -1009,6 +1030,9 @@ h3 {
   font-weight: 700;
   line-height: 1.1;
   color: var(--ink);
+  /* A 7-8 digit corpus count must stay on one line (the card grows to fit it) rather than break
+     mid-number ("29257" / "66"). */
+  white-space: nowrap;
 }
 
 /* The corpus "Corpus actions" panel — cards the inline forms together. */
