@@ -1,8 +1,9 @@
 use super::mark;
-use crate::concerns::CortexInsertable;
 use crate::helpers::TaskStatus;
-use crate::models::{Corpus, NewTask, Service};
+use crate::models::{Corpus, Service};
 use diesel::result::Error;
+use diesel::sql_types::Integer;
+use diesel::IntoSql;
 use diesel::*;
 
 pub(crate) fn register_service(
@@ -43,16 +44,12 @@ pub(crate) fn register_service(
     ));
   }
 
-  // The imported documents to (re)activate the service over (the magic `import` service's entries).
+  // The magic `import` service holds one entry per document; the new service activates over all of
+  // them.
   let import_service = Service::find_by_name("import", connection)?;
-  let entries: Vec<String> = tasks
-    .filter(service_id.eq(import_service.id))
-    .filter(corpus_id.eq(corpus.id))
-    .select(entry)
-    .load(connection)?;
 
   // (Re)activation atomically clears this <service, corpus> pair's prior tasks **and their `log_*`
-  // rows**, then re-creates a TODO task per imported entry. The `log_*` tables have no FK to
+  // rows**, then creates one TODO task per imported entry. The `log_*` tables have no FK to
   // `tasks` (the only FK is `historical_tasks → tasks ON DELETE CASCADE`), so deleting the tasks
   // alone would orphan their log rows on every re-activation — the same hazard closed in
   // `Corpus::destroy`. One transaction so a crash can't leave the service with its tasks deleted
@@ -78,15 +75,23 @@ pub(crate) fn register_service(
       .filter(service_id.eq(service_id_val))
       .filter(corpus_id.eq(corpus_id_val))
       .execute(t_connection)?;
-    for imported_entry in entries {
-      let new_task = NewTask {
-        entry: imported_entry,
-        service_id: service_id_val,
-        corpus_id: corpus_id_val,
-        status: todo_raw,
-      };
-      new_task.create(t_connection)?;
-    }
+    // Create the conversion tasks with ONE server-side `INSERT … SELECT` — no entry list in RAM and
+    // no per-document round-trip (KNOWN_ISSUES I-2). The guard above rejected an already-registered
+    // pair and import entries are unique, so no row conflict is possible here.
+    insert_into(tasks)
+      .values(
+        tasks
+          .filter(service_id.eq(import_service.id))
+          .filter(corpus_id.eq(corpus.id))
+          .select((
+            entry,
+            service_id_val.into_sql::<Integer>(),
+            corpus_id_val.into_sql::<Integer>(),
+            todo_raw.into_sql::<Integer>(),
+          )),
+      )
+      .into_columns((entry, service_id, corpus_id, status))
+      .execute(t_connection)?;
     Ok(())
   })?;
   // Finally, register a new run, completing potentially open ones for this pair, attributed to the
@@ -104,30 +109,32 @@ pub(crate) fn extend_service(
   let corpus = Corpus::find_by_path(corpus_path, connection)?;
   let todo_raw = TaskStatus::TODO.raw();
 
-  // TODO: when we want to get completeness, also:
-  // - update dependencies
+  // TODO: when we want to get completeness, also update dependencies.
   let import_service = Service::find_by_name("import", connection)?;
-  // TODO: performance can be improved with a convention here.
-  // when inserting a new task in the import service, use "TODO" (0) severity
-  // when this extension function succeeds, update severity to success (-1)
-  // Currently we try to reinsert all imported tasks, which is wasteful.
-  let entries: Vec<String> = tasks
-    .filter(service_id.eq(import_service.id))
-    .filter(corpus_id.eq(corpus.id))
-    .select(entry)
-    .load(connection)?;
-  connection.transaction::<(), Error, _>(|t_connection| {
-    for imported_entry in entries {
-      let new_task = NewTask {
-        entry: imported_entry,
-        service_id: service.id,
-        corpus_id: corpus.id,
-        status: todo_raw,
-      };
-      new_task.create_if_new(t_connection)?;
-    }
-    Ok(())
-  })
+  // Queue a conversion task for every imported document this service doesn't already have one for —
+  // only the genuinely-**new** ones (`ON CONFLICT (entry, service_id, corpus_id) DO NOTHING` is the
+  // bulk twin of the old per-entry `create_if_new`, so re-running `extend` adds the new documents
+  // and leaves existing tasks/results untouched). Done as ONE server-side `INSERT … SELECT`: no
+  // import entry list is materialized in RAM and there is no per-document round-trip, so the work
+  // is bounded regardless of corpus size (KNOWN_ISSUES I-2 — the old path loaded every import
+  // entry into a `Vec` and issued one `create_if_new` per entry, ~1.5M for arxmliv). A single
+  // statement is atomic, so no explicit transaction is needed.
+  insert_into(tasks)
+    .values(
+      tasks
+        .filter(service_id.eq(import_service.id))
+        .filter(corpus_id.eq(corpus.id))
+        .select((
+          entry,
+          service.id.into_sql::<Integer>(),
+          corpus.id.into_sql::<Integer>(),
+          todo_raw.into_sql::<Integer>(),
+        )),
+    )
+    .into_columns((entry, service_id, corpus_id, status))
+    .on_conflict_do_nothing()
+    .execute(connection)?;
+  Ok(())
 }
 
 /// Permanently destroys a service by name — its definition **plus all tasks + `log_*` rows across
