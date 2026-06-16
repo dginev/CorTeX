@@ -129,6 +129,16 @@ impl Service {
       .get_result(connection)
   }
 
+  /// Counts this service's tasks **across every corpus** — the size of what [`Self::destroy`] would
+  /// delete. Used to preview the blast radius of a registry-wide service deletion before executing.
+  pub fn total_task_count(&self, connection: &mut PgConnection) -> Result<i64, Error> {
+    use crate::schema::tasks;
+    tasks::table
+      .filter(tasks::service_id.eq(self.id))
+      .count()
+      .get_result(connection)
+  }
+
   /// Deactivates (retires) this service from a single corpus: deletes the `(corpus, service)`
   /// pair's tasks **and their `log_*` rows** in one transaction, returning the number of tasks
   /// removed. The service *definition* and its work on other corpora are untouched. The `log_*`

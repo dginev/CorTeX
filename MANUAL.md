@@ -308,10 +308,11 @@ paper ids → `cortex document <id>` — the same path an agent walks over `/api
 **Mutations — consequential, so dry-run by default; pass `--yes` to execute:**
 
 ```bash
-cortex rerun         arxmliv tex_to_html --severity error            # re-queue a filtered slice (→ TODO) for reconversion
-cortex deactivate    arxmliv tex_to_html                             # retire a service from a corpus (inverse of activate; deletes the pair's tasks+logs)
-cortex sandbox       arxmliv err-set --service tex_to_html --severity error  # carve a sandbox corpus by a message filter
-cortex delete-corpus old-sandbox                                     # orphan-free cascade delete (run tallies survive)
+cortex rerun          arxmliv tex_to_html --severity error           # re-queue a filtered slice (→ TODO) for reconversion
+cortex deactivate     arxmliv tex_to_html                            # retire a service from a corpus (inverse of activate; deletes the pair's tasks+logs)
+cortex sandbox        arxmliv err-set --service tex_to_html --severity error  # carve a sandbox corpus by a message filter
+cortex delete-corpus  old-sandbox                                    # orphan-free cascade delete (run tallies survive)
+cortex delete-service old_svc                                        # delete a service definition + ALL its work across every corpus (inverse of create-service)
 ```
 
 Without `--yes`, a mutation prints exactly what it *would* do (the matched scope / blast radius) and

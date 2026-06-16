@@ -6,12 +6,11 @@
 // except according to those terms.
 
 //! `cortex` — the administration CLI. A thin renderer over the library: self-install (`init`),
-//! diagnostics (`doctor`), DB tuning, token management, the corpus/service lifecycle
-//! (`create-service`, `import`, `extend`, `activate`, `deactivate`, `delete-corpus`, `sandbox`),
-//! the `report`/`runs`/`document`
-//! read surface (the CLI twins of the web/agent report ladder, run-history, and per-article
-//! forensics — `report` drills overview → severity → category → `what` → affected documents), and
-//! dataset export.
+//! diagnostics (`doctor`), DB tuning, token management, the full corpus/service lifecycle
+//! (`create-service`/`delete-service`, `import`/`extend`, `activate`/`deactivate`, `delete-corpus`,
+//! `sandbox`), the `report`/`runs`/`document` read surface (the CLI twins of the web/agent report
+//! ladder, run-history, and per-article forensics — `report` drills overview → severity → category
+//! → `what` → affected documents), the `snapshot`/`rerun` campaign actions, and dataset export.
 
 use std::path::PathBuf;
 
@@ -301,6 +300,18 @@ enum Command {
     #[arg(long)]
     yes: bool,
   },
+  /// Delete a service definition and ALL of its work across every corpus — the inverse of
+  /// `create-service` and the CLI twin of the agent `DELETE /api/services/<name>`, via the
+  /// transactional, orphan-free `Service::destroy`. Refuses the infrastructure init/import
+  /// services. Dry-run by default (prints the blast radius); pass `--yes` to delete. Run tallies
+  /// are immutable and survive.
+  DeleteService {
+    /// Service name to delete from the registry.
+    name: String,
+    /// Actually delete (without this, the command is a dry run that only prints the blast radius).
+    #[arg(long)]
+    yes: bool,
+  },
   /// Bundle a corpus/service's converted HTML into ZIP datasets (replaces the
   /// bundle-html-dataset*.sh scripts). Reads existing result archives off the filesystem.
   ExportDataset {
@@ -429,6 +440,7 @@ fn main() {
       yes,
     } => run_deactivate(corpus, service, yes),
     Command::DeleteCorpus { name, yes } => run_delete_corpus(name, yes),
+    Command::DeleteService { name, yes } => run_delete_service(name, yes),
     Command::TuneDb => println!("{}", bootstrap::db_tuning_guidance()),
     Command::SetAdminToken {
       token,
@@ -1192,6 +1204,57 @@ fn run_delete_corpus(name: String, yes: bool) {
   }
   match corpus.destroy(&mut backend.connection) {
     Ok(_) => println!("Deleted {kind} '{name}' ({task_count} tasks removed)."),
+    Err(error) => {
+      eprintln!("delete failed: {error}");
+      std::process::exit(1);
+    },
+  }
+}
+
+/// Deletes a service definition and all of its work across every corpus — the inverse of
+/// `create-service`, the CLI surface of the agent `DELETE /api/services/<name>`, via the
+/// transactional, orphan-free `Backend::destroy_service_by_name` (which refuses the magic
+/// init/import services as defense-in-depth). Dry-run by default (prints the blast radius across
+/// all corpora); `--yes` executes. Exits `1` on an unknown service, an infrastructure service, or a
+/// delete error.
+fn run_delete_service(name: String, yes: bool) {
+  let mut backend = backend::from_address(default_db_address());
+  let service = match Service::find_by_name(&name.to_lowercase(), &mut backend.connection) {
+    Ok(service) => service,
+    Err(_) => {
+      eprintln!("No such service: {name}");
+      std::process::exit(1);
+    },
+  };
+  if service.id <= 2 {
+    eprintln!(
+      "'{}' is an infrastructure service (init/import) and cannot be deleted.",
+      service.name
+    );
+    std::process::exit(1);
+  }
+  let task_count = service
+    .total_task_count(&mut backend.connection)
+    .unwrap_or(-1);
+
+  if !yes {
+    println!(
+      "Dry run — would delete service '{}' and all of its work across every corpus:",
+      service.name
+    );
+    println!(
+      "  {} task(s) + their log messages, on every corpus this service is activated (run tallies are immutable and survive).",
+      group_thousands(task_count)
+    );
+    println!("Pass --yes to delete.");
+    return;
+  }
+  match backend.destroy_service_by_name(&service.name) {
+    Ok(_) => println!(
+      "Deleted service '{}' ({} task(s) removed across all corpora).",
+      service.name,
+      group_thousands(task_count)
+    ),
     Err(error) => {
       eprintln!("delete failed: {error}");
       std::process::exit(1);
