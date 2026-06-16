@@ -22,12 +22,15 @@ use cortex::backend::{
 };
 use cortex::bootstrap::{self, DoctorReport};
 use cortex::config::config_file_path;
+use cortex::frontend::audit::AuditDto;
 use cortex::frontend::helpers::group_thousands;
 use cortex::frontend::jobs::JobDto;
 use cortex::frontend::params::{MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE};
 use cortex::helpers::TaskStatus;
 use cortex::importer::Importer;
-use cortex::models::{Corpus, HistoricalRun, NewCorpus, NewService, Service, Task, WorkerMetadata};
+use cortex::models::{
+  AuditEntry, Corpus, HistoricalRun, NewCorpus, NewService, Service, Task, WorkerMetadata,
+};
 
 /// Formats a timestamp the same way the web/agent surfaces do (RFC 3339, seconds) so the CLI's run
 /// JSON matches `RunDto`.
@@ -74,6 +77,20 @@ enum Command {
     #[arg(long)]
     limit: Option<i64>,
     /// Emit JSON (the same shape as the agent `JobDto` list) instead of a text table.
+    #[arg(long)]
+    json: bool,
+  },
+  /// Review the accountability audit log — who did what, when — the CLI twin of the `/admin/audit`
+  /// screen and the agent `GET /api/audit`. Every mutating admin action (rerun, import, delete,
+  /// config change, …) is recorded with its actor + outcome.
+  Audit {
+    /// Restrict to a single actor (the owner credited for the action).
+    #[arg(long)]
+    actor: Option<String>,
+    /// Max entries to list, most-recent first (default 50, capped at 500).
+    #[arg(long)]
+    limit: Option<i64>,
+    /// Emit JSON (the same shape as the agent `AuditDto` list) instead of a text table.
     #[arg(long)]
     json: bool,
   },
@@ -360,6 +377,7 @@ fn main() {
       limit,
       json,
     } => run_jobs(active, limit, json),
+    Command::Audit { actor, limit, json } => run_audit(actor, limit, json),
     Command::Report {
       corpus,
       service,
@@ -1871,6 +1889,49 @@ fn run_jobs(active: bool, limit: Option<i64>, json: bool) {
     );
     if !job.message.trim().is_empty() {
       println!("        {}", job.message.trim());
+    }
+  }
+}
+
+/// Reviews the accountability audit log — the CLI surface of the `/admin/audit` screen and the
+/// agent `GET /api/audit`, sharing `AuditEntry::list` + the `AuditDto`. Lists the most-recent admin
+/// actions (who / what / outcome / when), optionally filtered by `--actor`; `--json` mirrors the
+/// agent list.
+fn run_audit(actor: Option<String>, limit: Option<i64>, json: bool) {
+  let mut backend = backend::from_address(default_db_address());
+  let limit = limit.unwrap_or(50).clamp(1, 500);
+  let entries = match AuditEntry::list(&mut backend.connection, actor.as_deref(), limit) {
+    Ok(entries) => entries,
+    Err(error) => {
+      eprintln!("Could not read the audit log: {error}");
+      std::process::exit(1);
+    },
+  };
+  let dtos: Vec<AuditDto> = entries.into_iter().map(AuditDto::from).collect();
+  if json {
+    println!(
+      "{}",
+      serde_json::to_string_pretty(&dtos).unwrap_or_default()
+    );
+    return;
+  }
+  if dtos.is_empty() {
+    println!(
+      "No audit entries{}.",
+      actor
+        .map(|a| format!(" for actor {a:?}"))
+        .unwrap_or_default()
+    );
+    return;
+  }
+  println!("{} audit entr(y/ies), most recent first:", dtos.len());
+  for entry in &dtos {
+    println!(
+      "  {}  {}  {} {}  →  {}",
+      entry.at, entry.actor, entry.action, entry.target, entry.outcome
+    );
+    if !entry.details.trim().is_empty() {
+      println!("        {}", entry.details.trim());
     }
   }
 }

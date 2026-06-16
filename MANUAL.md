@@ -268,6 +268,8 @@ cortex status            # pending-task backlog, worker fleet, background jobs, 
 cortex status --json     # same shape as the /admin/status.json (and /api/status) feed
 cortex jobs              # list recent background jobs (imports/reruns/reindex) with health + heartbeat-idle age
 cortex jobs --active     # only pending/running jobs; --json mirrors the agent /api/jobs JobDto list
+cortex audit             # the accountability log: who did what, when (rerun/import/delete/config…) + outcome
+cortex audit --actor bob # filter to one actor; --json mirrors the agent /api/audit AuditDto list
 ```
 
 `status` shows *what's happening now* (the same numbers as the dashboard + `/metrics`); `doctor`
