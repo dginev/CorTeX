@@ -464,9 +464,25 @@ fn sanitize_download_filename(name: &str) -> String {
   }
 }
 
+/// The informative `Content-Disposition` filename for an entry download. The `import` service
+/// serves the **source** archive, which keeps the bare document name (`0811.0417.zip`); every other
+/// service serves a **result** archive, whose name appends the service
+/// (`0811.0417_tex_to_html.zip`) so a curator can tell the source from a result and several
+/// services' results for one document never collide. Sanitised to a safe charset
+/// (header-injection-proof).
+fn entry_download_filename(document_name: &str, service_name: &str, ext: &str) -> String {
+  let stem = if service_name == "import" {
+    document_name.to_string()
+  } else {
+    format!("{document_name}_{service_name}")
+  };
+  sanitize_download_filename(&format!("{stem}.{ext}"))
+}
+
 /// Provide a downloadable file for an entry, looking the task up over the caller-supplied (pooled)
-/// `connection` (the borrow ends before the file open). The download is named `<document>.<ext>`
-/// (the report's "Entry" name + the served file's real extension), not the task id.
+/// `connection` (the borrow ends before the file open). The download is named from the report's
+/// "Entry" name + the served file's real extension (not the opaque task id): `<document>.<ext>` for
+/// the `import` source archive, `<document>_<service>.<ext>` for a result archive.
 pub async fn serve_entry(
   connection: &mut PgConnection,
   service_name: String,
@@ -492,10 +508,13 @@ pub async fn serve_entry(
           let file = NamedFile::open(&path)
             .await
             .map_err(|_| NotFound("Invalid Zip at path".to_string()))?;
-          // Name the download `<document>.<ext>` from the served file's real extension (zip / gz /
-          // …).
+          // Name the download from the served file's real extension (zip / gz / …). The `import`
+          // service serves the **source** archive, which keeps the bare document name
+          // (`0811.0417.zip`); any **result** archive appends its service so a curator can tell the
+          // source from the `tex_to_html` output (`0811.0417_tex_to_html.zip`) and downloading
+          // several services' results for one document never collides (UX request 2026-06-16).
           let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("zip");
-          let filename = sanitize_download_filename(&format!("{document_name}.{ext}"));
+          let filename = entry_download_filename(&document_name, &service_name, ext);
           Ok(EntryDownload { file, filename })
         },
         None => Err(NotFound(format!(
@@ -836,5 +855,42 @@ mod live_report_limiter_tests {
   fn zero_is_clamped_to_one() {
     let limiter = LiveReportLimiter::new(0);
     assert_eq!(limiter.0.available_permits(), 1, "a 0 cap can't deadlock");
+  }
+}
+
+#[cfg(test)]
+mod download_filename_tests {
+  use super::entry_download_filename;
+
+  #[test]
+  fn import_keeps_the_bare_document_name() {
+    // The `import` service serves the source archive — no service suffix.
+    assert_eq!(
+      entry_download_filename("0811.0417", "import", "zip"),
+      "0811.0417.zip"
+    );
+  }
+
+  #[test]
+  fn a_result_archive_appends_its_service() {
+    // The UX request: /entry/tex_to_html/<id> downloads `<doc>_tex_to_html.zip`.
+    assert_eq!(
+      entry_download_filename("2105.13573", "tex_to_html", "zip"),
+      "2105.13573_tex_to_html.zip"
+    );
+    // The real extension is honored (e.g. a gz source-derived result).
+    assert_eq!(
+      entry_download_filename("0801.1234", "ngram", "gz"),
+      "0801.1234_ngram.gz"
+    );
+  }
+
+  #[test]
+  fn unsafe_characters_are_sanitised() {
+    // A hostile document or service name can't inject into the Content-Disposition header.
+    assert_eq!(
+      entry_download_filename("0801.1234", "te x/t", "zip"),
+      "0801.1234_te_x_t.zip"
+    );
   }
 }
