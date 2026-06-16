@@ -80,6 +80,40 @@ fn openapi_json(spec: &State<SpecJson>) -> (ContentType, String) {
   (ContentType::JSON, spec.0.clone())
 }
 
+/// Agent onboarding copy for the OpenAPI `info.description` — the first thing a tool reading
+/// `/api/openapi.json` (or browsing `/api/docs`) sees. `rocket_okapi` defaults to a bare title with
+/// no description, so an agent had no in-spec orientation; this is the agent twin of the human
+/// dashboard's at-a-glance context (authentication + where to start). Rendered as Markdown by
+/// RapiDoc.
+const AGENT_API_OVERVIEW: &str = "\
+CorTeX is a distributed corpus-conversion framework for scholarly documents. This is its **agent \
+API** — the machine twin of the human admin screens: every endpoint returns the *same* structured \
+DTO a screen renders, so an agent and an operator always see identical live and historical state.\n\
+\n\
+## Authenticating\n\
+\n\
+Read-only report endpoints are public; **management and write** endpoints (and `/metrics`) are \
+**token-gated**. Supply your token either way:\n\
+\n\
+- query string — `?token=<TOKEN>`\n\
+- header — `X-Cortex-Token: <TOKEN>`\n\
+\n\
+A missing or invalid token returns `401`. Every write is attributed to an actor and recorded in the \
+operational journal.\n\
+\n\
+## Where to start\n\
+\n\
+- `GET /api/status` — at-a-glance system snapshot (corpora, the active worker fleet, the \
+pending-conversion backlog, the latest run).\n\
+- `GET /api/health` — deep health check (connection pool, dispatcher ports, corpus storage).\n\
+- `GET /api/corpora` and `GET /api/reports/<corpus>/<service>/<severity>` — the conversion report \
+hierarchy (paginated).\n\
+- `GET /api/runs` and `GET /api/runs/<corpus>/<service>/diff` — live and historical run state.\n\
+- `GET /metrics` — Prometheus gauges.\n\
+\n\
+Conversion history (`/api/runs…`) is **append-only over the API** — never deletable or mutable via \
+`/api` (pruning is a human-admin action). See `MANUAL.md` for the full operator and agent guide.";
+
 /// Mounts the generated agent-API documentation onto `rocket`:
 /// - the `#[openapi]`-annotated agent routes (so they exist *and* are documented from one source),
 /// - the OpenAPI 3 spec at `GET /api/openapi.json`,
@@ -137,6 +171,10 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
   // stays as the `description` in the detail panel. Without a summary RapiDoc fell back to the long
   // description, making the nav unreadable (U-2).
   add_nav_summaries(&mut spec);
+  // The OpenAPI `info` is an agent's first contact with the API — fill in the title + an onboarding
+  // description (authentication + entry points), which `rocket_okapi` otherwise leaves bare.
+  spec.info.title = "CorTeX agent API".to_string();
+  spec.info.description = Some(AGENT_API_OVERVIEW.to_string());
   let spec_json = serde_json::to_string_pretty(&spec).unwrap_or_default();
   rocket
     .manage(SpecJson(spec_json))

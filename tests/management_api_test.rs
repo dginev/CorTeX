@@ -518,6 +518,21 @@ fn openapi_spec_and_rapidoc_are_served() {
     spec["components"]["securitySchemes"]["CortexToken"].is_object(),
     "the X-Cortex-Token security scheme is documented"
   );
+  // The `info` carries an agent quickstart (title + how-to-authenticate + entry points) — an
+  // agent's first contact with the API, not rocket_okapi's bare default.
+  assert_eq!(
+    spec["info"]["title"], "CorTeX agent API",
+    "the spec is titled as the agent API"
+  );
+  let overview = spec["info"]["description"].as_str().unwrap_or_default();
+  assert!(
+    overview.contains("X-Cortex-Token") && overview.contains("?token="),
+    "the overview tells an agent how to authenticate"
+  );
+  assert!(
+    overview.contains("/api/status"),
+    "the overview points at a where-to-start endpoint"
+  );
   // The documented route still serves (it is mounted via the openapi mechanism now).
   assert_eq!(client.get("/api/corpora").dispatch().status(), Status::Ok);
   // The RapiDoc browser page renders.
