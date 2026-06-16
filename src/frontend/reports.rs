@@ -22,7 +22,7 @@ use serde::Serialize;
 
 use crate::backend::{
   category_rollup, category_total, from_address, progress_report, severity_total, task_messages,
-  what_rollup, DatabaseUrl, DbPool, ReportSummaryRow, RerunOptions,
+  what_rollup, DatabaseUrl, DbPool, MessageCounts, ReportSummaryRow, RerunOptions,
 };
 use crate::frontend::actor::{require_admin, Actor, AdminReject, AdminSession};
 use crate::frontend::concerns::serve_report;
@@ -116,8 +116,38 @@ pub struct MessageDto {
   pub details: String,
 }
 
+/// True per-severity message totals for a document (the real counts behind a possibly-sampled
+/// `messages` list — see [`DocumentReportDto::messages`]).
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct MessageCountsDto {
+  /// info-level messages
+  pub info: i64,
+  /// warning-level messages
+  pub warning: i64,
+  /// error-level messages
+  pub error: i64,
+  /// fatal-level messages
+  pub fatal: i64,
+  /// invalid-level messages
+  pub invalid: i64,
+  /// total across all severities
+  pub total: i64,
+}
+impl From<MessageCounts> for MessageCountsDto {
+  fn from(counts: MessageCounts) -> Self {
+    MessageCountsDto {
+      info: counts.info,
+      warning: counts.warning,
+      error: counts.error,
+      fatal: counts.fatal,
+      invalid: counts.invalid,
+      total: counts.total(),
+    }
+  }
+}
+
 /// The per-article forensic report (the micro magnification): one document's conversion outcome for
-/// a service, plus every message behind it — the answer to "what are the errors of this article?".
+/// a service, plus the messages behind it — the answer to "what are the errors of this article?".
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct DocumentReportDto {
   /// Corpus name.
@@ -134,8 +164,15 @@ pub struct DocumentReportDto {
   pub status: String,
   /// The raw signed status code (see `helpers::TaskStatus`).
   pub status_code: i32,
-  /// Every message logged for the document, info → invalid.
+  /// The document's messages, info → invalid — **sampled**: at most
+  /// `backend::DOCUMENT_MESSAGE_CAP` per severity, so a pathological document (millions of
+  /// messages) can't blow up the response. Use `message_counts` for the real magnitude and
+  /// `messages_truncated` to know it was capped.
   pub messages: Vec<MessageDto>,
+  /// The true per-severity message totals (before the sampling cap on `messages`).
+  pub message_counts: MessageCountsDto,
+  /// `true` when `messages` was capped (the document has more messages than are listed).
+  pub messages_truncated: bool,
   /// Path to download the converted result archive.
   pub result_url: String,
   /// Path to the human preview page.
@@ -309,7 +346,8 @@ fn document_report(
   let task =
     Task::find_by_name(name, &corpus, &service, connection).map_err(|_| Status::NotFound)?;
   let status = TaskStatus::from_raw(task.status);
-  let messages = task_messages(connection, &task)
+  let (records, counts) = task_messages(connection, &task);
+  let messages: Vec<MessageDto> = records
     .iter()
     .map(|message| MessageDto {
       severity: message.severity().to_string(),
@@ -318,6 +356,7 @@ fn document_report(
       details: message.details().to_string(),
     })
     .collect();
+  let messages_truncated = (messages.len() as i64) < counts.total();
   Ok(DocumentReportDto {
     corpus: corpus.name.clone(),
     service: service.name.clone(),
@@ -327,6 +366,8 @@ fn document_report(
     status: status.to_key(),
     status_code: status.raw(),
     messages,
+    message_counts: counts.into(),
+    messages_truncated,
     result_url: format!("/entry/{}/{}", service.name, task.id),
     preview_url: format!("/preview/{}/{}/{}", corpus.name, service.name, name),
   })

@@ -8,7 +8,7 @@
 //! Contract test for the reports API: the typed, rollup-backed category and `what` reports — the
 //! agent twin of the severity-report / category-report screens.
 
-use cortex::backend::{self, test_db_address};
+use cortex::backend::{self, test_db_address, DOCUMENT_MESSAGE_CAP};
 use cortex::frontend::server::mount_api_with;
 use cortex::models::{Corpus, NewCorpus, NewService, Service};
 use cortex::schema::{corpora, log_errors, log_infos, log_warnings, services, tasks};
@@ -460,6 +460,84 @@ fn document_forensics_reports_status_and_messages() {
     .ok();
 }
 
+/// Robustness: a document with more messages than the per-severity cap is **sampled, not dumped** —
+/// the response stays bounded while the true counts remain exact. A production arXiv task was found
+/// with 1.6M warnings on one document; loading them all hung the request (KNOWN_ISSUES R-7). The
+/// forensic builder caps the loaded rows at `DOCUMENT_MESSAGE_CAP` per severity and reports the
+/// real totals + a `messages_truncated` flag.
+fn document_forensics_caps_pathological_message_volume() {
+  seed();
+  let mut backend = backend::testdb();
+  let corpus = Corpus::find_by_name(CORPUS_NAME, &mut backend.connection).expect("corpus");
+  let service = Service::find_by_name(SERVICE_NAME, &mut backend.connection).expect("service");
+
+  let entry = "/r/cap/9999.0001.zip";
+  let task_id: i64 = diesel::insert_into(tasks::table)
+    .values((
+      tasks::entry.eq(entry),
+      tasks::service_id.eq(service.id),
+      tasks::corpus_id.eq(corpus.id),
+      tasks::status.eq(-2i32),
+    ))
+    .returning(tasks::id)
+    .get_result(&mut backend.connection)
+    .expect("insert flood task");
+
+  // One over the cap, in a single batched insert (well under the bind-parameter limit).
+  let overflow = DOCUMENT_MESSAGE_CAP + 5;
+  let rows: Vec<_> = (0..overflow)
+    .map(|_| {
+      (
+        log_warnings::task_id.eq(task_id),
+        log_warnings::category.eq("flood"),
+        log_warnings::what.eq("noise"),
+        log_warnings::details.eq(""),
+      )
+    })
+    .collect();
+  diesel::insert_into(log_warnings::table)
+    .values(rows)
+    .execute(&mut backend.connection)
+    .expect("batch insert overflow warnings");
+
+  let client = client();
+  let response = client
+    .get(format!(
+      "/api/corpus/{CORPUS_NAME}/{SERVICE_NAME}/document/9999.0001"
+    ))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Ok,
+    "flood document still renders"
+  );
+  let report: Value = response.into_json().expect("document json");
+
+  // True totals are exact (not capped)...
+  assert_eq!(
+    report["message_counts"]["warning"], overflow,
+    "true warning total is reported exactly"
+  );
+  assert_eq!(report["message_counts"]["total"], overflow);
+  assert_eq!(
+    report["messages_truncated"], true,
+    "cap flagged transparently"
+  );
+  // ...but the loaded sample is bounded by the cap (the whole point: no unbounded load).
+  let shown = report["messages"].as_array().expect("messages array").len() as i64;
+  assert_eq!(
+    shown, DOCUMENT_MESSAGE_CAP,
+    "the message list is capped at DOCUMENT_MESSAGE_CAP, not the full {overflow}"
+  );
+
+  diesel::delete(log_warnings::table.filter(log_warnings::task_id.eq(task_id)))
+    .execute(&mut backend.connection)
+    .ok();
+  diesel::delete(tasks::table.filter(tasks::id.eq(task_id)))
+    .execute(&mut backend.connection)
+    .ok();
+}
+
 // Custom harness (`harness = false`): own `main`, so we end with `libc::_exit(0)` while the Client
 // is still alive — skipping the racy libpq/OpenSSL `atexit` teardown that SIGSEGVs a
 // default-harness exit (KNOWN_ISSUES L-1). A panic still aborts non-zero, so a real assertion
@@ -468,6 +546,7 @@ fn main() {
   category_and_what_reports_match_seed();
   service_overview_reports_the_status_breakdown();
   document_forensics_reports_status_and_messages();
+  document_forensics_caps_pathological_message_volume();
   eprintln!("reports_api_test: all cases passed");
   unsafe { libc::_exit(0) }
 }

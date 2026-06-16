@@ -418,6 +418,18 @@ hr {
 .severity-summary {
   margin: 0.25rem 0 1rem;
 }
+/* Shown when a document carries more messages than the per-severity display cap — the tables are a
+   bounded sample, so flag it (the counts stay exact). */
+.truncation-note {
+  margin: 0 0 1rem;
+  padding: 0.5rem 0.8rem;
+  font-size: var(--fs-sm);
+  color: var(--ink-soft);
+  background-color: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--warn, #b8860b);
+  border-radius: 6px;
+}
 details.info-messages {
   margin-top: 1.5rem;
 }

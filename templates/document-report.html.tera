@@ -18,13 +18,16 @@
   </p>
 
   {# Counts at a glance, then lead with the actionable messages; the info noise (loaded files,
-     debug) is collapsed into a native <details> so it never buries the warnings/errors. #}
-  {% set total = report.messages | length %}
-  {% set fatal = report.messages | filter(attribute="severity", value="fatal") | length %}
-  {% set error = report.messages | filter(attribute="severity", value="error") | length %}
-  {% set invalid = report.messages | filter(attribute="severity", value="invalid") | length %}
-  {% set warning = report.messages | filter(attribute="severity", value="warning") | length %}
-  {% set info = report.messages | filter(attribute="severity", value="info") | length %}
+     debug) is collapsed into a native <details> so it never buries the warnings/errors. The counts
+     are the *true* per-severity totals (report.message_counts); the message tables below render a
+     bounded sample (report.messages, capped per severity in the backend so a pathological document
+     with millions of messages can't hang the page). #}
+  {% set total = report.message_counts.total %}
+  {% set fatal = report.message_counts.fatal %}
+  {% set error = report.message_counts.error %}
+  {% set invalid = report.message_counts.invalid %}
+  {% set warning = report.message_counts.warning %}
+  {% set info = report.message_counts.info %}
   {% set actionable = total - info %}
 
   <h3>Messages <span class="muted">({{ total }})</span></h3>
@@ -35,6 +38,11 @@
     {% if warning > 0 %}<span class="status-warn">{{ warning }} warning</span>&nbsp;·&nbsp;{% endif %}
     <span class="muted">{{ info }} info</span>
   </p>
+  {% if report.messages_truncated %}
+  <p class="truncation-note"><i class="fa fa-exclamation-triangle"></i>&nbsp;This document has an
+    unusually large number of messages — the tables below show a bounded sample per severity. The
+    counts above are exact.</p>
+  {% endif %}
 
   {% if actionable > 0 %}
   <table class="table report-table message-table" id="document-messages">

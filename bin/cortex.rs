@@ -410,7 +410,11 @@ fn run_document(corpus_name: String, service_name: String, name: String, all: bo
     },
   };
   let status = TaskStatus::from_raw(task.status);
-  let messages = task_messages(&mut backend.connection, &task);
+  // Sampled at backend::DOCUMENT_MESSAGE_CAP per severity; `counts` are the true totals so the
+  // summary is accurate even when a pathological document carries millions of messages.
+  let (messages, counts) = task_messages(&mut backend.connection, &task);
+  let shown = messages.len() as i64;
+  let truncated = shown < counts.total();
   if json {
     let msgs: Vec<_> = messages
       .iter()
@@ -429,13 +433,17 @@ fn run_document(corpus_name: String, service_name: String, name: String, all: bo
       "status": status.to_key(),
       "status_code": status.raw(),
       "messages": msgs,
+      "message_counts": {
+        "info": counts.info, "warning": counts.warning, "error": counts.error,
+        "fatal": counts.fatal, "invalid": counts.invalid, "total": counts.total(),
+      },
+      "messages_truncated": truncated,
     });
     println!(
       "{}",
       serde_json::to_string_pretty(&document).unwrap_or_default()
     );
   } else {
-    let count_sev = |sev: &str| messages.iter().filter(|m| m.severity() == sev).count();
     println!(
       "{}  ({}/{})  —  status: {}",
       name,
@@ -445,13 +453,19 @@ fn run_document(corpus_name: String, service_name: String, name: String, all: bo
     );
     println!(
       "  {} message(s): {} fatal · {} error · {} warning · {} invalid · {} info",
-      messages.len(),
-      count_sev("fatal"),
-      count_sev("error"),
-      count_sev("warning"),
-      count_sev("invalid"),
-      count_sev("info"),
+      counts.total(),
+      counts.fatal,
+      counts.error,
+      counts.warning,
+      counts.invalid,
+      counts.info,
     );
+    if truncated {
+      println!(
+        "  (showing a sample of {shown}; this document has {} messages total)",
+        counts.total()
+      );
+    }
     for message in &messages {
       if message.severity() == "info" && !all {
         continue;
@@ -464,9 +478,11 @@ fn run_document(corpus_name: String, service_name: String, name: String, all: bo
         message.details()
       );
     }
-    let info_n = count_sev("info");
-    if info_n > 0 && !all {
-      println!("  … {info_n} info message(s) hidden — use --all to show");
+    if counts.info > 0 && !all {
+      println!(
+        "  … {} info message(s) hidden — use --all to show",
+        counts.info
+      );
     }
   }
 }

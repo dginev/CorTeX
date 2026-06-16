@@ -18,18 +18,62 @@ lazy_static! {
   static ref TASK_REPORT_NAME_REGEX: Regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
 }
 
-/// Every worker-log message attached to a `task` — the forensic evidence behind that document's
+/// Maximum messages loaded **per severity** for a single document's forensic view. A hostile or
+/// pathological document can carry millions of messages of one severity (observed in production: a
+/// single arXiv task with 1.6M warnings); loading them all would allocate gigabytes and hang the
+/// request — an unbounded per-request resource acquisition the design principles forbid. The view
+/// is a *sample* bounded by this cap; the true per-severity totals are reported separately
+/// ([`MessageCounts`]) so the cap is transparent, never silent.
+pub const DOCUMENT_MESSAGE_CAP: i64 = 1000;
+
+/// True per-severity message totals for a task (the real counts, **before** the
+/// [`DOCUMENT_MESSAGE_CAP`] sampling cap), so a forensic view can show "showing N of M".
+#[derive(Debug, Default, Clone, Copy)]
+pub struct MessageCounts {
+  /// info-level messages
+  pub info: i64,
+  /// warning-level messages
+  pub warning: i64,
+  /// error-level messages
+  pub error: i64,
+  /// fatal-level messages
+  pub fatal: i64,
+  /// invalid-level messages
+  pub invalid: i64,
+}
+impl MessageCounts {
+  /// Grand total across all severities.
+  pub fn total(&self) -> i64 { self.info + self.warning + self.error + self.fatal + self.invalid }
+}
+
+/// Worker-log messages attached to a `task` — the forensic evidence behind that document's
 /// conversion status — loaded through the Diesel-generated row structs (`LogInfo` … `LogInvalid`)
 /// via their `belongs_to(Task)` association, so the column mapping is compiler-checked. Each is
 /// returned as a [`LogRecord`] trait object (which carries its own
-/// `severity()`/`category()`/`what()` /`details()`), in info → invalid order. Cheap: every query is
-/// keyed by the indexed `task_id` and this serves a single document, never a hot path; a failed
-/// sub-query contributes no rows rather than erroring the whole report.
-pub fn task_messages(connection: &mut PgConnection, task: &Task) -> Vec<Box<dyn LogRecord>> {
+/// `severity()`/`category()`/`what()` /`details()`), in info → invalid order.
+///
+/// **Bounded:** at most [`DOCUMENT_MESSAGE_CAP`] rows are loaded **per severity** (so the worst
+/// case is a few thousand records, never the full millions a pathological document can hold). The
+/// second return value is the [`MessageCounts`] of *true* per-severity totals, so a caller can
+/// render the real magnitude and flag truncation rather than silently dropping evidence. Every
+/// query is keyed by the indexed `task_id` and this serves a single document, never a hot path; a
+/// failed sub-query contributes no rows rather than erroring the whole report.
+pub fn task_messages(
+  connection: &mut PgConnection,
+  task: &Task,
+) -> (Vec<Box<dyn LogRecord>>, MessageCounts) {
   let mut messages: Vec<Box<dyn LogRecord>> = Vec::new();
+  let mut counts = MessageCounts::default();
   macro_rules! collect {
-    ($row:ty) => {
-      if let Ok(rows) = <$row>::belonging_to(task).load::<$row>(connection) {
+    ($row:ty, $field:ident) => {
+      counts.$field = <$row>::belonging_to(task)
+        .count()
+        .get_result(connection)
+        .unwrap_or(0);
+      if let Ok(rows) = <$row>::belonging_to(task)
+        .limit(DOCUMENT_MESSAGE_CAP)
+        .load::<$row>(connection)
+      {
         messages.extend(
           rows
             .into_iter()
@@ -38,12 +82,12 @@ pub fn task_messages(connection: &mut PgConnection, task: &Task) -> Vec<Box<dyn 
       }
     };
   }
-  collect!(LogInfo);
-  collect!(LogWarning);
-  collect!(LogError);
-  collect!(LogFatal);
-  collect!(LogInvalid);
-  messages
+  collect!(LogInfo, info);
+  collect!(LogWarning, warning);
+  collect!(LogError, error);
+  collect!(LogFatal, fatal);
+  collect!(LogInvalid, invalid);
+  (messages, counts)
 }
 
 /// An options object describing a CorTeX report request

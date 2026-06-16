@@ -22,9 +22,9 @@ pub(crate) use reports::list_task_diffs;
 pub(crate) use reports::progress_report;
 pub(crate) use reports::report_uses_rollup;
 pub(crate) use reports::summary_task_diffs;
-pub use reports::task_messages;
 pub(crate) use reports::task_report;
 pub use reports::TaskReportOptions;
+pub use reports::{task_messages, MessageCounts, DOCUMENT_MESSAGE_CAP};
 pub use rollup::ReportSummaryRow;
 pub(crate) use rollup::{
   category_rollup, category_total, refresh_report_summary, report_summary_refreshed_at,
