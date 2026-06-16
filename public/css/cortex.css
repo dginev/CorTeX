@@ -1121,6 +1121,21 @@ h3 {
   color: var(--ink-muted);
   padding: 2.5rem 1rem;
 }
+/* The getting-started step list shown on a fresh (no-corpora) overview — a left-aligned, monospace
+   command block, centered as a unit. */
+.empty-state-steps {
+  display: inline-block;
+  text-align: left;
+  margin: 0.75rem auto;
+  padding: 0.75rem 1rem;
+  background-color: var(--code-bg);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  color: var(--ink);
+  white-space: pre;
+  overflow-x: auto;
+}
 
 /* === Report dashboard (scholarly) ===========================================================
    A calm progress dashboard: a titled header with run provenance, a status/breakdown grid with

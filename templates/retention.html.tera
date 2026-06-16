@@ -7,7 +7,7 @@
   </div>
 
   {% if pruned is defined and pruned %}
-  <p style="color:var(--ok);"><strong>Pruned {{ pruned }} per-task snapshot(s).</strong></p>
+  <p class="flash-saved"><i class="fa fa-check-circle"></i>&nbsp;Pruned <strong>{{ pruned }}</strong> per-task snapshot(s).</p>
   {% endif %}
 
   <p>Each "save snapshot" copies one status row per task into <code>historical_tasks</code> — the only
