@@ -19,7 +19,16 @@
 /// of each binary's `main`.
 pub fn init_tracing() {
   use tracing_subscriber::{fmt, EnvFilter};
-  let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+  // Default (when `RUST_LOG` is unset): app events at `info`, but Rocket's per-request internals at
+  // `warn` only. The frontend shares this subscriber (Rocket 0.5 logs via `tracing`), and its
+  // live-ops dashboard polls `/admin/status.json` every few seconds — at `info` Rocket would log
+  // ~4 lines per poll forever, drowning the app's own events. `rocket=warn` keeps the launch banner
+  // (emitted at `warn`) + any Rocket warnings/errors while silencing the per-request flood; the
+  // app's `info`/`warn` events (e.g. the P-2 slow-report warning) still show. The dispatcher has no
+  // Rocket, so the directive is inert there. Override anytime with `RUST_LOG` (e.g.
+  // `RUST_LOG=rocket=info` to restore per-request traces, `RUST_LOG=cortex=debug` for app detail).
+  let filter =
+    EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,rocket=warn"));
   // `try_init` returns `Err` if a global subscriber is already set — ignore it (idempotent).
   let _ = fmt().with_env_filter(filter).with_target(false).try_init();
 }

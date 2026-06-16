@@ -22,6 +22,12 @@ use crate::models::{Corpus, HistoricalRun, Service, Task};
 /// Placeholder word for unknown filters/fields
 pub const UNKNOWN: &str = "_unknown_";
 
+/// A live-computed (non-rollup) report taking at least this long held its pooled connection for the
+/// whole query — past this it is logged at `warn` as a pool-saturation risk (KNOWN_ISSUES P-2). The
+/// rollup-backed reports return in ~10–90 ms, so this only fires on the expensive `all=true` /
+/// large-corpus live aggregations, not normal traffic.
+const SLOW_REPORT_WARN_MS: i64 = 2000;
+
 /// Prepare a configurable report for a <corpus,server> pair, reading over the caller-supplied
 /// (pooled) `connection` — no per-request fresh `Backend::default()`. `404` on unknown
 /// corpus/service.
@@ -220,6 +226,50 @@ pub fn serve_report(
       context
         .global
         .insert("report_duration".to_string(), report_duration.to_string());
+      // Observability for the expensive live-aggregation path (KNOWN_ISSUES P-2). A non-rollup
+      // report (the `all=true` toggle, a per-task list, or the overview) computes live and holds
+      // its pooled connection for the whole query, so a burst can exhaust the pool and 503
+      // other requests. Emit the path + duration so an operator can measure how often the
+      // slow `all=true` toggle is actually hit and how slow it runs in production — the
+      // evidence the P-2 cost call needs — and `warn` past the pool-pinning-risk threshold.
+      // Pure observability: no behaviour change. (The metric name/JSON stay stable; this is a
+      // structured log via Rocket's tracing subscriber.)
+      if !used_rollup {
+        let corpus_l = context
+          .global
+          .get("corpus_name")
+          .map(String::as_str)
+          .unwrap_or("?");
+        let service_l = context
+          .global
+          .get("service_name")
+          .map(String::as_str)
+          .unwrap_or("?");
+        let severity_l = context
+          .global
+          .get("severity")
+          .map(String::as_str)
+          .unwrap_or("-");
+        if report_duration >= SLOW_REPORT_WARN_MS {
+          tracing::warn!(
+            corpus = corpus_l,
+            service = service_l,
+            severity = severity_l,
+            all_messages,
+            duration_ms = report_duration,
+            "slow live report held a pooled connection for the whole query (P-2 pool-saturation risk)"
+          );
+        } else {
+          tracing::debug!(
+            corpus = corpus_l,
+            service = service_l,
+            severity = severity_l,
+            all_messages,
+            duration_ms = report_duration,
+            "live-computed (non-rollup) report"
+          );
+        }
+      }
       // Report freshness = the **data's** age, and it must match where the data actually came from
       // (KNOWN_ISSUES): a matview-backed report is only as current as its last `report_summary`
       // refresh, but a live-computed one (all-severities `all=true`, per-task lists, the top-level

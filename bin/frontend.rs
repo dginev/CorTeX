@@ -47,6 +47,13 @@ async fn files(file: PathBuf) -> Result<NamedFile, NotFound<String>> {
 
 #[launch]
 fn rocket() -> _ {
+  // Install our `tracing` subscriber *before* Rocket builds, so application-level events (e.g. the
+  // P-2 slow-report warning in `frontend::concerns`) are actually emitted — Rocket's own subscriber
+  // only surfaces `rocket::*` targets and ignores `RUST_LOG`, so without this the frontend's
+  // app-level `tracing` events go nowhere (which is why legacy code reached for `println!`). Set
+  // first so Rocket finds an existing global subscriber and defers to it (idempotent `try_init`);
+  // `RUST_LOG` now controls frontend verbosity the same way it does the dispatcher.
+  cortex::observability::init_tracing();
   // Drive the template directory from the runtime configuration rather than a CWD-relative
   // Rocket.toml, so the binary is not bound to its working directory.
   let figment =
