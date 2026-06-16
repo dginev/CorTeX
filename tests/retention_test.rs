@@ -179,9 +179,60 @@ fn retention_stats_preview_and_prune() {
   );
 }
 
-// Custom harness (see KNOWN_ISSUES L-1): run the case then `_exit(0)`.
+/// The agent twin of the prune action (`POST /api/retention/prune?before=`): token-gated,
+/// validated, and it removes the same snapshots as the human screen.
+fn agent_prune_is_token_gated_and_validated() {
+  seed_old_snapshot();
+  let client = client();
+
+  // Token-gated: no token -> 401 (no unauthenticated data deletion).
+  let response = client
+    .post("/api/retention/prune?before=2001-01-01")
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Unauthorized,
+    "prune is token-gated"
+  );
+
+  // Malformed cutoff -> 400 (not a silent no-op for an agent).
+  let response = client
+    .post("/api/retention/prune?before=not-a-date")
+    .header(Header::new("X-Cortex-Token", "token1"))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::BadRequest,
+    "malformed cutoff -> 400"
+  );
+
+  // Valid prune -> 200 + ack; the year-2000 snapshot is removed.
+  let response = client
+    .post("/api/retention/prune?before=2001-01-01")
+    .header(Header::new("X-Cortex-Token", "token1"))
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  assert_eq!(response.content_type(), Some(ContentType::JSON));
+  let ack: serde_json::Value = response.into_json().expect("prune ack json");
+  assert!(
+    ack["pruned"].as_u64().is_some_and(|n| n >= 1),
+    "the ack reports the removed snapshot count"
+  );
+  assert_eq!(ack["before"], "2001-01-01");
+  assert_eq!(ack["actor"], "username1", "attributed to the token's owner");
+
+  let mut db = backend::testdb();
+  assert_eq!(
+    HistoricalTask::count_before(&mut db.connection, cutoff_before_year(2001)).unwrap(),
+    0,
+    "no pre-2001 snapshots remain after the agent prune"
+  );
+}
+
+// Custom harness (see KNOWN_ISSUES L-1): run the cases then `_exit(0)`.
 fn main() {
   retention_stats_preview_and_prune();
+  agent_prune_is_token_gated_and_validated();
   eprintln!("retention_test: all cases passed");
   unsafe { libc::_exit(0) }
 }
