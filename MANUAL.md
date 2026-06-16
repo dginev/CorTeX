@@ -277,6 +277,7 @@ checks the *install* is healthy. Neither mutates anything.
 cortex import   arxmliv /data/arxmliv             # walk the path, create one import task per document
 cortex import   my-tikz /data/tikz --complex      # --complex for multi-file documents
 cortex activate arxmliv tex_to_html               # then queue one conversion task per document
+cortex extend   arxmliv                           # later: re-scan the path, import + queue only NEW documents
 ```
 
 `import` registers a corpus and walks its path (one import task per document); `activate` then

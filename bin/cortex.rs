@@ -7,10 +7,10 @@
 
 //! `cortex` — the administration CLI. A thin renderer over the library: self-install (`init`),
 //! diagnostics (`doctor`), DB tuning, token management, the corpus/service lifecycle (`import`,
-//! `activate`, `deactivate`, `delete-corpus`, `sandbox`), the `report`/`runs`/`document` read
-//! surface (the CLI twins of the web/agent report ladder, run-history, and per-article forensics —
-//! `report` drills overview → severity → category → `what` → affected documents), and dataset
-//! export.
+//! `extend`, `activate`, `deactivate`, `delete-corpus`, `sandbox`), the `report`/`runs`/`document`
+//! read surface (the CLI twins of the web/agent report ladder, run-history, and per-article
+//! forensics — `report` drills overview → severity → category → `what` → affected documents), and
+//! dataset export.
 
 use std::path::PathBuf;
 
@@ -221,6 +221,15 @@ enum Command {
     #[arg(long, default_value = "")]
     description: String,
   },
+  /// Re-scan a corpus's path for newly-arrived documents and import them — the CLI twin of the
+  /// corpus screen's "Extend" button and the agent `POST /api/corpora/<name>/extend`. Adds an
+  /// import task per new document and extends each already-active service to cover them (so new
+  /// documents get conversion tasks), leaving existing tasks + results untouched. The incremental
+  /// companion to `import` for a growing corpus.
+  Extend {
+    /// Corpus name to re-scan.
+    corpus: String,
+  },
   /// Activate a service on a corpus — the CLI twin of the corpus screen's "Register a service"
   /// form and the agent `POST /api/corpora/<c>/services/<s>`. Creates one TODO task per imported
   /// document so the dispatcher converts them (the step after `import`). Refuses an
@@ -362,6 +371,7 @@ fn main() {
       complex,
       description,
     } => run_import(name, path, complex, description),
+    Command::Extend { corpus } => run_extend(corpus),
     Command::Activate {
       corpus,
       service,
@@ -1200,6 +1210,67 @@ fn run_import(name: String, path: String, complex: bool, description: String) {
   println!(
     "Imported {} document(s) into corpus {name}. Start the dispatcher (or activate a service) to convert them.",
     group_thousands(imported)
+  );
+}
+
+/// Re-scans a corpus's path for newly-arrived documents and imports them — the CLI surface of the
+/// corpus screen's "Extend" button and the agent `POST /api/corpora/<name>/extend`, driving the
+/// same `Importer::extend_corpus` + `Backend::extend_service`. Adds an import task per new document
+/// and extends each already-active real service (id > 2) to cover them, leaving existing tasks +
+/// results untouched. Prints how many new documents were added. Exits `1` on an unknown corpus or
+/// an extend error.
+fn run_extend(corpus_name: String) {
+  let mut backend = backend::from_address(default_db_address());
+  let corpus = match Corpus::find_by_name(&corpus_name.to_lowercase(), &mut backend.connection) {
+    Ok(corpus) => corpus,
+    Err(_) => {
+      eprintln!("No such corpus: {corpus_name}");
+      std::process::exit(1);
+    },
+  };
+  let corpus_id = corpus.id;
+  let corpus_path = corpus.path.clone();
+  let before = Corpus::document_counts(&mut backend.connection)
+    .get(&corpus_id)
+    .copied()
+    .unwrap_or(0);
+  println!(
+    "Extending {} — re-scanning {corpus_path} for new documents …",
+    corpus.name
+  );
+  let mut importer = Importer {
+    corpus,
+    backend,
+    cwd: Importer::cwd(),
+    active_prefixes: std::collections::HashSet::new(),
+  };
+  if let Err(error) = importer.extend_corpus() {
+    eprintln!("Extend failed: {error}");
+    std::process::exit(1);
+  }
+  // Extend each already-active real service (id > 2) to the new documents so they get conversion
+  // tasks too — the magic init/import services are not "activated" services. A per-service failure
+  // is logged but doesn't abort the others.
+  let services = importer
+    .corpus
+    .select_services(&mut importer.backend.connection)
+    .unwrap_or_default();
+  for service in services.iter().filter(|service| service.id > 2) {
+    if let Err(error) = importer.backend.extend_service(service, &corpus_path) {
+      eprintln!(
+        "Warning: could not extend service {}: {error}",
+        service.name
+      );
+    }
+  }
+  let after = Corpus::document_counts(&mut importer.backend.connection)
+    .get(&corpus_id)
+    .copied()
+    .unwrap_or(0);
+  println!(
+    "Extended {corpus_name}: {} new document(s) ({} total).",
+    group_thousands(after - before),
+    group_thousands(after)
   );
 }
 
