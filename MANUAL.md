@@ -265,7 +265,9 @@ emit the same shape as the corresponding agent DTO (so a script gets identical n
 
 ```bash
 cortex status            # pending-task backlog, worker fleet, background jobs, latest run
-cortex status --json     # same shape as the /admin/status.json feed
+cortex status --json     # same shape as the /admin/status.json (and /api/status) feed
+cortex jobs              # list recent background jobs (imports/reruns/reindex) with health + heartbeat-idle age
+cortex jobs --active     # only pending/running jobs; --json mirrors the agent /api/jobs JobDto list
 ```
 
 `status` shows *what's happening now* (the same numbers as the dashboard + `/metrics`); `doctor`

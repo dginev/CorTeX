@@ -23,6 +23,7 @@ use cortex::backend::{
 use cortex::bootstrap::{self, DoctorReport};
 use cortex::config::config_file_path;
 use cortex::frontend::helpers::group_thousands;
+use cortex::frontend::jobs::JobDto;
 use cortex::frontend::params::{MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE};
 use cortex::helpers::TaskStatus;
 use cortex::importer::Importer;
@@ -59,6 +60,20 @@ enum Command {
   Status {
     /// Emit JSON (the same shape as the admin `/admin/status.json` feed) instead of a text
     /// summary.
+    #[arg(long)]
+    json: bool,
+  },
+  /// List recent background jobs (imports, reruns, reindex/analyze, sandbox carves) with health,
+  /// progress, and heartbeat age — the CLI twin of the `/jobs` dashboard and the agent
+  /// `GET /api/jobs`. (`status` shows job *counts*; `jobs` shows the list.)
+  Jobs {
+    /// Show only pending/running jobs (omit terminal ones).
+    #[arg(long)]
+    active: bool,
+    /// Max jobs to list (default 50, capped at 200).
+    #[arg(long)]
+    limit: Option<i64>,
+    /// Emit JSON (the same shape as the agent `JobDto` list) instead of a text table.
     #[arg(long)]
     json: bool,
   },
@@ -340,6 +355,11 @@ fn main() {
     Command::Init => run_init(),
     Command::Doctor { json } => run_doctor(json),
     Command::Status { json } => run_status(json),
+    Command::Jobs {
+      active,
+      limit,
+      json,
+    } => run_jobs(active, limit, json),
     Command::Report {
       corpus,
       service,
@@ -1801,6 +1821,56 @@ fn run_status(json: bool) {
         if run.end_time.is_none() { ", open" } else { "" }
       ),
       None => println!("  last run:         none yet"),
+    }
+  }
+}
+
+/// Lists recent background jobs — the CLI surface of the `/jobs` dashboard and the agent
+/// `GET /api/jobs`, sharing the same `jobs::list_recent` + `JobDto`. `--active` narrows to
+/// pending/running; `--json` mirrors the agent `JobDto` list. The text view shows each job's
+/// health, progress, runtime, and heartbeat-idle age (a large idle on a running job flags a stall).
+fn run_jobs(active: bool, limit: Option<i64>, json: bool) {
+  let mut backend = backend::from_address(default_db_address());
+  let limit = limit.unwrap_or(50).clamp(1, 200);
+  let now = cortex::jobs::db_now(&mut backend.connection);
+  let dtos: Vec<JobDto> = cortex::jobs::list_recent(&mut backend.connection, active, limit)
+    .into_iter()
+    .map(|job| JobDto::at(job, now))
+    .collect();
+  if json {
+    println!(
+      "{}",
+      serde_json::to_string_pretty(&dtos).unwrap_or_default()
+    );
+    return;
+  }
+  if dtos.is_empty() {
+    println!("No {}background jobs.", if active { "active " } else { "" });
+    return;
+  }
+  println!("{} background job(s):", dtos.len());
+  for job in &dtos {
+    let progress = match job.progress_total {
+      Some(total) => format!(
+        "{}/{}",
+        group_thousands(i64::from(job.progress_current)),
+        group_thousands(i64::from(total))
+      ),
+      None => group_thousands(i64::from(job.progress_current)),
+    };
+    // Flag a stalled running job: a large heartbeat-idle age while non-terminal.
+    let idle =
+      if (job.health == "running" || job.health == "pending") && job.seconds_since_update >= 120 {
+        format!("{}s ⚠", job.seconds_since_update)
+      } else {
+        format!("{}s", job.seconds_since_update)
+      };
+    println!(
+      "  [{}] {}  by {}  ·  {} done  ·  {}s runtime  ·  idle {}",
+      job.health, job.kind, job.actor, progress, job.duration_seconds, idle
+    );
+    if !job.message.trim().is_empty() {
+      println!("        {}", job.message.trim());
     }
   }
 }
