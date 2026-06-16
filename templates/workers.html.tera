@@ -2,7 +2,7 @@
 <div class="center">
   <h1>Workers for {{global.service_name}}</h1>
   <p class="fleet-summary">
-    <strong>{{global.fleet_total}}</strong> workers
+    <strong>{{global.fleet_total | group_thousands}}</strong> workers
     <span class="report-sep">·</span>
     <span class="status-ok">{{global.fleet_fresh}} active</span>
     <span class="report-sep">·</span>

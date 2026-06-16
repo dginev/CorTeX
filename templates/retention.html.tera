@@ -29,12 +29,12 @@
 
   {% if preview is defined and preview %}
   <p class="gap-top">
-    <strong>{{ preview.count }}</strong> snapshot(s) are older than <strong>{{ preview.before }}</strong>.
+    <strong>{{ preview.count | group_thousands }}</strong> snapshot(s) are older than <strong>{{ preview.before }}</strong>.
     {% if preview.count > 0 %}
   <form method="post" action="/admin/retention/prune" class="inline-form gap-left"
-    onsubmit="return confirm('Permanently delete {{ preview.count }} per-task snapshots older than {{ preview.before }}? This cannot be undone.');">
+    onsubmit="return confirm('Permanently delete {{ preview.count | group_thousands }} per-task snapshots older than {{ preview.before }}? This cannot be undone.');">
     <input type="hidden" name="before" value="{{ preview.before }}">
-    <button type="submit" class="status-bad">Delete {{ preview.count }} snapshot(s) permanently</button>
+    <button type="submit" class="status-bad">Delete {{ preview.count | group_thousands }} snapshot(s) permanently</button>
   </form>
   {% else %}
   <span class="muted">nothing to prune.</span>
