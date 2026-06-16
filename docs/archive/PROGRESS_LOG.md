@@ -11,6 +11,23 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](../PRODUCTIZING_PLAN.md); the
 
 ## 2026-06-15
 
+- **Arm 15 loop run — admin UX + agent/human symmetry increments (cron every 5m).** A string of
+  focused, tested, committed increments: **C2 guided job workflows** (`f7d991b`) — all 8
+  job-spawning human handlers redirect to `/jobs/<uuid>` (watch your job) + the job page shows a
+  kind-aware next-step on success. **History immutability (owner directive)** — I'd added a
+  `POST /api/retention/prune` agent twin; the owner ruled the historical tables must never expose
+  deletion/modification via the API, so it was **reverted** (`522d1bb`), audited (every `/api` path
+  touching history is read-only or append), and codified as **DESIGN_PRINCIPLES principle 9** +
+  memory [[history-immutable-over-api]]. **Logo refresh** (`23bed12`→`f4bdaed`) — swapped the nav/hero
+  wordmark to the owner's new candidate, settling on the flat-serif brain-`O` variant (crisper than
+  the metallic at nav size); same dual-variant crop+blend, downscaled to 960×640. **Sessions-revoke
+  agent twin** (`3123240`) — `POST /api/sessions/revoke?owner=` (ephemeral auth state, not history,
+  so agent-exposed); closes the last human-only admin write. **Jobs-list scannability** (`6538926`) —
+  color-coded health + a stall flag on the Idle column past the tunable reap threshold.
+  **"view as JSON" discoverability** (`3689e55` admin screens + `f61b1b6` public report ladder +
+  overview) — every human screen with an agent twin now surfaces it, making the both-consumers
+  symmetry visible end-to-end. The `:8001` dev frontend (on the migrated `cortex_load`) is the live
+  test-drive. See [[experience-rationalization-program]].
 - **Arm 15 continued — agent report ladder completed + admin UX (loop active, cron every 5m).**
   After the live-ops console + plan (below): (2) **A1 per-article forensics** (`c161e15`) — `GET
   /api/corpus/<c>/<svc>/document/<name>` → `DocumentReportDto`; building it exposed a real ORM bug
