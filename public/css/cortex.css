@@ -370,6 +370,17 @@ hr {
   padding: 0.6rem 0.9rem;
   background-color: var(--bg-elev);
   box-shadow: var(--shadow);
+  /* Long run descriptions / filter tokens (e.g. `API(filters: severity=fatal)`) must wrap inside the
+     card on narrow displays rather than overflow its border. `overflow-wrap` is inherited, so this
+     covers the Last-run card's nested text too. */
+  overflow-wrap: break-word;
+  min-width: 0;
+}
+/* The global `time { white-space: nowrap }` keeps compact relative times ("5s ago") on one line, but
+   the Last-run card's full date ("Jun 13, 2026, 11:51 PM EDT") must wrap on a narrow display rather
+   than overflow the card. */
+.admin-card time {
+  white-space: normal;
 }
 
 /* Live ops console — the at-a-glance stat strip + its live-refresh indicator. */
