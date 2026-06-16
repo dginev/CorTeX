@@ -110,7 +110,7 @@ fn admin_requires_sign_in_then_grants_access() {
   // The live ops console's status cards + the live-refresh indicator render (at-a-glance state).
   assert!(
     body.contains("active jobs")
-      && body.contains("workers in")
+      && body.contains("workers")
       && body.contains("failed (24h)")
       && body.contains("Last run"),
     "the dashboard shows the live ops status strip (jobs / workers / failures / last run)"

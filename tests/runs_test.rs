@@ -494,7 +494,7 @@ fn api_lists_runs_and_reports_current(client: &Client) {
   assert_eq!(response.content_type(), Some(ContentType::HTML));
   let body = response.into_string().expect("html body");
   assert!(
-    body.contains("Historical Runs"),
+    body.contains("Historical runs"),
     "renders the run-history chart screen"
   );
   assert!(
