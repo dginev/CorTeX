@@ -62,6 +62,15 @@ work without trace, or take down unrelated components.
    (see `bench_pipeline.rs`), not asserted. Each hardening increment ships red/green with a test
    that pins the failure it fixes.
 
+9. **History is immutable over the API.** The historical-information tables (`historical_runs`,
+   `historical_tasks`) are the reliable record of how the corpus converted over time. The **agent
+   API never exposes a deletion or modification of them** — every `/api/...` path that touches
+   history is read-only or **append** (a new run, a new snapshot). Pruning the unbounded-growth
+   snapshot table is the *one* mutation, and it is a gated + audited + confirm-dialog **human admin**
+   operation only (`/admin/retention/prune`), never an agent endpoint. A programmatic consumer can
+   always trust that history it has read will still be there, unchanged. (Owner directive,
+   2026-06-15.)
+
 ## How this is applied
 
 - Every increment is checked against these principles; deviations are logged in
