@@ -239,7 +239,7 @@ checks the *install* is healthy. Neither mutates anything.
 
 ```bash
 cortex report   arxmliv tex_to_html             # service overview: valid-task total + per-status counts/shares
-cortex runs     arxmliv tex_to_html             # run history: each run's per-severity tallies (live for the open run)
+cortex runs     arxmliv tex_to_html             # run history: per-severity tallies + run-over-run delta vs the previous run (live for the open run)
 cortex document arxmliv tex_to_html 2105.13573  # per-article forensics: status + every worker-log message
 ```
 

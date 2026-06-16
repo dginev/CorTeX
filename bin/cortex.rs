@@ -365,7 +365,11 @@ fn run_runs(corpus_name: String, service_name: String, json: bool) {
       service.name,
       runs.len()
     );
-    for r in &runs {
+    // Newest-first (`find_by` orders `start_time.desc()`), so run `i` is compared against the
+    // next-older run `i+1` for the run-over-run delta — the same "how did this run move the
+    // conversion tallies" view the web run-history screen renders. Text (human) surface only;
+    // `--json` above stays raw (agents diff themselves).
+    for (i, r) in runs.iter().enumerate() {
       let state = if r.end_time.is_some() {
         "completed"
       } else {
@@ -382,6 +386,17 @@ fn run_runs(corpus_name: String, service_name: String, json: bool) {
         "       {} tasks: {} ok · {} warn · {} err · {} fatal · {} inv · {} in-prog",
         r.total, r.no_problem, r.warning, r.error, r.fatal, r.invalid, r.in_progress
       );
+      if let Some(older) = runs.get(i + 1) {
+        // `{:+}` always shows the sign: `+26 ok` (more clean conversions = better), `-138 fatal`
+        // (fewer fatals = better). No older run for the oldest row → no delta line.
+        println!(
+          "       Δ vs previous: {:+} ok · {:+} warn · {:+} err · {:+} fatal",
+          r.no_problem - older.no_problem,
+          r.warning - older.warning,
+          r.error - older.error,
+          r.fatal - older.fatal,
+        );
+      }
       if !r.description.trim().is_empty() {
         println!("       {}", r.description.trim());
       }
