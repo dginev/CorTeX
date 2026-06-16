@@ -28,7 +28,7 @@ use crate::backend::{DatabaseUrl, DbPool};
 use crate::concerns::CortexInsertable;
 use crate::frontend::actor::{require_admin_to, Actor, AdminReject, AdminSession, ReturnTo};
 use crate::frontend::corpora::start_activate;
-use crate::frontend::helpers::decorate_uri_encodings;
+use crate::frontend::helpers::{decorate_uri_encodings, group_thousands};
 use crate::frontend::params::TemplateContext;
 use crate::models::{Corpus, NewService, Service, WorkerMetadata};
 
@@ -126,24 +126,6 @@ impl From<WorkerMetadata> for WorkerDto {
 /// Resolves a service name to its record, mapping a miss to `404`.
 fn resolve(service: &str, connection: &mut diesel::PgConnection) -> Result<Service, Status> {
   Service::find_by_name(service, connection).map_err(|_| Status::NotFound)
-}
-
-/// Groups a non-negative count into thousands with commas (`5449369` → `5,449,369`) for the
-/// fleet-summary throughput, which can reach millions on a long-lived corpus.
-fn group_thousands(n: i64) -> String {
-  let digits = n.abs().to_string();
-  let mut grouped = String::new();
-  for (i, ch) in digits.chars().enumerate() {
-    if i > 0 && (digits.len() - i).is_multiple_of(3) {
-      grouped.push(',');
-    }
-    grouped.push(ch);
-  }
-  if n < 0 {
-    format!("-{grouped}")
-  } else {
-    grouped
-  }
 }
 
 /// The service registry (agent twin of the registry screen): every registered service. `503` if the
@@ -745,20 +727,4 @@ pub fn routes() -> Vec<Route> {
     worker_report_page,
     delete_service_human
   ]
-}
-
-#[cfg(test)]
-mod tests {
-  use super::group_thousands;
-
-  #[test]
-  fn group_thousands_inserts_separators() {
-    assert_eq!(group_thousands(0), "0");
-    assert_eq!(group_thousands(7), "7");
-    assert_eq!(group_thousands(999), "999");
-    assert_eq!(group_thousands(1000), "1,000");
-    assert_eq!(group_thousands(12345), "12,345");
-    assert_eq!(group_thousands(5_449_369), "5,449,369");
-    assert_eq!(group_thousands(-1234), "-1,234");
-  }
 }

@@ -54,15 +54,19 @@ pub struct CorpusDto {
   pub description: String,
   /// Whether documents are multi-file (complex) rather than a single TeX file.
   pub complex: bool,
+  /// Number of ingested documents (import-service tasks) — the corpus's scale at a glance.
+  pub document_count: i64,
 }
 
-impl From<Corpus> for CorpusDto {
-  fn from(corpus: Corpus) -> Self {
+impl CorpusDto {
+  /// Builds the DTO, attaching the document count looked up from the batched per-corpus map.
+  fn build(corpus: Corpus, document_count: i64) -> Self {
     CorpusDto {
       name: corpus.name,
       path: corpus.path,
       description: corpus.description,
       complex: corpus.complex,
+      document_count,
     }
   }
 }
@@ -71,11 +75,20 @@ impl From<Corpus> for CorpusDto {
 #[openapi(tag = "Corpora")]
 #[get("/api/corpora")]
 pub fn api_corpora(pool: &State<DbPool>) -> Json<Vec<CorpusDto>> {
-  let corpora = match pool.get() {
-    Ok(mut connection) => Corpus::all(&mut connection).unwrap_or_default(),
-    Err(_) => Vec::new(),
+  let Ok(mut connection) = pool.get() else {
+    return Json(Vec::new());
   };
-  Json(corpora.into_iter().map(CorpusDto::from).collect())
+  let corpora = Corpus::all(&mut connection).unwrap_or_default();
+  let counts = Corpus::document_counts(&mut connection);
+  Json(
+    corpora
+      .into_iter()
+      .map(|corpus| {
+        let count = counts.get(&corpus.id).copied().unwrap_or(0);
+        CorpusDto::build(corpus, count)
+      })
+      .collect(),
+  )
 }
 
 /// Per-service status counts within a corpus (mirrors the progress report).
@@ -856,10 +869,22 @@ fn delete_corpus_cascade(connection: &mut PgConnection, corpus: Corpus) -> Resul
 #[get("/")]
 pub fn overview_page(pool: &State<DbPool>) -> Result<Template, Status> {
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let counts = Corpus::document_counts(&mut connection);
   let corpora = Corpus::all(&mut connection)
     .unwrap_or_default()
     .iter()
-    .map(Corpus::to_hash)
+    .map(|corpus| {
+      let mut hash = corpus.to_hash();
+      // Document scale at a glance on the landing (0 → omitted client-side); grouped for
+      // readability.
+      if let Some(count) = counts.get(&corpus.id) {
+        hash.insert(
+          "document_count".to_string(),
+          crate::frontend::helpers::group_thousands(*count),
+        );
+      }
+      hash
+    })
     .collect::<Vec<_>>();
   let mut global = HashMap::new();
   global.insert(

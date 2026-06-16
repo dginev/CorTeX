@@ -13,6 +13,7 @@
     <a class="corpus-card" href="/corpus/{{ corpus.name_uri }}">
       <span class="corpus-card-name">{{ corpus.name }}</span>
       {% if corpus.description %}<span class="corpus-card-desc">{{ corpus.description }}</span>{% endif %}
+      {% if corpus.document_count %}<span class="corpus-card-count">{{ corpus.document_count }} documents</span>{% endif %}
     </a>
     {% endfor %}
   </section>

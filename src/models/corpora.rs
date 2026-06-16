@@ -73,6 +73,26 @@ impl Corpus {
       .order(corpora::name.asc())
       .get_results(connection)
   }
+
+  /// Document count per corpus id, for **every** corpus in **one** query (no N+1) — the number of
+  /// `import`-service (id 2) tasks, which is one per ingested document. Used to show each corpus's
+  /// scale on the overview/landing without a per-corpus count. A corpus with no import tasks (none
+  /// ingested yet) is simply absent from the map (treat as 0).
+  pub fn document_counts(connection: &mut PgConnection) -> HashMap<i32, i64> {
+    use crate::schema::tasks::dsl::{corpus_id, service_id, tasks};
+    use diesel::dsl::sql;
+    use diesel::sql_types::BigInt;
+    // The magic `import` service id is 2 (1=init, 2=import). Raw `count(*)` mirrors
+    // `progress_report` and sidesteps Diesel's aggregate/group-by type check.
+    tasks
+      .select((corpus_id, sql::<BigInt>("count(*)")))
+      .filter(service_id.eq(2))
+      .group_by(corpus_id)
+      .load::<(i32, i64)>(connection)
+      .unwrap_or_default()
+      .into_iter()
+      .collect()
+  }
   /// Return a hash representation of the corpus, usually for frontend reports
   pub fn to_hash(&self) -> HashMap<String, String> {
     let mut hm = HashMap::new();

@@ -40,6 +40,19 @@ fn api_corpora_lists_registered_corpora() {
     description: "a test corpus".to_string(),
   })
   .expect("insert a corpus");
+  // Two import-service (id 2) tasks = two ingested documents, so the corpus reports a real scale.
+  let corpus = Corpus::find_by_name(name, &mut db.connection).expect("our corpus");
+  for i in 0..2 {
+    diesel::insert_into(tasks::table)
+      .values((
+        tasks::entry.eq(format!("/tmp/corpora_capability_test/doc{i}.zip")),
+        tasks::service_id.eq(2),
+        tasks::corpus_id.eq(corpus.id),
+        tasks::status.eq(TaskStatus::TODO.raw()),
+      ))
+      .execute(&mut db.connection)
+      .expect("insert import task");
+  }
 
   let client = client();
   let response = client.get("/api/corpora").dispatch();
@@ -56,7 +69,24 @@ fn api_corpora_lists_registered_corpora() {
   assert!(ours["path"].is_string());
   assert!(ours["description"].is_string());
   assert!(ours["complex"].is_boolean());
+  assert_eq!(
+    ours["document_count"], 2,
+    "the agent corpus list reports the ingested-document count (batched, no N+1)"
+  );
 
+  // The human overview (HTML twin) renders the same count, grouped for readability.
+  let overview = client
+    .get("/")
+    .dispatch()
+    .into_string()
+    .expect("overview html");
+  assert!(
+    overview.contains(name) && overview.contains("2 documents"),
+    "the landing page shows each corpus's document count"
+  );
+
+  let _ =
+    diesel::delete(tasks::table.filter(tasks::corpus_id.eq(corpus.id))).execute(&mut db.connection);
   let _ = diesel::delete(corpora::table.filter(corpora::name.eq(name))).execute(&mut db.connection);
 }
 

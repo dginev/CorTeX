@@ -1049,6 +1049,11 @@ h3 {
   color: var(--ink-muted);
   line-height: 1.45;
 }
+.corpus-card-count {
+  font-size: var(--fs-sm);
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
 .empty-state {
   text-align: center;
   color: var(--ink-muted);

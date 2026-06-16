@@ -57,6 +57,25 @@ pub fn iso_utc(time: chrono::NaiveDateTime) -> String {
     .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
+/// Groups an integer into thousands with commas (`2820484` → `2,820,484`) for human-facing counts
+/// (corpus document totals, fleet throughput) that can reach millions. Agents get the raw number;
+/// only the rendered HTML is grouped.
+pub fn group_thousands(n: i64) -> String {
+  let digits = n.unsigned_abs().to_string();
+  let mut grouped = String::new();
+  for (i, ch) in digits.chars().enumerate() {
+    if i > 0 && (digits.len() - i).is_multiple_of(3) {
+      grouped.push(',');
+    }
+    grouped.push(ch);
+  }
+  if n < 0 {
+    format!("-{grouped}")
+  } else {
+    grouped
+  }
+}
+
 /// Maps a cortex message severity into a bootstrap class for color highlight
 pub fn severity_highlight(severity: &str) -> &str {
   match severity {
@@ -184,5 +203,21 @@ pub fn decorate_uri_encodings(context: &mut TemplateContext) {
     context
       .global
       .insert("current_link_uri".to_string(), current_link);
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::group_thousands;
+
+  #[test]
+  fn group_thousands_inserts_separators() {
+    assert_eq!(group_thousands(0), "0");
+    assert_eq!(group_thousands(7), "7");
+    assert_eq!(group_thousands(999), "999");
+    assert_eq!(group_thousands(1000), "1,000");
+    assert_eq!(group_thousands(12345), "12,345");
+    assert_eq!(group_thousands(2_820_484), "2,820,484");
+    assert_eq!(group_thousands(-1234), "-1,234");
   }
 }
