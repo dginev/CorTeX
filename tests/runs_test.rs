@@ -94,6 +94,7 @@ fn main() {
   current_run_reports_live_tallies(&client);
   api_task_diff_over_real_snapshots(&client);
   api_runs_is_404_for_unknown_corpus(&client);
+  overview_overlays_live_tallies_via_batch(&client);
   overview_lists_runs_system_wide(&client);
   eprintln!("runs_test: all cases passed");
   // `_exit` (not `process::exit`): skip C atexit handlers — libpq/OpenSSL global cleanup races with
@@ -256,6 +257,60 @@ fn overview_lists_runs_system_wide(client: &Client) {
   assert!(
     html.contains("Historical runs") && html.contains(CORPUS_NAME),
     "the overview lists the seeded run"
+  );
+}
+
+// The system-wide overview overlays LIVE tallies onto open runs via a single BATCHED query (the
+// N+1 fix, KNOWN_ISSUES P-1). Seed a known live distribution and assert the open run in the
+// system-wide list reflects it exactly — pinning the batched path to `progress_report`'s numbers.
+fn overview_overlays_live_tallies_via_batch(client: &Client) {
+  seed(); // corpus + service + two runs (the second left open), no tasks yet
+  let mut backend = backend::testdb();
+  let corpus = Corpus::find_by_name(CORPUS_NAME, &mut backend.connection).expect("corpus");
+  let service = Service::find_by_name(SERVICE_NAME, &mut backend.connection).expect("service");
+  // 3 NoProblem, 2 Error, 1 TODO: no invalids so total = 6; in_progress = the lone TODO.
+  let mut n = 0;
+  for (status, count) in [
+    (TaskStatus::NoProblem, 3),
+    (TaskStatus::Error, 2),
+    (TaskStatus::TODO, 1),
+  ] {
+    for _ in 0..count {
+      backend
+        .add(&NewTask {
+          entry: format!("/tmp/runs-api/batch-{n}.zip"),
+          service_id: service.id,
+          corpus_id: corpus.id,
+          status: status.raw(),
+        })
+        .expect("add task");
+      n += 1;
+    }
+  }
+
+  let runs: Value = client
+    .get(format!("/api/runs?corpus={CORPUS_NAME}"))
+    .dispatch()
+    .into_json()
+    .expect("system-wide runs json");
+  let open = runs
+    .as_array()
+    .expect("array")
+    .iter()
+    .find(|run| run["corpus"] == CORPUS_NAME && run["completed"] == false)
+    .expect("the open run for the seeded corpus");
+  assert_eq!(
+    open["no_problem"], 3,
+    "batched overlay surfaces live no_problem"
+  );
+  assert_eq!(open["error"], 2, "batched overlay surfaces live error");
+  assert_eq!(
+    open["in_progress"], 1,
+    "batched overlay surfaces live in_progress (the TODO)"
+  );
+  assert_eq!(
+    open["total"], 6,
+    "batched total = all non-invalid live tasks (3 + 2 + 1)"
   );
 }
 

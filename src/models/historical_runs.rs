@@ -285,9 +285,46 @@ impl HistoricalRun {
     }
     self
   }
+
+  /// Overlays live tallies onto every **open** run in `runs` using a **single** batched query,
+  /// replacing the per-open-run [`with_live_tallies`](Self::with_live_tallies) N+1 that made the
+  /// system-wide run overview cost one `progress_report` per open run (O(open runs) — a real drag
+  /// when many corpora convert at once). Completed runs keep their frozen tallies untouched. Use
+  /// this for any **multi-`(corpus, service)`** run list; a single-pair list (≤1 open run) can
+  /// keep `with_live_tallies`.
+  #[must_use]
+  pub fn overlay_live_tallies(
+    mut runs: Vec<HistoricalRun>,
+    connection: &mut PgConnection,
+  ) -> Vec<HistoricalRun> {
+    let pairs: Vec<(i32, i32)> = runs
+      .iter()
+      .filter(|run| run.end_time.is_none())
+      .map(|run| (run.corpus_id, run.service_id))
+      .collect::<HashSet<_>>()
+      .into_iter()
+      .collect();
+    if pairs.is_empty() {
+      return runs; // no open runs → nothing live to overlay
+    }
+    let tallies = live_tally_fields_batch(connection, &pairs);
+    for run in runs.iter_mut().filter(|run| run.end_time.is_none()) {
+      if let Some(t) = tallies.get(&(run.corpus_id, run.service_id)) {
+        run.total = t.total;
+        run.no_problem = t.no_problem;
+        run.warning = t.warning;
+        run.error = t.error;
+        run.fatal = t.fatal;
+        run.invalid = t.invalid;
+        run.in_progress = t.in_progress;
+      }
+    }
+    runs
+  }
 }
 
 /// The per-severity tallies of a `(corpus, service)` at a point in time.
+#[derive(Default)]
 struct RunTallies {
   total: i32,
   no_problem: i32,
@@ -316,6 +353,61 @@ fn live_tally_fields(connection: &mut PgConnection, corpus_id: i32, service_id: 
     invalid: get("invalid") as i32,
     in_progress: (get("queued") + get("todo")) as i32,
   }
+}
+
+/// Live tallies for **several** `(corpus, service)` pairs in **one** grouped query — the batched
+/// twin of [`live_tally_fields`], so overlaying live progress onto a list of open runs costs one DB
+/// round-trip instead of one per run (the N+1 that made the system-wide run overview O(open runs);
+/// see [`HistoricalRun::overlay_live_tallies`]). The `ANY` filters may select cross pairs that were
+/// not requested; those are dropped via `wanted`, so the result is exact. Folds the status
+/// distribution exactly as [`live_tally_fields`]/`progress_report` do (total excludes invalids;
+/// `in_progress` = the unfinished `todo` + `queued` leases).
+fn live_tally_fields_batch(
+  connection: &mut PgConnection,
+  pairs: &[(i32, i32)],
+) -> std::collections::HashMap<(i32, i32), RunTallies> {
+  use crate::schema::tasks::dsl::{corpus_id, service_id, status, tasks};
+  use diesel::dsl::sql;
+  use diesel::sql_types::BigInt;
+  let mut out: std::collections::HashMap<(i32, i32), RunTallies> = std::collections::HashMap::new();
+  if pairs.is_empty() {
+    return out;
+  }
+  let wanted: HashSet<(i32, i32)> = pairs.iter().copied().collect();
+  let corpus_ids: Vec<i32> = wanted.iter().map(|(corpus, _)| *corpus).collect();
+  let service_ids: Vec<i32> = wanted.iter().map(|(_, service)| *service).collect();
+  // Raw `count(*)` (as `progress_report` does) sidesteps Diesel's aggregate/group-by type check
+  // while staying parameterized everywhere else.
+  let rows: Vec<(i32, i32, i32, i64)> = tasks
+    .select((corpus_id, service_id, status, sql::<BigInt>("count(*)")))
+    .filter(corpus_id.eq_any(&corpus_ids))
+    .filter(service_id.eq_any(&service_ids))
+    .group_by((corpus_id, service_id, status))
+    .load(connection)
+    .unwrap_or_default();
+  for (corpus, service, raw_status, count) in rows {
+    if !wanted.contains(&(corpus, service)) {
+      continue; // an over-selected cross pair (ANY × ANY) we did not ask for
+    }
+    let count = count as i32;
+    let tally = out.entry((corpus, service)).or_default();
+    let task_status = TaskStatus::from_raw(raw_status);
+    if task_status != TaskStatus::Invalid {
+      tally.total += count; // total excludes only invalids (matches progress_report)
+    }
+    match task_status {
+      TaskStatus::NoProblem => tally.no_problem += count,
+      TaskStatus::Warning => tally.warning += count,
+      TaskStatus::Error => tally.error += count,
+      TaskStatus::Fatal => tally.fatal += count,
+      TaskStatus::Invalid => tally.invalid += count,
+      // unfinished work: TODO (0) and any positive lease mark (Queued) fold into in_progress
+      TaskStatus::TODO => tally.in_progress += count,
+      _ if raw_status > TaskStatus::TODO.raw() => tally.in_progress += count,
+      _ => {}, // Blocked and other negatives count toward total only, as above
+    }
+  }
+  out
 }
 
 impl From<HistoricalRun> for RunMetadata {

@@ -188,11 +188,10 @@ fn load_recent_runs(
   let runs = HistoricalRun::recent_filtered(&mut connection, corpus_id, service_id, owner, limit)
     .map_err(|_| Status::InternalServerError)?;
   // Open runs freeze their tallies only at completion, so their stored counts are zero; overlay the
-  // live progress so an in-progress run shows real numbers (a no-op for completed runs).
-  let runs: Vec<HistoricalRun> = runs
-    .into_iter()
-    .map(|run| run.with_live_tallies(&mut connection))
-    .collect();
+  // live progress so an in-progress run shows real numbers (a no-op for completed runs). Batched
+  // into one query across all open runs — this is a system-wide list, so a per-run overlay would be
+  // an N+1 over the open-run count (KNOWN_ISSUES P-1).
+  let runs = HistoricalRun::overlay_live_tallies(runs, &mut connection);
   // The corpora/services tables are small; one batched read each beats N+1 per-run lookups.
   let corpora: HashMap<i32, String> = Corpus::all(&mut connection)
     .unwrap_or_default()
