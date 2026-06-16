@@ -6,9 +6,10 @@
 // except according to those terms.
 
 //! `cortex` — the administration CLI. A thin renderer over the library: self-install (`init`),
-//! diagnostics (`doctor`), DB tuning, token management, the `report`/`runs`/`document` read surface
-//! (the CLI twins of the web/agent report ladder, run-history, and per-article forensics — `report`
-//! drills overview → severity → category → `what` → affected documents), and dataset export.
+//! diagnostics (`doctor`), DB tuning, token management, corpus `import`, the `report`/`runs`/
+//! `document` read surface (the CLI twins of the web/agent report ladder, run-history, and
+//! per-article forensics — `report` drills overview → severity → category → `what` → affected
+//! documents), and dataset export.
 
 use std::path::PathBuf;
 
@@ -23,7 +24,8 @@ use cortex::config::config_file_path;
 use cortex::frontend::helpers::group_thousands;
 use cortex::frontend::params::{MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE};
 use cortex::helpers::TaskStatus;
-use cortex::models::{Corpus, HistoricalRun, Service, Task, WorkerMetadata};
+use cortex::importer::Importer;
+use cortex::models::{Corpus, HistoricalRun, NewCorpus, Service, Task, WorkerMetadata};
 
 /// Formats a timestamp the same way the web/agent surfaces do (RFC 3339, seconds) so the CLI's run
 /// JSON matches `RunDto`.
@@ -201,6 +203,23 @@ enum Command {
     #[arg(long)]
     yes: bool,
   },
+  /// Register a corpus and import its documents — the CLI twin of the web "Add a corpus" form and
+  /// the agent `POST /api/corpora`. Walks the corpus path creating one import task per document,
+  /// so the dispatcher can then convert them (the usual first step after `cortex init`). Runs
+  /// synchronously to completion (the web/agent run it as a background job); exits `1` on a name
+  /// clash, an unreadable path, or an import error.
+  Import {
+    /// Corpus name — the unique handle used everywhere else.
+    name: String,
+    /// Filesystem path to the corpus root (must be a readable directory on this host).
+    path: String,
+    /// Documents are multi-file (complex) rather than a single TeX file.
+    #[arg(long)]
+    complex: bool,
+    /// Optional human-readable description.
+    #[arg(long, default_value = "")]
+    description: String,
+  },
   /// Delete a corpus (or sandbox) and all of its tasks + log messages — the CLI twin of the
   /// web/agent `DELETE /api/corpora/<name>`, via the transactional, orphan-free `Corpus::destroy`.
   /// Dry-run by default (prints the blast radius); pass `--yes` to delete. Historical run tallies
@@ -304,6 +323,12 @@ fn main() {
       what,
       yes,
     } => run_sandbox(parent, name, service, severity, category, what, yes),
+    Command::Import {
+      name,
+      path,
+      complex,
+      description,
+    } => run_import(name, path, complex, description),
     Command::DeleteCorpus { name, yes } => run_delete_corpus(name, yes),
     Command::TuneDb => println!("{}", bootstrap::db_tuning_guidance()),
     Command::SetAdminToken {
@@ -1073,6 +1098,65 @@ fn run_delete_corpus(name: String, yes: bool) {
       std::process::exit(1);
     },
   }
+}
+
+/// Registers a corpus and imports its documents synchronously — the CLI surface of the web "Add a
+/// corpus" form and the agent `POST /api/corpora`, driving the same `Importer` machinery (one
+/// capability across all three surfaces). Pre-flights the path + name like the agent does (so a
+/// doomed import is never half-registered), runs the walk to completion, then prints the
+/// document count. Exits `1` on a name clash, an unreadable path, or an import error.
+fn run_import(name: String, path: String, complex: bool, description: String) {
+  let mut backend = backend::from_address(default_db_address());
+  // Name must be free (matches the agent's 409).
+  if Corpus::find_by_name(&name, &mut backend.connection).is_ok() {
+    eprintln!("A corpus named {name:?} already exists.");
+    std::process::exit(1);
+  }
+  // Pre-flight the source path (matches the agent's 422): a doomed import is never started, so we
+  // don't leave a registered corpus whose import silently found nothing.
+  if !std::fs::metadata(path.trim_end())
+    .map(|meta| meta.is_dir())
+    .unwrap_or(false)
+  {
+    eprintln!("Path {path:?} is not a readable directory on this host.");
+    std::process::exit(1);
+  }
+  if let Err(error) = backend.add(&NewCorpus {
+    name: name.clone(),
+    path: path.clone(),
+    complex,
+    description,
+  }) {
+    eprintln!("Could not register the corpus: {error}");
+    std::process::exit(1);
+  }
+  let corpus = match Corpus::find_by_name(&name, &mut backend.connection) {
+    Ok(corpus) => corpus,
+    Err(error) => {
+      eprintln!("Registered the corpus but could not reload it: {error}");
+      std::process::exit(1);
+    },
+  };
+  let corpus_id = corpus.id;
+  println!("Importing {name} from {path} …");
+  let mut importer = Importer {
+    corpus,
+    backend,
+    cwd: Importer::cwd(),
+    active_prefixes: std::collections::HashSet::new(),
+  };
+  if let Err(error) = importer.process() {
+    eprintln!("Import failed: {error}");
+    std::process::exit(1);
+  }
+  let imported = Corpus::document_counts(&mut importer.backend.connection)
+    .get(&corpus_id)
+    .copied()
+    .unwrap_or(0);
+  println!(
+    "Imported {} document(s) into corpus {name}. Start the dispatcher (or activate a service) to convert them.",
+    group_thousands(imported)
+  );
 }
 
 fn run_export_dataset(

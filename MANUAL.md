@@ -41,6 +41,9 @@ cargo run --bin cortex -- set-admin-token --generate --owner alice
 
 # 4. Verify the installation is healthy
 cargo run --bin cortex -- doctor
+
+# 5. Import your first corpus (registers it + creates one import task per document)
+cargo run --bin cortex -- import arxmliv /data/arxmliv        # add --complex for multi-file documents
 ```
 
 `doctor` reports database reachability, migration currency, whether the magic services are seeded, and
@@ -266,6 +269,18 @@ cortex status --json     # same shape as the /admin/status.json feed
 
 `status` shows *what's happening now* (the same numbers as the dashboard + `/metrics`); `doctor`
 checks the *install* is healthy. Neither mutates anything.
+
+**Setup — register + import a corpus (the CLI twin of the web "Add a corpus" form / agent `POST
+/api/corpora`):**
+
+```bash
+cortex import arxmliv /data/arxmliv               # walk the path, create one import task per document
+cortex import my-tikz /data/tikz --complex        # --complex for multi-file documents
+```
+
+Runs synchronously to completion (the web/agent run it as a background job), printing the imported
+document count. Pre-flighted like the agent: a name clash or a non-directory path fails fast (exit 1)
+without half-registering the corpus.
 
 **Read — the report ladder, scriptable:**
 
