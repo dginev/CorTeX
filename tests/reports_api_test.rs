@@ -195,6 +195,17 @@ fn category_and_what_reports_match_seed() {
     Status::BadRequest,
     "unknown severity on the entry list -> 400"
   );
+  // A pathologically deep `offset` is rejected (bounds the OFFSET scan-and-discard cost; P-4).
+  assert_eq!(
+    client
+      .get(format!(
+        "/api/reports/{CORPUS_NAME}/{SERVICE_NAME}/warning/math/undefined_x?offset=200001"
+      ))
+      .dispatch()
+      .status(),
+    Status::BadRequest,
+    "offset past ENTRY_LIST_MAX_OFFSET -> 400 (no multi-second deep scan)"
+  );
 
   // --- Guards ----------------------------------------------------------------------------------
   let response = client
