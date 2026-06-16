@@ -339,6 +339,29 @@ hr {
   color: var(--bad);
 }
 
+/* Severity-coloured status labels — the run-diff "Task severity changes" table (and any status cell
+   keyed by a TaskStatus `to_key` string). The status key IS the class suffix, so no per-status
+   template branching is needed; an unrecognised key simply renders in the default ink. */
+.sev-no_problem {
+  color: var(--ok);
+}
+.sev-warning {
+  color: var(--warn);
+}
+.sev-error {
+  color: var(--bad);
+}
+.sev-fatal {
+  color: var(--bad);
+  font-weight: 600;
+}
+.sev-invalid {
+  color: var(--ink-muted);
+}
+.sev-todo {
+  color: var(--ink-muted);
+}
+
 /* Run-history run-over-run deltas: a small signed change vs the previous (older) run, coloured by
    whether it improves (green) or regresses (red) conversion; `delta-zero` is muted (no change). */
 .delta {

@@ -569,6 +569,20 @@ pub async fn entry_fetch(
   serve_entry(&mut connection, service_name, entry_id).await
 }
 
+/// `GET` twin of [`entry_fetch`] for plain downloadable links (browser-native `<a download>`), used
+/// by the run-diff "Task severity changes" table to offer each entry's source archive without the
+/// jQuery/AJAX `entry-submit` downloader. Reuses [`serve_entry`]; same `404`-not-`500` discipline
+/// on an unknown task or a missing/unreadable archive.
+#[get("/entry/<service_name>/<entry_id>")]
+pub async fn entry_download(
+  service_name: String,
+  entry_id: usize,
+  pool: &State<DbPool>,
+) -> Result<NamedFile, NotFound<String>> {
+  let mut connection = pooled(pool)?;
+  serve_entry(&mut connection, service_name, entry_id).await
+}
+
 /// The document-serving route set (preview + archive download), migrated out of `bin/frontend.rs`
 /// onto the pooled, testable library surface.
 /// Shared core of the **human** (cookie-authed) rerun routes: require a signed-in admin, then mark
@@ -733,6 +747,7 @@ pub fn routes() -> Vec<Route> {
   routes![
     preview_entry,
     entry_fetch,
+    entry_download,
     rerun_corpus,
     rerun_severity,
     rerun_category,

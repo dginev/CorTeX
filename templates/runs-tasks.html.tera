@@ -43,6 +43,8 @@
         <thead>
           <tr>
             <th class="left">Entry</th>
+            <th class="left">Preview</th>
+            <th class="left">Source</th>
             <th class="left">Previous status</th>
             <th class="left">Current status</th>
             <th class="left">Previous save</th>
@@ -53,8 +55,10 @@
           {% for task in tasks %}
           <tr>
             <td class="left">{{task.entry}}</td>
-            <td class="left">{{task.previous_status}}</td>
-            <td class="left">{{task.current_status}}</td>
+            <td class="left"><a target="_blank" rel="noopener" href="/preview/{{corpus}}/{{service}}/{{task.entry}}">preview</a></td>
+            <td class="left"><a href="/entry/import/{{task.task_id}}" download>source</a></td>
+            <td class="left"><span class="sev sev-{{task.previous_status}}">{{task.previous_status}}</span></td>
+            <td class="left"><span class="sev sev-{{task.current_status}}">{{task.current_status}}</span></td>
             <td class="left">{{task.previous_saved_at}}</td>
             <td class="left">{{task.current_saved_at}}</td>
           </tr>

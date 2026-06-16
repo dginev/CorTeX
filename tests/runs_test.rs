@@ -629,6 +629,25 @@ fn api_task_diff_over_real_snapshots(client: &Client) {
     );
   }
 
+  // --- HTML twin of the filtered drill-down: the "Task severity changes" table colour-codes the
+  // status cells (by their TaskStatus key) and offers per-row Preview (result) + Source (download)
+  // links right after the Entry cell.
+  let response = client
+    .get(format!(
+      "/runs/{CORPUS_NAME}/{SERVICE_NAME}/tasks?previous=2025-01-01%2000:00:00&current=2025-06-01%2000:00:00&previous_status=error&current_status=warning"
+    ))
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  let body = response.into_string().expect("html body");
+  assert!(
+    body.contains("sev-error") && body.contains("sev-warning"),
+    "status cells are severity-colour-coded by their TaskStatus key"
+  );
+  assert!(
+    body.contains("/preview/") && body.contains("/entry/import/"),
+    "each row offers a result-preview link and a source-download link"
+  );
+
   // --- Summary matrix: now aggregated in SQL (KNOWN_ISSUES R-8) instead of loading every snapshot
   // row. With 2 tasks error->warning and 2 staying error->error, the transition matrix must report
   // exactly those counts — pinning the rewrite to the prior load-and-count-in-Rust behaviour.
