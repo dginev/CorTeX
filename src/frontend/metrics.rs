@@ -8,9 +8,10 @@
 //! Prometheus **`/metrics`** — operational gauges for scraping (Arm 8 observability).
 //! **Token-gated** via the [`Actor`] guard, so it is not public; Prometheus scrapes it with
 //! `?token=<token>` (the guard also accepts the `X-Cortex-Token` header). Deliberately limited to
-//! **cheap, current-state gauges** read on each scrape — connection-pool saturation, background-job
-//! backlog, active admin sessions, registered corpora/services, and the dispatcher worker fleet's
-//! size + in-flight backlog.
+//! **current-state gauges** read on each scrape — connection-pool saturation, background-job
+//! backlog, active admin sessions, registered corpora/services, the dispatcher worker fleet's
+//! size + in-flight backlog, and the **pending-conversion backlog** (`cortex_tasks_todo`, the one
+//! full-table count — bounded ~tens-to-hundreds of ms even at arXiv scale).
 //!
 //! It does **not** instrument the hot paths (no dispatcher changes) and does **not** run the
 //! `/healthz` ZMQ/filesystem probes (those are slow and that endpoint's job). Real-time
@@ -18,12 +19,15 @@
 //! instrumentation and are a follow-on — this gives the operationally-critical saturation/backlog
 //! signals today, cheaply.
 
+use diesel::prelude::*;
 use rocket::http::ContentType;
 use rocket::{Route, State};
 
 use crate::backend::DbPool;
 use crate::frontend::actor::Actor;
+use crate::helpers::TaskStatus;
 use crate::models::{Corpus, Service, Session, WorkerMetadata};
+use crate::schema::tasks;
 
 /// Appends one Prometheus gauge (HELP + TYPE + value lines) to `out`.
 fn gauge(out: &mut String, name: &str, help: &str, value: impl std::fmt::Display) {
@@ -135,6 +139,21 @@ pub fn metrics(_caller: Actor, pool: &State<DbPool>) -> (ContentType, String) {
           in_flight,
         );
       }
+      // Pending-conversion backlog: TODO tasks not yet dispatched to any worker — the headline "is
+      // the fleet keeping up?" signal (`workers_in_flight` above is the *leased* backlog; this is
+      // the *unleased* one, otherwise invisible to a scrape). One count over `tasks` — the
+      // costliest gauge here (~tens-to-hundreds of ms at arXiv scale), but operationally
+      // critical; degrades to 0 on a query error, like its siblings.
+      gauge(
+        &mut out,
+        "cortex_tasks_todo",
+        "Tasks awaiting conversion (status TODO, not yet dispatched) — the pending-work backlog.",
+        tasks::table
+          .filter(tasks::status.eq(TaskStatus::TODO.raw()))
+          .count()
+          .get_result::<i64>(&mut connection)
+          .unwrap_or(0),
+      );
     },
     Err(_) => gauge(
       &mut out,

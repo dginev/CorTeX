@@ -65,9 +65,15 @@ fn metrics_is_token_gated_and_exposes_gauges() {
     "cortex_jobs_interrupted_recent",
     "cortex_sessions_active",
     "cortex_workers_total",
+    "cortex_tasks_todo",
   ] {
     assert!(body.contains(metric), "the {metric} gauge is exposed");
   }
+  // The pending-conversion backlog gauge parses as a valid non-negative count (not absent / -1).
+  assert!(
+    gauge_value(&body, "cortex_tasks_todo") >= 0,
+    "cortex_tasks_todo is a valid non-negative gauge value"
+  );
 
   // The header form (X-Cortex-Token) works too.
   let response = client
