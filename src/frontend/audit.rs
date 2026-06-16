@@ -79,11 +79,11 @@ impl Fairing for AuditFairing {
         let actor = resolve_carriers(&mut connection, &carriers).unwrap_or_default();
         let entry = NewAuditEntry::new(actor, action, target).outcome(outcome);
         if let Err(error) = entry.record(&mut connection) {
-          eprintln!("-- audit: failed to record {entry:?}: {error}");
+          tracing::error!(?entry, %error, "audit: failed to record entry");
         }
       },
       Err(error) => {
-        eprintln!("-- audit: pool exhausted, dropped audit row ({action} {target}): {error}")
+        tracing::warn!(action, target, %error, "audit: pool exhausted, dropped audit row");
       },
     });
   }

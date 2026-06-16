@@ -131,10 +131,12 @@ pub fn prune(
     .and_then(|mut connection| HistoricalTask::prune_before(&mut connection, cutoff).ok())
     .unwrap_or(0);
   // Server-side record of who pruned what (the audit fairing also logs the action + actor +
-  // outcome).
-  println!(
-    "-- retention: {:?} pruned {pruned} historical_tasks older than {}",
-    admin.owner, form.before
+  // outcome to the DB; this is the operational journal line).
+  tracing::info!(
+    actor = %admin.owner,
+    pruned,
+    before = %form.before,
+    "retention prune"
   );
   Ok(Redirect::to(format!("/admin/retention?pruned={pruned}")))
 }

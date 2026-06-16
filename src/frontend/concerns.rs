@@ -321,8 +321,17 @@ pub fn serve_rerun(
 ) -> Result<Accepted<String>, Status> {
   let corpus_name = corpus_name.to_lowercase();
   let service_name = service_name.to_lowercase();
-  println!(
-    "-- User {owner:?}: Mark for rerun on {corpus_name}/{service_name}/{severity:?}/{category:?}/{what:?}");
+  // Structured admin-action log (the audit fairing also records actor + outcome to the DB; this is
+  // the operational journal line). Emitted here, before the scope is moved into `RerunOptions`.
+  tracing::info!(
+    actor = owner,
+    corpus = corpus_name,
+    service = service_name,
+    severity = ?severity,
+    category = ?category,
+    what = ?what,
+    "rerun requested"
+  );
   let corpus = Corpus::find_by_name(&corpus_name, connection).map_err(|_| Status::NotFound)?;
   let service = Service::find_by_name(&service_name, connection).map_err(|_| Status::NotFound)?;
   let report_start = chrono::Utc::now();
@@ -339,10 +348,17 @@ pub fn serve_rerun(
     },
   );
   let report_duration = (chrono::Utc::now() - report_start).num_milliseconds();
-  println!("-- User {owner:?}: Mark for rerun took {report_duration:?}ms");
   match rerun_result {
-    Err(_) => Err(Status::InternalServerError),
+    Err(error) => {
+      tracing::warn!(actor = owner, duration_ms = report_duration, %error, "rerun failed");
+      Err(Status::InternalServerError)
+    },
     Ok(_) => {
+      tracing::info!(
+        actor = owner,
+        duration_ms = report_duration,
+        "rerun committed"
+      );
       // Reflect the rerun in reports without blocking this request: refresh the rollup off the
       // request path (debounced, observable via `/api/jobs`). Best-effort — the rerun committed.
       let _ = crate::jobs::spawn_report_refresh(pool.clone(), owner);

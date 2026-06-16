@@ -62,10 +62,7 @@ pub fn build_state(config: &WebauthnConfig) -> Option<WebauthnState> {
   let origin = match Url::parse(&config.rp_origin) {
     Ok(origin) => origin,
     Err(error) => {
-      eprintln!(
-        "-- webauthn: invalid rp_origin {:?}: {error} (passkeys disabled)",
-        config.rp_origin
-      );
+      tracing::error!(rp_origin = %config.rp_origin, %error, "webauthn: invalid rp_origin (passkeys disabled)");
       return None;
     },
   };
@@ -77,11 +74,7 @@ pub fn build_state(config: &WebauthnConfig) -> Option<WebauthnState> {
       webauthn: Arc::new(webauthn),
     }),
     Err(error) => {
-      eprintln!(
-        "-- webauthn: cannot build relying party (rp_id={:?}, rp_origin={:?}): {error} (passkeys \
-         disabled)",
-        config.rp_id, config.rp_origin
-      );
+      tracing::error!(rp_id = %config.rp_id, rp_origin = %config.rp_origin, %error, "webauthn: cannot build relying party (passkeys disabled)");
       None
     },
   }
@@ -182,7 +175,7 @@ pub fn register_begin(
   let (challenge, state) = webauthn
     .start_passkey_registration(handle, &session.owner, &session.owner, Some(exclude))
     .map_err(|error| {
-      eprintln!("-- webauthn: start_passkey_registration failed: {error}");
+      tracing::error!(%error, "webauthn: start_passkey_registration failed");
       Status::InternalServerError
     })?;
   let ceremony_id = store.put(Ceremony::Register(state));
@@ -265,7 +258,7 @@ pub fn auth_begin(
   let (challenge, state) = webauthn
     .start_passkey_authentication(&passkeys)
     .map_err(|error| {
-      eprintln!("-- webauthn: start_passkey_authentication failed: {error}");
+      tracing::error!(%error, "webauthn: start_passkey_authentication failed");
       Status::InternalServerError
     })?;
   let ceremony_id = store.put(Ceremony::Authenticate { owner, state });
