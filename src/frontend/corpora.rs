@@ -164,7 +164,8 @@ pub struct ImportRequest {
 /// Registers a corpus and starts an in-process import job; returns `202 Accepted` + the job handle.
 /// Agents and humans poll `GET /api/jobs/<uuid>` (or the progress page) for completion.
 /// **Token-gated** via the [`Actor`] guard (creating a corpus + a filesystem import job is a
-/// consequential write); `401` without a valid token, `409` if the corpus name already exists.
+/// consequential write); `401` without a valid token, `409` if the corpus name already exists,
+/// `422` if the `path` is not a readable directory on the server.
 #[rocket_okapi::openapi(tag = "Corpora")]
 #[post("/api/corpora", format = "json", data = "<request>")]
 pub fn import_corpus(
@@ -188,8 +189,9 @@ pub fn import_corpus(
   Ok((Status::Accepted, Json(JobDto::from(job))))
 }
 
-/// Registers a corpus (`409` if the name already exists) and spawns its import job, returning the
-/// job uuid. The shared core of the agent endpoint and the human form.
+/// Registers a corpus and spawns its import job, returning the job uuid. The shared core of the
+/// agent endpoint and the human form. `409` if the name already exists; `422` if the `path` is not
+/// a readable directory on the server (pre-flighted so a doomed import is never started).
 #[allow(clippy::too_many_arguments)]
 fn start_import(
   pool: &DbPool,
@@ -203,6 +205,16 @@ fn start_import(
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   if Corpus::find_by_name(&name, &mut connection).is_ok() {
     return Err(Status::Conflict);
+  }
+  // Pre-flight the source path (the in-process import reads it): reject a path that doesn't exist
+  // or isn't a readable directory, so the admin/agent gets immediate feedback instead of a
+  // registered corpus whose import silently finds nothing. `422` distinguishes it from the `409`
+  // name clash.
+  if !std::fs::metadata(path.trim_end())
+    .map(|meta| meta.is_dir())
+    .unwrap_or(false)
+  {
+    return Err(Status::UnprocessableEntity);
   }
   NewCorpus {
     name: name.clone(),
@@ -277,6 +289,10 @@ pub fn import_corpus_human(
         409 => format!(
           "A corpus named “{}” already exists — choose a different name.",
           form.name
+        ),
+        422 => format!(
+          "“{}” is not a readable directory on the server — check the path.",
+          form.path
         ),
         503 => "The database is temporarily unavailable — please try again.".to_string(),
         _ => "Could not register the corpus — check the values and try again.".to_string(),

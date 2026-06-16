@@ -1002,9 +1002,63 @@ fn import_form_reshows_friendly_error_on_name_collision() {
   let _ = diesel::delete(corpora::table.filter(corpora::name.eq(name))).execute(&mut db.connection);
 }
 
+/// The import pre-flight rejects a path that isn't a readable directory — the agent gets `422`, the
+/// human form re-renders with a clear message — so a doomed (silently-empty) import is never
+/// started.
+fn import_rejects_an_unreadable_path() {
+  let bad_path = "/nonexistent/cortex/import-preflight-xyz";
+  let mut db = backend::testdb();
+  let _ = diesel::delete(corpora::table.filter(corpora::name.like("preflight-%")))
+    .execute(&mut db.connection);
+
+  // Agent: a bad path -> 422 (and the corpus is NOT registered).
+  let client = client();
+  let response = client
+    .post("/api/corpora?token=token1")
+    .header(ContentType::JSON)
+    .body(
+      serde_json::json!({ "name": "preflight-agent", "path": bad_path, "complex": false })
+        .to_string(),
+    )
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::UnprocessableEntity,
+    "an unreadable path -> 422"
+  );
+  assert!(
+    Corpus::find_by_name("preflight-agent", &mut db.connection).is_err(),
+    "the doomed corpus was not registered"
+  );
+
+  // Human: a bad path re-renders the form (200) with a clear message + the path preserved.
+  sign_in(&client);
+  let response = client
+    .post("/corpus/import")
+    .header(ContentType::Form)
+    .body(format!(
+      "name=preflight-human&path={bad_path}&complex=false"
+    ))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Ok,
+    "the human form re-renders, not an error page"
+  );
+  let body = response.into_string().expect("html");
+  assert!(
+    body.contains("not a readable directory"),
+    "shows a clear path-problem message"
+  );
+
+  let _ = diesel::delete(corpora::table.filter(corpora::name.like("preflight-%")))
+    .execute(&mut db.connection);
+}
+
 fn main() {
   api_corpora_lists_registered_corpora();
   import_form_reshows_friendly_error_on_name_collision();
+  import_rejects_an_unreadable_path();
   api_corpus_detail_reports_services_and_counts();
   api_corpus_detail_is_404_for_unknown_corpus();
   activate_service_requires_a_token();
