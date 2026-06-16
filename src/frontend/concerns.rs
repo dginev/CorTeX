@@ -1,5 +1,4 @@
 //! Common concerns for frontend routes
-use crate::rocket::futures::TryFutureExt;
 use diesel::PgConnection;
 use rocket::fs::NamedFile;
 use rocket::http::Status;
@@ -424,17 +423,62 @@ pub fn serve_savetasks(
   }
 }
 
-/// Provide a `NamedFile` for an entry, looking the task up over the caller-supplied (pooled)
-/// `connection` (the borrow ends before the file open).
+/// A file download served with a `Content-Disposition` filename derived from the document's **entry
+/// name** (e.g. `0811.0417.zip`) instead of the opaque task id in the URL — so corpus curators get
+/// an informative filename (UX request 2026-06-16). Wraps a [`NamedFile`] and adds the header.
+pub struct EntryDownload {
+  file: NamedFile,
+  /// The download filename, already sanitised to a safe character set.
+  filename: String,
+}
+
+impl<'r> rocket::response::Responder<'r, 'static> for EntryDownload {
+  fn respond_to(self, request: &'r rocket::Request<'_>) -> rocket::response::Result<'static> {
+    let mut response = self.file.respond_to(request)?;
+    response.set_raw_header(
+      "Content-Disposition",
+      format!("attachment; filename=\"{}\"", self.filename),
+    );
+    Ok(response)
+  }
+}
+
+/// Restricts a download filename to a safe set (alphanumerics + `.`/`-`/`_`), replacing any other
+/// character with `_`. Prevents `Content-Disposition` header injection or odd filenames from a
+/// hostile entry path; falls back to `download` if nothing safe remains.
+fn sanitize_download_filename(name: &str) -> String {
+  let safe: String = name
+    .chars()
+    .map(|c| {
+      if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
+        c
+      } else {
+        '_'
+      }
+    })
+    .collect();
+  if safe.is_empty() {
+    "download".to_string()
+  } else {
+    safe
+  }
+}
+
+/// Provide a downloadable file for an entry, looking the task up over the caller-supplied (pooled)
+/// `connection` (the borrow ends before the file open). The download is named `<document>.<ext>`
+/// (the report's "Entry" name + the served file's real extension), not the task id.
 pub async fn serve_entry(
   connection: &mut PgConnection,
   service_name: String,
   entry_id: usize,
-) -> Result<NamedFile, NotFound<String>> {
+) -> Result<EntryDownload, NotFound<String>> {
   match Task::find(entry_id as i64, connection) {
     Ok(task) => {
+      // The informative download name (the report's "Entry" name), captured before `task.entry`
+      // is consumed below.
+      let document_name = crate::helpers::entry_document_name(&task.entry);
       let zip_path = if service_name == "import" {
-        Some(std::path::PathBuf::from(task.entry))
+        Some(std::path::PathBuf::from(&task.entry))
       } else {
         // A sandbox's results are name-scoped by its corpus id (F-6), so resolve the task's corpus
         // to match what the sink wrote. One lookup per file-serve request (not a hot path).
@@ -445,9 +489,14 @@ pub async fn serve_entry(
       };
       match zip_path {
         Some(path) => {
-          NamedFile::open(&path)
-            .map_err(|_| NotFound("Invalid Zip at path".to_string()))
+          let file = NamedFile::open(&path)
             .await
+            .map_err(|_| NotFound("Invalid Zip at path".to_string()))?;
+          // Name the download `<document>.<ext>` from the served file's real extension (zip / gz /
+          // …).
+          let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("zip");
+          let filename = sanitize_download_filename(&format!("{document_name}.{ext}"));
+          Ok(EntryDownload { file, filename })
         },
         None => Err(NotFound(format!(
           "Service {service_name:?} does not have a result for entry {entry_id:?}"
@@ -564,7 +613,7 @@ pub async fn entry_fetch(
   service_name: String,
   entry_id: usize,
   pool: &State<DbPool>,
-) -> Result<NamedFile, NotFound<String>> {
+) -> Result<EntryDownload, NotFound<String>> {
   let mut connection = pooled(pool)?;
   serve_entry(&mut connection, service_name, entry_id).await
 }
@@ -578,7 +627,7 @@ pub async fn entry_download(
   service_name: String,
   entry_id: usize,
   pool: &State<DbPool>,
-) -> Result<NamedFile, NotFound<String>> {
+) -> Result<EntryDownload, NotFound<String>> {
   let mut connection = pooled(pool)?;
   serve_entry(&mut connection, service_name, entry_id).await
 }

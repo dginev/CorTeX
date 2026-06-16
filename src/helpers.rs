@@ -29,6 +29,17 @@ lazy_static! {
   /// "(Loading... file" message regex
   pub static ref LOADING_LINE_REGEX: Regex =
     Regex::new(r"^\((?:Loading|Processing definitions)\s(.+/)?([^/]+[^.])\.\.\.(\s|$)").unwrap();
+  /// The short document name within an entry path: everything between the last `/` and the last `.`.
+  static ref ENTRY_DOCUMENT_NAME_REGEX: Regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
+}
+
+/// The short document name shown in reports and used for download filenames — an entry path's
+/// basename without its directory or extension (e.g. `/data/…/0811.0417/0811.0417.zip` →
+/// `0811.0417`). Falls back to the trimmed entry when the path doesn't match the `…/name.ext`
+/// shape.
+pub fn entry_document_name(entry: &str) -> String {
+  let trimmed = entry.trim_end();
+  ENTRY_DOCUMENT_NAME_REGEX.replace(trimmed, "$1").to_string()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -762,5 +773,28 @@ mod log_decode_tests {
     // instead of panicking.
     assert!(result_archive_path("", "tex_to_html", None).is_none());
     assert!(result_archive_path("/", "tex_to_html", None).is_none());
+  }
+}
+
+#[cfg(test)]
+mod entry_name_tests {
+  use super::entry_document_name;
+
+  #[test]
+  fn extracts_short_document_name() {
+    // The motivating UX example: a download should be named by the entry, not the task id.
+    assert_eq!(
+      entry_document_name("/data/arxmliv/0811/0811.0417/0811.0417.zip"),
+      "0811.0417"
+    );
+    // Dotted arXiv ids keep their internal dot (the extension is the final segment).
+    assert_eq!(
+      entry_document_name("/data/foo/2105.13573.tar"),
+      "2105.13573"
+    );
+    // A trailing-whitespace entry (padded varchar) is trimmed first.
+    assert_eq!(entry_document_name("/d/bar.tex   "), "bar");
+    // No `/name.ext` shape -> falls back to the trimmed entry rather than erroring.
+    assert_eq!(entry_document_name("noslash"), "noslash");
   }
 }
