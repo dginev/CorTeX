@@ -26,7 +26,7 @@
              re-queues every task, including the ones that already converted cleanly. Make the count
              and that consequence explicit, and point at the safer narrower path. #}
           <p class="rerun-blast-radius">
-            <i class="fa fa-exclamation-triangle"></i>&nbsp;This re-queues <strong>all {{global.total}} tasks</strong> of the corpus — <em>including those that already converted with no problems</em>. To rerun only failures, drill into a severity (e.g.&nbsp;<a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/fatal">Fatal</a>) first.
+            <i class="fa fa-exclamation-triangle"></i>&nbsp;This re-queues <strong>all {{ global.total | group_thousands }} tasks</strong> of the corpus — <em>including those that already converted with no problems</em>. To rerun only failures, drill into a severity (e.g.&nbsp;<a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/fatal">Fatal</a>) first.
           </p>
           {% endif %}
         </div>

@@ -40,11 +40,11 @@
             <td class="left">{% if run.completed %}<time datetime="{{run.end_time}}">{{run.end_time}}</time>{% else %}<em>ongoing</em>{% if run.in_progress > 0 %} &middot; {{run.in_progress}} in&nbsp;progress{% endif %}{% endif %}</td>
             <td class="left">{{run.owner}}</td>
             <td class="left">{{run.description}}</td>
-            <td class="right">{{run.total}}</td>
-            <td class="right">{{run.no_problem}}{% if run.delta %} <span class="delta {{run.delta.no_problem.cls}}">{% if run.delta.no_problem.v > 0 %}+{% endif %}{{run.delta.no_problem.v}}</span>{% endif %}</td>
-            <td class="right">{{run.warning}}{% if run.delta %} <span class="delta {{run.delta.warning.cls}}">{% if run.delta.warning.v > 0 %}+{% endif %}{{run.delta.warning.v}}</span>{% endif %}</td>
-            <td class="right">{{run.error}}{% if run.delta %} <span class="delta {{run.delta.error.cls}}">{% if run.delta.error.v > 0 %}+{% endif %}{{run.delta.error.v}}</span>{% endif %}</td>
-            <td class="right">{{run.fatal}}{% if run.delta %} <span class="delta {{run.delta.fatal.cls}}">{% if run.delta.fatal.v > 0 %}+{% endif %}{{run.delta.fatal.v}}</span>{% endif %}</td>
+            <td class="right">{{ run.total | group_thousands }}</td>
+            <td class="right">{{ run.no_problem | group_thousands }}{% if run.delta %} <span class="delta {{run.delta.no_problem.cls}}">{% if run.delta.no_problem.v > 0 %}+{% endif %}{{ run.delta.no_problem.v | group_thousands }}</span>{% endif %}</td>
+            <td class="right">{{ run.warning | group_thousands }}{% if run.delta %} <span class="delta {{run.delta.warning.cls}}">{% if run.delta.warning.v > 0 %}+{% endif %}{{ run.delta.warning.v | group_thousands }}</span>{% endif %}</td>
+            <td class="right">{{ run.error | group_thousands }}{% if run.delta %} <span class="delta {{run.delta.error.cls}}">{% if run.delta.error.v > 0 %}+{% endif %}{{ run.delta.error.v | group_thousands }}</span>{% endif %}</td>
+            <td class="right">{{ run.fatal | group_thousands }}{% if run.delta %} <span class="delta {{run.delta.fatal.cls}}">{% if run.delta.fatal.v > 0 %}+{% endif %}{{ run.delta.fatal.v | group_thousands }}</span>{% endif %}</td>
           </tr>
           {% endfor %}
         </tbody>

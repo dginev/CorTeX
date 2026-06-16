@@ -13,12 +13,13 @@
 //! their capability modules; this file only wires them together. As later arms land, their routes
 //! are mounted here too (the binary's legacy routes migrate in incrementally).
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use diesel::pg::PgConnection;
 use diesel::Connection;
 use rocket::{Build, Rocket};
-use rocket_dyn_templates::Template;
+use rocket_dyn_templates::{tera, Template};
 
 use crate::backend::{build_pool, DatabaseUrl};
 use crate::config::{config, config_file_path};
@@ -28,6 +29,23 @@ use crate::frontend::management::{self, ConfigFile};
 use crate::frontend::reports;
 use crate::frontend::runs;
 use crate::frontend::services;
+
+/// Tera `group_thousands` filter: comma-groups an integer for readable report screens (e.g.
+/// `2783148` → `2,783,148`). The report globals are stringly-typed (`HashMap<String,String>`), so
+/// it accepts both a JSON number and a numeric string, and passes anything non-numeric through
+/// unchanged — a template filter must never error a render.
+fn group_thousands_filter(
+  value: &tera::Value,
+  _args: &HashMap<String, tera::Value>,
+) -> tera::Result<tera::Value> {
+  let parsed = value
+    .as_i64()
+    .or_else(|| value.as_str().and_then(|s| s.parse::<i64>().ok()));
+  Ok(match parsed {
+    Some(n) => tera::Value::String(crate::frontend::helpers::group_thousands(n)),
+    None => value.clone(),
+  })
+}
 
 /// Mounts the full library API/UI surface from the runtime configuration. The composition root the
 /// binary uses.
@@ -72,7 +90,11 @@ pub fn mount_api_with(
     .mount("/", crate::frontend::metrics::routes())
     .mount("/", crate::frontend::webauthn::routes())
     .register("/", crate::frontend::catchers::catchers())
-    .attach(Template::fairing())
+    .attach(Template::custom(|engines| {
+      engines
+        .tera
+        .register_filter("group_thousands", group_thousands_filter);
+    }))
     // Accounting (AAA): record every mutating admin request to the `audit_log` (drift-proof —
     // covers every write route, present and future). See `frontend::audit`.
     .attach(crate::frontend::audit::AuditFairing);

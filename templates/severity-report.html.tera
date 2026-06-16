@@ -35,8 +35,8 @@
         </td>
         <td class="bar-cell"><span class="bar-track"><span class="bar {% if global.severity == 'warning' %}warn{% elif global.severity == 'error' %}error{% elif global.severity == 'fatal' %}fatal{% endif %}" style="width: {{category.tasks_percent}}%"></span></span></td>
         <td class="right">{{ category.tasks_percent | float(default=0) | round }}%</td>
-        <td class="right">{{category.tasks}}</td>
-        <td class="right">{{category.messages}}</td>
+        <td class="right">{{ category.tasks | group_thousands }}</td>
+        <td class="right">{{ category.messages | group_thousands }}</td>
       </tr>
       {% endfor %}
     </tbody>
