@@ -339,6 +339,30 @@ hr {
   color: var(--bad);
 }
 
+/* Run-history run-over-run deltas: a small signed change vs the previous (older) run, coloured by
+   whether it improves (green) or regresses (red) conversion; `delta-zero` is muted (no change). */
+.delta {
+  font-size: 0.82em;
+  font-variant-numeric: tabular-nums;
+  margin-left: 0.35em;
+  color: var(--ink-muted);
+}
+.delta-good {
+  color: var(--ok);
+}
+.delta-bad {
+  color: var(--bad);
+}
+.delta-zero {
+  color: var(--ink-muted);
+}
+#runs-report caption {
+  caption-side: top;
+  text-align: left;
+  padding: 0 0 0.6em;
+  font-size: 0.85em;
+}
+
 /* Themed admin-dashboard stat cards (replacing per-element inline colors so midnight reads right). */
 .admin-card {
   border: 1px solid var(--rule);

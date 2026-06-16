@@ -19,6 +19,7 @@
     <div class="col-md-1"></div>
     <div class="col-md-10">
       <table id="runs-report" class="table">
+        <caption class="muted">Coloured numbers are each run's change vs the previous (older) run — <span class="delta delta-good">green = improvement</span>, <span class="delta delta-bad">red = regression</span>.</caption>
         <thead>
           <tr>
             <th class="left">Started</th>
@@ -40,10 +41,10 @@
             <td class="left">{{run.owner}}</td>
             <td class="left">{{run.description}}</td>
             <td class="right">{{run.total}}</td>
-            <td class="right">{{run.no_problem}}</td>
-            <td class="right">{{run.warning}}</td>
-            <td class="right">{{run.error}}</td>
-            <td class="right">{{run.fatal}}</td>
+            <td class="right">{{run.no_problem}}{% if run.delta %} <span class="delta {{run.delta.no_problem.cls}}">{% if run.delta.no_problem.v > 0 %}+{% endif %}{{run.delta.no_problem.v}}</span>{% endif %}</td>
+            <td class="right">{{run.warning}}{% if run.delta %} <span class="delta {{run.delta.warning.cls}}">{% if run.delta.warning.v > 0 %}+{% endif %}{{run.delta.warning.v}}</span>{% endif %}</td>
+            <td class="right">{{run.error}}{% if run.delta %} <span class="delta {{run.delta.error.cls}}">{% if run.delta.error.v > 0 %}+{% endif %}{{run.delta.error.v}}</span>{% endif %}</td>
+            <td class="right">{{run.fatal}}{% if run.delta %} <span class="delta {{run.delta.fatal.cls}}">{% if run.delta.fatal.v > 0 %}+{% endif %}{{run.delta.fatal.v}}</span>{% endif %}</td>
           </tr>
           {% endfor %}
         </tbody>

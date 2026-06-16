@@ -87,6 +87,72 @@ impl From<HistoricalRun> for RunDto {
   }
 }
 
+/// One run-over-run tally change for the human history table: the signed delta and the CSS class
+/// that colours it (good/bad/neutral). Human-render only — the agent `/api/runs` feed stays raw
+/// tallies (agents compute their own deltas).
+#[derive(Debug, Serialize)]
+struct DeltaCell {
+  /// Signed change vs the next-older run (`this.tally - older.tally`).
+  v: i32,
+  /// CSS class encoding the *direction's meaning*: `delta-good` (improvement), `delta-bad`
+  /// (regression), or `delta-zero` (no change). Severity-aware — see [`delta_class`].
+  cls: &'static str,
+}
+
+/// Per-severity change of a run vs the next-older run, so the table answers "how did this run move
+/// the conversion tallies" directly instead of making the reader subtract consecutive rows.
+#[derive(Debug, Serialize)]
+struct RunDelta {
+  /// Change in clean conversions (more is better — the headline conversion-rate movement).
+  no_problem: DeltaCell,
+  /// Change in warnings (fewer is better).
+  warning: DeltaCell,
+  /// Change in errors (fewer is better).
+  error: DeltaCell,
+  /// Change in fatal failures (fewer is better).
+  fatal: DeltaCell,
+}
+
+/// A run-history table row: the shared [`RunDto`] tallies plus the human-only run-over-run delta.
+/// `delta` is `None` for the oldest run (nothing older to compare against).
+#[derive(Debug, Serialize)]
+struct RunRow {
+  /// The run's absolute tallies (flattened, so the template reads `run.no_problem` etc.).
+  #[serde(flatten)]
+  run: RunDto,
+  /// Change vs the next-older run; `None` for the oldest row.
+  delta: Option<RunDelta>,
+}
+
+/// Maps a signed tally delta to its colour class given the severity's polarity. For `no_problem`
+/// more is better (`higher_is_better = true`); for warning/error/fatal fewer is better. A zero
+/// delta is `delta-zero` (muted) so an unchanged column reads as "no change", not "no data".
+fn delta_class(delta: i32, higher_is_better: bool) -> &'static str {
+  if delta == 0 {
+    "delta-zero"
+  } else if (delta > 0) == higher_is_better {
+    "delta-good"
+  } else {
+    "delta-bad"
+  }
+}
+
+impl RunDelta {
+  /// Builds the per-severity deltas of `run` against the next-older `older` run.
+  fn between(run: &RunDto, older: &RunDto) -> RunDelta {
+    let cell = |delta: i32, higher_is_better: bool| DeltaCell {
+      v: delta,
+      cls: delta_class(delta, higher_is_better),
+    };
+    RunDelta {
+      no_problem: cell(run.no_problem - older.no_problem, true),
+      warning: cell(run.warning - older.warning, false),
+      error: cell(run.error - older.error, false),
+      fatal: cell(run.fatal - older.fatal, false),
+    }
+  }
+}
+
 /// A historical run as exposed in the **system-wide** overview: the per-`(corpus, service)`
 /// [`RunDto`] fields plus the corpus + service names (the overview spans every pair, so the names
 /// are part of the row). The read model for `GET /api/runs` and the `/admin/runs` management
@@ -647,6 +713,21 @@ pub fn runs_page(corpus: &str, service: &str, pool: &State<DbPool>) -> Result<Te
     // Overlay live progress on any still-open run so the table doesn't show it as all-zeros.
     .map(|run| RunDto::from(run.with_live_tallies(&mut connection)))
     .collect();
+  // Run-over-run deltas (newest-first, so row `i` compares against the next-older row `i+1`) so the
+  // human table answers "how did this run move the conversion tallies" without the reader
+  // subtracting consecutive rows. The agent `/api/runs` feed stays raw (agents diff themselves).
+  let deltas: Vec<Option<RunDelta>> = (0..runs.len())
+    .map(|i| {
+      runs
+        .get(i + 1)
+        .map(|older| RunDelta::between(&runs[i], older))
+    })
+    .collect();
+  let runs: Vec<RunRow> = runs
+    .into_iter()
+    .zip(deltas)
+    .map(|(run, delta)| RunRow { run, delta })
+    .collect();
   // `global` carries the title/description the shared `layout` template expects.
   let global = serde_json::json!({
     "title": format!("Run history · {service} / {corpus}"),
@@ -715,4 +796,22 @@ pub fn routes() -> Vec<Route> {
     runs_page,
     history_page
   ]
+}
+
+#[cfg(test)]
+mod tests {
+  use super::delta_class;
+
+  #[test]
+  fn delta_class_polarity() {
+    // no_problem: more clean conversions is an improvement.
+    assert_eq!(delta_class(26, true), "delta-good");
+    assert_eq!(delta_class(-5, true), "delta-bad");
+    // error/fatal/warning: fewer problems is an improvement.
+    assert_eq!(delta_class(3, false), "delta-bad");
+    assert_eq!(delta_class(-3, false), "delta-good");
+    // unchanged columns are muted, regardless of polarity.
+    assert_eq!(delta_class(0, true), "delta-zero");
+    assert_eq!(delta_class(0, false), "delta-zero");
+  }
 }
