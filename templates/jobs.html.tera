@@ -40,12 +40,12 @@
           <tr>
             <td class="left">{{job.kind}}</td>
             <td class="left">{{job.actor}}</td>
-            <td class="left">{{job.health}}</td>
+            <td class="left">{% if job.health == "ok" %}<span class="status-ok">ok</span>{% elif job.health == "failed" or job.health == "interrupted" or job.health == "unknown" %}<span class="status-bad">{{job.health}}</span>{% else %}{{job.health}}{% endif %}</td>
             <td class="right">{{job.progress_current}}{% if job.progress_total %}/{{job.progress_total}}{% endif %}</td>
             <td class="right">{{job.duration_seconds}}</td>
             <td class="left"><time datetime="{{job.created_at}}">{{job.created_at}}</time></td>
             <td class="left"><time datetime="{{job.updated_at}}">{{job.updated_at}}</time></td>
-            <td class="right">{% if job.health == "running" or job.health == "pending" %}{{job.seconds_since_update}}{% else %}—{% endif %}</td>
+            <td class="right">{% if job.health == "running" or job.health == "pending" %}{% if job.seconds_since_update >= stale_timeout %}<span class="status-warn" title="Idle past the {{stale_timeout}}s stall threshold — likely stuck (the reaper will mark it interrupted).">{{job.seconds_since_update}}&nbsp;⚠</span>{% else %}{{job.seconds_since_update}}{% endif %}{% else %}—{% endif %}</td>
             <td class="left">{{job.message}}</td>
             <td class="left"><a href="/jobs/{{job.uuid}}">view</a></td>
           </tr>

@@ -161,13 +161,16 @@ pub fn jobs_page(
   let has_active = jobs
     .iter()
     .any(|job| matches!(job.health.as_str(), "pending" | "running"));
+  // The operator-tunable stall threshold (W-4): a running/pending job idle past this is flagged in
+  // the list so a stuck job is obvious before the reaper flips it to `interrupted`.
+  let stale_timeout = crate::config::config().jobs.stale_timeout_seconds;
   let global = serde_json::json!({
     "title": "Background jobs",
     "description": "Recent background jobs across the CorTeX framework",
   });
   Ok(Template::render(
     "jobs",
-    context! { global, jobs, active, has_active },
+    context! { global, jobs, active, has_active, stale_timeout },
   ))
 }
 
