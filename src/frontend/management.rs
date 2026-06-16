@@ -252,6 +252,9 @@ pub struct SettingsForm {
   pub dispatcher_message_size: usize,
   /// Backpressure threshold: max in-flight tasks before the ventilator stops leasing.
   pub dispatcher_max_in_flight: usize,
+  /// Hard cap (bytes) on a single worker result archive; an oversized result is rejected + the
+  /// task marked `Invalid` so a runaway worker can't fill `/data` (W-1③).
+  pub dispatcher_max_result_bytes: usize,
   /// How often (seconds) the finalize thread refreshes the report rollup (the freshness
   /// guarantee).
   pub dispatcher_report_refresh_interval_seconds: u64,
@@ -540,6 +543,7 @@ pub fn post_settings(
       "queue_size": f.dispatcher_queue_size,
       "message_size": f.dispatcher_message_size,
       "max_in_flight": f.dispatcher_max_in_flight,
+      "max_result_bytes": f.dispatcher_max_result_bytes,
       "report_refresh_interval_seconds": f.dispatcher_report_refresh_interval_seconds,
     },
     "jobs": { "stale_timeout_seconds": f.jobs_stale_timeout_seconds },

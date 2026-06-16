@@ -23,6 +23,9 @@
       <input id="m" name="dispatcher_message_size" type="number" value="{{ config.dispatcher.message_size }}">
       <label for="mif">Max in-flight (backpressure threshold)</label>
       <input id="mif" name="dispatcher_max_in_flight" type="number" value="{{ config.dispatcher.max_in_flight }}">
+      <label for="mrb">Max result archive size (bytes)</label>
+      <input id="mrb" name="dispatcher_max_result_bytes" type="number" min="1"
+        value="{{ config.dispatcher.max_result_bytes }}">
       <label for="rri">Report refresh interval (seconds)</label>
       <input id="rri" name="dispatcher_report_refresh_interval_seconds" type="number"
         value="{{ config.dispatcher.report_refresh_interval_seconds }}">

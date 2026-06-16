@@ -49,6 +49,9 @@ fn get_api_config_returns_masked_contract() {
   assert!(body["dispatcher"]["result_port"].is_number());
   assert!(body["dispatcher"]["queue_size"].is_number());
   assert!(body["dispatcher"]["max_in_flight"].is_number());
+  // The result-archive size cap (W-1③) is in the contract, so the agent + Settings UI can manage
+  // it.
+  assert!(body["dispatcher"]["max_result_bytes"].is_number());
   assert!(
     body.get("cache").is_none(),
     "the removed Redis cache config is no longer exposed"

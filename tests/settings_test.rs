@@ -106,7 +106,8 @@ fn post_settings_form_persists_and_redirects() {
   sign_in(&client);
   let form = "dispatcher_source_port=51695&dispatcher_result_port=51696\
               &dispatcher_queue_size=4242&dispatcher_message_size=100000\
-              &dispatcher_max_in_flight=5000&dispatcher_report_refresh_interval_seconds=7200\
+              &dispatcher_max_in_flight=5000&dispatcher_max_result_bytes=1234567\
+              &dispatcher_report_refresh_interval_seconds=7200\
               &jobs_stale_timeout_seconds=10800\
               &assets_template_dir=templates&assets_public_dir=public";
   let response = client
@@ -131,6 +132,10 @@ fn post_settings_form_persists_and_redirects() {
   assert!(
     written.contains("10800"),
     "the jobs stall-reap threshold is editable from the form + persisted"
+  );
+  assert!(
+    written.contains("1234567"),
+    "the dispatcher max-result-bytes cap is editable from the form + persisted"
   );
 }
 
