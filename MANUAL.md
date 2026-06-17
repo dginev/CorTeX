@@ -382,6 +382,7 @@ cortex report   arxmliv tex_to_html --severity warning --category not_parsed   #
 cortex report   arxmliv tex_to_html --severity warning --category not_parsed --what '>OPEN'  # affected docs (paper ids → feed `document`)
 cortex runs     arxmliv tex_to_html             # run history: per-severity tallies + run-over-run delta vs the previous run (live for the open run)
 cortex diff     arxmliv tex_to_html             # run-diff: the (previous → current) status-transition matrix between two snapshots (latest pair by default; --previous/--current to pick)
+cortex diff     arxmliv tex_to_html --tasks --previous-status warning --current-status no_problem  # drill: which individual entries made that transition (paginated --offset/--limit)
 cortex document arxmliv tex_to_html 2105.13573  # per-article forensics: status + every worker-log message
 ```
 

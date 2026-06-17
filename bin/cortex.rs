@@ -17,8 +17,9 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 use cortex::backend::{
-  self, create_sandbox, default_db_address, export_html_dataset, summary_task_diffs, task_messages,
-  DatasetExportOutcome, GroupBy, RerunOptions, SandboxSelection, TaskReportOptions,
+  self, create_sandbox, default_db_address, export_html_dataset, list_task_diffs,
+  summary_task_diffs, task_messages, DatasetExportOutcome, GroupBy, RerunOptions, SandboxSelection,
+  TaskReportOptions,
 };
 use cortex::bootstrap::{self, DoctorReport};
 use cortex::config::config_file_path;
@@ -31,7 +32,8 @@ use cortex::frontend::services::ServiceDto;
 use cortex::helpers::TaskStatus;
 use cortex::importer::Importer;
 use cortex::models::{
-  AuditEntry, Corpus, HistoricalRun, NewCorpus, NewService, Service, Session, Task, WorkerMetadata,
+  AuditEntry, Corpus, DiffStatusFilter, HistoricalRun, NewCorpus, NewService, Service, Session,
+  Task, WorkerMetadata,
 };
 
 /// Formats a timestamp the same way the web/agent surfaces do (RFC 3339, seconds) so the CLI's run
@@ -189,7 +191,26 @@ enum Command {
     /// Later snapshot timestamp. Omit for the most recent saved pair.
     #[arg(long)]
     current: Option<String>,
-    /// Emit JSON (the same shape as the agent `RunDiffDto`) instead of a text table.
+    /// Drill into the individual entries that changed status (the per-task list) instead of the
+    /// summary matrix — the CLI twin of the web `/runs/<c>/<s>/tasks` screen + agent
+    /// `GET /api/runs/<c>/<s>/tasks`. The `--*-status`/`--offset`/`--limit` flags apply here.
+    #[arg(long)]
+    tasks: bool,
+    /// With `--tasks`: only entries whose EARLIER snapshot had this severity
+    /// (`no_problem`/`warning`/`error`/`fatal`/`invalid`/`todo`).
+    #[arg(long)]
+    previous_status: Option<String>,
+    /// With `--tasks`: only entries whose LATER snapshot has this severity.
+    #[arg(long)]
+    current_status: Option<String>,
+    /// With `--tasks`: pagination offset (default 0).
+    #[arg(long)]
+    offset: Option<usize>,
+    /// With `--tasks`: page size (default 100, capped).
+    #[arg(long)]
+    limit: Option<usize>,
+    /// Emit JSON (the agent `RunDiffDto` shape, or a `TaskDiffDto` list with `--tasks`) instead of
+    /// a text table.
     #[arg(long)]
     json: bool,
   },
@@ -480,8 +501,29 @@ fn main() {
       service,
       previous,
       current,
+      tasks,
+      previous_status,
+      current_status,
+      offset,
+      limit,
       json,
-    } => run_diff(corpus, service, previous, current, json),
+    } => {
+      if tasks {
+        run_diff_tasks(
+          corpus,
+          service,
+          previous,
+          current,
+          previous_status,
+          current_status,
+          offset,
+          limit,
+          json,
+        )
+      } else {
+        run_diff(corpus, service, previous, current, json)
+      }
+    },
     Command::Snapshot {
       corpus,
       service,
@@ -1123,6 +1165,123 @@ fn run_diff(
     println!(
       "    {:>10} {arrow} {:<10} : {}",
       row.previous_status, row.current_status, row.task_count
+    );
+  }
+}
+
+/// Parses an optional `--previous-status`/`--current-status` severity filter for `cortex diff
+/// --tasks`. `None`/empty means "no filter on this side"; an unknown key exits 2 (mirroring the
+/// agent's `400`).
+fn parse_cli_diff_status(raw: Option<&str>, flag: &str) -> Option<TaskStatus> {
+  match raw.map(str::trim).filter(|value| !value.is_empty()) {
+    None => None,
+    Some(value) => match TaskStatus::from_key(value) {
+      Some(status) => Some(status),
+      None => {
+        eprintln!(
+          "error: {flag} {value:?} is not a severity (use no_problem, warning, error, fatal, \
+           invalid, todo)"
+        );
+        std::process::exit(2);
+      },
+    },
+  }
+}
+
+/// The `cortex diff --tasks` drill: the individual entries whose status changed between two
+/// snapshots — the CLI twin of the web `/runs/<c>/<s>/tasks` screen + agent
+/// `GET /api/runs/<c>/<s>/tasks`, over the shared `list_task_diffs`. Optionally filtered to a
+/// `previous_status → current_status` transition and paginated (`--offset`/`--limit`, bounded like
+/// the report drill). `--json` mirrors the agent `TaskDiffDto` list exactly.
+#[allow(clippy::too_many_arguments)]
+fn run_diff_tasks(
+  corpus_name: String,
+  service_name: String,
+  previous: Option<String>,
+  current: Option<String>,
+  previous_status: Option<String>,
+  current_status: Option<String>,
+  offset: Option<usize>,
+  limit: Option<usize>,
+  json: bool,
+) {
+  let previous_date = match parse_cli_snapshot_date(previous.as_deref()) {
+    Ok(date) => date,
+    Err(raw) => {
+      eprintln!("error: --previous {raw:?} is not a YYYY-MM-DD HH:MM:SS timestamp");
+      std::process::exit(2);
+    },
+  };
+  let current_date = match parse_cli_snapshot_date(current.as_deref()) {
+    Ok(date) => date,
+    Err(raw) => {
+      eprintln!("error: --current {raw:?} is not a YYYY-MM-DD HH:MM:SS timestamp");
+      std::process::exit(2);
+    },
+  };
+  let previous_status = parse_cli_diff_status(previous_status.as_deref(), "--previous-status");
+  let current_status = parse_cli_diff_status(current_status.as_deref(), "--current-status");
+
+  let mut backend = backend::from_address(default_db_address());
+  let corpus = match Corpus::find_by_name(&corpus_name.to_lowercase(), &mut backend.connection) {
+    Ok(corpus) => corpus,
+    Err(_) => {
+      eprintln!("No such corpus: {corpus_name}");
+      std::process::exit(1);
+    },
+  };
+  let service = match Service::find_by_name(&service_name.to_lowercase(), &mut backend.connection) {
+    Ok(service) => service,
+    Err(_) => {
+      eprintln!("No such service: {service_name}");
+      std::process::exit(1);
+    },
+  };
+
+  // Bound offset/page_size exactly like the agent endpoint (R-8 / P-4): never an unpaginated or
+  // scan-and-discard task-diff.
+  let filters = DiffStatusFilter {
+    previous_status,
+    current_status,
+    previous_date,
+    current_date,
+    offset: offset.unwrap_or(0).min(MAX_REPORT_OFFSET as usize),
+    page_size: limit.unwrap_or(100).clamp(1, MAX_REPORT_PAGE_SIZE as usize),
+  };
+  let tasks = list_task_diffs(&mut backend.connection, &corpus, &service, filters);
+
+  if json {
+    let array: Vec<_> = tasks
+      .iter()
+      .map(|task| {
+        serde_json::json!({
+          "task_id": task.task_id,
+          "entry": task.entry,
+          "previous_status": task.previous_status,
+          "current_status": task.current_status,
+          "previous_saved_at": task.previous_saved_at,
+          "current_saved_at": task.current_saved_at,
+        })
+      })
+      .collect();
+    println!(
+      "{}",
+      serde_json::to_string_pretty(&array).unwrap_or_default()
+    );
+    return;
+  }
+
+  println!(
+    "Run task-diff: {} / {}  ({} changed entr{})",
+    corpus.name,
+    service.name,
+    tasks.len(),
+    if tasks.len() == 1 { "y" } else { "ies" }
+  );
+  for task in &tasks {
+    println!(
+      "  {:>10} → {:<10}  {}",
+      task.previous_status, task.current_status, task.entry
     );
   }
 }

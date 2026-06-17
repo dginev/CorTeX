@@ -49,7 +49,7 @@ from *two* surfaces to *three* (add the CLI). The corollary that drives sequenci
 | Capability | Web UI | Agent API | CLI |
 |---|---|---|---|
 | Reports: severity → category → `what` | ✓ | ✓ JSON | ✓ (`cortex report --severity/--category/--what`) |
-| Run list / current / **diff** / changed-tasks | ✓ | ✓ JSON | ✓ list+current (`cortex runs`) + **diff** (`cortex diff`); per-task changed-tasks still web/agent-only |
+| Run list / current / **diff** / changed-tasks | ✓ | ✓ JSON | ✓ all of it — `cortex runs` (list+current), `cortex diff` (summary matrix), `cortex diff --tasks` (per-task changed-tasks) |
 | **Per-article forensics** ("errors of this article") | ✓ (`/document/<c>/<s>/<name>`) | ✓ **A1 landed** | ✓ (`cortex document`) |
 | **Macro history trend** (rate over time) | ✓ Vega chart | ✓ (via `/api/runs/<c>/<s>` tallies) | ✓ (`cortex runs` tallies + deltas) |
 | Top-of-service severity summary (`progress_report`) | ✓ | ✓ **A3 landed** (`/api/reports/<c>/<s>`) | ✓ (`cortex report`) |
@@ -61,11 +61,11 @@ from *two* surfaces to *three* (add the CLI). The corollary that drives sequenci
 | Live ops console | ✓ (landed) | `/metrics` + `/api/status` | ✓ (`cortex status`) |
 | Init / configure / health | ✓ | ✓ | ✓ (`init`/`doctor`/`set-admin-token`) |
 
-Reading (updated 2026-06-16): the three-surface symmetry is **essentially complete** — every
-capability is now on web · agent · CLI. The sole remaining sliver is the **per-task changed-tasks
-diff** (which individual entries moved status), still web+agent only (`/runs/<c>/<s>/tasks`); the
-CLI has the *summary* matrix via `cortex diff`. What's left is polish (web cohesion C1/C2, guided
-`init` TUI D-B2), not capability gaps — the work was *projection + gap-fill*, and it is done.
+Reading (updated 2026-06-16): the three-surface symmetry is **complete** — every capability in the
+matrix is now on web · agent · CLI, including the per-task changed-tasks drill (`cortex diff
+--tasks`), which was the last remaining sliver. What's left is **polish, not capability gaps**: web
+cohesion (C1/C2) and the guided-`init` TUI (D-B2). The Arm-15 *projection + gap-fill* program is
+done.
 
 ## 4. The arms (sequenced; agent-API-first)
 
@@ -124,8 +124,11 @@ discoverable JSON DTOs (each also the future HTML/CLI source).
   /api/corpora/<name>/extend`, driving the same `Importer::extend_corpus` + `Backend::extend_service`).
   `cortex diff <c> <s>` ✅ LANDED — the CLI twin of the web `/runs/<c>/<s>/diff` + agent `GET
   /api/runs/<c>/<s>/diff`, over the shared `summary_task_diffs` (now `pub` for the third surface),
-  closing the snapshot→rerun→**diff** improvement loop on the terminal. **B1 management surface is
-  complete** (the lone remaining sliver is the per-task changed-tasks drill, web/agent-only).
+  closing the snapshot→rerun→**diff** improvement loop on the terminal. `cortex diff --tasks` ✅
+  LANDED — the per-task changed-tasks drill (the CLI twin of the web `/runs/<c>/<s>/tasks` + agent
+  `GET /api/runs/<c>/<s>/tasks`, over the shared `list_task_diffs`, with `--previous-status`/
+  `--current-status` filters + `--offset`/`--limit` paging bounded like the report drill). **B1
+  management surface is complete — the CLI is a full first-class third surface.**
 - **B2 — Guided init.** An interactive `cortex init --guided` walking the strategic choices (database,
   admin token, services, dispatcher knobs). **Decision D-B2 (see §5): ratatui rich TUI vs a plain
   guided prompt flow.** Default lazy: ship the plain prompt flow first (no heavy new dep; 90% of the

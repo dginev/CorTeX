@@ -18,7 +18,10 @@ mod services_aggregate;
 mod tasks_aggregate;
 pub use export::{export_html_dataset, DatasetExportOutcome, GroupBy};
 pub(crate) use mark::{mark_blocked, mark_rerun, resume_blocked, save_historical_tasks};
-pub(crate) use reports::list_task_diffs;
+// `pub` (not `pub(crate)`): the `cortex diff --tasks` subcommand calls it directly, giving the
+// per-task changed-tasks drill a third (CLI) surface alongside the agent `/api/runs/<c>/<s>/tasks`
+// and the web screen.
+pub use reports::list_task_diffs;
 pub(crate) use reports::progress_report;
 pub(crate) use reports::report_uses_rollup;
 // `pub` (not `pub(crate)`): the `cortex` CLI's `diff` subcommand calls it directly, so the run-diff
