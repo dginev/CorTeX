@@ -104,9 +104,12 @@ needed to change databases** — e.g. point the frontend at a populated DB with
 `DATABASE_URL=… cargo run --bin frontend`.
 
 The simplest setup is `cortex init`, which scaffolds a `cortex.toml` (operational sections) and runs
-migrations (Step 5). The repo also ships a working `.env` default:
+migrations (Step 5). For the legacy `.env` path, the repo ships an **`.env.example`** template (the
+real `.env` is **gitignored** — never commit credentials); copy it and set the values for this node
+— for a production node matching Step 3 that is:
 
 ```
+# cp .env.example .env, then set these (the example defaults to a dev DB + CHANGE_ME password)
 DATABASE_URL=postgres://cortex:cortex@localhost/cortex
 TEST_DATABASE_URL=postgres://cortex_tester:cortex_tester@localhost/cortex_tester
 ```
