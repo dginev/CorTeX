@@ -197,30 +197,34 @@
   })();
 </script>
 <script>
-  // Auto-reload toggle (the footer "Auto reload" switch), persisted in localStorage.
-  // The Rerun Progress table is now rendered server-side (see above), so this small
-  // toggle is all that remains client-side. Vanilla JS, matching the inline scripts
-  // above; replaces the former /public/js/progress_report.js.
-  (function () {
+  // Auto-reload toggle (the footer "Auto reload" switch), persisted in localStorage so
+  // repeated visits land on the same state. The checkbox lives in the layout FOOTER,
+  // which is parsed AFTER this content block — so wire up on DOMContentLoaded;
+  // otherwise the checkbox isn't in the DOM yet and the toggle silently no-ops (the
+  // bug from inlining what was progress_report.js's `$(document).ready`). The Rerun
+  // Progress table is now server-side, so this small toggle is all that's client-side.
+  document.addEventListener("DOMContentLoaded", function () {
     var box = document.querySelector("input[name='refresh']");
+    if (!box) return;
     var timer;
     function start() {
+      clearTimeout(timer);
       var secs = localStorage.getItem("report-auto-refresh");
-      if (!secs || secs === "undefined") { clearTimeout(timer); return; }
-      if (box) box.checked = true;
+      if (!secs || secs === "undefined") return;
+      box.checked = true;
       timer = setTimeout(function () {
         var sw = document.querySelector("label.switch");
         if (sw) sw.outerHTML = "<span>Refreshing ...</span>";
         window.location.reload();
       }, secs * 1000);
     }
-    start();
-    if (box) box.addEventListener("change", function () {
+    box.addEventListener("change", function () {
       if (box.checked) localStorage.setItem("report-auto-refresh", 60);
       else localStorage.removeItem("report-auto-refresh");
       start();
     });
-  })();
+    start();
+  });
 </script> {% endblock content %}
 
 {# Rerun + Save snapshot live in the run-control row under the report table on this page, so drop
