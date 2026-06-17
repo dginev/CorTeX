@@ -606,6 +606,19 @@ pub async fn serve_entry(
   service_name: String,
   entry_id: usize,
 ) -> Result<EntryDownload, NotFound<String>> {
+  // Defense-in-depth path-traversal guard: `service_name` is a raw URL segment that gets
+  // interpolated into the result-archive **filesystem path** (`{entry_dir}/{service_name}.zip` via
+  // `result_archive_path`), with no service-registry lookup on this download path. A real service
+  // name is a bare identifier; reject any path separator / `..` / NUL so a crafted segment can
+  // never resolve outside the corpus's data directory (a `.zip`-scoped local-file read on a
+  // public route).
+  if service_name.contains('/')
+    || service_name.contains('\\')
+    || service_name.contains("..")
+    || service_name.contains('\0')
+  {
+    return Err(NotFound("invalid service".to_string()));
+  }
   match Task::find(entry_id as i64, connection) {
     Ok(task) => {
       // The informative download name (the report's "Entry" name), captured before `task.entry`

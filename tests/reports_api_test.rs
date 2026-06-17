@@ -509,6 +509,27 @@ fn document_forensics_reports_status_and_messages() {
     Status::NotFound,
     "an unknown task id is a clean 404"
   );
+  // Security: the `<service>` segment is interpolated into the result-archive filesystem path, so a
+  // path-traversal payload must be rejected BEFORE any file open — even with a real task id. The
+  // guard's `invalid service` body distinguishes this from an incidental file-not-found 404.
+  for bad in ["evil..svc", "..%2f..%2fetc%2fpasswd", "a%2fb"] {
+    let response = client.post(format!("/entry/{bad}/{task_id}")).dispatch();
+    assert_eq!(
+      response.status(),
+      Status::NotFound,
+      "a traversal service segment {bad:?} is 404, never a file read"
+    );
+  }
+  // The literal `..` case provably hits the guard (real task id, so not a task-not-found 404).
+  let guarded = client
+    .post(format!("/entry/evil..svc/{task_id}"))
+    .dispatch()
+    .into_string()
+    .unwrap_or_default();
+  assert!(
+    guarded.contains("invalid service"),
+    "a `..` service segment is rejected by the traversal guard, got {guarded:?}"
+  );
   let response = client
     .get(format!("/preview/{CORPUS_NAME}/{SERVICE_NAME}/0801.1234"))
     .dispatch();
