@@ -18,7 +18,9 @@
 > severity, and a one-line fix direction; promote 🔴→🟢 (don't delete) when fixed, with the commit
 > that did it.
 
-**No open issues.**
+| # | Sev | Status | Issue |
+|---|---|---|---|
+| F-7 | S3 | 🔴 | **Sandbox severity validation is context-blind (the R-9 bug's analogue in the carve path).** `create_sandbox` validates `selection.severity` with a flat `TaskStatus::from_key` (and `cortex sandbox` repeats it), but the carve is context-dependent like rerun: a **severity-only** selection reads `tasks` by *status* (`no_problem`|`warning`|`error`|`fatal`|`invalid`); a **`category`/`what`** narrowing joins `log_<severity>` — a *message* severity (`warning`|`error`|`fatal`|`invalid`|`info`). The flat check is wrong both ways: ① `severity=info` is rejected even with a category (info IS valid — `log_infos`), so an info-message sandbox can't be carved; ② `severity=no_problem` + a category is *accepted*, but `TaskStatus::to_table(NoProblem)` falls through to `log_infos`, so it silently carves tasks with **info** messages of that category, mislabelled as a `no_problem` sandbox (a wrong-scope carve, like R-9's `no_problem` mis-scope). **Impact low** — nonsensical/niche combos (no_problem has no categories; info isn't in the human form's dropdown) and the common warning/error/fatal/invalid carves (±category) are correct. **Why deferred (not a validator swap like R-9):** `info` has no `TaskStatus` variant (it rides `to_table`'s `_ => log_infos` fallback), so the carve conflates task-status and message-severity — the proper fix lifts the rerun `is_valid_rerun_severity` logic into a shared `helpers` validator (rerun + sandbox both want "task status without a message filter, message severity with one"), rejects the bad combos in `create_sandbox`, and handles `info` as a no-`TaskStatus` message severity for the join. Found 2026-06-17 by the cross-surface audit that completed R-9. `src/backend/sandbox.rs`, `bin/cortex.rs::run_sandbox`. |
 
 ## Resolved since the reset
 
