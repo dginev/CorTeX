@@ -16,6 +16,9 @@
   --ink-muted: #5f5f5a;
   --rule: #b9b8af;
   --rule-soft: #ceccc2;
+  /* Form-field border — strengthened from --rule (~1.5:1) to clear WCAG 1.4.11 (≥3:1): #767670 on
+     the light bg ≈ 3.4:1, so inputs read as distinct fields. */
+  --field-border: #767670;
   --accent: #7a3e9d;
   --accent-soft: #ece1f5;
   /* Text on the accent fill. Paper's accent is dark, so white reads (#fff on #7a3e9d ≈ 7:1). */
@@ -58,6 +61,9 @@
   --ink-muted: #8b857c;
   --rule: #2a2a30;
   --rule-soft: #1f1f24;
+  /* Form-field border — strengthened from --rule (~1.2:1, invisible) to clear WCAG 1.4.11 (≥3:1 for
+     UI-component boundaries) so inputs are perceptible: #6e6e78 on the dark bg ≈ 3.3:1. */
+  --field-border: #6e6e78;
   --accent: #c79bff;
   --accent-soft: #2a1f3a;
   /* Text that sits ON the accent (e.g. a .btn-primary fill). Midnight's accent is *light*, so the
@@ -231,7 +237,7 @@ select,
 textarea {
   background-color: var(--bg-elev);
   color: var(--ink);
-  border: 1px solid var(--rule);
+  border: 1px solid var(--field-border);
   border-radius: 4px;
 }
 .form-control:focus,
@@ -249,7 +255,7 @@ textarea:focus {
 input:not([type]) {
   background-color: var(--bg-elev);
   color: var(--ink);
-  border: 1px solid var(--rule);
+  border: 1px solid var(--field-border);
   border-radius: 4px;
 }
 
