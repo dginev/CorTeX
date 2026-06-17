@@ -109,7 +109,6 @@ pub(crate) fn extend_service(
   let corpus = Corpus::find_by_path(corpus_path, connection)?;
   let todo_raw = TaskStatus::TODO.raw();
 
-  // TODO: when we want to get completeness, also update dependencies.
   let import_service = Service::find_by_name("import", connection)?;
   // Queue a conversion task for every imported document this service doesn't already have one for —
   // only the genuinely-**new** ones (`ON CONFLICT (entry, service_id, corpus_id) DO NOTHING` is the

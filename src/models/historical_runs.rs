@@ -90,7 +90,10 @@ impl RunMetadata {
       "warning" => self.warning,
       "no_problem" => self.no_problem,
       "in_progress" => self.in_progress,
-      _ => unimplemented!(),
+      // An unknown field is a programming error (callers pass fixed keys), but this feeds the
+      // **public** `/history` chart — degrade to 0 rather than `panic!` on a request path
+      // (robustness: no panic where a `Result`/default will do).
+      _ => 0,
     };
     field_i32 as f32
   }
