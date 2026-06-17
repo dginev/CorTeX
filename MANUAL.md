@@ -38,6 +38,12 @@ faster binary on the long-running `frontend`/`dispatcher`. Put `--` *before* any
 itself. A real deployment adds a reverse proxy / Anubis + systemd units — see §2 and
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md); none of that is needed locally.
 
+**Once `set-admin-token` succeeds, the entire rest of this walkthrough is doable in the browser** —
+creating the corpus, defining the service, registering it, watching the run fill in, and saving the
+snapshot are all admin screens (and the agent API mirrors each — noted in parens below). The only
+pieces that stay on the command line are the **dispatcher + worker** in step 5 (the conversion engine,
+which CorTeX does not start for you).
+
 ### Walk the run
 
 1. **Sign in.** Open `http://127.0.0.1:8000/admin/login` and paste the token. You land on **`/admin`**,

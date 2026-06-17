@@ -136,10 +136,41 @@ pub fn doctor(database_url: &str) -> DoctorReport {
   }
 }
 
+/// Minimum PostgreSQL server version CorTeX requires (`180000` = 18.0). The migrations use
+/// **PG18-only features** — `uuidv7()` defaults on the external-handle columns and the
+/// report-summary materialized-view rollups — so an older server cannot run them. `init`
+/// pre-flights this and fails with a clear message instead of a cryptic mid-migration `function
+/// "uuidv7" does not exist`.
+const MIN_PG_VERSION_NUM: i32 = 180_000;
+
+/// Reads PostgreSQL's `server_version_num` (e.g. `180004` for 18.4); `None` if the probe itself
+/// fails (then we let the migration proceed rather than block on a probe error — the migration is
+/// the backstop).
+fn server_version_num(connection: &mut PgConnection) -> Option<i32> {
+  use diesel::dsl::sql;
+  use diesel::sql_types::Integer;
+  diesel::select(sql::<Integer>("current_setting('server_version_num')::int"))
+    .get_result::<i32>(connection)
+    .ok()
+}
+
 /// Self-migrates the database (embedded migrations) and scaffolds a config file if one is missing.
 pub fn init(database_url: &str, config_path: &Path) -> Result<InitOutcome, String> {
   let mut connection = PgConnection::establish(database_url)
     .map_err(|e| format!("cannot connect to database: {e}"))?;
+  // Pre-flight the server version: fail fast with a clear message on PostgreSQL < 18 instead of a
+  // cryptic mid-migration error. A probe failure (`None`) doesn't block — the migration still runs.
+  if let Some(version) = server_version_num(&mut connection) {
+    if version < MIN_PG_VERSION_NUM {
+      return Err(format!(
+        "CorTeX requires PostgreSQL 18 or newer (the migrations use PG18-only features — `uuidv7()` \
+         handle defaults and the report-summary materialized views); this server is {}.{}. Upgrade \
+         PostgreSQL and re-run `cortex init`.",
+        version / 10000,
+        version % 10000
+      ));
+    }
+  }
   let migrations_applied = migrations::run_pending_migrations(&mut connection)
     .map_err(|e| format!("migration failed: {e}"))?;
   let config_created = if config_path.exists() {
