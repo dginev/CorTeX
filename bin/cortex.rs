@@ -28,6 +28,7 @@ use cortex::frontend::corpora::CorpusDto;
 use cortex::frontend::helpers::group_thousands;
 use cortex::frontend::jobs::JobDto;
 use cortex::frontend::params::{MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE};
+use cortex::frontend::reports::is_valid_rerun_severity;
 use cortex::frontend::services::ServiceDto;
 use cortex::helpers::TaskStatus;
 use cortex::importer::Importer;
@@ -1552,9 +1553,15 @@ fn run_rerun(
       std::process::exit(1);
     },
   };
+  // Validate the rerun severity with the SAME context-aware rule as the agent + human surfaces
+  // (R-9): without `--category` it's a task status; with one it's a message severity.
   if let Some(sev) = &severity {
-    if TaskStatus::from_key(sev).is_none() {
-      eprintln!("Invalid --severity {sev:?} (use no_problem, warning, error, fatal, invalid)");
+    if !is_valid_rerun_severity(sev, category.is_some()) {
+      eprintln!(
+        "Invalid --severity {sev:?} for this rerun: without --category use a task status \
+         (no_problem|warning|error|fatal|invalid); with --category use a message severity \
+         (warning|error|fatal|invalid|info)."
+      );
       std::process::exit(2);
     }
   }

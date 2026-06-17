@@ -194,7 +194,7 @@ fn is_rollup_severity(severity: &str) -> bool {
 /// `info` is not a task status). One shared validator for the agent (`rerun_report`) and human
 /// (`serve_rerun`) surfaces, so both reject the same typos instead of silently mis-scoping to
 /// `no_problem`.
-pub(crate) fn is_valid_rerun_severity(severity: &str, has_category: bool) -> bool {
+pub fn is_valid_rerun_severity(severity: &str, has_category: bool) -> bool {
   if has_category {
     matches!(severity, "warning" | "error" | "fatal" | "invalid" | "info")
   } else {
@@ -1026,4 +1026,46 @@ pub fn routes() -> Vec<Route> {
     document_report_page,
     document_lookup_redirect
   ]
+}
+
+#[cfg(test)]
+mod tests {
+  use super::is_valid_rerun_severity;
+
+  /// The rerun-severity validator is context-aware (R-9) and shared by all three surfaces
+  /// (`rerun_report` agent, `serve_rerun` human, `cortex rerun` CLI): without a category the scope
+  /// is a task **status** (incl. `no_problem`, not `info`); with a category it's a log-message
+  /// **severity** (incl. `info`, not `no_problem`).
+  #[test]
+  fn rerun_severity_is_context_aware() {
+    // No category → task statuses.
+    for sev in ["no_problem", "warning", "error", "fatal", "invalid"] {
+      assert!(
+        is_valid_rerun_severity(sev, false),
+        "{sev} is a valid no-category rerun severity"
+      );
+    }
+    assert!(
+      !is_valid_rerun_severity("info", false),
+      "info is not a task status"
+    );
+    assert!(
+      !is_valid_rerun_severity("todo", false),
+      "todo isn't a rerun scope"
+    );
+    assert!(!is_valid_rerun_severity("bogus", false));
+
+    // With a category → message severities.
+    for sev in ["warning", "error", "fatal", "invalid", "info"] {
+      assert!(
+        is_valid_rerun_severity(sev, true),
+        "{sev} is a valid with-category rerun severity"
+      );
+    }
+    assert!(
+      !is_valid_rerun_severity("no_problem", true),
+      "no_problem tasks carry no messages, so it's invalid with a category"
+    );
+    assert!(!is_valid_rerun_severity("bogus", true));
+  }
 }
