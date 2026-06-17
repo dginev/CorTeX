@@ -70,7 +70,6 @@ diesel = {version="2.2.10", features = ["postgres", "chrono", "r2d2", "uuid", "s
 diesel_migrations = "2.2"
 clap = { version = "4", features = ["derive"] }
 uuid = { version = "1", features = ["v4", "serde"] }
-lazy_static = "1.0.0"
 # API-docs auto-generation (Arm 9). rocket_okapi was chosen over utoipa (docs/archive/api-spike/COMPARISON.md
 # + OPEN_QUESTIONS #7): its `#[openapi]` reads the real Rocket route, so the OpenAPI spec is generated
 # from the single source of truth and can't drift — the symmetry contract extended to the docs.

@@ -95,7 +95,7 @@ pub fn uri_unescape(param: Option<&str>) -> Option<String> {
     None => None,
     Some(param_encoded) => {
       let mut param_decoded: String = param_encoded.to_owned();
-      // TODO: This could/should be done faster by using lazy_static!
+      // TODO: This could/should be done faster by hoisting the table into a `LazyLock`.
       for &(original, replacement) in &[
         ("%3A", ":"),
         ("%2F", "/"),
@@ -123,7 +123,7 @@ pub fn uri_escape(param: Option<String>) -> Option<String> {
       let mut param_encoded: String =
         percent_encoding::utf8_percent_encode(&param_pure, percent_encoding::NON_ALPHANUMERIC)
           .collect::<String>();
-      // TODO: This could/should be done faster by using lazy_static!
+      // TODO: This could/should be done faster by hoisting the table into a `LazyLock`.
       for &(original, replacement) in &[
         (":", "%3A"),
         ("/", "%2F"),

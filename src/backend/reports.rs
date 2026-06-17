@@ -3,6 +3,7 @@ use diesel::dsl::sql;
 use diesel::*;
 use regex::Regex;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use super::rollup;
 use crate::frontend::helpers::severity_highlight;
@@ -14,9 +15,8 @@ use crate::models::{
 use crate::reports::{AggregateReport, TaskDetailReport};
 use crate::schema::tasks;
 
-lazy_static! {
-  static ref TASK_REPORT_NAME_REGEX: Regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
-}
+static TASK_REPORT_NAME_REGEX: LazyLock<Regex> =
+  LazyLock::new(|| Regex::new(r"^.+/(.+)\..+$").unwrap());
 
 /// Maximum messages loaded **per severity** for a single document's forensic view. A hostile or
 /// pathological document can carry millions of messages of one severity (observed in production: a

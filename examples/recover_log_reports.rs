@@ -16,10 +16,10 @@
 
 use std::env;
 use std::path::Path;
+use std::sync::LazyLock;
 use std::thread;
 use std::time::Duration;
 
-use lazy_static::lazy_static;
 use regex::Regex;
 
 use diesel::*;
@@ -30,9 +30,8 @@ use cortex::models::{Corpus, Service, Task};
 use cortex::schema::tasks;
 use cortex::schema::tasks::dsl::{corpus_id, service_id, status};
 
-lazy_static! {
-  static ref ENTRY_ZIP_NAME_REGEX: Regex = Regex::new(r"[^/]+\.zip$").unwrap();
-}
+static ENTRY_ZIP_NAME_REGEX: LazyLock<Regex> =
+  LazyLock::new(|| Regex::new(r"[^/]+\.zip$").unwrap());
 
 // Walks all TODO "status" entries of a corpus, unpacks+scans their cortex.log file, then
 // 1. uses conversion status to update "status" value in tasks

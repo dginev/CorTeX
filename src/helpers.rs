@@ -13,6 +13,7 @@ use std::io;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::str;
+use std::sync::LazyLock;
 
 use diesel::pg::PgConnection;
 use diesel::result::Error;
@@ -23,15 +24,15 @@ use crate::models::{
   NewLogInfo, NewLogInvalid, NewLogWarning, Task,
 };
 
-lazy_static! {
-  static ref MESSAGE_LINE_REGEX: Regex =
-    Regex::new(r"^([^ :]+):([^ :]+):([^ ]+)(\s(.*))?$").unwrap();
-  /// "(Loading... file" message regex
-  pub static ref LOADING_LINE_REGEX: Regex =
-    Regex::new(r"^\((?:Loading|Processing definitions)\s(.+/)?([^/]+[^.])\.\.\.(\s|$)").unwrap();
-  /// The short document name within an entry path: everything between the last `/` and the last `.`.
-  static ref ENTRY_DOCUMENT_NAME_REGEX: Regex = Regex::new(r"^.+/(.+)\..+$").unwrap();
-}
+static MESSAGE_LINE_REGEX: LazyLock<Regex> =
+  LazyLock::new(|| Regex::new(r"^([^ :]+):([^ :]+):([^ ]+)(\s(.*))?$").unwrap());
+/// "(Loading... file" message regex
+pub static LOADING_LINE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+  Regex::new(r"^\((?:Loading|Processing definitions)\s(.+/)?([^/]+[^.])\.\.\.(\s|$)").unwrap()
+});
+/// The short document name within an entry path: everything between the last `/` and the last `.`.
+static ENTRY_DOCUMENT_NAME_REGEX: LazyLock<Regex> =
+  LazyLock::new(|| Regex::new(r"^.+/(.+)\..+$").unwrap());
 
 /// The short document name shown in reports and used for download filenames — an entry path's
 /// basename without its directory or extension (e.g. `/data/…/0811.0417/0811.0417.zip` →

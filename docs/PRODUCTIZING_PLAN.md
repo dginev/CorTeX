@@ -166,22 +166,28 @@ Net: only `admin-ui` carries unmerged, productization-aligned work, and it is re
 
 Confirmed by reading `Cargo.toml` + grepping `src/`:
 
-- 🔴 **`time = "0.1.4"` (RUSTSEC-2020-0071)** — **actively used in ~10 files** via `time::get_time()`
-  / `time::now().rfc822()` (dispatcher server/sink/ventilator, `frontend/concerns.rs`,
-  `frontend/cached/task_report.rs`, several examples). `chrono` is already a dep. Port all uses to
-  `chrono` and drop `time 0.1`. Real, spread-out work — not a one-liner.
-- 🔴 **`dotenv` + `dotenv_codegen` (RUSTSEC-2021-0141, unmaintained)** — and worse, the `dotenv!`
-  **macro bakes `DATABASE_URL`/`TEST_DATABASE_URL` into the binary at compile time**
-  (`src/backend.rs`: `pub const DEFAULT_DB_ADDRESS: &str = dotenv!("DATABASE_URL")`). **This is a
-  productization blocker**: you cannot ship a binary and point it at a different DB without
-  recompiling. Replacing this is folded into Arm 1 (runtime config), not a mere crate swap.
-- ⚠️ **`redis = "1.2.2"` — NOT vestigial.** It is a **hard runtime dependency of the frontend**:
-  `src/frontend/cached/{task_report,worker}.rs` cache report JSON in Redis and the `cache_worker`
-  thread `.expect()`s a connection to `redis://127.0.0.1/` at boot (panics if Redis is down). The
-  handoff's "is Redis still used?" lead resolves to **yes** — see Arm 11 (make it optional/embedded,
-  don't silently require an extra daemon for self-install).
-- `lazy_static` (6 files) → std `LazyLock` (we're on nightly; trivially stable). `rand 0.8` → `0.9`.
-  `zmq 0.10` — newest, thin C binding; **keep, pin, watch** (don't rewrite the transport).
+> **Advisory status (2026-06-16): `cargo audit` is clean — 0 vulnerabilities across 445
+> dependencies on `productize-2026`.** The 🔴/⚠️ items below were the *sprint-start* state and are
+> now all **resolved** (flipped to 🟢, kept for history). The GitHub Dependabot alerts (6, incl. 1
+> high) are against the **default branch / `master`** — the pre-sprint prototype this branch
+> supersedes — not this tree.
+
+- 🟢 **`time` (RUSTSEC-2020-0071) — RESOLVED.** Was `time = "0.1.4"`, used in ~10 files via
+  `time::get_time()` / `.rfc822()`. All uses ported to `chrono`; `time` is now only the transitive
+  `0.3.49` (the advisory affects `< 0.2.23`), with **zero** `time::get_time` / `use time::` in the
+  tree.
+- 🟢 **`dotenv` + `dotenv_codegen` (RUSTSEC-2021-0141) — RESOLVED.** The compile-time `dotenv!`
+  baking of `DATABASE_URL` (the productization blocker) is gone; config is now runtime `dotenvy` +
+  figment with `CORTEX_`-prefixed env precedence (Arm 1). Neither crate is in the lockfile.
+- 🟢 **`redis` — RESOLVED (removed, not merely made optional).** The `src/frontend/cached/` Redis
+  cache daemon and the `redis` crate are gone; reports are served from the `report_summary`
+  materialized view and **the frontend boots without Redis** (Arm 14). Not in the lockfile.
+- 🟢 **`lazy_static` → std `LazyLock` — DONE.** Every `lazy_static!` regex static (`helpers.rs`,
+  `backend/reports.rs`, the `recover_log_reports` example) migrated to `std::sync::LazyLock` and our
+  direct dependency was dropped (it remains only transitively via `tera` / `tracing-subscriber` /
+  `webauthn-rs`, which is fine — maintained, audit-clean). `rand 0.8` is **deliberately retained** (0.9 is a breaking-API churn with
+  no functional gain here — not a security item). `zmq 0.10` — newest, thin C binding; **keep, pin,
+  watch** (don't rewrite the transport).
 - **Git deps** `pericortex` + `libarchive-sys` are pinned by branch; pin to exact rev for
   reproducible builds (ties to Arm 10 provenance).
 - **Build status today:** `libzmq/libarchive/libpq/libsodium` are **not installed** and Postgres

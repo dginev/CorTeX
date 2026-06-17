@@ -523,7 +523,6 @@ dependencies = [
  "glob",
  "hyper 1.10.1",
  "infer",
- "lazy_static",
  "libc",
  "percent-encoding",
  "pericortex",
