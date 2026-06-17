@@ -247,8 +247,9 @@ online with `REINDEX (CONCURRENTLY) …` (see `docs/DB_TUNING.md` for the mainte
 
 - **`config.json` not found / parse error** — you must run binaries from the repository root and
   `config.json` must be valid JSON (Step 4).
-- **`password authentication failed`** — re-check Step 3 credentials and that they match `.env`;
-  remember a changed `.env` needs a rebuild (Step 6 note).
+- **`password authentication failed`** — re-check Step 3 credentials and that they match `.env`. A
+  changed `.env` is read at **runtime** (`dotenvy`, §4) — just **restart** the affected process, no
+  rebuild (the database URL has not been compile-time baked since Arm 1).
 - **`libpq`/`libzmq` not found at build time** — re-run Step 2 and confirm
   `pkg-config --modversion <lib>` succeeds.
 - **A migration fails on the public schema** — re-run the `GRANT ALL ON SCHEMA public` commands from
