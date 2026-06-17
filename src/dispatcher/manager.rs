@@ -177,6 +177,17 @@ impl TaskManager {
       if job_limit.is_some() {
         break;
       }
+      // Graceful shutdown (O-1): the ventilator returned because a SIGTERM/SIGINT set the flag (it
+      // set `dispatch_complete` on the way out, exactly like a bounded run finishing). Break
+      // to the drain path below — join the sink (it finishes the in-flight set), drop the
+      // done-sender, flush finalize, exit `Ok` — instead of restarting the ventilator. A
+      // dead-worker straggler whose result never returns is backstopped by the supervisor's
+      // stop-timeout SIGKILL; its task recovers via `clear_limbo_tasks_except` on the next
+      // start.
+      if crate::dispatcher::server::shutdown_requested() {
+        info!("Graceful shutdown requested — draining in-flight results, then stopping.");
+        break;
+      }
       // Perpetual mode (`job_limit = None`, i.e. production): the sink and finalize threads are
       // spawned **once** (only the ventilator is restart-looped), and this loop never reaches their
       // joins below — so a sink/finalize that died (e.g. a panic on a DB runaway, or an unexpected

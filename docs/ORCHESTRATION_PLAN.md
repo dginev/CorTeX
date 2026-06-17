@@ -52,9 +52,14 @@ workers) the zmq.rs path cannot meet ~100 tasks/s with headroom.
    ~3000/s at 200 peers, hinting at an inherent per-message task overhead.
 3. **A different transport** (raw length-prefixed TCP, or `nng`). Larger rewrite.
 
-**Recommendation.** **Benchmark (1) vs (2) head-to-head at 4 / 16 / 64 / 200 simulated peers** before
-committing — this is the throughput-critical decision and your active research area. Default lean:
-**libzmq on the hot path**, keeping pure-Rust as a stretch goal. **[Owner decision needed.]**
+**Decision (owner — measured): keep the current split — it is already optimal.** The two directions
+were measured **separately** and have **different winners**: **sends (ventilator) → libzmq** (~10×
+faster on send), **receives (sink) → zmq.rs** (high-performance *and* more robust). The dispatcher
+already runs exactly this split (libzmq ROUTER ventilator + zmq.rs PULL sink), so there is **no
+transport work** — keep both as they are until convincing new evidence says otherwise. There is no
+"ceiling" left to pay down: the send hot path is already on libzmq (no zmq.rs/tokio collapse), and the
+receive path is on the faster, more-robust zmq.rs. *(An earlier draft of this doc said "revert the
+sink to libzmq" — that was a misread; the sink staying on zmq.rs is correct.)*
 
 ## 4. Gap 2 — Frontend → Dispatcher signaling (control latency)
 
@@ -100,15 +105,15 @@ well as by lease-timeout.
 
 | Arm | What | Risk | Why this order |
 |---|---|---|---|
-| **O-1** | Graceful shutdown (Gap 3) | Low, self-contained | Immediate operational value; no protocol change |
+| **O-1** ✅ | Graceful shutdown (Gap 3) — **done** | Low, self-contained | SIGTERM/SIGINT → stop leasing → drain in-flight + flush finalize → exit 0; fail-fast preserved |
 | **O-2** | `LISTEN/NOTIFY` control (Gap 2) | Low — falls back to polling | Kills control latency; incremental + safe |
-| **O-3** | Transport benchmark → decision (Gap 1) | High — the hot path | The throughput ceiling; **owner-gated** |
+| ~~O-3~~ | Transport — **settled**: keep the measured split (libzmq send / zmq.rs receive) | None | Already measured-optimal; no work |
 | **O-4** | Worker registration/heartbeat (§6) | Low | Observability; unblocks fleet liveness |
 
 ## 8. Open decisions (owner input)
 
-1. **Transport (O-3):** libzmq (proven flat) vs investing in tuned zmq.rs (pure-Rust goal, uncertain
-   ceiling)? The crux, and your research area.
+1. ~~**Transport (O-3):**~~ **RESOLVED — keep the measured split:** libzmq for the ventilator (send),
+   zmq.rs for the sink (receive). No change unless convincing new evidence.
 2. **Graceful-drain deadline:** how long to wait for in-flight results on SIGTERM before force-exit?
 3. **Scope:** full rewrite, or incremental hardening of the (already sound) core? I lean **incremental**
    — the core is good; the gaps are graceful-stop, push-signaling, and the transport ceiling.

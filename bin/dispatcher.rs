@@ -25,6 +25,11 @@ fn main() {
     max_in_flight: cfg.dispatcher.max_in_flight,
     backend_address: cfg.database.url.clone(),
   };
+  // Graceful shutdown (O-1): on SIGTERM/SIGINT, stop leasing new work and drain the in-flight set +
+  // finalize batch before exiting, instead of the supervisor hard-killing in-flight tasks.
+  // Unexpected failures still fail-fast (panic → abort). Production-only — bounded test runs
+  // don't install this.
+  cortex::dispatcher::server::install_shutdown_handlers();
   manager
     .start(None)
     .unwrap_or_else(|_| panic!("Failed to start TaskManager"));

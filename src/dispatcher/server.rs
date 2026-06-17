@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::SyncSender;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -36,6 +36,41 @@ pub fn apply_tcp_keepalive(socket: &zmq::Socket, idle_seconds: i32) -> zmq::Resu
   socket.set_tcp_keepalive_cnt(KEEPALIVE_PROBE_COUNT)?;
   Ok(())
 }
+
+/// **Graceful-shutdown request flag** (O-1, orchestration). Set by the SIGTERM/SIGINT handler the
+/// dispatcher binary installs; the ventilator checks it each loop iteration and, when set, signals
+/// completion (`dispatch_complete`) and returns — so the manager drains the in-flight set and
+/// flushes the finalize batch before exiting, rather than the supervisor hard-killing in-flight
+/// work. ONLY a **planned** stop uses this; unexpected failures still fail-fast (panic → abort).
+/// Production-only — bounded test runs never install the handler, so this stays `false` and the
+/// dispatch path is byte-for-byte unchanged.
+pub static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+/// SIGTERM/SIGINT handler. The only thing it does is an async-signal-safe atomic store — nothing
+/// allocating or locking, as `signal(2)` requires.
+extern "C" fn handle_shutdown_signal(_sig: libc::c_int) {
+  SHUTDOWN_REQUESTED.store(true, Ordering::SeqCst);
+}
+
+/// Installs SIGTERM + SIGINT handlers that request a graceful drain-and-stop. Call once from the
+/// dispatcher binary's `main` (never in bounded test runs).
+pub fn install_shutdown_handlers() {
+  // SAFETY: `handle_shutdown_signal` is async-signal-safe (a lone atomic store).
+  unsafe {
+    libc::signal(
+      libc::SIGTERM,
+      handle_shutdown_signal as *const () as libc::sighandler_t,
+    );
+    libc::signal(
+      libc::SIGINT,
+      handle_shutdown_signal as *const () as libc::sighandler_t,
+    );
+  }
+}
+
+/// Whether a graceful shutdown has been requested (set by [`install_shutdown_handlers`]'s handler).
+#[must_use]
+pub fn shutdown_requested() -> bool { SHUTDOWN_REQUESTED.load(Ordering::SeqCst) }
 
 /// The dispatcher's **service cache**: a `service_name → Option<Service>` memo shared by the
 /// ventilator (populated on a cache miss) and the sink (read on every result), so a `Service` row

@@ -104,6 +104,17 @@ impl Ventilator {
     let mut discard_log = server::RateLimitedLog::new(Duration::from_secs(5));
 
     loop {
+      // Graceful shutdown (O-1): a SIGTERM/SIGINT set the flag. Stop leasing new work, signal
+      // completion (so the sink drains the in-flight set and finalize flushes its last batch), and
+      // return cleanly — the manager then takes the drain path instead of restarting us. Reached on
+      // the next loop iteration; under load that's each worker request, so the response is prompt.
+      // A *fully idle* dispatcher (no workers connected) has nothing in flight, so the
+      // supervisor's stop-timeout SIGKILL is loss-free there.
+      if server::shutdown_requested() {
+        info!("ventilator: graceful shutdown requested — ceasing to lease; the sink will drain in-flight work");
+        dispatch_complete.store(true, Ordering::SeqCst);
+        return Ok(real_dispatched);
+      }
       let mut identity = zmq::Message::new();
       let mut msg = zmq::Message::new();
       // A worker request is exactly `[identity, service_name]` on the ROUTER: the DEALER worker
