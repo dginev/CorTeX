@@ -417,9 +417,14 @@ pub fn api_index(routes: &State<RouteTable>) -> Json<ApiIndexDto> {
 }
 
 /// The effective configuration, masked for safe exposure (the agent twin of the Settings screen).
+/// **Token-gated** via the [`Actor`] guard (clean `401` without a token), matching the human
+/// `/settings` (`require_admin`) and the write twin `PUT /api/config` — config is admin-only on
+/// every surface. Secrets are masked regardless (DB password → `***`, only the token *count* is
+/// shown), but the operational config (DB host/user/name, ports, pool/queue tuning) is not for
+/// anonymous eyes.
 #[rocket_okapi::openapi(tag = "Management")]
 #[get("/api/config")]
-pub fn api_config() -> Json<ConfigDto> { Json(ConfigDto::from_config(config())) }
+pub fn api_config(_caller: Actor) -> Json<ConfigDto> { Json(ConfigDto::from_config(config())) }
 
 /// Whether a TCP connection to `127.0.0.1:port` succeeds within a short timeout — a liveness probe
 /// of a ZeroMQ socket bound by the dispatcher (ZMQ `tcp://` sockets are TCP listeners). A closed

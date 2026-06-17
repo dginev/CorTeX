@@ -37,7 +37,21 @@ fn sign_in(client: &Client) {
 
 fn get_api_config_returns_masked_contract() {
   let client = client();
-  let response = client.get("/api/config").header(Accept::JSON).dispatch();
+  // Token-gated like its `PUT` twin (X-5) and the human `/settings`: no token → 401, never a public
+  // read of the operational config (DB host/user/name, ports, pool/queue tuning, token count).
+  assert_eq!(
+    client
+      .get("/api/config")
+      .header(Accept::JSON)
+      .dispatch()
+      .status(),
+    Status::Unauthorized,
+    "GET /api/config without a token is 401 (admin-only on every surface)"
+  );
+  let response = client
+    .get("/api/config?token=token1")
+    .header(Accept::JSON)
+    .dispatch();
   assert_eq!(response.status(), Status::Ok);
   assert_eq!(response.content_type(), Some(ContentType::JSON));
 
