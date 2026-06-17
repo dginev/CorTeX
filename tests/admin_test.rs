@@ -196,9 +196,50 @@ fn admin_status_feed_is_cookie_gated_and_returns_the_snapshot() {
 }
 
 // Custom harness (see KNOWN_ISSUES L-1): run the cases then `_exit(0)`.
+/// Security regression: the post-login `?next=` redirect is **open-redirect guarded**. A malicious
+/// off-site `next` (absolute, protocol-relative `//host`, or a `/\host` backslash trick) is dropped
+/// in favour of the safe `/admin` default, so a crafted sign-in link can't bounce an admin off-site
+/// after authenticating; a genuine local path is still honoured.
+fn login_next_is_open_redirect_guarded() {
+  let client = client();
+  for evil in [
+    "https://evil.example/x",
+    "//evil.example/x",
+    "/\\evil.example",
+    "/\\/evil.example",
+  ] {
+    let response = client
+      .post("/admin/login")
+      .header(ContentType::Form)
+      .body(format!("token=token1&next={evil}"))
+      .dispatch();
+    let location = response.headers().get_one("Location").unwrap_or("");
+    assert_eq!(
+      location, "/admin",
+      "a malicious next={evil:?} must fall back to the safe default, got {location:?}"
+    );
+    assert!(
+      !location.contains("evil.example"),
+      "no off-site redirect for next={evil:?}"
+    );
+  }
+  // A genuine local path is honoured.
+  let response = client
+    .post("/admin/login")
+    .header(ContentType::Form)
+    .body("token=token1&next=/admin/runs")
+    .dispatch();
+  assert_eq!(
+    response.headers().get_one("Location"),
+    Some("/admin/runs"),
+    "a safe local next is honoured"
+  );
+}
+
 fn main() {
   admin_requires_sign_in_then_grants_access();
   admin_status_feed_is_cookie_gated_and_returns_the_snapshot();
+  login_next_is_open_redirect_guarded();
   eprintln!("admin_test: all cases passed");
   unsafe { libc::_exit(0) }
 }
