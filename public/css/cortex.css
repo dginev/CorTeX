@@ -18,6 +18,8 @@
   --rule-soft: #ceccc2;
   --accent: #7a3e9d;
   --accent-soft: #ece1f5;
+  /* Text on the accent fill. Paper's accent is dark, so white reads (#fff on #7a3e9d ≈ 7:1). */
+  --accent-ink: #ffffff;
   --link: var(--accent);
   --link-hover: #9a4ec0;
   --code-bg: #cdccc3;
@@ -58,6 +60,9 @@
   --rule-soft: #1f1f24;
   --accent: #c79bff;
   --accent-soft: #2a1f3a;
+  /* Text that sits ON the accent (e.g. a .btn-primary fill). Midnight's accent is *light*, so the
+     ink must be dark: #161618 on #c79bff ≈ 7.5:1 (white-on-accent was only ~2.2:1, failing AA). */
+  --accent-ink: #161618;
   --link: var(--accent);
   --link-hover: #d9b8ff;
   --code-bg: #1f1f24;
@@ -314,7 +319,7 @@ button:not([class]):hover {
 .btn-primary {
   background-color: var(--accent);
   background-image: none;
-  color: #fff;
+  color: var(--accent-ink);
   /* Same box as .btn-default (border / radius / padding) so primary and default buttons are the
      same size — they only differ in colour. */
   border: 1px solid var(--accent);
@@ -325,7 +330,7 @@ button:not([class]):hover {
 .btn-primary:focus {
   background-color: var(--link-hover);
   border-color: var(--link-hover);
-  color: #fff;
+  color: var(--accent-ink);
 }
 .btn-link {
   color: var(--link);
