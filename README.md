@@ -13,7 +13,7 @@
 **Features**:
  - [x] Safe and speedy Rust implementation
  - [x] Distributed processing and streaming data transfers via **ZeroMQ**
- - [x] Backend support for Document (via FileSystem) and Task (via PostgreSQL **≥9.5**) provenance.
+ - [x] Backend support for Document (via FileSystem) and Task (via PostgreSQL **18+**) provenance.
  - [x] Representation-aware and -independent (TeX, HTML+RDFa, ePub, TEI, JATS, ...)
  - [x] Powerful workflow management and development support through the CorTeX web interface
  - [x] Supports multi-corpora multi-service installations
