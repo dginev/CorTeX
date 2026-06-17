@@ -738,6 +738,54 @@ pub fn resume_run_api(
   api_run_control(corpus, service, &actor.owner, false, pool)
 }
 
+/// Acknowledgement for a global pause/resume-all conversion control.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct GlobalRunControlDto {
+  /// `pause` or `resume`.
+  pub action: String,
+  /// Number of tasks moved (blocked, or returned to TODO).
+  pub affected: usize,
+  /// The token-resolved actor recorded as the initiator.
+  pub actor: String,
+}
+
+fn api_run_control_all(
+  owner: &str,
+  pause: bool,
+  pool: &State<DbPool>,
+) -> Result<Json<GlobalRunControlDto>, Status> {
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let affected = crate::frontend::concerns::serve_pause_resume_all(&mut connection, owner, pause)?;
+  Ok(Json(GlobalRunControlDto {
+    action: if pause { "pause" } else { "resume" }.to_string(),
+    affected,
+    actor: owner.to_string(),
+  }))
+}
+
+/// **Pause all conversions** — block every in-progress task fleet-wide so the dispatcher stops
+/// leasing new work everywhere. The agent twin of the dashboard's "Pause all conversions".
+/// **Token-gated**; returns the count blocked. Reversible with the resume twin.
+#[rocket_okapi::openapi(tag = "Reports")]
+#[post("/api/conversions/pause")]
+pub fn pause_all_api(
+  actor: Actor,
+  pool: &State<DbPool>,
+) -> Result<Json<GlobalRunControlDto>, Status> {
+  api_run_control_all(&actor.owner, true, pool)
+}
+
+/// **Resume all conversions** — return every Blocked task fleet-wide to TODO. The agent twin of the
+/// dashboard's "Resume all conversions". **Token-gated**; returns the count resumed.
+#[rocket_okapi::openapi(tag = "Reports")]
+#[post("/api/conversions/resume")]
+pub fn resume_all_api(
+  actor: Actor,
+  pool: &State<DbPool>,
+) -> Result<Json<GlobalRunControlDto>, Status> {
+  api_run_control_all(&actor.owner, false, pool)
+}
+
 /// Acknowledgement for a forced report-rollup refresh: the background [`crate::jobs`] handle to
 /// poll.
 #[derive(Serialize, schemars::JsonSchema)]

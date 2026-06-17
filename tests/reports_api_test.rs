@@ -262,6 +262,31 @@ fn category_and_what_reports_match_seed() {
     "rerun with an unknown token is 401"
   );
 
+  // --- Global pause/resume ALL conversions: token-gated (a dangerous fleet-wide control) ---------
+  for path in ["/api/conversions/pause", "/api/conversions/resume"] {
+    assert_eq!(
+      client.post(path).dispatch().status(),
+      Status::Unauthorized,
+      "global run control without a token is 401"
+    );
+    assert_eq!(
+      client
+        .post(format!("{path}?token=bogus"))
+        .dispatch()
+        .status(),
+      Status::Unauthorized,
+      "global run control with an unknown token is 401"
+    );
+    assert_eq!(
+      client
+        .post(format!("{path}?token=token1"))
+        .dispatch()
+        .status(),
+      Status::Ok,
+      "global run control with a valid token succeeds"
+    );
+  }
+
   // --- HTML report screens (relocated to the library + pooled): top + severity drill-down --------
   let response = client
     .get(format!("/corpus/{CORPUS_NAME}/{SERVICE_NAME}"))

@@ -60,6 +60,27 @@ pub(crate) fn resume_blocked(
     .execute(connection)
 }
 
+/// **Pause ALL conversions** (the dashboard's global control): block every in-progress task
+/// (`status >= 0`) across **every** `(corpus, service)`, fleet-wide, so the ventilator stops
+/// leasing new work everywhere. The global twin of [`mark_blocked`]; returns the number paused.
+/// Reversible with [`resume_all_blocked`]. (In-flight tasks already dispatched still land their
+/// results — pause only stops *new* leasing, exactly like the per-run pause.)
+pub(crate) fn mark_all_blocked(connection: &mut PgConnection) -> Result<usize, Error> {
+  update(tasks::table)
+    .filter(tasks::status.ge(0))
+    .set(tasks::status.eq(TaskStatus::Blocked(-6).raw()))
+    .execute(connection)
+}
+
+/// **Resume ALL conversions**: return every Blocked task (`status < -5`) across every pair to TODO
+/// — the exact inverse of [`mark_all_blocked`]. Returns the number resumed.
+pub(crate) fn resume_all_blocked(connection: &mut PgConnection) -> Result<usize, Error> {
+  update(tasks::table)
+    .filter(tasks::status.lt(-5))
+    .set(tasks::status.eq(TaskStatus::TODO.raw()))
+    .execute(connection)
+}
+
 pub(crate) fn mark_done(
   connection: &mut PgConnection,
   reports: &[TaskReport],

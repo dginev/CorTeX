@@ -60,6 +60,22 @@
   </div>
 
   <hr>
+  <h3>Run control</h3>
+  <p class="muted">Pause halts <em>new</em> dispatching across every corpus &amp; service (in-flight
+    conversions still finish); resume returns paused tasks to the queue. Reversible, and recorded in
+    the audit log.</p>
+  <div class="button-row">
+    <form method="post" action="/pause-all"
+      onsubmit="return confirm('Pause ALL conversions across every corpus and service?');">
+      <button type="submit" class="btn-default"><i class="fa fa-pause"></i>&nbsp; Pause all conversions</button>
+    </form>
+    <form method="post" action="/resume-all"
+      onsubmit="return confirm('Resume ALL paused conversions?');">
+      <button type="submit" class="btn-default"><i class="fa fa-play"></i>&nbsp; Resume all conversions</button>
+    </form>
+  </div>
+
+  <hr>
   <h3>Manage</h3>
   <ul class="admin-actions">
     <li><a href="/corpora/new"><i class="fa fa-plus-circle"></i>&nbsp; Add a corpus</a> — register a new corpus &amp; import its documents</li>

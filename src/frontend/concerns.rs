@@ -12,8 +12,8 @@ use std::str;
 use std::sync::Arc;
 
 use crate::backend::{
-  mark_blocked, mark_rerun, progress_report, resume_blocked, save_historical_tasks, DbPool,
-  PooledConn, RerunOptions,
+  mark_all_blocked, mark_blocked, mark_rerun, progress_report, resume_all_blocked, resume_blocked,
+  save_historical_tasks, DbPool, PooledConn, RerunOptions,
 };
 use crate::frontend::actor::AdminSession;
 use crate::frontend::helpers::*;
@@ -515,6 +515,66 @@ pub fn resume_run(
   )))
 }
 
+/// Pause or resume **all** conversions globally — the dashboard's "Pause/Resume all conversions".
+/// The global twin of [`serve_pause_resume`]: across every `(corpus, service)`, pause blocks every
+/// in-progress task and resume returns every Blocked task to TODO. Returns the number of tasks
+/// moved. Audited by the fairing; fully reversible (the inverse action restores TODO).
+pub fn serve_pause_resume_all(
+  connection: &mut PgConnection,
+  owner: &str,
+  pause: bool,
+) -> Result<usize, Status> {
+  let action = if pause { "pause-all" } else { "resume-all" };
+  tracing::info!(actor = owner, action, "global run control requested");
+  let result = if pause {
+    mark_all_blocked(connection)
+  } else {
+    resume_all_blocked(connection)
+  };
+  match result {
+    Err(error) => {
+      tracing::warn!(actor = owner, action, %error, "global run control failed");
+      Err(Status::InternalServerError)
+    },
+    Ok(count) => {
+      tracing::info!(
+        actor = owner,
+        action,
+        affected = count,
+        "global run control committed"
+      );
+      Ok(count)
+    },
+  }
+}
+
+/// Human **pause all conversions** — block every in-progress task fleet-wide so the dispatcher
+/// stops leasing new work everywhere. Cookie-gated; redirects to `/admin`. Agent twin:
+/// `POST /api/conversions/pause`.
+#[post("/pause-all")]
+pub fn pause_all(
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+) -> Result<rocket::response::Redirect, Status> {
+  let session = session.ok_or(Status::Unauthorized)?;
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  serve_pause_resume_all(&mut connection, &session.owner, true)?;
+  Ok(rocket::response::Redirect::to("/admin"))
+}
+
+/// Human **resume all conversions** — return every Blocked task fleet-wide to TODO. Cookie-gated;
+/// redirects to `/admin`. Agent twin: `POST /api/conversions/resume`.
+#[post("/resume-all")]
+pub fn resume_all(
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+) -> Result<rocket::response::Redirect, Status> {
+  let session = session.ok_or(Status::Unauthorized)?;
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  serve_pause_resume_all(&mut connection, &session.owner, false)?;
+  Ok(rocket::response::Redirect::to("/admin"))
+}
+
 /// Save the historical tasks of a corpus run, for reference, for a <corpus,service> pair. Auth is
 /// the signed-in [`crate::frontend::actor::AdminSession`] cookie (gated at the route). `404` on an
 /// unknown corpus/service.
@@ -957,6 +1017,8 @@ pub fn routes() -> Vec<Route> {
     rerun_what,
     pause_run,
     resume_run,
+    pause_all,
+    resume_all,
     savetasks
   ]
 }

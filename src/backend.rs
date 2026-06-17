@@ -17,7 +17,10 @@ mod sandbox;
 mod services_aggregate;
 mod tasks_aggregate;
 pub use export::{export_html_dataset, DatasetExportOutcome, GroupBy};
-pub(crate) use mark::{mark_blocked, mark_rerun, resume_blocked, save_historical_tasks};
+pub(crate) use mark::{
+  mark_all_blocked, mark_blocked, mark_rerun, resume_all_blocked, resume_blocked,
+  save_historical_tasks,
+};
 // `pub` (not `pub(crate)`): the `cortex diff --tasks` subcommand calls it directly, giving the
 // per-task changed-tasks drill a third (CLI) surface alongside the agent `/api/runs/<c>/<s>/tasks`
 // and the web screen.

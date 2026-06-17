@@ -299,6 +299,16 @@ legend {
   display: inline;
   font-weight: 400;
 }
+/* A row of inline action buttons/forms (e.g. the dashboard's pause/resume-all controls). */
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+.button-row form {
+  margin: 0;
+}
 
 /* Job progress page: themed progress bar + status colours. */
 progress {
