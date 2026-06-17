@@ -92,12 +92,12 @@ pub(crate) fn register_service(
       )
       .into_columns((entry, service_id, corpus_id, status))
       .execute(t_connection)?;
-    Ok(())
-  })?;
-  // Finally, register a new run, completing potentially open ones for this pair, attributed to the
-  // actor who activated the service (threaded from the UI/API; the CLI passes a `cli-admin`
-  // default).
-  mark::mark_new_run(connection, &corpus, service, owner, description)
+    // Register the activation run **inside** the same transaction (R-11 sibling), so a crash or a
+    // `mark_new_run` error rolls the freshly-created tasks back too — never
+    // tasks-created-but-no-run, nor a "failed" activate job that in fact created the tasks.
+    // `mark_new_run`'s own transaction nests here as a savepoint.
+    mark::mark_new_run(t_connection, &corpus, service, owner, description)
+  })
 }
 
 pub(crate) fn extend_service(
