@@ -445,7 +445,9 @@ pub(crate) fn task_report_live(
         .select((tasks::entry, tasks::id))
         .filter(service_id.eq(service.id))
         .filter(corpus_id.eq(corpus.id))
-        .filter(status.eq(task_status.unwrap().raw()))
+        // In this branch `task_status == Some(NoProblem)`; use the constant directly so the report
+        // path carries no `.unwrap()` (structurally panic-free, not merely provably-so today).
+        .filter(status.eq(TaskStatus::NoProblem.raw()))
         .order(tasks::entry.asc())
         .offset(offset)
         .limit(page_size)

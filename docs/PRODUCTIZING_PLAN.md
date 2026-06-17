@@ -198,9 +198,14 @@ Confirmed by reading `Cargo.toml` + grepping `src/`:
   warnings`, and the full integration suite (`--no-fail-fast`). A second **`supply-chain`** job runs
   `cargo-deny check advisories licenses sources` (`deny.toml`) — which subsumes `cargo-audit`. Both
   jobs verified green locally (2026-06-16).
-- ⚠️ `~105` `unwrap()/expect()/panic!` sites in `src/`+`bin/` (down from ~113); the intentional
-  fail-fast ones (dispatcher mutex-poison → abort) stay, the request/dispatch-path ones are the
-  ongoing **Arm 4** target.
+- 🟢 **Request-path panics — clean (the Arm 4 priority surface).** Audited the HTTP boundary
+  (2026-06-16): the **frontend handlers carry zero** real `unwrap`/`expect`/`panic!` (the 8 grep
+  hits are doc comments on *closed* legacy panics + `#[cfg(test)]` modules; the F-1 dispatch-path
+  diff panic is closed), and the request-callable backend report path was hardened too (its last
+  branch-guarded `.unwrap()` swapped for the known constant). The remaining `~104` sites in
+  `src/`+`bin/` are **intentional fail-fast** (dispatcher mutex-poison → abort, by design) or
+  **startup/setup/test** (config load, migrations, static-regex compiles) — not request paths.
+  De-paniccing the non-request internals is the ongoing **Arm 4** tail.
 - 🟢 **Dead code — REMOVED (Arm 12).** `src/backend/make_history.rs`, `src/dispatcher/metadata.rs`,
   and the `dependencies` table are all gone from the tree/schema.
 
