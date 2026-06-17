@@ -774,6 +774,11 @@ fn start_sandbox(
   let database_url = database_url.to_string();
   let name = request.name.clone();
   let selection = SandboxSelection::from(request);
+  // Pre-flight the selection's severity (mirrors import/export) so a bad/`no_problem`+category
+  // carve is an immediate 422, not a `202` that an agent has to poll only to find the job failed.
+  selection
+    .validated_status()
+    .map_err(|_| Status::UnprocessableEntity)?;
   let params = serde_json::json!({
     "parent": parent, "name": name, "selection": serde_json::to_value(&selection).ok(),
   });

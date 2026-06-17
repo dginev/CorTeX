@@ -73,6 +73,23 @@ impl SandboxSelection {
     }
     summary
   }
+
+  /// Validates the selection's severity for the carve and returns the resolved task status, or a
+  /// human-readable reason. The carve is context-dependent: a severity-only selection reads `tasks`
+  /// by *status*; a `category`/`what` narrowing joins `log_<severity>`. `no_problem` carries no
+  /// messages, so it can't be narrowed (F-7) — `to_table(NoProblem)` would otherwise silently fall
+  /// through to `log_infos`. This is the **pre-flight twin** of the carve itself: `start_sandbox`
+  /// calls it so a bad selection is an immediate `422` (like import/export), not a doomed job.
+  pub fn validated_status(&self) -> Result<TaskStatus, String> {
+    let status = TaskStatus::from_key(&self.severity)
+      .ok_or_else(|| format!("unknown severity '{}'", self.severity))?;
+    if self.severity == "no_problem" && (self.category.is_some() || self.what.is_some()) {
+      return Err(
+        "severity 'no_problem' has no messages and can't be narrowed by category/what".to_string(),
+      );
+    }
+    Ok(status)
+  }
 }
 
 /// The result of carving a sandbox: the new corpus plus how many entries it captured.
@@ -109,26 +126,12 @@ pub fn create_sandbox(
   name: &str,
   selection: &SandboxSelection,
 ) -> Result<SandboxOutcome, Error> {
-  let status = match TaskStatus::from_key(&selection.severity) {
-    Some(severity) => severity.raw(),
-    None => {
-      return Err(Error::QueryBuilderError(
-        format!("unknown severity '{}'", selection.severity).into(),
-      ))
-    },
-  };
-  // F-7: `no_problem` tasks carry no log messages, so a category/`what` narrowing is nonsensical —
-  // and `to_table(NoProblem)` falls through to `log_infos`, which would silently carve info-message
-  // tasks mislabelled as a `no_problem` sandbox. Reject the combo cleanly (transparent failure over
-  // a wrong-scope carve). (Carving info-message tasks needs `severity=info`, F-7's deferred
-  // half.)
-  if status == TaskStatus::NoProblem.raw()
-    && (selection.category.is_some() || selection.what.is_some())
-  {
-    return Err(Error::QueryBuilderError(
-      "severity 'no_problem' has no messages and can't be narrowed by category/what".into(),
-    ));
-  }
+  // Severity validation (incl. the F-7 `no_problem`+category guard) lives in `validated_status`, so
+  // the carve and the `start_sandbox` pre-flight reject the identical set.
+  let status = selection
+    .validated_status()
+    .map_err(|message| Error::QueryBuilderError(message.into()))?
+    .raw();
   let log_table = TaskStatus::from_raw(status).to_table();
   let selection_json = serde_json::to_value(selection).ok();
 
