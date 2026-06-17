@@ -294,7 +294,11 @@ fn merge_and_persist(patch: &serde_json::Value, path: &Path) -> Result<CortexCon
   }
   let toml_text =
     crate::config::to_persisted_toml(&merged).map_err(|_| Status::InternalServerError)?;
-  std::fs::write(path, toml_text).map_err(|_| Status::InternalServerError)?;
+  // Atomic publish (B-1): write a sibling temp + rename, so a crash mid-write can't leave a
+  // half-written `cortex.toml` that bricks the next restart — the same guard `cortex init` /
+  // `set-admin-token` use.
+  crate::bootstrap::write_config_atomically(path, &toml_text)
+    .map_err(|_| Status::InternalServerError)?;
   Ok(merged)
 }
 

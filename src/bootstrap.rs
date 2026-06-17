@@ -27,7 +27,7 @@ use crate::migrations;
 /// `cortex init` would then skip as "already present". `fs::write` truncates any temp orphaned by a
 /// prior crash, so the next write starts clean. (Process-crash atomic; power-loss durability would
 /// additionally need an `fsync` of the temp + dir, overkill for a setup-time config write.)
-fn write_config_atomically(path: impl AsRef<Path>, content: &str) -> Result<(), String> {
+pub(crate) fn write_config_atomically(path: impl AsRef<Path>, content: &str) -> Result<(), String> {
   let path = path.as_ref();
   let tmp = path.with_extension("toml.tmp");
   std::fs::write(&tmp, content).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
