@@ -310,8 +310,12 @@ button:not([class]):hover {
 .btn-primary {
   background-color: var(--accent);
   background-image: none;
-  border-color: var(--accent);
   color: #fff;
+  /* Same box as .btn-default (border / radius / padding) so primary and default buttons are the
+     same size — they only differ in colour. */
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 5px 12px;
 }
 .btn-primary:hover,
 .btn-primary:focus {

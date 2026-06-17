@@ -1091,6 +1091,9 @@ pub fn corpus_page(
   );
   global.insert("corpus_name".to_string(), corpus.name.clone());
   global.insert("corpus_description".to_string(), corpus.description.clone());
+  // The filesystem root the "Extend" action re-scans — named in the corpus-actions form so an admin
+  // sees exactly which directory will be walked.
+  global.insert("corpus_path".to_string(), corpus.path.clone());
   // Sandbox provenance: if this corpus was carved from a parent, surface the parent + carve filter
   // (the agent twin `api_corpus` exposes the same via `CorpusDetailDto.sandbox`). `sandbox_parent`
   // gets a `_uri` variant from `decorate_uri_encodings` for the parent link.

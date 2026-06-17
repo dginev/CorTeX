@@ -79,8 +79,8 @@
     <form method="post" action="/corpus/{{global.corpus_name_uri}}/extend">
       <span class="action-label action-title">Re-scan corpus path</span>
       <div class="action-control">
-        <button type="submit" class="btn-default">Extend</button>
-        <span class="muted">Pick up newly-arrived entries.</span>
+        <button type="submit" class="btn-primary">Extend</button>
+        <span class="muted">Pick up newly-arrived entries from <code>{{global.corpus_path}}</code>.</span>
       </div>
     </form>
 
