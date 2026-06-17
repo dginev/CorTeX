@@ -653,7 +653,9 @@ pub async fn serve_entry(
         ))),
       }
     },
-    Err(e) => Err(NotFound(format!("Task not found: {e}"))),
+    // Don't echo the raw diesel error to the client (info disclosure on a public route); a missing
+    // task is an unremarkable 404 with a generic body.
+    Err(_) => Err(NotFound("Task not found".to_string())),
   }
 }
 
