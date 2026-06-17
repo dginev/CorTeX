@@ -81,6 +81,10 @@ fn api_corpora_lists_registered_corpora() {
     ours["document_count"], 2,
     "the agent corpus list reports the ingested-document count (batched, no N+1)"
   );
+  assert!(
+    ours["parent"].is_null(),
+    "an ordinary (non-carved) corpus has no parent in the list"
+  );
 
   // The human overview (HTML twin) renders the same count, grouped for readability.
   let overview = client
@@ -1019,6 +1023,24 @@ fn sandbox_carves_matching_entries_into_a_new_corpus() {
   assert!(
     detail["sandbox"]["selection"].is_object(),
     "the detail API echoes the structured selection predicate"
+  );
+
+  // The corpus LIST also names the sandbox's parent (list-level twin: CorpusDto.parent), so a
+  // caller can tell sandboxes apart without a per-corpus detail fetch.
+  let list: serde_json::Value = client
+    .get("/api/corpora")
+    .dispatch()
+    .into_json()
+    .expect("corpora list json");
+  let listed = list
+    .as_array()
+    .expect("a JSON array")
+    .iter()
+    .find(|c| c["name"] == sandbox_name)
+    .expect("the sandbox is listed");
+  assert_eq!(
+    listed["parent"], parent_name,
+    "the corpus list names the sandbox's parent"
   );
 
   cleanup(&mut db, parent_name, svc_name);

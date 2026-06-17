@@ -13,8 +13,9 @@
   <h2 class="section-heading">Corpora</h2>
   <section class="corpora-grid">
     {% for corpus in corpora %}
-    <a class="corpus-card" href="/corpus/{{ corpus.name_uri }}">
-      <span class="corpus-card-name">{{ corpus.name }}</span>
+    <a class="corpus-card{% if corpus.sandbox_parent %} is-sandbox{% endif %}" href="/corpus/{{ corpus.name_uri }}">
+      <span class="corpus-card-name">{{ corpus.name }}{% if corpus.sandbox_parent %} <span class="corpus-badge">sandbox</span>{% endif %}</span>
+      {% if corpus.sandbox_parent %}<span class="corpus-card-sandbox"><i class="fa fa-cube"></i>&nbsp;carved from {{ corpus.sandbox_parent }}</span>{% endif %}
       {% if corpus.description %}<span class="corpus-card-desc">{{ corpus.description }}</span>{% endif %}
       {% if corpus.document_count %}<span class="corpus-card-count">{{ corpus.document_count }} documents</span>{% endif %}
     </a>

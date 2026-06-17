@@ -2089,12 +2089,18 @@ fn run_corpora(json: bool) {
   let mut backend = backend::from_address(default_db_address());
   let connection = &mut backend.connection;
   let counts = Corpus::document_counts(connection);
-  let dtos: Vec<CorpusDto> = Corpus::all(connection)
-    .unwrap_or_default()
+  let all = Corpus::all(connection).unwrap_or_default();
+  // id → name over the loaded listing, so a sandbox's parent name resolves with no extra query.
+  let names_by_id: std::collections::HashMap<i32, String> =
+    all.iter().map(|c| (c.id, c.name.clone())).collect();
+  let dtos: Vec<CorpusDto> = all
     .into_iter()
     .map(|corpus| {
       let count = counts.get(&corpus.id).copied().unwrap_or(0);
-      CorpusDto::build(corpus, count)
+      let parent = corpus
+        .parent_corpus_id
+        .and_then(|pid| names_by_id.get(&pid).cloned());
+      CorpusDto::build(corpus, count, parent)
     })
     .collect();
   if json {
@@ -2110,13 +2116,18 @@ fn run_corpora(json: bool) {
   }
   println!("{} corpus(es):", dtos.len());
   for corpus in &dtos {
+    let sandbox = match &corpus.parent {
+      Some(parent) => format!("  ·  sandbox of {parent}"),
+      None => String::new(),
+    };
     println!(
-      "  {}  {}  ·  {} docs{}  ·  {}",
+      "  {}  {}  ·  {} docs{}  ·  {}{}",
       corpus.public_id,
       corpus.name,
       group_thousands(corpus.document_count),
       if corpus.complex { " (complex)" } else { "" },
-      corpus.path
+      corpus.path,
+      sandbox
     );
   }
 }

@@ -59,12 +59,18 @@ pub struct CorpusDto {
   pub complex: bool,
   /// Number of ingested documents (import-service tasks) — the corpus's scale at a glance.
   pub document_count: i64,
+  /// Name of the parent corpus if this is a **sandbox** (a carved subset), else `null`. Lets a
+  /// caller tell sandboxes from ordinary corpora — and find their parent — from the list alone,
+  /// without a per-corpus detail fetch.
+  pub parent: Option<String>,
 }
 
 impl CorpusDto {
-  /// Builds the DTO, attaching the document count looked up from the batched per-corpus map.
-  /// Public so the `cortex` CLI can emit the identical shape (web ↔ CLI ↔ agent parity).
-  pub fn build(corpus: Corpus, document_count: i64) -> Self {
+  /// Builds the DTO, attaching the document count looked up from the batched per-corpus map and the
+  /// parent corpus name (for sandboxes; `None` otherwise — resolve it from the same `Corpus::all`
+  /// listing so there is no extra query). Public so the `cortex` CLI can emit the identical shape
+  /// (web ↔ CLI ↔ agent parity).
+  pub fn build(corpus: Corpus, document_count: i64, parent: Option<String>) -> Self {
     CorpusDto {
       public_id: corpus.public_id.to_string(),
       name: corpus.name,
@@ -72,6 +78,7 @@ impl CorpusDto {
       description: corpus.description,
       complex: corpus.complex,
       document_count,
+      parent,
     }
   }
 }
@@ -85,12 +92,17 @@ pub fn api_corpora(pool: &State<DbPool>) -> Json<Vec<CorpusDto>> {
   };
   let corpora = Corpus::all(&mut connection).unwrap_or_default();
   let counts = Corpus::document_counts(&mut connection);
+  // id → name over the loaded listing, so a sandbox's parent name resolves with no extra query.
+  let names_by_id: HashMap<i32, String> = corpora.iter().map(|c| (c.id, c.name.clone())).collect();
   Json(
     corpora
       .into_iter()
       .map(|corpus| {
         let count = counts.get(&corpus.id).copied().unwrap_or(0);
-        CorpusDto::build(corpus, count)
+        let parent = corpus
+          .parent_corpus_id
+          .and_then(|pid| names_by_id.get(&pid).cloned());
+        CorpusDto::build(corpus, count, parent)
       })
       .collect(),
   )
@@ -998,8 +1010,10 @@ fn delete_corpus_cascade(connection: &mut PgConnection, corpus: Corpus) -> Resul
 pub fn overview_page(deleted: Option<&str>, pool: &State<DbPool>) -> Result<Template, Status> {
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let counts = Corpus::document_counts(&mut connection);
-  let corpora = Corpus::all(&mut connection)
-    .unwrap_or_default()
+  let all = Corpus::all(&mut connection).unwrap_or_default();
+  // id → name over the loaded listing, so a sandbox's parent name resolves with no extra query.
+  let names_by_id: HashMap<i32, String> = all.iter().map(|c| (c.id, c.name.clone())).collect();
+  let corpora = all
     .iter()
     .map(|corpus| {
       let mut hash = corpus.to_hash();
@@ -1010,6 +1024,14 @@ pub fn overview_page(deleted: Option<&str>, pool: &State<DbPool>) -> Result<Temp
           "document_count".to_string(),
           crate::frontend::helpers::group_thousands(*count),
         );
+      }
+      // Mark sandboxes (carved subsets) so the list can badge them + link to their parent — the
+      // human twin of `CorpusDto.parent`. `decorate_uri_encodings` adds `sandbox_parent_uri`.
+      if let Some(parent) = corpus
+        .parent_corpus_id
+        .and_then(|pid| names_by_id.get(&pid))
+      {
+        hash.insert("sandbox_parent".to_string(), parent.clone());
       }
       hash
     })

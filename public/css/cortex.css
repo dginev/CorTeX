@@ -1394,6 +1394,29 @@ h3 {
   color: var(--ink-soft);
   font-variant-numeric: tabular-nums;
 }
+/* Sandbox corpora (carved subsets) are badged on the overview so they're distinguishable from
+   ordinary corpora at a glance — the list-level twin of CorpusDto.parent / the corpus-page banner. */
+.corpus-badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.02rem 0.45rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  font-family: var(--sans);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  vertical-align: middle;
+}
+.corpus-card-sandbox {
+  font-size: var(--fs-sm);
+  color: var(--ink-muted);
+}
+.corpus-card-sandbox .fa-cube {
+  color: var(--accent);
+}
 .empty-state {
   text-align: center;
   color: var(--ink-muted);
