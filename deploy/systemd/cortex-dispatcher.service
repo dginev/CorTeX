@@ -21,6 +21,13 @@ ExecStart=/home/deyan/git/cortex/target/release/dispatcher
 # that restarts it (see docs/DESIGN_PRINCIPLES.md). StartLimitBurst backs off a tight crash loop.
 Restart=always
 RestartSec=3
+# Graceful shutdown (orchestration O-1). `systemctl stop` sends SIGTERM (the default KillSignal), which
+# the dispatcher catches to STOP leasing new work, let the in-flight set DRAIN (dispatched tasks' results
+# land), flush the finalize batch, then exit 0 — instead of orphaning in-flight work. TimeoutStopSec is
+# the drain window: in-flight conversions still running past it are SIGKILLed and their tasks recover via
+# the limbo-reset on the next start. Tune to how long a deploy should wait for in-flight conversions to
+# finish cleanly (longer = fewer re-conversions on restart; shorter = faster stops).
+TimeoutStopSec=120
 NoNewPrivileges=true
 # ProtectSystem=full leaves /data (the shared result filesystem) writable; do NOT use =strict.
 ProtectSystem=full
