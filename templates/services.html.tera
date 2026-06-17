@@ -86,7 +86,7 @@
 
     {% if services and services | length > 0 %}
     <form method="post" action="/corpus/{{global.corpus_name_uri}}/sandbox" class="action-section">
-      <p class="action-subhead action-title">Carve a sandbox <span class="muted">— a working subset, by message-condition filter</span></p>
+      <p class="action-subhead action-title">Prepare a sandbox <span class="muted">— a working subset, by message-condition filter</span></p>
       <label for="sbx-name">Sandbox name</label>
       <input id="sbx-name" type="text" name="name" placeholder="new sandbox name" aria-label="New sandbox corpus name" required>
       <p class="action-divider">Filters</p>
