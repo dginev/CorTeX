@@ -244,6 +244,20 @@ fn api_write_errors_return_the_json_envelope() {
   assert_eq!(unprocessable.content_type(), Some(ContentType::JSON));
   let body: serde_json::Value = unprocessable.into_json().expect("a JSON error envelope");
   assert_eq!(body["status"], 422);
+
+  // 403: deleting a protected magic service (`import`, id 2) is forbidden — caught before any
+  // destroy, so nothing is removed; the agent still gets the envelope, not the default page.
+  let forbidden = client
+    .delete("/api/services/import?confirm=import&token=token1")
+    .dispatch();
+  assert_eq!(
+    forbidden.status(),
+    Status::Forbidden,
+    "deleting a magic init/import service is 403"
+  );
+  assert_eq!(forbidden.content_type(), Some(ContentType::JSON));
+  let body: serde_json::Value = forbidden.into_json().expect("a JSON error envelope");
+  assert_eq!(body["status"], 403);
 }
 
 fn api_index_lists_the_agent_surface() {
