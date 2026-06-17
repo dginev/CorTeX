@@ -151,12 +151,26 @@ impl Importer {
   }
   /// Given a CorTeX-topology corpus, walk the file system and import it into the Task store
   pub fn walk_import(&mut self) -> Result<usize, Box<dyn Error>> {
+    // Depth bound on the directory walk. `fs::metadata` follows symlinks, so a corpus containing a
+    // symlink loop (malicious, or an accidental backup/snapshot link) would otherwise recurse
+    // forever — unbounded paths → unbounded tasks + a job that keeps "progressing", so the
+    // heartbeat-keyed stale-reap never fires. arXiv-topology corpora are ~3 levels deep, so 64
+    // bounds any loop without truncating a real corpus (DESIGN_PRINCIPLES: no unbounded per-event
+    // resource acquisition on hostile data).
+    const MAX_WALK_DEPTH: usize = 64;
     let import_extension = if self.corpus.complex { "zip" } else { "tex" };
-    let mut walk_q: Vec<PathBuf> = vec![Path::new(&self.corpus.path).to_owned()];
+    let mut walk_q: Vec<(PathBuf, usize)> = vec![(Path::new(&self.corpus.path).to_owned(), 0)];
     println!("-- Starting import walk at {}", self.corpus.path);
     let mut import_q: Vec<NewTask> = Vec::new();
     let mut import_counter = 0;
-    while let Some(current_path) = walk_q.pop() {
+    while let Some((current_path, depth)) = walk_q.pop() {
+      if depth > MAX_WALK_DEPTH {
+        eprintln!(
+          "-- import: skipping {current_path:?} beyond max walk depth {MAX_WALK_DEPTH} \
+           (possible symlink loop)"
+        );
+        continue;
+      }
       // arXiv data is hostile: one unreadable path (a broken symlink, a vanished or
       // permission-denied entry) or a non-UTF-8 name must **skip**, not abort the whole import —
       // blast-radius isolation + transparent (logged) failure (docs/DESIGN_PRINCIPLES.md). Only a
@@ -223,7 +237,7 @@ impl Importer {
             Ok(entries) => {
               for subentry in entries {
                 match subentry {
-                  Ok(subentry) => walk_q.push(subentry.path()),
+                  Ok(subentry) => walk_q.push((subentry.path(), depth + 1)),
                   Err(e) => {
                     eprintln!("-- import: skipping unreadable entry under {current_path:?}: {e}")
                   },

@@ -132,6 +132,63 @@ fn import_skips_unreadable_paths_instead_of_aborting() {
 }
 
 #[test]
+fn import_walk_terminates_on_a_symlink_loop() {
+  // Hostile-data resilience: a symlink loop in the corpus (`loop -> root`) must not make the walk
+  // recurse forever (unbounded paths → unbounded tasks + a job that keeps "progressing", so the
+  // heartbeat-keyed stale-reap never fires). The depth bound caps it, so the import TERMINATES with
+  // a bounded count rather than hanging. (Without the bound this test would hang, not just fail.)
+  use std::os::unix::fs::symlink;
+  let root = std::env::temp_dir().join("cortex_import_symlink_loop");
+  let _ = fs::remove_dir_all(&root);
+  let entry_dir = root.join("validentry");
+  fs::create_dir_all(&entry_dir).expect("create the valid entry dir");
+  fs::write(
+    entry_dir.join("validentry.tex"),
+    b"\\documentclass{article}",
+  )
+  .expect("write entry");
+  // The self-loop: `root/loop` points back at `root`, so a naive walk would recurse forever.
+  symlink(&root, root.join("loop")).expect("create the loop symlink");
+
+  let mut test_backend = backend::testdb();
+  let name = "symlink loop import test";
+  let _ = delete(corpora::table)
+    .filter(corpora::name.eq(name))
+    .execute(&mut test_backend.connection);
+  let new_corpus = NewCorpus {
+    name: name.to_string(),
+    path: format!("{}/", root.to_str().expect("temp path is UTF-8")),
+    complex: false,
+    description: String::new(),
+  };
+  test_backend.add(&new_corpus).expect("add corpus");
+  let corpus = Corpus::find_by_name(name, &mut test_backend.connection).expect("corpus");
+  let corpus_id = corpus.id;
+  let mut importer = Importer {
+    corpus,
+    backend: backend::testdb(),
+    ..Importer::default()
+  };
+
+  // The key property: this RETURNS (does not hang) — the depth bound terminates the loop.
+  let imported = importer
+    .walk_import()
+    .expect("the symlink loop must not hang the import");
+  assert!(
+    (1..1000).contains(&imported),
+    "the loop is depth-bounded, not infinite (got {imported} imported entries)"
+  );
+
+  let _ = delete(tasks::table)
+    .filter(tasks::corpus_id.eq(corpus_id))
+    .execute(&mut test_backend.connection);
+  let _ = delete(corpora::table)
+    .filter(corpora::name.eq(name))
+    .execute(&mut test_backend.connection);
+  let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
 fn import_does_not_panic_on_glob_metacharacter_path() {
   // A corpus path containing glob metacharacters (here an unterminated `[` character class) makes
   // the complex-import `glob(path/*.tar)` pattern fail to compile. It must fail *gracefully* (an
