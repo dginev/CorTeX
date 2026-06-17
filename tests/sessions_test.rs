@@ -11,6 +11,7 @@
 //! `username1`-based tests running alongside it.
 
 use cortex::backend::test_db_address;
+use cortex::frontend::actor::ADMIN_COOKIE;
 use cortex::frontend::server::mount_api_with;
 use rocket::http::{ContentType, Header, Status};
 use rocket::local::blocking::Client;
@@ -147,9 +148,50 @@ fn agent_revoke_is_token_gated_and_idempotent() {
 }
 
 // Custom harness (see KNOWN_ISSUES L-1): run the cases then `_exit(0)`.
+/// Security regression: the `cortex_admin` cookie carries the opaque **session id** — the bearer
+/// secret (the token is no longer in the cookie), so "the security rests on this randomness" (a
+/// CSPRNG, 48 url-safe chars). Guard that property: a fresh sign-in yields a long, url-safe id, and
+/// two sign-ins yield **different** ids (never a constant / predictable value a refactor might
+/// slip).
+fn session_id_is_long_url_safe_and_unique() {
+  let session_id = |client: &Client| -> String {
+    let response = client
+      .post("/admin/login")
+      .header(ContentType::Form)
+      .body("token=token1")
+      .dispatch();
+    let prefix = format!("{ADMIN_COOKIE}=");
+    let id = response
+      .headers()
+      .get("Set-Cookie")
+      .find(|c| c.starts_with(&prefix))
+      .and_then(|c| c.strip_prefix(&prefix))
+      .map(|v| v.split(';').next().unwrap_or("").to_string())
+      .expect("login sets the session-id cookie");
+    id
+  };
+  let client = client();
+  let id1 = session_id(&client);
+  let id2 = session_id(&client);
+  assert!(
+    id1.len() >= 32,
+    "the session id must be long (unguessable bearer), got {} chars",
+    id1.len()
+  );
+  assert!(
+    id1.chars().all(|c| c.is_ascii_alphanumeric()),
+    "the session id is url-safe alphanumeric, got {id1:?}"
+  );
+  assert_ne!(
+    id1, id2,
+    "two sign-ins must yield different session ids (never constant / predictable)"
+  );
+}
+
 fn main() {
   sessions_view_and_revoke();
   agent_revoke_is_token_gated_and_idempotent();
+  session_id_is_long_url_safe_and_unique();
   eprintln!("sessions_test: all cases passed");
   unsafe { libc::_exit(0) }
 }
