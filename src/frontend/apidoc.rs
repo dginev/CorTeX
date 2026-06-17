@@ -19,7 +19,7 @@
 use rocket::http::ContentType;
 use rocket::{Build, Rocket, State};
 use rocket_okapi::openapi_get_routes_spec;
-use rocket_okapi::rapidoc::{make_rapidoc, GeneralConfig, RapiDocConfig};
+use rocket_okapi::rapidoc::{GeneralConfig, RapiDocConfig, make_rapidoc};
 use rocket_okapi::settings::{OpenApiSettings, UrlObject};
 
 // Each documented handler is imported alongside its `#[openapi]`-generated
@@ -217,10 +217,10 @@ fn add_nav_summaries(spec: &mut rocket_okapi::okapi::openapi3::OpenApi) {
     .into_iter()
     .flatten()
     {
-      if op.summary.is_none() {
-        if let Some(description) = op.description.as_deref() {
-          op.summary = Some(short_summary(description));
-        }
+      if op.summary.is_none()
+        && let Some(description) = op.description.as_deref()
+      {
+        op.summary = Some(short_summary(description));
       }
     }
   }
@@ -232,18 +232,18 @@ fn add_nav_summaries(spec: &mut rocket_okapi::okapi::openapi3::OpenApi) {
 fn short_summary(description: &str) -> String {
   let mut text = description.trim();
   // Strip a leading backtick code span (e.g. "`GET /api/status`") + a following em-dash/colon/dash.
-  if let Some(after_tick) = text.strip_prefix('`') {
-    if let Some(end) = after_tick.find('`') {
-      let rest = after_tick[end + 1..].trim_start();
-      let rest = rest
-        .strip_prefix('—')
-        .or_else(|| rest.strip_prefix(':'))
-        .or_else(|| rest.strip_prefix('-'))
-        .unwrap_or(rest)
-        .trim_start();
-      if !rest.is_empty() {
-        text = rest;
-      }
+  if let Some(after_tick) = text.strip_prefix('`')
+    && let Some(end) = after_tick.find('`')
+  {
+    let rest = after_tick[end + 1..].trim_start();
+    let rest = rest
+      .strip_prefix('—')
+      .or_else(|| rest.strip_prefix(':'))
+      .or_else(|| rest.strip_prefix('-'))
+      .unwrap_or(rest)
+      .trim_start();
+    if !rest.is_empty() {
+      text = rest;
     }
   }
   // First sentence / line, minus trailing punctuation and markdown emphasis.

@@ -128,10 +128,10 @@ fn jobs_list_carries_health_and_duration_and_supports_pending() {
   // Give the worker thread a moment to reach a terminal state.
   for _ in 0..100 {
     let mut db = cortex::backend::testdb();
-    if let Some(job) = jobs::find_job(&mut db.connection, uuid) {
-      if job.status == "succeeded" {
-        break;
-      }
+    if let Some(job) = jobs::find_job(&mut db.connection, uuid)
+      && job.status == "succeeded"
+    {
+      break;
     }
     std::thread::sleep(std::time::Duration::from_millis(20));
   }

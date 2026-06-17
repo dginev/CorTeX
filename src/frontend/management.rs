@@ -17,20 +17,20 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use diesel::prelude::*;
-use figment::providers::Serialized;
 use figment::Figment;
+use figment::providers::Serialized;
 use rocket::form::Form;
 use rocket::http::Status;
 use rocket::response::Redirect;
 use rocket::serde::json::Json;
 use rocket::{Build, Rocket, Route, State};
-use rocket_dyn_templates::{context, Template};
+use rocket_dyn_templates::{Template, context};
 use serde::Serialize;
 
 use crate::backend::DbPool;
-use crate::config::{config, AssetsConfig, CortexConfig, DispatcherConfig, JobsConfig};
+use crate::config::{AssetsConfig, CortexConfig, DispatcherConfig, JobsConfig, config};
 use crate::frontend::actor::{
-  require_admin, require_admin_to, Actor, AdminReject, AdminSession, ReturnTo,
+  Actor, AdminReject, AdminSession, ReturnTo, require_admin, require_admin_to,
 };
 
 /// Managed state: the path where the write path persists the configuration file.

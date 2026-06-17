@@ -1,6 +1,6 @@
 #![allow(clippy::extra_unused_lifetimes)]
 use std::collections::HashMap;
-use std::sync::mpsc::{sync_channel, SyncSender};
+use std::sync::mpsc::{SyncSender, sync_channel};
 use std::thread;
 use std::time::{Duration, SystemTime};
 

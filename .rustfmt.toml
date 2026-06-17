@@ -4,7 +4,7 @@
 # are used deliberately and marked [nightly]. Apply with `cargo fmt --all`; CI / git hooks enforce
 # `cargo fmt --all --check`.
 
-edition = "2021"                 # match the crate edition explicitly
+edition = "2024"                 # match the crate edition explicitly
 max_width = 100                  # line width (rustfmt default, stated for clarity)
 tab_spaces = 2                   # project convention: compact 2-space indentation
 newline_style = "Unix"           # always LF line endings, cross-platform

@@ -7,7 +7,7 @@
 //! module (formerly `frontend::cached`, renamed once the cache was removed) now only translates
 //! request params into a [`TaskReportOptions`], delegates, and records the pagination/`report_time`
 //! globals the report templates expect.
-use crate::backend::{task_report as backend_task_report, TaskReportOptions};
+use crate::backend::{TaskReportOptions, task_report as backend_task_report};
 use crate::frontend::params::ReportParams;
 use crate::models::{Corpus, Service};
 use diesel::PgConnection;

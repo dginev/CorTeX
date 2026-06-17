@@ -21,13 +21,13 @@ use rocket_dyn_templates::Template;
 use serde::Serialize;
 
 use crate::backend::{
+  DatabaseUrl, DbPool, MessageCounts, ReportSummaryRow, RerunOptions, TaskReportOptions,
   category_rollup, category_total, from_address, progress_report, severity_total, task_messages,
-  task_report, what_rollup, DatabaseUrl, DbPool, MessageCounts, ReportSummaryRow, RerunOptions,
-  TaskReportOptions,
+  task_report, what_rollup,
 };
-use crate::frontend::actor::{require_admin, Actor, AdminReject, AdminSession};
-use crate::frontend::concerns::{serve_report, LiveReportLimiter};
-use crate::frontend::params::{ReportParams, MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE};
+use crate::frontend::actor::{Actor, AdminReject, AdminSession, require_admin};
+use crate::frontend::concerns::{LiveReportLimiter, serve_report};
+use crate::frontend::params::{MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE, ReportParams};
 use crate::helpers::TaskStatus;
 use crate::jobs;
 use crate::models::{Corpus, Service, Task};
@@ -631,10 +631,10 @@ pub fn rerun_report(
   database_url: &State<DatabaseUrl>,
   pool: &State<DbPool>,
 ) -> Result<(Status, Json<RerunAckDto>), Status> {
-  if let Some(severity) = severity {
-    if !is_valid_rerun_severity(severity, category.is_some()) {
-      return Err(Status::BadRequest);
-    }
+  if let Some(severity) = severity
+    && !is_valid_rerun_severity(severity, category.is_some())
+  {
+    return Err(Status::BadRequest);
   }
   let description = description.unwrap_or("rerun via API").to_string();
   // A fresh connection for this low-frequency, consequential admin action (mirrors the legacy

@@ -25,7 +25,7 @@ use regex::Regex;
 use diesel::*;
 
 use cortex::backend::Backend;
-use cortex::helpers::{generate_report, TaskStatus};
+use cortex::helpers::{TaskStatus, generate_report};
 use cortex::models::{Corpus, Service, Task};
 use cortex::schema::tasks;
 use cortex::schema::tasks::dsl::{corpus_id, service_id, status};
@@ -90,23 +90,26 @@ fn main() {
     }
     let mut success = false;
     let reports_len: usize = batch_reports.iter().map(|r| r.messages.len()).sum();
-    if let Err(e) = backend.mark_done(&batch_reports) {
-      eprintln!("-- mark_done attempt failed: {e:?}");
-      // DB persist failed, retry
-      let mut retries = 0;
-      while retries < 3 {
-        thread::sleep(Duration::new(2, 0)); // wait 2 seconds before retrying, in case this is latency related
-        retries += 1;
-        match backend.mark_done(&batch_reports) {
-          Ok(_) => {
-            success = true;
-            break;
-          },
-          Err(e) => eprintln!("-- mark_done retry failed: {e:?}"),
-        };
-      }
-    } else {
-      success = true;
+    match backend.mark_done(&batch_reports) {
+      Err(e) => {
+        eprintln!("-- mark_done attempt failed: {e:?}");
+        // DB persist failed, retry
+        let mut retries = 0;
+        while retries < 3 {
+          thread::sleep(Duration::new(2, 0)); // wait 2 seconds before retrying, in case this is latency related
+          retries += 1;
+          match backend.mark_done(&batch_reports) {
+            Ok(_) => {
+              success = true;
+              break;
+            },
+            Err(e) => eprintln!("-- mark_done retry failed: {e:?}"),
+          };
+        }
+      },
+      _ => {
+        success = true;
+      },
     }
     if success {
       eprintln!(

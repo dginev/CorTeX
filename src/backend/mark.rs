@@ -8,7 +8,7 @@ use diesel::*;
 
 use super::RerunOptions;
 use crate::concerns::{CortexInsertable, MarkRerun};
-use crate::helpers::{random_mark, NewTaskMessage, TaskReport, TaskStatus};
+use crate::helpers::{NewTaskMessage, TaskReport, TaskStatus, random_mark};
 use crate::models::{
   Corpus, HistoricalRun, LogError, LogFatal, LogInfo, LogInvalid, LogRecord, LogWarning,
   NewHistoricalRun, NewLogError, NewLogFatal, NewLogInfo, NewLogInvalid, NewLogWarning, NewTask,

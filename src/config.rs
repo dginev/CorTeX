@@ -22,8 +22,8 @@
 //! Access the process-wide configuration through [`config()`].
 
 use figment::{
-  providers::{Env, Format, Serialized, Toml},
   Figment,
+  providers::{Env, Format, Serialized, Toml},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

@@ -19,8 +19,8 @@
 //   cargo run --release --example zmq_interop
 //   WORKERS=200 TASKS=20000 PAYLOAD_KB=64 cargo run --release --example zmq_interop
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::Instant;
 
@@ -244,7 +244,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
        interleaving/reordering/misrouting/loss across {received} tasks, {workers} workers"
     );
   } else {
-    println!("  ✗ interop FAILED: {worker_bad} worker-side frame anomalies, {} sink/router anomalies, {received}/{tasks} delivered", anomalies.len());
+    println!(
+      "  ✗ interop FAILED: {worker_bad} worker-side frame anomalies, {} sink/router anomalies, {received}/{tasks} delivered",
+      anomalies.len()
+    );
     for a in anomalies.iter().take(8) {
       println!("    - {a}");
     }

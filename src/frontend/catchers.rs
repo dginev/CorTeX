@@ -17,8 +17,8 @@ use rocket::http::Status;
 use rocket::request::Request;
 use rocket::response::{self, Responder};
 use rocket::serde::json::Json;
-use rocket::{catch, catchers, Catcher};
-use rocket_dyn_templates::{context, Template};
+use rocket::{Catcher, catch, catchers};
+use rocket_dyn_templates::{Template, context};
 use serde_json::json;
 
 /// A status + message rendered as JSON for agents and themed HTML for humans, the branch chosen

@@ -18,11 +18,11 @@ use rocket::http::Status;
 use rocket::response::Redirect;
 use rocket::serde::json::Json;
 use rocket::{Route, State};
-use rocket_dyn_templates::{context, Template};
+use rocket_dyn_templates::{Template, context};
 use serde::Serialize;
 
 use crate::backend::DbPool;
-use crate::frontend::actor::{require_admin_to, Actor, AdminReject, AdminSession, ReturnTo};
+use crate::frontend::actor::{Actor, AdminReject, AdminSession, ReturnTo, require_admin_to};
 use crate::models::HistoricalTask;
 
 /// Parses a `YYYY-MM-DD` cutoff to the start of that day (midnight); `None` on a malformed date.

@@ -182,18 +182,18 @@ pub fn decorate_uri_encodings(context: &mut TemplateContext) {
   }
   let mut current_link = String::new();
   {
-    if let Some(corpus_name) = context.global.get("corpus_name_uri") {
-      if let Some(service_name) = context.global.get("service_name_uri") {
-        current_link = format!("/corpus/{corpus_name}/{service_name}/");
-        if let Some(severity) = context.global.get("severity_uri") {
-          current_link.push_str(severity);
+    if let Some(corpus_name) = context.global.get("corpus_name_uri")
+      && let Some(service_name) = context.global.get("service_name_uri")
+    {
+      current_link = format!("/corpus/{corpus_name}/{service_name}/");
+      if let Some(severity) = context.global.get("severity_uri") {
+        current_link.push_str(severity);
+        current_link.push('/');
+        if let Some(category) = context.global.get("category_uri") {
+          current_link.push_str(category);
           current_link.push('/');
-          if let Some(category) = context.global.get("category_uri") {
-            current_link.push_str(category);
-            current_link.push('/');
-            if let Some(what) = context.global.get("what_uri") {
-              current_link.push_str(what);
-            }
+          if let Some(what) = context.global.get("what_uri") {
+            current_link.push_str(what);
           }
         }
       }

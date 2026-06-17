@@ -16,12 +16,12 @@ use rocket::http::{Method, Status};
 use rocket::response::Redirect;
 use rocket::serde::json::Json;
 use rocket::{Request, Response, Route, State};
-use rocket_dyn_templates::{context, Template};
+use rocket_dyn_templates::{Template, context};
 use serde::Serialize;
 
 use crate::backend::DbPool;
 use crate::frontend::actor::{
-  actor_carriers, resolve_carriers, sign_in_url, Actor, AdminSession, ReturnTo,
+  Actor, AdminSession, ReturnTo, actor_carriers, resolve_carriers, sign_in_url,
 };
 use crate::models::{AuditEntry, NewAuditEntry};
 

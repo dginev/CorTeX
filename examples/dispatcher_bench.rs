@@ -158,10 +158,12 @@ fn main() {
   let chaos = env_usize("BENCH_CHAOS", 0);
   if chaos > 0 {
     if env::var("CORTEX_DISPATCHER__LEASE_TIMEOUT_SECONDS").is_err() {
-      env::set_var("CORTEX_DISPATCHER__LEASE_TIMEOUT_SECONDS", "2");
+      // FIXME: Audit that the environment access only happens in single-threaded code.
+      unsafe { env::set_var("CORTEX_DISPATCHER__LEASE_TIMEOUT_SECONDS", "2") };
     }
     if env::var("CORTEX_DISPATCHER__REAP_INTERVAL_SECONDS").is_err() {
-      env::set_var("CORTEX_DISPATCHER__REAP_INTERVAL_SECONDS", "2");
+      // FIXME: Audit that the environment access only happens in single-threaded code.
+      unsafe { env::set_var("CORTEX_DISPATCHER__REAP_INTERVAL_SECONDS", "2") };
     }
   }
 

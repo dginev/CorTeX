@@ -16,7 +16,7 @@ mod rollup;
 mod sandbox;
 mod services_aggregate;
 mod tasks_aggregate;
-pub use export::{export_html_dataset, DatasetExportOutcome, GroupBy};
+pub use export::{DatasetExportOutcome, GroupBy, export_html_dataset};
 pub(crate) use mark::{
   mark_all_blocked, mark_blocked, mark_rerun, resume_all_blocked, resume_blocked,
   save_historical_tasks,
@@ -30,16 +30,16 @@ pub(crate) use reports::report_uses_rollup;
 // `pub` (not `pub(crate)`): the `cortex` CLI's `diff` subcommand calls it directly, so the run-diff
 // summary has a third (CLI) surface alongside the agent `/api/runs/<c>/<s>/diff` and the web
 // screen.
+pub use reports::TaskReportOptions;
 pub use reports::summary_task_diffs;
 pub(crate) use reports::task_report;
-pub use reports::TaskReportOptions;
-pub use reports::{task_messages, MessageCounts, DOCUMENT_MESSAGE_CAP};
+pub use reports::{DOCUMENT_MESSAGE_CAP, MessageCounts, task_messages};
 pub use rollup::ReportSummaryRow;
 pub(crate) use rollup::{
   category_rollup, category_total, refresh_report_summary, report_summary_refreshed_at,
   severity_total, what_rollup,
 };
-pub use sandbox::{create_sandbox, SandboxOutcome, SandboxSelection};
+pub use sandbox::{SandboxOutcome, SandboxSelection, create_sandbox};
 
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use diesel::result::Error;

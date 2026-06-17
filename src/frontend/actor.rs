@@ -15,11 +15,11 @@
 //! everyone, rather than letting anyone wipe results).
 
 use diesel::pg::PgConnection;
-use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
+use rocket::State;
 use rocket::http::Status;
 use rocket::request::{FromRequest, Outcome, Request};
 use rocket::response::{Redirect, Responder};
-use rocket::State;
 
 use crate::backend::DbPool;
 use crate::config::config;
@@ -101,7 +101,7 @@ impl<'r> FromRequest<'r> for Actor {
 /// `X-Cortex-Token` request header — so the docs show which calls are token-gated.
 impl<'r> rocket_okapi::request::OpenApiFromRequest<'r> for Actor {
   fn from_request_input(
-    _gen: &mut rocket_okapi::gen::OpenApiGenerator,
+    _gen: &mut rocket_okapi::r#gen::OpenApiGenerator,
     _name: String,
     _required: bool,
   ) -> rocket_okapi::Result<rocket_okapi::request::RequestHeaderInput> {

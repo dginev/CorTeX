@@ -408,12 +408,12 @@ fn unpack_one_gz(path: &Path) -> Result<(), String> {
   // Reject mislabeled non-source content *before* writing anything (no stray empty zip left
   // behind).
   let detected = infer::get(&decompressed).map(|t| t.extension());
-  if let Some(other) = detected {
-    if other != "tar" {
-      return Err(format!(
-        "decompressed content is `{other}`, not a TeX source — rejected"
-      ));
-    }
+  if let Some(other) = detected
+    && other != "tar"
+  {
+    return Err(format!(
+      "decompressed content is `{other}`, not a TeX source — rejected"
+    ));
   }
 
   let out =

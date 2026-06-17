@@ -22,19 +22,19 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use rand::distributions::Alphanumeric;
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 use rocket::http::{Cookie, CookieJar, SameSite, Status};
 use rocket::response::Redirect;
 use rocket::serde::json::Json;
 use rocket::{Route, State};
-use rocket_dyn_templates::{context, Template};
+use rocket_dyn_templates::{Template, context};
 use serde::Serialize;
 use webauthn_rs::prelude::*;
 
 use crate::backend::DbPool;
 use crate::config::WebauthnConfig;
 use crate::frontend::actor::{
-  require_admin, require_admin_to, AdminReject, AdminSession, ReturnTo, ADMIN_COOKIE,
+  ADMIN_COOKIE, AdminReject, AdminSession, ReturnTo, require_admin, require_admin_to,
 };
 use crate::models::{Session, WebauthnCredential, WebauthnUser};
 

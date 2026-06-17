@@ -153,12 +153,12 @@ impl Worker for InitWorker {
       sink.send(Vec::new(), 0).unwrap();
 
       work_counter += 1;
-      if let Some(upper_bound) = limit {
-        if work_counter >= upper_bound {
-          // Give enough time to complete the Final job.
-          thread::sleep(Duration::from_millis(500));
-          break;
-        }
+      if let Some(upper_bound) = limit
+        && work_counter >= upper_bound
+      {
+        // Give enough time to complete the Final job.
+        thread::sleep(Duration::from_millis(500));
+        break;
       };
     }
     Ok(())

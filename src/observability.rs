@@ -18,7 +18,7 @@
 /// test that already installed a subscriber) is a no-op rather than a panic. Call once at the top
 /// of each binary's `main`.
 pub fn init_tracing() {
-  use tracing_subscriber::{fmt, EnvFilter};
+  use tracing_subscriber::{EnvFilter, fmt};
   // Default (when `RUST_LOG` is unset): app events at `info`, but Rocket's per-request internals at
   // `warn` only. The frontend shares this subscriber (Rocket 0.5 logs via `tracing`), and its
   // live-ops dashboard polls `/admin/status.json` every few seconds — at `info` Rocket would log

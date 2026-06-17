@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::io::Read;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::SyncSender;
-use std::sync::Arc;
 use std::time::Duration;
 
 use crate::backend;
@@ -111,7 +111,9 @@ impl Ventilator {
       // A *fully idle* dispatcher (no workers connected) has nothing in flight, so the
       // supervisor's stop-timeout SIGKILL is loss-free there.
       if server::shutdown_requested() {
-        info!("ventilator: graceful shutdown requested — ceasing to lease; the sink will drain in-flight work");
+        info!(
+          "ventilator: graceful shutdown requested — ceasing to lease; the sink will drain in-flight work"
+        );
         dispatch_complete.store(true, Ordering::SeqCst);
         return Ok(real_dispatched);
       }
@@ -134,7 +136,9 @@ impl Ventilator {
         // `[identity]` with no service frame — truncated. Skipping consumes nothing further, so the
         // next request's frames are left intact (no desync).
         if let Some(n) = discard_log.record() {
-          warn!("ventilator: discarded {n} malformed request(s) [latest: truncated, no service frame] (rate-limited)");
+          warn!(
+            "ventilator: discarded {n} malformed request(s) [latest: truncated, no service frame] (rate-limited)"
+          );
         }
         continue;
       }
@@ -153,7 +157,9 @@ impl Ventilator {
       if service_name.is_empty() {
         // Empty service request (e.g. the "3 adjacent empty messages") — skip without desyncing.
         if let Some(n) = discard_log.record() {
-          warn!("ventilator: discarded {n} malformed request(s) [latest: empty service from {identity_str:?}] (rate-limited)");
+          warn!(
+            "ventilator: discarded {n} malformed request(s) [latest: empty service from {identity_str:?}] (rate-limited)"
+          );
         }
         continue;
       }
@@ -190,7 +196,9 @@ impl Ventilator {
           // worker backs off — rather than the old fatal desync (the request framing is robust now,
           // D-4). Rate-limit the log so a flood of bad-service requests can't DoS us (D-11).
           if let Some(n) = discard_log.record() {
-            warn!("ventilator: discarded {n} request(s) [latest: unknown service {service_name:?} from {identity_str:?}, mock-replied] (rate-limited)");
+            warn!(
+              "ventilator: discarded {n} request(s) [latest: unknown service {service_name:?} from {identity_str:?}, mock-replied] (rate-limited)"
+            );
           }
           ventilator.send(identity, SNDMORE)?;
           ventilator.send("0", SNDMORE)?;
@@ -289,7 +297,8 @@ impl Ventilator {
               let responded_time = chrono::Utc::now();
               let request_duration = (responded_time - request_time).num_milliseconds();
               trace!(
-                "vent {source_job_count}: message size: {total_outgoing}, took {request_duration}ms.");
+                "vent {source_job_count}: message size: {total_outgoing}, took {request_duration}ms."
+              );
             } else {
               warn!("Failed to prepare input stream for taskid {taskid:?}");
               debug!("task details: {current_task:?}");
@@ -313,7 +322,9 @@ impl Ventilator {
         // the manager disconnects) agree on "done" — one condition instead of the three
         // incompatible per-thread counters that used to deadlock (KNOWN_ISSUES D-5).
         if real_dispatched >= limit_number {
-          info!("vent: bounded job limit ({limit_number}) reached after {real_dispatched} real dispatch(es); terminating ventilator");
+          info!(
+            "vent: bounded job limit ({limit_number}) reached after {real_dispatched} real dispatch(es); terminating ventilator"
+          );
           dispatch_complete.store(true, Ordering::Release);
           return Ok(real_dispatched);
         }
@@ -325,7 +336,9 @@ impl Ventilator {
         // `job_limit` is used for (a multi-service bounded run could drain one service
         // early — acceptable, benchmark-only).
         if !dispatched_this_iter && progress_queue_arc.is_empty() {
-          info!("vent: source exhausted after {real_dispatched} dispatch(es) (< limit {limit_number}); terminating ventilator");
+          info!(
+            "vent: source exhausted after {real_dispatched} dispatch(es) (< limit {limit_number}); terminating ventilator"
+          );
           dispatch_complete.store(true, Ordering::Release);
           return Ok(real_dispatched);
         }

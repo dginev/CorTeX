@@ -22,10 +22,10 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
-use diesel::prelude::*;
 use diesel::PgConnection;
+use diesel::prelude::*;
 
-use crate::helpers::{result_archive_path, TaskStatus};
+use crate::helpers::{TaskStatus, result_archive_path};
 use crate::models::{Corpus, Service};
 
 /// How the per-paper HTML files are bucketed into output archives — the sole difference between the
@@ -383,13 +383,14 @@ impl<'a> ArchiveStreamer<'a> {
     // The accumulator advances for resume-skipped papers too, so resume re-derives identical
     // boundaries.
     let size = html.len() as u64;
-    if let Some(cap) = self.max_bytes {
-      if self.cur_bytes > 0 && self.cur_bytes + size > cap {
-        self.cur_chunk += 1;
-        self.cur_bytes = 0;
-        let next = self.chunk_key(&base_key, self.cur_chunk);
-        self.rotate_to(&next, progress)?;
-      }
+    if let Some(cap) = self.max_bytes
+      && self.cur_bytes > 0
+      && self.cur_bytes + size > cap
+    {
+      self.cur_chunk += 1;
+      self.cur_bytes = 0;
+      let next = self.chunk_key(&base_key, self.cur_chunk);
+      self.rotate_to(&next, progress)?;
     }
     self.cur_bytes += size;
     let Some(open) = self.open.as_mut() else {
@@ -454,8 +455,8 @@ impl<'a> ArchiveStreamer<'a> {
         .finish()
         .map_err(|e| format!("finalizing {} failed: {e}", open.name))?;
       drop(file); // close the handle before the rename (atomic publish)
-                  // Publish atomically: now that the central directory is written, rename `<name>.partial` →
-                  // `<name>` — only a complete archive ever gets the final name (the resume's skip key).
+      // Publish atomically: now that the central directory is written, rename `<name>.partial` →
+      // `<name>` — only a complete archive ever gets the final name (the resume's skip key).
       let tmp_path = self.out_dir.join(format!("{}.partial", open.name));
       let final_path = self.out_dir.join(&open.name);
       fs::rename(&tmp_path, &final_path)
@@ -510,7 +511,7 @@ fn extract_main_html(result_zip: &PathBuf, paper: &str) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-  use super::{extract_main_html, GroupBy};
+  use super::{GroupBy, extract_main_html};
   use std::io::Write;
 
   fn write_zip(path: &std::path::Path, files: &[(&str, &str)]) {

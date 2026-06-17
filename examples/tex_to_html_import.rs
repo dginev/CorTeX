@@ -9,7 +9,7 @@
 //! Example run: `$ cargo run --release --example tex_to_html_import /data/arxmliv/ arXMLiv`
 use std::env;
 
-use cortex::backend::{default_db_address, Backend};
+use cortex::backend::{Backend, default_db_address};
 use cortex::dispatcher::manager::TaskManager;
 use cortex::helpers::TaskStatus;
 use cortex::models::{Corpus, NewService, NewTask, Service};
@@ -25,10 +25,10 @@ fn main() {
     Some(path) => path,
     None => "/arXMLiv/modern".to_string(),
   };
-  if let Some(c) = corpus_path.pop() {
-    if c != '/' {
-      corpus_path.push(c);
-    }
+  if let Some(c) = corpus_path.pop()
+    && c != '/'
+  {
+    corpus_path.push(c);
   }
   corpus_path.push('/');
   println!("-- Importing corpus at {corpus_path:?} ...");
@@ -99,12 +99,14 @@ fn main() {
     },
   };
 
-  assert!(backend
-    .register_service(
-      &service_registered,
-      &corpus_path,
-      "cli-admin".to_string(),
-      "Newly registered service, initial run.".to_string(),
-    )
-    .is_ok());
+  assert!(
+    backend
+      .register_service(
+        &service_registered,
+        &corpus_path,
+        "cli-admin".to_string(),
+        "Newly registered service, initial run.".to_string(),
+      )
+      .is_ok()
+  );
 }

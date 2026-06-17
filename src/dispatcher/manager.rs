@@ -5,9 +5,9 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::sync_channel;
-use std::sync::Arc;
 use std::thread::{self, sleep};
 use std::time::Duration;
 

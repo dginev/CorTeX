@@ -12,13 +12,13 @@
 use rocket::http::Status;
 use rocket::serde::json::Json;
 use rocket::{Route, State};
-use rocket_dyn_templates::{context, Template};
+use rocket_dyn_templates::{Template, context};
 use serde::Serialize;
 use serde_json::Value;
 use uuid::Uuid;
 
 use crate::backend::DbPool;
-use crate::frontend::actor::{require_admin_to, Actor, AdminReject, AdminSession, ReturnTo};
+use crate::frontend::actor::{Actor, AdminReject, AdminSession, ReturnTo, require_admin_to};
 use crate::jobs::{self, Job};
 
 /// A job as exposed over the API/UI (uuid handle, no internal serial id).

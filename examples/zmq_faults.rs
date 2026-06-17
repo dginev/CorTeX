@@ -344,7 +344,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   let s = status.lock().unwrap();
   let p = persisted.lock().unwrap();
   let done_in_status = s.values().filter(|&&v| v == DONE).count();
-  let lost = s.iter().filter(|(seq, &v)| v != DONE && p.contains(seq)).count() // persisted but not Done
+  let lost = s.iter().filter(|&(seq, &v)| v != DONE && p.contains(seq)).count() // persisted but not Done
     + p.iter().filter(|seq| !s.contains_key(seq)).count(); // persisted but unknown task
   let recoverable = s.values().filter(|&&v| v == QUEUED).count();
   let reason = halt.reason.lock().unwrap().unwrap_or("(none)");

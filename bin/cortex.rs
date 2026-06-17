@@ -17,9 +17,9 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 use cortex::backend::{
-  self, create_sandbox, default_db_address, export_html_dataset, list_task_diffs,
-  summary_task_diffs, task_messages, DatasetExportOutcome, GroupBy, RerunOptions, SandboxSelection,
-  TaskReportOptions,
+  self, DatasetExportOutcome, GroupBy, RerunOptions, SandboxSelection, TaskReportOptions,
+  create_sandbox, default_db_address, export_html_dataset, list_task_diffs, summary_task_diffs,
+  task_messages,
 };
 use cortex::bootstrap::{self, DoctorReport};
 use cortex::config::config_file_path;
@@ -1612,15 +1612,15 @@ fn run_rerun(
   };
   // Validate the rerun severity with the SAME context-aware rule as the agent + human surfaces
   // (R-9): without `--category` it's a task status; with one it's a message severity.
-  if let Some(sev) = &severity {
-    if !is_valid_rerun_severity(sev, category.is_some()) {
-      eprintln!(
-        "Invalid --severity {sev:?} for this rerun: without --category use a task status \
+  if let Some(sev) = &severity
+    && !is_valid_rerun_severity(sev, category.is_some())
+  {
+    eprintln!(
+      "Invalid --severity {sev:?} for this rerun: without --category use a task status \
          (no_problem|warning|error|fatal|invalid); with --category use a message severity \
          (warning|error|fatal|invalid|info)."
-      );
-      std::process::exit(2);
-    }
+    );
+    std::process::exit(2);
   }
   let mut scope = format!("{}/{}", corpus.name, service.name);
   if let Some(sev) = &severity {

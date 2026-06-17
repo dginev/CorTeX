@@ -122,7 +122,8 @@ fn main() {
     1024 * 1024
   };
   // The cap is config-driven; set it before anything reads `config()`.
-  std::env::set_var("CORTEX_DISPATCHER__MAX_RESULT_BYTES", cap.to_string());
+  // FIXME: Audit that the environment access only happens in single-threaded code.
+  unsafe { std::env::set_var("CORTEX_DISPATCHER__MAX_RESULT_BYTES", cap.to_string()) };
 
   // On an empty / mock reply (`taskid 0` — momentary-empty-queue, backpressure, or unknown-service)
   // the `pericortex` worker sends an empty reply and then *naps* `CORTEX_WORKER_THROTTLE_SECS`
@@ -134,7 +135,8 @@ fn main() {
   // the worker thread reads it. (Throttle is configurable since pericortex 0.2.5, OPEN_QUESTIONS
   // #14.)
   if std::env::var("CORTEX_WORKER_THROTTLE_SECS").is_err() {
-    std::env::set_var("CORTEX_WORKER_THROTTLE_SECS", "1");
+    // FIXME: Audit that the environment access only happens in single-threaded code.
+    unsafe { std::env::set_var("CORTEX_WORKER_THROTTLE_SECS", "1") };
   }
   let worker_throttle = std::env::var("CORTEX_WORKER_THROTTLE_SECS").unwrap();
 

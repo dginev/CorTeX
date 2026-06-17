@@ -24,8 +24,8 @@
 //   cargo run --release --example zmq_arxiv_workload
 //   WORKERS=200 TASKS=20000 PAYLOAD_KB=64 cargo run --release --example zmq_arxiv_workload
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use bytes::Bytes;

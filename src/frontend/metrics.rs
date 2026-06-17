@@ -131,9 +131,9 @@ pub fn metrics(_caller: Actor, pool: &State<DbPool>) -> (ContentType, String) {
         );
         gauge(
           &mut out,
-          // Metric name kept stable for existing scrapers/dashboards. Now a TRUE current gauge: tasks
-          // in-flight at the *active* workers, so it reads 0 on an idle deployment instead of the old
-          // misleading cumulative-lifetime gap (KNOWN_ISSUES P-3).
+          // Metric name kept stable for existing scrapers/dashboards. Now a TRUE current gauge:
+          // tasks in-flight at the *active* workers, so it reads 0 on an idle deployment
+          // instead of the old misleading cumulative-lifetime gap (KNOWN_ISSUES P-3).
           "cortex_workers_in_flight_total",
           "Tasks in-flight (dispatched, not yet returned) at the active workers — real current in-flight work, 0 on an idle deployment.",
           in_flight,

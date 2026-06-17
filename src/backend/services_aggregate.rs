@@ -1,9 +1,9 @@
 use super::mark;
 use crate::helpers::TaskStatus;
 use crate::models::{Corpus, Service};
+use diesel::IntoSql;
 use diesel::result::Error;
 use diesel::sql_types::Integer;
-use diesel::IntoSql;
 use diesel::*;
 
 pub(crate) fn register_service(

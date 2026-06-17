@@ -15,13 +15,13 @@ use rocket::http::{Cookie, CookieJar, SameSite, Status};
 use rocket::response::Redirect;
 use rocket::serde::json::Json;
 use rocket::{Route, State};
-use rocket_dyn_templates::{context, Template};
+use rocket_dyn_templates::{Template, context};
 use schemars::JsonSchema;
 use serde::Serialize;
 
 use crate::backend::DbPool;
 use crate::frontend::actor::{
-  owner_for_token, safe_next, sign_in_url, Actor, AdminSession, ReturnTo, ADMIN_COOKIE,
+  ADMIN_COOKIE, Actor, AdminSession, ReturnTo, owner_for_token, safe_next, sign_in_url,
 };
 use crate::models::{Corpus, HistoricalRun, Session, Task, WorkerMetadata};
 
@@ -251,10 +251,9 @@ pub fn admin_logout(cookies: &CookieJar<'_>, pool: &State<DbPool>) -> Redirect {
   if let Some(session_id) = cookies
     .get(ADMIN_COOKIE)
     .map(|cookie| cookie.value().to_string())
+    && let Ok(mut connection) = pool.get()
   {
-    if let Ok(mut connection) = pool.get() {
-      let _ = Session::revoke(&mut connection, &session_id);
-    }
+    let _ = Session::revoke(&mut connection, &session_id);
   }
   cookies.remove(Cookie::build(ADMIN_COOKIE).path("/").build());
   Redirect::to("/admin/login")

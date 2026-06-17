@@ -18,15 +18,15 @@ use chrono::NaiveDateTime;
 use rocket::http::Status;
 use rocket::serde::json::Json;
 use rocket::{Route, State};
-use rocket_dyn_templates::{context, Template};
+use rocket_dyn_templates::{Template, context};
 use serde::Serialize;
 
 use std::collections::HashMap;
 
-use crate::backend::{list_task_diffs, summary_task_diffs, DbPool};
-use crate::frontend::actor::{require_admin_to, AdminReject, AdminSession, ReturnTo};
+use crate::backend::{DbPool, list_task_diffs, summary_task_diffs};
+use crate::frontend::actor::{AdminReject, AdminSession, ReturnTo, require_admin_to};
 use crate::frontend::helpers::decorate_uri_encodings;
-use crate::frontend::params::{TemplateContext, MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE};
+use crate::frontend::params::{MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE, TemplateContext};
 use crate::helpers::TaskStatus;
 use crate::models::{
   Corpus, DiffStatusFilter, HistoricalRun, RunMetadata, RunMetadataStack, Service, TaskRunMetadata,
@@ -528,7 +528,9 @@ impl From<TaskRunMetadata> for TaskDiffDto {
 /// default 100). `400` on a malformed date or status, `404` if the corpus/service is unknown.
 #[allow(clippy::too_many_arguments)]
 #[rocket_okapi::openapi(tag = "Runs")]
-#[get("/api/runs/<corpus>/<service>/tasks?<previous>&<current>&<previous_status>&<current_status>&<offset>&<page_size>")]
+#[get(
+  "/api/runs/<corpus>/<service>/tasks?<previous>&<current>&<previous_status>&<current_status>&<offset>&<page_size>"
+)]
 pub fn api_run_task_diffs(
   corpus: &str,
   service: &str,
@@ -573,7 +575,9 @@ const DIFF_SEVERITY_KEYS: [&str; 6] =
 /// It replaced the legacy `diff-history` binary route, which `.expect()`ed the status params and
 /// `.unwrap()`ed the dates — **panicking on the dispatch path** (the F-1 gap, now closed).
 #[allow(clippy::too_many_arguments)]
-#[get("/runs/<corpus>/<service>/tasks?<previous>&<current>&<previous_status>&<current_status>&<offset>&<page_size>")]
+#[get(
+  "/runs/<corpus>/<service>/tasks?<previous>&<current>&<previous_status>&<current_status>&<offset>&<page_size>"
+)]
 pub fn runs_tasks_page(
   corpus: &str,
   service: &str,

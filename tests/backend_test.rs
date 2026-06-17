@@ -7,7 +7,7 @@
 use cortex::backend;
 use cortex::backend::RerunOptions;
 use cortex::concerns::CortexInsertable;
-use cortex::helpers::{rand_in_range, random_mark, NewTaskMessage, TaskReport, TaskStatus};
+use cortex::helpers::{NewTaskMessage, TaskReport, TaskStatus, rand_in_range, random_mark};
 use cortex::models::{Corpus, NewCorpus, NewLogInfo, NewService, NewTask, Service, Task};
 use cortex::schema::log_infos::dsl::task_id;
 use cortex::schema::tasks::dsl::{service_id, status};

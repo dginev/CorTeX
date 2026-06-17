@@ -161,14 +161,14 @@ fn session_id_is_long_url_safe_and_unique() {
       .body("token=token1")
       .dispatch();
     let prefix = format!("{ADMIN_COOKIE}=");
-    let id = response
+
+    response
       .headers()
       .get("Set-Cookie")
       .find(|c| c.starts_with(&prefix))
       .and_then(|c| c.strip_prefix(&prefix))
       .map(|v| v.split(';').next().unwrap_or("").to_string())
-      .expect("login sets the session-id cookie");
-    id
+      .expect("login sets the session-id cookie")
   };
   let client = client();
   let id1 = session_id(&client);

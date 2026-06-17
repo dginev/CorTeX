@@ -8,7 +8,7 @@
 //! Contract test for the reports API: the typed, rollup-backed category and `what` reports — the
 //! agent twin of the severity-report / category-report screens.
 
-use cortex::backend::{self, test_db_address, DOCUMENT_MESSAGE_CAP};
+use cortex::backend::{self, DOCUMENT_MESSAGE_CAP, test_db_address};
 use cortex::frontend::server::mount_api_with;
 use cortex::models::{Corpus, NewCorpus, NewService, Service};
 use cortex::schema::{corpora, log_errors, log_infos, log_warnings, services, tasks};

@@ -29,8 +29,8 @@
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -109,7 +109,8 @@ fn main() {
   // keep it short so the drain-detection (which needs the worker to keep requesting after the
   // source empties) isn't dominated by a 60 s nap. Must be set before the worker thread reads it.
   if std::env::var("CORTEX_WORKER_THROTTLE_SECS").is_err() {
-    std::env::set_var("CORTEX_WORKER_THROTTLE_SECS", "1");
+    // FIXME: Audit that the environment access only happens in single-threaded code.
+    unsafe { std::env::set_var("CORTEX_WORKER_THROTTLE_SECS", "1") };
   }
 
   let mut backend = backend::testdb();

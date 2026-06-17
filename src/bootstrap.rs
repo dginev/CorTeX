@@ -15,10 +15,10 @@ use std::path::Path;
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use rand::distributions::Alphanumeric;
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 use serde::Serialize;
 
-use crate::config::{to_persisted_toml, CortexConfig};
+use crate::config::{CortexConfig, to_persisted_toml};
 use crate::migrations;
 
 /// Write `cortex.toml` **atomically**: serialize to a sibling temp file, then `rename` it over the
@@ -160,16 +160,16 @@ pub fn init(database_url: &str, config_path: &Path) -> Result<InitOutcome, Strin
     .map_err(|e| format!("cannot connect to database: {e}"))?;
   // Pre-flight the server version: fail fast with a clear message on PostgreSQL < 18 instead of a
   // cryptic mid-migration error. A probe failure (`None`) doesn't block — the migration still runs.
-  if let Some(version) = server_version_num(&mut connection) {
-    if version < MIN_PG_VERSION_NUM {
-      return Err(format!(
-        "CorTeX requires PostgreSQL 18 or newer (the migrations use PG18-only features — `uuidv7()` \
+  if let Some(version) = server_version_num(&mut connection)
+    && version < MIN_PG_VERSION_NUM
+  {
+    return Err(format!(
+      "CorTeX requires PostgreSQL 18 or newer (the migrations use PG18-only features — `uuidv7()` \
          handle defaults and the report-summary materialized views); this server is {}.{}. Upgrade \
          PostgreSQL and re-run `cortex init`.",
-        version / 10000,
-        version % 10000
-      ));
-    }
+      version / 10000,
+      version % 10000
+    ));
   }
   let migrations_applied = migrations::run_pending_migrations(&mut connection)
     .map_err(|e| format!("migration failed: {e}"))?;

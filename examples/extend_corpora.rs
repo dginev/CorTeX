@@ -22,10 +22,15 @@ fn main() {
   let mut input_args = env::args();
   let _ = input_args.next();
   let corpora = if let Some(path) = input_args.next() {
-    if let Ok(corpus) = Corpus::find_by_path(&path, &mut backend.connection) {
-      vec![corpus]
-    } else {
-      panic!("No corpus could be found at path {path:?}. Make sure path matches DB registration.");
+    match Corpus::find_by_path(&path, &mut backend.connection) {
+      Ok(corpus) => {
+        vec![corpus]
+      },
+      _ => {
+        panic!(
+          "No corpus could be found at path {path:?}. Make sure path matches DB registration."
+        );
+      },
     }
   } else {
     backend.corpora()

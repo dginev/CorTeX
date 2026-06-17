@@ -905,7 +905,7 @@ mod rollup_equivalence_tests {
   //! Pins behavioral equivalence: the rollup-backed [`task_report`] must return exactly what the
   //! live aggregation ([`task_report_live`]) returns for the category and `what` grains it now
   //! serves — so wiring reports to the materialized view changed performance, not numbers.
-  use super::{rollup, task_report, task_report_live, TaskReportOptions};
+  use super::{TaskReportOptions, rollup, task_report, task_report_live};
   use crate::backend;
   use crate::helpers::TaskStatus;
   use crate::models::{Corpus, NewCorpus, NewService, Service};

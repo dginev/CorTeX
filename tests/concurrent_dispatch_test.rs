@@ -113,7 +113,8 @@ fn main() {
   // 60); keep it short so the tail of the drain isn't dominated by a nap. Must be set before the
   // worker threads read it.
   if std::env::var("CORTEX_WORKER_THROTTLE_SECS").is_err() {
-    std::env::set_var("CORTEX_WORKER_THROTTLE_SECS", "1");
+    // FIXME: Audit that the environment access only happens in single-threaded code.
+    unsafe { std::env::set_var("CORTEX_WORKER_THROTTLE_SECS", "1") };
   }
 
   let mut backend = backend::testdb();

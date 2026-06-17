@@ -11,7 +11,7 @@
 
 use std::io::{Read, Write};
 
-use cortex::backend::{self, export_html_dataset, GroupBy};
+use cortex::backend::{self, GroupBy, export_html_dataset};
 use cortex::helpers::TaskStatus;
 use cortex::models::{Corpus, NewCorpus, NewService, NewTask, Service};
 

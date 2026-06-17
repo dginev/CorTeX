@@ -3,9 +3,9 @@ use std::fs::File;
 use std::io;
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -88,15 +88,14 @@ fn run_writer(rx: &Receiver<WriteCommand>, done_tx: &SyncSender<TaskReport>) {
         current = Some((*task, recv_path, file));
       },
       WriteCommand::Chunk(bytes) => {
-        if let Some((_, _, slot)) = current.as_mut() {
-          if let Some(file) = slot {
-            if let Err(e) = file.write_all(&bytes) {
-              warn!("sink writer: write to result file failed ({e:?}); abandoning result");
-              // Stop writing; the (now-partial) file makes the result untrustworthy, so Commit
-              // skips the report and the task is recovered by the reaper.
-              *slot = None;
-            }
-          }
+        if let Some((_, _, slot)) = current.as_mut()
+          && let Some(file) = slot
+          && let Err(e) = file.write_all(&bytes)
+        {
+          warn!("sink writer: write to result file failed ({e:?}); abandoning result");
+          // Stop writing; the (now-partial) file makes the result untrustworthy, so Commit
+          // skips the report and the task is recovered by the reaper.
+          *slot = None;
         }
         // `bytes` dropped here — tight deallocation, O(chunk) resident.
       },

@@ -19,9 +19,12 @@ use rocket::local::blocking::Client;
 fn client() -> Client {
   // Enable passkeys for THIS test process before config() is first read. Each harness=false test is
   // its own binary, so the config LazyLock has not loaded yet and these env overrides take effect.
-  std::env::set_var("CORTEX_WEBAUTHN__ENABLED", "true");
-  std::env::set_var("CORTEX_WEBAUTHN__RP_ID", "localhost");
-  std::env::set_var("CORTEX_WEBAUTHN__RP_ORIGIN", "http://localhost:8000");
+  // FIXME: Audit that the environment access only happens in single-threaded code.
+  unsafe { std::env::set_var("CORTEX_WEBAUTHN__ENABLED", "true") };
+  // FIXME: Audit that the environment access only happens in single-threaded code.
+  unsafe { std::env::set_var("CORTEX_WEBAUTHN__RP_ID", "localhost") };
+  // FIXME: Audit that the environment access only happens in single-threaded code.
+  unsafe { std::env::set_var("CORTEX_WEBAUTHN__RP_ORIGIN", "http://localhost:8000") };
   let figment = rocket::Config::figment().merge(("template_dir", "templates"));
   let config_file = std::env::temp_dir().join("cortex_webauthn_test.toml");
   Client::tracked(mount_api_with(

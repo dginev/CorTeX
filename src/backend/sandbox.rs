@@ -105,15 +105,15 @@ impl SandboxSelection {
       parts.push(message);
     }
     // Legacy stored selections only had the overloaded `severity` (+ its category/what).
-    if parts.is_empty() {
-      if let Some(severity) = &self.severity {
-        parts.push(format!("severity={severity}"));
-        if let Some(category) = &self.category {
-          parts.push(format!("category={category}"));
-        }
-        if let Some(what) = &self.what {
-          parts.push(format!("what={what}"));
-        }
+    if parts.is_empty()
+      && let Some(severity) = &self.severity
+    {
+      parts.push(format!("severity={severity}"));
+      if let Some(category) = &self.category {
+        parts.push(format!("category={category}"));
+      }
+      if let Some(what) = &self.what {
+        parts.push(format!("what={what}"));
       }
     }
     if let Some(entry) = self
@@ -341,28 +341,36 @@ mod tests {
   fn model_c_validation_is_status_and_message_intersected() {
     // The F-7 fix: `info`+category is now VALID (info is a real message severity, `log_infos`;
     // `conversion` is a real info category — unlike `missing_file`, which is a *warning* category).
-    assert!(sel(None, Some("info"), Some("conversion"), None)
-      .validate()
-      .is_ok());
+    assert!(
+      sel(None, Some("info"), Some("conversion"), None)
+        .validate()
+        .is_ok()
+    );
     // status + message intersect; status-only; message-only (any status) — all valid.
-    assert!(sel(
-      Some("no_problem"),
-      Some("warning"),
-      Some("missing_file"),
-      None
-    )
-    .validate()
-    .is_ok());
+    assert!(
+      sel(
+        Some("no_problem"),
+        Some("warning"),
+        Some("missing_file"),
+        None
+      )
+      .validate()
+      .is_ok()
+    );
     assert!(sel(Some("warning"), None, None, None).validate().is_ok());
     assert!(sel(None, Some("error"), None, None).validate().is_ok());
 
     // category needs a message_severity; what needs a category.
-    assert!(sel(Some("no_problem"), None, Some("x"), None)
-      .validate()
-      .is_err());
-    assert!(sel(None, Some("warning"), None, Some("x"))
-      .validate()
-      .is_err());
+    assert!(
+      sel(Some("no_problem"), None, Some("x"), None)
+        .validate()
+        .is_err()
+    );
+    assert!(
+      sel(None, Some("warning"), None, Some("x"))
+        .validate()
+        .is_err()
+    );
     // `info` is a message severity, NOT a task status — rejected in the status slot.
     assert!(sel(Some("info"), None, None, None).validate().is_err());
     // an empty selection (no dimension) is rejected.

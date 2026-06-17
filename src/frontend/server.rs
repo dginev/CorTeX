@@ -16,12 +16,12 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use diesel::pg::PgConnection;
 use diesel::Connection;
+use diesel::pg::PgConnection;
 use rocket::{Build, Rocket};
-use rocket_dyn_templates::{tera, Template};
+use rocket_dyn_templates::{Template, tera};
 
-use crate::backend::{build_pool, DatabaseUrl};
+use crate::backend::{DatabaseUrl, build_pool};
 use crate::config::{config, config_file_path};
 use crate::frontend::corpora;
 use crate::frontend::jobs;

@@ -14,7 +14,7 @@ use chrono::{Duration, NaiveDateTime, Utc};
 use diesel::prelude::*;
 use diesel::result::Error;
 use rand::distributions::Alphanumeric;
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 
 use crate::schema::sessions;
 

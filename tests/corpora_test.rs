@@ -7,7 +7,7 @@
 
 //! High-level contract test for the corpus-management capability (read side).
 
-use cortex::backend::{self, create_sandbox, test_db_address, SandboxSelection};
+use cortex::backend::{self, SandboxSelection, create_sandbox, test_db_address};
 use cortex::frontend::server::mount_api_with;
 use cortex::helpers::TaskStatus;
 use cortex::models::{

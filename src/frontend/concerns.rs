@@ -5,15 +5,15 @@ use rocket::http::Status;
 use rocket::response::status::{Accepted, NotFound};
 use rocket::serde::json::Json;
 use rocket::tokio::sync::{OwnedSemaphorePermit, Semaphore};
-use rocket::{get, post, routes, Route, State};
+use rocket::{Route, State, get, post, routes};
 use rocket_dyn_templates::Template;
 use std::collections::HashMap;
 use std::str;
 use std::sync::Arc;
 
 use crate::backend::{
-  mark_all_blocked, mark_blocked, mark_rerun, progress_report, resume_all_blocked, resume_blocked,
-  save_historical_tasks, DbPool, PooledConn, RerunOptions,
+  DbPool, PooledConn, RerunOptions, mark_all_blocked, mark_blocked, mark_rerun, progress_report,
+  resume_all_blocked, resume_blocked, save_historical_tasks,
 };
 use crate::frontend::actor::AdminSession;
 use crate::frontend::helpers::*;
@@ -365,10 +365,10 @@ pub fn serve_rerun(
   // Reject an out-of-scope / typo'd rerun severity (R-9) up front, instead of letting `mark_rerun`
   // silently mis-scope it to `no_problem` — the same guard the agent `rerun_report` applies, so the
   // human and agent surfaces accept/reject the same set.
-  if let Some(ref severity) = severity {
-    if !crate::frontend::reports::is_valid_rerun_severity(severity, category.is_some()) {
-      return Err(Status::BadRequest);
-    }
+  if let Some(ref severity) = severity
+    && !crate::frontend::reports::is_valid_rerun_severity(severity, category.is_some())
+  {
+    return Err(Status::BadRequest);
   }
   // Structured admin-action log (the audit fairing also records actor + outcome to the DB; this is
   // the operational journal line). Emitted here, before the scope is moved into `RerunOptions`.

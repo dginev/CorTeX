@@ -255,23 +255,26 @@ pub fn mark_done_batch(backend: &mut Backend, reports: &[TaskReport]) -> Result<
   }
   let request_time = chrono::Utc::now();
   let mut success = false;
-  if let Err(e) = backend.mark_done(reports) {
-    warn!("mark_done attempt failed: {e:?}");
-    // DB persist failed, retry
-    let mut retries = 0;
-    while retries < 3 {
-      thread::sleep(Duration::new(2, 0)); // wait 2 seconds before retrying, in case this is latency related
-      retries += 1;
-      match backend.mark_done(reports) {
-        Ok(_) => {
-          success = true;
-          break;
-        },
-        Err(e) => warn!("mark_done retry failed: {e:?}"),
-      };
-    }
-  } else {
-    success = true;
+  match backend.mark_done(reports) {
+    Err(e) => {
+      warn!("mark_done attempt failed: {e:?}");
+      // DB persist failed, retry
+      let mut retries = 0;
+      while retries < 3 {
+        thread::sleep(Duration::new(2, 0)); // wait 2 seconds before retrying, in case this is latency related
+        retries += 1;
+        match backend.mark_done(reports) {
+          Ok(_) => {
+            success = true;
+            break;
+          },
+          Err(e) => warn!("mark_done retry failed: {e:?}"),
+        };
+      }
+    },
+    _ => {
+      success = true;
+    },
   }
   if !success {
     return Err(String::from(
