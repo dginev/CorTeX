@@ -153,27 +153,28 @@ pub(crate) fn progress_report(
 /// `severity`/`category`/`what` selectors.
 ///
 /// The aggregate grains — the category report and its `what` drill-down — are served from the
-/// `report_summary` rollup (an indexed lookup, refreshed on the run-completion path) rather than
-/// the expensive live aggregation in [`task_report_live`]. The per-task drill-downs (`no_problem`
-/// and `no_messages` entry lists, the `what`-detail list) and the all-severities (`all_messages`)
-/// view are not materialized, so they fall through to the live path. Both paths share
-/// [`aux_task_rows_stats`], so the rollup-backed numbers are identical to the live ones (pinned by
-/// `tests/report_rollup_test.rs`).
+/// per-`(corpus, service, severity)` `report_grain_cache` (the cached `category_rollup`/
+/// `what_rollup`/`severity_total` readers: populated on a cold miss, invalidated on the scoped
+/// rerun / run-completion / force-refresh paths) rather than the expensive live aggregation in
+/// [`task_report_live`]. The per-task drill-downs (`no_problem` and `no_messages` entry lists, the
+/// `what`-detail list) and the all-severities (`all_messages`) view have no cached grain, so they
+/// fall through to the live path. Both paths share [`aux_task_rows_stats`], so the cached numbers
+/// are identical to the live ones (pinned by `live_report_grains_are_correct`).
 pub(crate) fn task_report(
   connection: &mut PgConnection,
   options: TaskReportOptions,
 ) -> Vec<HashMap<String, String>> {
-  // The gate and the freshness stamp share ONE oracle ([`report_uses_rollup`]) so the footer can
-  // never claim matview-freshness for a live-computed report (and vice-versa).
+  // [`report_uses_rollup`] routes the aggregate grains to the per-scope `report_grain_cache` and
+  // everything else to the live path.
   if report_uses_rollup(
     options.severity_opt.as_deref(),
     options.category_opt.as_deref(),
     options.what_opt.as_deref(),
     options.all_messages,
   ) {
-    // The oracle guarantees a rollup severity; the URL severity string IS the matview's `severity`
-    // key (`warning`/`error`/`fatal`/`invalid`/`info`). The `if let` + fall-through keeps this
-    // panic-free on the request path regardless.
+    // The gate guarantees a cached drill-down severity; the URL severity string IS the cache's
+    // `severity` key (`warning`/`error`/`fatal`/`invalid`/`info`). The `if let` + fall-through
+    // keeps this panic-free on the request path regardless.
     if let Some(severity) = options.severity_opt.clone() {
       match (options.category_opt.as_deref(), options.what_opt.as_deref()) {
         // Category report: one row per category, plus the severity totals.
