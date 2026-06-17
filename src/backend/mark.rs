@@ -188,109 +188,121 @@ pub(crate) fn mark_rerun<'a>(
   }
   description.push(')');
 
-  mark_new_run(
-    connection,
-    corpus,
-    service,
-    owner_opt.unwrap_or_else(|| "admin".to_string()),
-    description,
-  )?;
-  // Rerun = set status to TODO for all tasks, deleting old logs
-  let mark: i32 = random_mark();
+  // Atomic rerun (R-11): the run record + the two-phase task reset (set the scope to a temporary
+  // `mark`, delete its logs, flip `mark → TODO`) must all-or-nothing together. Otherwise a frontend
+  // crash/restart mid-rerun could strand the whole scope in the `mark` value — a positive status
+  // the dispatcher won't lease (it leases `TODO=0`) — so the tasks never re-convert until a
+  // dispatcher restart's limbo recovery. One transaction makes the temporary `mark` never
+  // observable and a crash a clean rollback. `mark_new_run`'s own transaction nests here as a
+  // savepoint. (The closure param shadows `connection` so the body below uses the transaction
+  // connection.)
+  connection.transaction::<(), Error, _>(|connection| {
+    mark_new_run(
+      connection,
+      corpus,
+      service,
+      owner_opt.unwrap_or_else(|| "admin".to_string()),
+      description,
+    )?;
+    // Rerun = set status to TODO for all tasks, deleting old logs
+    let mark: i32 = random_mark();
 
-  // First, mark as blocked all of the tasks in the chosen scope, using a special mark
-  match severity_opt {
-    Some(severity) => match category_opt {
-      Some(category) => match what_opt {
-        // All tasks in a "what" class
-        Some(what) => match severity.to_lowercase().as_str() {
-          "warning" => LogWarning::mark_rerun_by_what(
-            mark, corpus.id, service.id, &category, &what, connection,
-          ),
-          "error" => {
-            LogError::mark_rerun_by_what(mark, corpus.id, service.id, &category, &what, connection)
-          },
-          "fatal" => {
-            LogFatal::mark_rerun_by_what(mark, corpus.id, service.id, &category, &what, connection)
-          },
-          "invalid" => LogInvalid::mark_rerun_by_what(
-            mark, corpus.id, service.id, &category, &what, connection,
-          ),
-          _ => {
-            LogInfo::mark_rerun_by_what(mark, corpus.id, service.id, &category, &what, connection)
-          },
-        }?,
-        // None: All tasks in a category
-        None => match severity.to_lowercase().as_str() {
-          "warning" => {
-            LogWarning::mark_rerun_by_category(mark, corpus.id, service.id, &category, connection)
-          },
-          "error" => {
-            LogError::mark_rerun_by_category(mark, corpus.id, service.id, &category, connection)
-          },
-          "fatal" => {
-            LogFatal::mark_rerun_by_category(mark, corpus.id, service.id, &category, connection)
-          },
-          "invalid" => {
-            LogInvalid::mark_rerun_by_category(mark, corpus.id, service.id, &category, connection)
-          },
-          _ => LogInfo::mark_rerun_by_category(mark, corpus.id, service.id, &category, connection),
-        }?,
+    // First, mark as blocked all of the tasks in the chosen scope, using a special mark
+    match severity_opt {
+      Some(severity) => match category_opt {
+        Some(category) => match what_opt {
+          // All tasks in a "what" class
+          Some(what) => match severity.to_lowercase().as_str() {
+            "warning" => LogWarning::mark_rerun_by_what(
+              mark, corpus.id, service.id, &category, &what, connection,
+            ),
+            "error" => LogError::mark_rerun_by_what(
+              mark, corpus.id, service.id, &category, &what, connection,
+            ),
+            "fatal" => LogFatal::mark_rerun_by_what(
+              mark, corpus.id, service.id, &category, &what, connection,
+            ),
+            "invalid" => LogInvalid::mark_rerun_by_what(
+              mark, corpus.id, service.id, &category, &what, connection,
+            ),
+            _ => {
+              LogInfo::mark_rerun_by_what(mark, corpus.id, service.id, &category, &what, connection)
+            },
+          }?,
+          // None: All tasks in a category
+          None => match severity.to_lowercase().as_str() {
+            "warning" => {
+              LogWarning::mark_rerun_by_category(mark, corpus.id, service.id, &category, connection)
+            },
+            "error" => {
+              LogError::mark_rerun_by_category(mark, corpus.id, service.id, &category, connection)
+            },
+            "fatal" => {
+              LogFatal::mark_rerun_by_category(mark, corpus.id, service.id, &category, connection)
+            },
+            "invalid" => {
+              LogInvalid::mark_rerun_by_category(mark, corpus.id, service.id, &category, connection)
+            },
+            _ => {
+              LogInfo::mark_rerun_by_category(mark, corpus.id, service.id, &category, connection)
+            },
+          }?,
+        },
+        None => {
+          // All tasks in a certain status/severity
+          let status_to_rerun: i32 = TaskStatus::from_key(&severity)
+            .unwrap_or(TaskStatus::NoProblem)
+            .raw();
+          update(tasks::table)
+            .filter(corpus_id.eq(corpus.id))
+            .filter(service_id.eq(service.id))
+            .filter(status.eq(status_to_rerun))
+            .set(status.eq(mark))
+            .execute(connection)?
+        },
       },
       None => {
-        // All tasks in a certain status/severity
-        let status_to_rerun: i32 = TaskStatus::from_key(&severity)
-          .unwrap_or(TaskStatus::NoProblem)
-          .raw();
+        // Entire corpus
         update(tasks::table)
           .filter(corpus_id.eq(corpus.id))
           .filter(service_id.eq(service.id))
-          .filter(status.eq(status_to_rerun))
+          .filter(status.lt(0))
           .set(status.eq(mark))
           .execute(connection)?
       },
-    },
-    None => {
-      // Entire corpus
-      update(tasks::table)
-        .filter(corpus_id.eq(corpus.id))
-        .filter(service_id.eq(service.id))
-        .filter(status.lt(0))
-        .set(status.eq(mark))
-        .execute(connection)?
-    },
-  };
+    };
 
-  // Next, delete all logs for the blocked tasks.
-  // Note that if we are using a negative blocking status, this query should get sped up via an
-  // "Index Scan using log_taskid on logs"
-  let affected_tasks = tasks::table
-    .filter(corpus_id.eq(corpus.id))
-    .filter(service_id.eq(service.id))
-    .filter(status.eq(mark));
-  let affected_tasks_ids = affected_tasks.select(tasks::id);
+    // Next, delete all logs for the blocked tasks.
+    // Note that if we are using a negative blocking status, this query should get sped up via an
+    // "Index Scan using log_taskid on logs"
+    let affected_tasks = tasks::table
+      .filter(corpus_id.eq(corpus.id))
+      .filter(service_id.eq(service.id))
+      .filter(status.eq(mark));
+    let affected_tasks_ids = affected_tasks.select(tasks::id);
 
-  let affected_log_infos = log_infos::table.filter(log_infos::task_id.eq_any(affected_tasks_ids));
-  delete(affected_log_infos).execute(connection)?;
-  let affected_log_warnings =
-    log_warnings::table.filter(log_warnings::task_id.eq_any(affected_tasks_ids));
-  delete(affected_log_warnings).execute(connection)?;
-  let affected_log_errors =
-    log_errors::table.filter(log_errors::task_id.eq_any(affected_tasks_ids));
-  delete(affected_log_errors).execute(connection)?;
-  let affected_log_fatals =
-    log_fatals::table.filter(log_fatals::task_id.eq_any(affected_tasks_ids));
-  delete(affected_log_fatals).execute(connection)?;
-  let affected_log_invalids =
-    log_invalids::table.filter(log_invalids::task_id.eq_any(affected_tasks_ids));
-  delete(affected_log_invalids).execute(connection)?;
+    let affected_log_infos = log_infos::table.filter(log_infos::task_id.eq_any(affected_tasks_ids));
+    delete(affected_log_infos).execute(connection)?;
+    let affected_log_warnings =
+      log_warnings::table.filter(log_warnings::task_id.eq_any(affected_tasks_ids));
+    delete(affected_log_warnings).execute(connection)?;
+    let affected_log_errors =
+      log_errors::table.filter(log_errors::task_id.eq_any(affected_tasks_ids));
+    delete(affected_log_errors).execute(connection)?;
+    let affected_log_fatals =
+      log_fatals::table.filter(log_fatals::task_id.eq_any(affected_tasks_ids));
+    delete(affected_log_fatals).execute(connection)?;
+    let affected_log_invalids =
+      log_invalids::table.filter(log_invalids::task_id.eq_any(affected_tasks_ids));
+    delete(affected_log_invalids).execute(connection)?;
 
-  // Lastly, switch all blocked tasks to TODO, and complete the rerun mark pass.
-  update(affected_tasks)
-    .set(status.eq(TaskStatus::TODO.raw()))
-    .execute(connection)?;
+    // Lastly, switch all blocked tasks to TODO, and complete the rerun mark pass.
+    update(affected_tasks)
+      .set(status.eq(TaskStatus::TODO.raw()))
+      .execute(connection)?;
 
-  Ok(())
+    Ok(())
+  })
 }
 
 pub(crate) fn mark_new_run(
