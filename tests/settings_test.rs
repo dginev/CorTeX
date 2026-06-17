@@ -148,10 +148,66 @@ fn post_settings_form_persists_and_redirects() {
 // Custom harness (Cargo.toml `harness = false`): run the cases then `_exit(0)` to skip the racy
 // libpq/OpenSSL atexit teardown that SIGSEGVs after assertions pass (KNOWN_ISSUES L-1). A panic in
 // any case aborts non-zero, so real failures still fail CI.
+/// The config write path rejects a structurally-valid but operationally **bricking** value (a zero
+/// pool/queue, an out-of-range port) with `422`, and never persists it — so an admin can't silently
+/// break the next restart from the Settings screen / `PUT /api/config`.
+fn put_api_config_rejects_bricking_values() {
+  let path = temp_config_path("brick");
+  let client = client(path.clone());
+
+  for (label, body) in [
+    (
+      "a zero pool blocks every request",
+      r#"{"database":{"pool_size":0}}"#,
+    ),
+    (
+      "a zero queue leases no work",
+      r#"{"dispatcher":{"queue_size":0}}"#,
+    ),
+    (
+      "an out-of-range port can't bind",
+      r#"{"dispatcher":{"source_port":99999}}"#,
+    ),
+    (
+      "a non-positive reap timeout kills every job",
+      r#"{"jobs":{"stale_timeout_seconds":0}}"#,
+    ),
+  ] {
+    let response = client
+      .put("/api/config?token=token1")
+      .header(ContentType::JSON)
+      .body(body)
+      .dispatch();
+    assert_eq!(
+      response.status(),
+      Status::UnprocessableEntity,
+      "{label}: a bricking config value is rejected with 422"
+    );
+  }
+
+  // A valid change still succeeds (the guard is not over-eager).
+  let ok = client
+    .put("/api/config?token=token1")
+    .header(ContentType::JSON)
+    .body(r#"{"database":{"pool_size":16}}"#)
+    .dispatch();
+  assert_eq!(ok.status(), Status::Ok, "a sane pool_size is accepted");
+
+  // None of the rejected writes persisted a bricking value (only the valid pool_size=16 is on
+  // disk).
+  if let Ok(written) = std::fs::read_to_string(&path) {
+    assert!(
+      !written.contains("pool_size = 0") && !written.contains("queue_size = 0"),
+      "a rejected config value must never reach the file"
+    );
+  }
+}
+
 fn main() {
   settings_page_renders_masked_html();
   put_api_config_merges_and_persists();
   post_settings_form_persists_and_redirects();
+  put_api_config_rejects_bricking_values();
   eprintln!("settings_test: all cases passed");
   unsafe { libc::_exit(0) }
 }

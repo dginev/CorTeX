@@ -285,10 +285,66 @@ fn merge_and_persist(patch: &serde_json::Value, path: &Path) -> Result<CortexCon
     .merge(Serialized::defaults(patch))
     .extract()
     .map_err(|_| Status::UnprocessableEntity)?;
+  // The figment extract above only checks *types*. Reject a structurally-valid but operationally
+  // **bricking** value (a zero pool/queue, an out-of-range port) BEFORE persisting — otherwise it
+  // is written to disk and silently breaks the next restart.
+  if let Err(reason) = validate_config_bounds(&merged) {
+    tracing::warn!(%reason, "rejected a config update that would brick a component");
+    return Err(Status::UnprocessableEntity);
+  }
   let toml_text =
     crate::config::to_persisted_toml(&merged).map_err(|_| Status::InternalServerError)?;
   std::fs::write(path, toml_text).map_err(|_| Status::InternalServerError)?;
   Ok(merged)
+}
+
+/// Value-bound check for a merged config: rejects knobs whose value is structurally valid (the
+/// right type) but would make a component unusable — the kind of footgun an admin could otherwise
+/// persist from the Settings screen / `PUT /api/config` and only discover on the next (broken)
+/// restart. The returned reason is logged; the write path maps it to `422`.
+fn validate_config_bounds(c: &CortexConfig) -> Result<(), String> {
+  if c.database.pool_size < 1 {
+    return Err("database.pool_size must be >= 1 (a zero pool blocks every request)".to_string());
+  }
+  let port_ok = |port: usize| (1..=65535).contains(&port);
+  if !port_ok(c.dispatcher.source_port) {
+    return Err(format!(
+      "dispatcher.source_port {} is out of range (1..=65535)",
+      c.dispatcher.source_port
+    ));
+  }
+  if !port_ok(c.dispatcher.result_port) {
+    return Err(format!(
+      "dispatcher.result_port {} is out of range (1..=65535)",
+      c.dispatcher.result_port
+    ));
+  }
+  if c.dispatcher.source_port == c.dispatcher.result_port {
+    return Err(
+      "dispatcher.source_port and result_port must differ (the ventilator and sink can't \
+                share a port)"
+        .to_string(),
+    );
+  }
+  if c.dispatcher.queue_size < 1 {
+    return Err("dispatcher.queue_size must be >= 1 (a zero queue leases no work)".to_string());
+  }
+  if c.dispatcher.max_in_flight < 1 {
+    return Err("dispatcher.max_in_flight must be >= 1".to_string());
+  }
+  if c.dispatcher.max_result_bytes < 1 {
+    return Err(
+      "dispatcher.max_result_bytes must be >= 1 (a zero cap rejects every result)".to_string(),
+    );
+  }
+  if c.jobs.stale_timeout_seconds < 1 {
+    return Err(
+      "jobs.stale_timeout_seconds must be >= 1 (a non-positive timeout reaps every job \
+                instantly)"
+        .to_string(),
+    );
+  }
+  Ok(())
 }
 
 /// One row of the mounted route surface — an endpoint's method, URI pattern, and handler name.
