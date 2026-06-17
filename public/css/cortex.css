@@ -1170,6 +1170,11 @@ h3 {
   min-width: 10rem;
   max-width: 22rem;
 }
+/* A stacked control cell: the description on its own line, the button beneath it (e.g. Extend). */
+.corpus-actions .action-stack {
+  flex-direction: column;
+  align-items: flex-start;
+}
 /* A standalone submit (no label in column 1) aligns under the controls. */
 .corpus-actions .action-submit {
   grid-column: 2;

@@ -78,9 +78,9 @@
 
     <form method="post" action="/corpus/{{global.corpus_name_uri}}/extend">
       <span class="action-label action-title">Re-scan corpus path</span>
-      <div class="action-control">
-        <button type="submit" class="btn-primary">Extend</button>
+      <div class="action-control action-stack">
         <span class="muted">Pick up newly-arrived entries from <code>{{global.corpus_path}}</code>.</span>
+        <button type="submit" class="btn-primary">Extend</button>
       </div>
     </form>
 
@@ -121,7 +121,7 @@
       <div class="action-control">
         <input id="ca-delete" type="text" name="confirm" placeholder="type «{{global.corpus_name}}» to confirm" aria-label="Type the corpus name to confirm deletion" required>
         <button type="submit" class="danger">Delete corpus</button>
-        <span class="muted">Irreversible — removes all tasks &amp; logs.</span>
+        <span class="muted"><strong>Irreversible</strong> — removes all tasks &amp; logs.</span>
       </div>
     </form>
   </fieldset>
