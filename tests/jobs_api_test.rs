@@ -291,6 +291,71 @@ fn stale_running_job_is_reaped_but_fresh_one_survives() {
 }
 
 // Custom harness (see KNOWN_ISSUES L-1): run the cases then `_exit(0)`.
+/// `interrupt_orphans` — called once on frontend startup — marks every non-terminal job (`queued` /
+/// `running`) as `interrupted` so a job that died with a previous process is not left looking live
+/// (the MANUAL §8 "cleaned at restart" guarantee, the startup complement to the runtime
+/// `reap_stale` above). Run inside a rolled-back `test_transaction`: the function is a GLOBAL
+/// update over all non-terminal jobs, so isolation keeps it from disturbing a parallel test
+/// binary's live jobs.
+fn interrupt_orphans_cleans_non_terminal_jobs_on_restart() {
+  use diesel::prelude::*;
+  let mut db = cortex::backend::testdb();
+  db.connection
+    .test_transaction::<_, diesel::result::Error, _>(|conn| {
+      // Two non-terminal jobs (as if a previous process died mid-flight) + one terminal job that
+      // must be left untouched.
+      diesel::sql_query(
+        "INSERT INTO jobs (kind, actor, status, params) VALUES \
+         ('orphan_running_probe', 'tester', 'running', '{}'::jsonb), \
+         ('orphan_queued_probe', 'tester', 'queued', '{}'::jsonb), \
+         ('orphan_done_probe', 'tester', 'succeeded', '{}'::jsonb)",
+      )
+      .execute(conn)?;
+
+      let reaped = jobs::interrupt_orphans(conn);
+      assert!(
+        reaped >= 2,
+        "both non-terminal probe jobs are interrupted (got {reaped})"
+      );
+
+      let status_of = |kind: &str, conn: &mut PgConnection| -> String {
+        cortex::schema::jobs::table
+          .filter(cortex::schema::jobs::kind.eq(kind))
+          .select(cortex::schema::jobs::status)
+          .first::<String>(conn)
+          .expect("probe job present")
+      };
+      assert_eq!(
+        status_of("orphan_running_probe", conn),
+        "interrupted",
+        "a running job is interrupted on restart"
+      );
+      assert_eq!(
+        status_of("orphan_queued_probe", conn),
+        "interrupted",
+        "a queued job is interrupted on restart"
+      );
+      assert_eq!(
+        status_of("orphan_done_probe", conn),
+        "succeeded",
+        "a terminal (succeeded) job is left untouched"
+      );
+
+      // The message records the cause (distinguishing a restart-interrupt from a stale-heartbeat
+      // reap).
+      let message: String = cortex::schema::jobs::table
+        .filter(cortex::schema::jobs::kind.eq("orphan_running_probe"))
+        .select(cortex::schema::jobs::message)
+        .first(conn)
+        .expect("message present");
+      assert!(
+        message.contains("restart"),
+        "the interrupt records the restart cause, got {message:?}"
+      );
+      Ok(())
+    });
+}
+
 fn main() {
   api_job_polls_a_spawned_job();
   api_job_is_404_for_unknown_uuid();
@@ -299,6 +364,7 @@ fn main() {
   jobs_dashboard_auto_refreshes_while_a_job_is_active();
   stalled_running_job_reports_a_large_heartbeat_age();
   stale_running_job_is_reaped_but_fresh_one_survives();
+  interrupt_orphans_cleans_non_terminal_jobs_on_restart();
   eprintln!("jobs_api_test: all cases passed");
   unsafe { libc::_exit(0) }
 }
