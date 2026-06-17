@@ -52,7 +52,7 @@
       <input id="pubdir" name="assets_public_dir" type="text" required value="{{ config.assets.public_dir }}">
     </fieldset>
 
-    <button type="submit">Save configuration</button>
+    <button type="submit" class="btn-primary">Save configuration</button>
   </form>
 
   <fieldset>

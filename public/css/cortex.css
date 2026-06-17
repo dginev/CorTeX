@@ -299,6 +299,13 @@ legend {
   display: inline;
   font-weight: 400;
 }
+/* The export form's severity checkboxes are options too — keep them inline (a horizontal checklist),
+   not stretched/bold field rows. */
+.config-page .export-severities label {
+  display: inline-block;
+  font-weight: 400;
+  margin-right: 1rem;
+}
 /* A row of inline action buttons/forms (e.g. the dashboard's pause/resume-all controls). */
 .button-row {
   display: flex;

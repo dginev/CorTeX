@@ -1,5 +1,5 @@
 {% extends "layout" %} {% block content %}
-<div class="report-layout">
+<div class="report-layout config-page">
   <h1>Export dataset</h1>
   <p><a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}">&larr; back to the {{global.corpus_name}} / {{global.service_name}} report</a></p>
   {% if global.error %}<p class="flash-error"><i class="fa fa-exclamation-triangle"></i>&nbsp;{{ global.error }}</p>{% endif %}
@@ -8,13 +8,19 @@
     run; resumable — an archive that already exists is skipped). Runs as a background job you can
     track on <a href="/jobs">Background jobs</a>.</p>
   <form method="post" action="/export/{{global.corpus_name_uri}}/{{global.service_name_uri}}">
-    <p><label>Output directory <span class="muted">(server-side, created if missing)</span><br>
-        <input type="text" name="out" size="52" required placeholder="/data/datasets/&hellip;" value="{{ global.out }}"></label></p>
-    <p><label>Group archives by
-        <select name="group_by">
-          <option value="month"{% if global.group_by == "month" %} selected{% endif %}>month &mdash; one zip per year-month</option>
-          <option value="severity"{% if global.group_by == "severity" %} selected{% endif %}>severity &mdash; one zip per severity</option>
-        </select></label></p>
+    <fieldset>
+      <legend>Dataset export</legend>
+
+      <label for="export-out">Output directory <span class="muted">(server-side, created if missing)</span></label>
+      <input id="export-out" type="text" name="out" required placeholder="/data/datasets/&hellip;" value="{{ global.out }}">
+
+      <label for="export-groupby">Group archives by</label>
+      <select id="export-groupby" name="group_by">
+        <option value="month"{% if global.group_by == "month" %} selected{% endif %}>month &mdash; one zip per year-month</option>
+        <option value="severity"{% if global.group_by == "severity" %} selected{% endif %}>severity &mdash; one zip per severity</option>
+      </select>
+    </fieldset>
+
     <fieldset class="export-severities">
       <legend>Severities to include</legend>
       <label><input type="checkbox" name="severities" value="no_problem"{% if global.sev_no_problem_checked == "true" %} checked{% endif %}> no_problem</label>
