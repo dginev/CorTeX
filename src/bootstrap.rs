@@ -21,6 +21,20 @@ use serde::Serialize;
 use crate::config::{to_persisted_toml, CortexConfig};
 use crate::migrations;
 
+/// Write `cortex.toml` **atomically**: serialize to a sibling temp file, then `rename` it over the
+/// target. `rename` is atomic on a POSIX filesystem, so a crash mid-write leaves the **previous**
+/// `cortex.toml` (or none) intact rather than a half-written file the app can't parse — and that
+/// `cortex init` would then skip as "already present". `fs::write` truncates any temp orphaned by a
+/// prior crash, so the next write starts clean. (Process-crash atomic; power-loss durability would
+/// additionally need an `fsync` of the temp + dir, overkill for a setup-time config write.)
+fn write_config_atomically(path: impl AsRef<Path>, content: &str) -> Result<(), String> {
+  let path = path.as_ref();
+  let tmp = path.with_extension("toml.tmp");
+  std::fs::write(&tmp, content).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
+  std::fs::rename(&tmp, path).map_err(|e| format!("cannot publish {}: {e}", path.display()))?;
+  Ok(())
+}
+
 /// Structured diagnostics — the data contract shared by `cortex doctor` and its agent twin.
 #[derive(Debug, Serialize)]
 pub struct DoctorReport {
@@ -133,7 +147,7 @@ pub fn init(database_url: &str, config_path: &Path) -> Result<InitOutcome, Strin
   } else {
     let toml = to_persisted_toml(&CortexConfig::default())
       .map_err(|e| format!("cannot serialize config: {e}"))?;
-    std::fs::write(config_path, toml).map_err(|e| format!("cannot write config: {e}"))?;
+    write_config_atomically(config_path, &toml)?;
     true
   };
   Ok(InitOutcome {
@@ -212,8 +226,7 @@ pub fn set_admin_token(
   let token_count = tokens_table.len();
   let serialized =
     toml::to_string_pretty(&document).map_err(|e| format!("cannot serialize config: {e}"))?;
-  std::fs::write(config_path, serialized)
-    .map_err(|e| format!("cannot write {}: {e}", config_path.display()))?;
+  write_config_atomically(config_path, &serialized)?;
   Ok(SetTokenOutcome {
     owner: owner.to_string(),
     replaced,
