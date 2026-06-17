@@ -12,6 +12,7 @@
 
       <label for="corpus-path">Path <span class="muted">(server-side folder, under <code>/data</code>)</span></label>
       <input id="corpus-path" type="text" name="path" required placeholder="/data/&hellip;" value="{{ global.path }}">
+      <p><button type="button" id="browse-path" class="btn-default" hidden>Browse for a folder&hellip;</button></p>
 
       <label for="corpus-desc">Description <span class="muted">(optional)</span></label>
       <input id="corpus-desc" type="text" name="description" value="{{ global.corpus_description }}">
@@ -26,4 +27,23 @@
     <p><button type="submit" class="btn-primary">Register &amp; import</button></p>
   </form>
 </div>
+<script>
+  // Optional convenience (Chromium File System Access API): pick a folder via the native dialog and
+  // fill the Path as /data/<folder-name>. Browsers expose only the folder name, never the absolute
+  // path, and corpora live under /data; the field stays editable for deeper paths. There is NO server
+  // endpoint here — nothing a stolen token could enumerate. Unsupported browsers (Firefox/Safari)
+  // never see the button and just type the path.
+  (function () {
+    var btn = document.getElementById("browse-path");
+    var path = document.getElementById("corpus-path");
+    if (!btn || !path || typeof window.showDirectoryPicker !== "function") return;
+    btn.hidden = false;
+    btn.addEventListener("click", function () {
+      window.showDirectoryPicker().then(function (handle) {
+        path.value = "/data/" + handle.name;
+        path.focus();
+      }).catch(function () { /* user cancelled the dialog — leave the field as-is */ });
+    });
+  })();
+</script>
 {% endblock content %}
