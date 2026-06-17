@@ -53,7 +53,7 @@ pub struct HistoricalRun {
   pub public_id: uuid::Uuid,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, Default)]
 /// A JSON-friendly data structure, used for the frontend reports
 pub struct RunMetadata {
   /// total tasks in run
@@ -141,6 +141,14 @@ impl RunMetadataStack {
         }
       }
       let total = run.field_f32("total");
+      // A run with no valid tasks (total 0 — all-invalid, or an open run before any completion) has
+      // no success-rate to plot, and `field / 0.0` yields NaN/Inf which `serde_json` cannot encode.
+      // Critically, that failure is on the WHOLE array — one such run would blank the *entire*
+      // chart (the serialized payload falls back to empty) — so skip it rather than poison
+      // the series.
+      if total <= 0.0 {
+        continue;
+      }
       for field in ["fatal", "error", "warning", "no_problem", "in_progress"].iter() {
         runs_meta_vega.push(RunMetadataStack {
           severity: (*field).to_string(),
@@ -448,5 +456,41 @@ impl From<HistoricalRun> for RunMetadata {
       owner,
       description,
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{RunMetadata, RunMetadataStack};
+
+  /// A zero-total run (all-invalid, or an open run before any completion) must not blank the whole
+  /// history chart: it is skipped (no `field / 0.0` NaN/Inf percents, which would fail `serde_json`
+  /// on the *whole array* and empty the series), while runs with valid tasks still chart.
+  #[test]
+  fn transform_skips_zero_total_runs_so_one_doesnt_blank_the_chart() {
+    let zero_total = RunMetadata {
+      invalid: 5, // all-invalid → total 0 (the total excludes invalids)
+      start_time: "2026-01-01 00:00:00".to_string(),
+      end_time: "2026-01-01 01:00:00".to_string(),
+      ..Default::default()
+    };
+    let real = RunMetadata {
+      total: 4,
+      warning: 1,
+      no_problem: 3,
+      start_time: "2026-01-02 00:00:00".to_string(),
+      end_time: "2026-01-02 01:00:00".to_string(),
+      ..Default::default()
+    };
+    let stack = RunMetadataStack::transform(&[zero_total, real]);
+    assert!(!stack.is_empty(), "the valid run still charts");
+    assert!(
+      stack.iter().all(|row| row.percent.is_finite()),
+      "no NaN/Inf percents — a zero-total run is skipped, never divided by zero"
+    );
+    assert!(
+      serde_json::to_string(&stack).is_ok(),
+      "the series serializes — the bug was serde failing on a NaN and blanking the chart"
+    );
   }
 }
