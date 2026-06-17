@@ -148,7 +148,9 @@ Two ways to authenticate as an admin; both resolve to a **server-side session** 
 - **Admin token** — the bootstrap / break-glass path (and the credential agents use). Created by
   `set-admin-token`; presented as an **`X-Cortex-Token: <token>`** header **or** a `?token=…` query
   param (these are the only two the guard reads — *not* `Authorization`/`Bearer`). Each token maps
-  to an **owner** that is threaded into the audit log as the actor.
+  to an **owner** that is threaded into the audit log as the actor. **Revoke** with
+  `cortex revoke-token <token>` (or `--owner <name>` to revoke every token a person holds, e.g. when
+  they leave); a revoked token stops working immediately (the guard resolves `rerun_tokens` live).
 
 Sign in at **`/admin/login`**. A GET screen that needs authorization redirects an anonymous visitor to
 `/admin/login?next=<destination>` and returns you there after signing in. Active sessions are listed

@@ -203,6 +203,58 @@ fn set_admin_token_scaffolds_merges_and_updates() {
 }
 
 #[test]
+fn revoke_token_removes_by_value_or_owner_and_preserves_the_rest() {
+  let mut config_path = std::env::temp_dir();
+  config_path.push("cortex_revoke_token_test.toml");
+  let _ = std::fs::remove_file(&config_path);
+
+  // Seed three tokens: one alice, two bob.
+  bootstrap::set_admin_token(&config_path, "tok-aaa", "alice").expect("seed aaa");
+  bootstrap::set_admin_token(&config_path, "tok-bbb", "bob").expect("seed bbb");
+  bootstrap::set_admin_token(&config_path, "tok-ccc", "bob").expect("seed ccc");
+
+  // Revoke a SPECIFIC token.
+  let outcome =
+    bootstrap::revoke_admin_token(&config_path, Some("tok-aaa"), None).expect("revoke aaa");
+  assert_eq!(outcome.revoked, 1, "one token removed by value");
+  assert_eq!(outcome.token_count, 2, "two remain");
+
+  // Revoking an already-gone token is an idempotent no-op, not an error.
+  let outcome =
+    bootstrap::revoke_admin_token(&config_path, Some("tok-aaa"), None).expect("revoke missing");
+  assert_eq!(outcome.revoked, 0, "already-gone token removes nothing");
+  assert_eq!(outcome.token_count, 2);
+
+  // Revoke ALL of an owner's tokens.
+  let outcome = bootstrap::revoke_admin_token(&config_path, None, Some("bob")).expect("revoke bob");
+  assert_eq!(outcome.revoked, 2, "both of bob's tokens removed");
+  assert_eq!(outcome.token_count, 0, "none remain");
+
+  // Operational sections survive; rerun_tokens is now empty.
+  let written = std::fs::read_to_string(&config_path).expect("written");
+  assert!(
+    written.contains("[dispatcher]"),
+    "operational sections preserved across revokes"
+  );
+  let document: toml::Table = written.parse().expect("valid toml");
+  assert!(
+    document["auth"]["rerun_tokens"]
+      .as_table()
+      .expect("rerun_tokens table")
+      .is_empty(),
+    "all tokens revoked"
+  );
+
+  // Neither selector → an error (the CLI guards this too).
+  assert!(
+    bootstrap::revoke_admin_token(&config_path, None, None).is_err(),
+    "must specify a token or an owner"
+  );
+
+  let _ = std::fs::remove_file(&config_path);
+}
+
+#[test]
 fn generate_token_is_long_random_and_url_safe() {
   let first = bootstrap::generate_token();
   let second = bootstrap::generate_token();

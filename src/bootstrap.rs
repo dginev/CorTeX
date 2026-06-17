@@ -267,6 +267,74 @@ pub fn set_admin_token(
   })
 }
 
+/// The outcome of `cortex revoke-token`.
+#[derive(Debug, Serialize)]
+pub struct RevokeTokenOutcome {
+  /// How many tokens this call removed (`0` if none matched).
+  pub revoked: usize,
+  /// How many tokens remain configured afterward.
+  pub token_count: usize,
+  /// `true` if a legacy `config.json` shadows `cortex.toml`'s `[auth]` — the revoke will not take
+  /// effect until that file is reconciled or removed.
+  pub shadowed_by_legacy_json: bool,
+}
+
+/// Revokes admin/API token(s) from the `[auth].rerun_tokens` table of `config_path` — the inverse
+/// of [`set_admin_token`]. Removes either a specific `token` or **every** token mapped to `owner`
+/// (the caller supplies exactly one). Merges into the existing file (other sections + other tokens
+/// are preserved) and writes atomically; rewrites only when something actually changed. The library
+/// logic behind `cortex revoke-token`. A revoked token stops working immediately — the frontend
+/// resolves `auth.rerun_tokens` live on every request.
+pub fn revoke_admin_token(
+  config_path: &Path,
+  token: Option<&str>,
+  owner: Option<&str>,
+) -> Result<RevokeTokenOutcome, String> {
+  let shadowed_by_legacy_json = Path::new("config.json").exists();
+  let existing = std::fs::read_to_string(config_path)
+    .map_err(|_| format!("no config at {} — nothing to revoke", config_path.display()))?;
+  let mut document: toml::Table = existing
+    .parse()
+    .map_err(|e| format!("cannot parse {}: {e}", config_path.display()))?;
+  // Navigate to [auth].rerun_tokens; if absent, there is simply nothing to revoke.
+  let tokens_table = document
+    .get_mut("auth")
+    .and_then(|auth| auth.as_table_mut())
+    .and_then(|auth| auth.get_mut("rerun_tokens"))
+    .and_then(|tokens| tokens.as_table_mut());
+  let (revoked, token_count) = match tokens_table {
+    None => (0, 0),
+    Some(tokens) => {
+      let revoked = match (token, owner) {
+        (Some(tok), _) => usize::from(tokens.remove(tok).is_some()),
+        (None, Some(own)) => {
+          let matching: Vec<String> = tokens
+            .iter()
+            .filter(|(_, value)| value.as_str() == Some(own))
+            .map(|(key, _)| key.clone())
+            .collect();
+          for key in &matching {
+            tokens.remove(key);
+          }
+          matching.len()
+        },
+        (None, None) => return Err("specify a token to revoke, or --owner <name>".to_string()),
+      };
+      (revoked, tokens.len())
+    },
+  };
+  if revoked > 0 {
+    let serialized =
+      toml::to_string_pretty(&document).map_err(|e| format!("cannot serialize config: {e}"))?;
+    write_config_atomically(config_path, &serialized)?;
+  }
+  Ok(RevokeTokenOutcome {
+    revoked,
+    token_count,
+    shadowed_by_legacy_json,
+  })
+}
+
 /// Operator guidance for tuning the PostgreSQL **server** (`shared_buffers`, `work_mem`, …),
 /// printed by `cortex tune-db` and at the end of `cortex init`. Per the owner decision (see
 /// `docs/DB_TUNING.md`), `cortex` does **not** reimplement the pgtune heuristic — it points at the

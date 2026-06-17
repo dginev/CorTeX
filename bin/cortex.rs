@@ -147,6 +147,17 @@ enum Command {
     #[arg(long, default_value = "admin")]
     owner: String,
   },
+  /// Revoke an admin/API token from cortex.toml's [auth] — the inverse of set-admin-token.
+  ///
+  /// Pass a `<TOKEN>` to revoke that one, or `--owner <name>` to revoke every token attributed to
+  /// an owner (e.g. when a person leaves). A revoked token stops working immediately.
+  RevokeToken {
+    /// The token value to revoke. Omit and pass --owner to revoke all of an owner's tokens.
+    token: Option<String>,
+    /// Revoke every token attributed to this owner, instead of a single token value.
+    #[arg(long)]
+    owner: Option<String>,
+  },
   /// Print the conversion report for a `(corpus, service)`.
   ///
   /// The CLI twin of the web/agent report ladder. With no drill flags: the service overview
@@ -674,6 +685,7 @@ fn main() {
       generate,
       owner,
     } => run_set_admin_token(token, generate, owner),
+    Command::RevokeToken { token, owner } => run_revoke_token(token, owner),
     Command::ExportDataset {
       corpus,
       service,
@@ -2203,6 +2215,50 @@ fn run_set_admin_token(token: Option<String>, generate: bool, owner: String) {
     },
     Err(error) => {
       eprintln!("cortex set-admin-token failed: {error}");
+      std::process::exit(1);
+    },
+  }
+}
+
+fn run_revoke_token(token: Option<String>, owner: Option<String>) {
+  match (token.as_deref(), owner.as_deref()) {
+    (None, None) => {
+      eprintln!(
+        "error: provide a <TOKEN> to revoke, or --owner <name> to revoke all of an owner's tokens"
+      );
+      std::process::exit(2);
+    },
+    (Some(_), Some(_)) => {
+      eprintln!("error: provide EITHER a <TOKEN> or --owner <name>, not both");
+      std::process::exit(2);
+    },
+    _ => {},
+  }
+  match bootstrap::revoke_admin_token(&config_file_path(), token.as_deref(), owner.as_deref()) {
+    Ok(outcome) => {
+      if outcome.revoked == 0 {
+        println!(
+          "No matching token found — nothing revoked ({} token(s) still configured).",
+          outcome.token_count
+        );
+      } else {
+        println!(
+          "Revoked {} token(s) in {} ({} remaining).",
+          outcome.revoked,
+          config_file_path().display(),
+          outcome.token_count
+        );
+      }
+      if outcome.shadowed_by_legacy_json {
+        eprintln!(
+          "\nWARNING: a legacy config.json in this directory overrides [auth] in cortex.toml, so \
+           this revoke will NOT take effect until you remove the token from config.json (or remove \
+           config.json)."
+        );
+      }
+    },
+    Err(error) => {
+      eprintln!("cortex revoke-token failed: {error}");
       std::process::exit(1);
     },
   }
