@@ -1592,8 +1592,71 @@ fn export_dataset_endpoint_and_human_form() {
   );
 }
 
+/// The create endpoints reject a blank (empty / whitespace-only) name on the AGENT path with `400`,
+/// creating nothing — the HTML forms enforce `required`, but a raw `POST` bypasses that, and an
+/// empty handle is unreachable by every name-keyed route (the human/agent surfaces stay
+/// equivalent).
+fn create_paths_reject_a_blank_name() {
+  let mut db = backend::testdb();
+  let parent = "blank_name_test_parent";
+  let _ =
+    diesel::delete(corpora::table.filter(corpora::name.eq(parent))).execute(&mut db.connection);
+  db.add(&NewCorpus {
+    name: parent.to_string(),
+    path: "/tmp/blank_name_test_parent".to_string(),
+    complex: false,
+    description: String::new(),
+  })
+  .expect("seed a sandbox parent");
+
+  let client = client();
+  // Corpus: a whitespace-only name is rejected before the path check.
+  let corpus = client
+    .post("/api/corpora?token=token1")
+    .header(ContentType::JSON)
+    .body(r#"{"name":"   ","path":"/tmp","complex":false}"#)
+    .dispatch();
+  assert_eq!(
+    corpus.status(),
+    Status::BadRequest,
+    "a blank corpus name is rejected (400)"
+  );
+  // Service: an empty name is rejected.
+  let service = client
+    .post("/api/services?token=token1")
+    .header(ContentType::JSON)
+    .body(r#"{"name":"","version":0.1,"inputformat":"tex","outputformat":"html","complex":false}"#)
+    .dispatch();
+  assert_eq!(
+    service.status(),
+    Status::BadRequest,
+    "a blank service name is rejected (400)"
+  );
+  // Sandbox: a blank name is rejected after the parent resolves (so the carve never runs).
+  let sandbox = client
+    .post(format!("/api/corpora/{parent}/sandbox?token=token1"))
+    .header(ContentType::JSON)
+    .body(r#"{"name":"  ","service_id":2,"severity":"warning"}"#)
+    .dispatch();
+  assert_eq!(
+    sandbox.status(),
+    Status::BadRequest,
+    "a blank sandbox name is rejected (400)"
+  );
+
+  // Nothing was created (the blank-named corpus does not exist).
+  assert!(
+    Corpus::find_by_name("   ", &mut db.connection).is_err(),
+    "a blank-named corpus is never created"
+  );
+  diesel::delete(corpora::table.filter(corpora::name.eq(parent)))
+    .execute(&mut db.connection)
+    .ok();
+}
+
 fn main() {
   api_corpora_lists_registered_corpora();
+  create_paths_reject_a_blank_name();
   import_form_reshows_friendly_error_on_name_collision();
   import_rejects_an_unreadable_path();
   api_corpus_detail_reports_services_and_counts();

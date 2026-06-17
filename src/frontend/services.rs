@@ -145,6 +145,11 @@ pub fn api_services(pool: &State<DbPool>) -> Result<Json<Vec<ServiceDto>>, Statu
 /// Inserts a new service definition (`409` if the name is taken). Shared by the agent endpoint and
 /// the human form. Normalizes an empty `inputconverter` to `None` (no prerequisite).
 fn insert_service(pool: &DbPool, mut service: NewService) -> Result<(), Status> {
+  // Reject a blank name on the agent path too (the HTML form enforces `required`) — a service with
+  // an empty handle is unreachable by every name-keyed route.
+  if service.name.trim().is_empty() {
+    return Err(Status::BadRequest);
+  }
   service.inputconverter = service.inputconverter.filter(|s| !s.is_empty());
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   if Service::find_by_name(&service.name, &mut connection).is_ok() {

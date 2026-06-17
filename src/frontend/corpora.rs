@@ -273,6 +273,11 @@ fn start_import(
   description: String,
 ) -> Result<Uuid, Status> {
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  // Reject a blank name on the agent path too (the HTML form enforces `required`, but a raw
+  // `POST /api/corpora` bypasses that) — an empty handle is unreachable by every name-keyed route.
+  if name.trim().is_empty() {
+    return Err(Status::BadRequest);
+  }
   if Corpus::find_by_name(&name, &mut connection).is_ok() {
     return Err(Status::Conflict);
   }
@@ -757,6 +762,10 @@ fn start_sandbox(
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let parent_corpus =
     Corpus::find_by_name(parent, &mut connection).map_err(|_| Status::NotFound)?;
+  // A blank sandbox name is unreachable junk — reject it (the web form enforces `required`).
+  if request.name.trim().is_empty() {
+    return Err(Status::BadRequest);
+  }
   if Corpus::find_by_name(&request.name, &mut connection).is_ok() {
     return Err(Status::Conflict);
   }
