@@ -494,6 +494,8 @@ fn openapi_spec_and_rapidoc_are_served() {
     "/api/services",
     "/api/jobs",
     "/api/runs/{corpus}/{service}",
+    "/api/runs/{corpus}/{service}/diff",
+    "/api/runs/{corpus}/{service}/tasks",
     "/api/reports/{corpus}/{service}/{severity}",
     "/api/config",
     "/healthz",
@@ -512,6 +514,12 @@ fn openapi_spec_and_rapidoc_are_served() {
   assert!(
     spec["paths"]["/api/corpora/{name}"]["delete"].is_object(),
     "the delete-corpus write endpoint is documented"
+  );
+  // The dataset-export POST must stay on the agent surface — it is mounted by hand in
+  // `apidoc::mount` (two places), so a dropped registration would silently break agent discovery.
+  assert!(
+    spec["paths"]["/api/corpora/{corpus}/services/{service}/export-dataset"]["post"].is_object(),
+    "the dataset-export write endpoint is documented"
   );
   // The token-gating is described as a security scheme (the Actor guard's OpenApiFromRequest).
   assert!(
