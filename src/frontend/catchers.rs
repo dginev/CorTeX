@@ -68,11 +68,36 @@ fn unauthorized(_request: &Request) -> NegotiatedError {
   }
 }
 
+#[catch(403)]
+fn forbidden(_request: &Request) -> NegotiatedError {
+  NegotiatedError {
+    status: Status::Forbidden,
+    message: "Forbidden — this action is not permitted (e.g. a protected init/import service)",
+  }
+}
+
 #[catch(404)]
 fn not_found(_request: &Request) -> NegotiatedError {
   NegotiatedError {
     status: Status::NotFound,
     message: "Not found",
+  }
+}
+
+#[catch(409)]
+fn conflict(_request: &Request) -> NegotiatedError {
+  NegotiatedError {
+    status: Status::Conflict,
+    message: "Conflict — the resource already exists, or the run is busy (e.g. tasks in progress)",
+  }
+}
+
+#[catch(422)]
+fn unprocessable(_request: &Request) -> NegotiatedError {
+  NegotiatedError {
+    status: Status::UnprocessableEntity,
+    message: "Unprocessable request — check the submitted values (e.g. an unreadable path or an \
+              unknown severity/grouping)",
   }
 }
 
@@ -97,7 +122,10 @@ pub fn catchers() -> Vec<Catcher> {
   catchers![
     bad_request,
     unauthorized,
+    forbidden,
     not_found,
+    conflict,
+    unprocessable,
     internal_error,
     unavailable
   ]

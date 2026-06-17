@@ -200,6 +200,52 @@ fn healthz_reports_ok_when_db_reachable() {
   );
 }
 
+/// An agent's write-validation failures (409 conflict, 422 unprocessable) come back as the same
+/// content-negotiated JSON envelope `{ error, status }` as the other error statuses — not Rocket's
+/// default page. These two statuses are the common write-failure codes (name clash / bad input) and
+/// previously had no catcher.
+fn api_write_errors_return_the_json_envelope() {
+  let client = client();
+
+  // 409: registering an already-seeded service name (`import`) clashes.
+  let conflict = client
+    .post("/api/services?token=token1")
+    .header(ContentType::JSON)
+    .body(r#"{"name":"import","version":0.1,"inputformat":"tex","outputformat":"html","complex":false}"#)
+    .dispatch();
+  assert_eq!(
+    conflict.status(),
+    Status::Conflict,
+    "a duplicate service name is 409"
+  );
+  assert_eq!(
+    conflict.content_type(),
+    Some(ContentType::JSON),
+    "an agent's 409 carries a JSON body, not the HTML error page"
+  );
+  let body: serde_json::Value = conflict.into_json().expect("a JSON error envelope");
+  assert_eq!(body["status"], 409);
+  assert!(
+    body["error"].as_str().is_some_and(|m| !m.is_empty()),
+    "the envelope carries an explanatory message"
+  );
+
+  // 422: an import whose path is not a readable directory is pre-flighted (no corpus is created).
+  let unprocessable = client
+    .post("/api/corpora?token=token1")
+    .header(ContentType::JSON)
+    .body(r#"{"name":"catcher-422-probe-corpus","path":"/no/such/dir/xyz-cortex","complex":false}"#)
+    .dispatch();
+  assert_eq!(
+    unprocessable.status(),
+    Status::UnprocessableEntity,
+    "an unreadable import path is 422"
+  );
+  assert_eq!(unprocessable.content_type(), Some(ContentType::JSON));
+  let body: serde_json::Value = unprocessable.into_json().expect("a JSON error envelope");
+  assert_eq!(body["status"], 422);
+}
+
 fn api_index_lists_the_agent_surface() {
   let client = client();
   let response = client.get("/api").dispatch();
@@ -562,6 +608,7 @@ fn main() {
   analyze_is_token_gated();
   healthz_flags_unreadable_corpus_storage();
   openapi_spec_and_rapidoc_are_served();
+  api_write_errors_return_the_json_envelope();
   eprintln!("management_api_test: all cases passed");
   unsafe { libc::_exit(0) }
 }
