@@ -13,11 +13,16 @@
 
 > **2026-06-16 — clean slate.** Every bug tracked through the productize-2026 sprint reached 🟢
 > (36 of 36); that all-resolved ledger is archived verbatim at
-> [`archive/KNOWN_ISSUES_June16.md`](archive/KNOWN_ISSUES_June16.md). **No open issues.** Add new
-> findings below the moment they're discovered, with a stable ID, severity, and a one-line fix
-> direction; promote 🔴→🟢 (don't delete) when fixed, with the commit that did it.
+> [`archive/KNOWN_ISSUES_June16.md`](archive/KNOWN_ISSUES_June16.md). The ledger reset clean; new
+> findings are recorded under **Open issues** below the moment they're discovered, with a stable ID,
+> severity, and a one-line fix direction; promote 🔴→🟢 (don't delete) when fixed, with the commit
+> that did it.
 
-**No open issues.**
+## Open issues
+
+| # | Sev | Status | Issue |
+|---|---|---|---|
+| R-9 | S3 | 🔴 | **Rerun severity validation is inconsistent across surfaces and uses the wrong set.** The agent `POST /api/reports/<c>/<s>/rerun` validates `severity` with `is_rollup_severity` — the **report** validator (`warning\|error\|fatal\|invalid\|info`) — which is wrong for *rerun*: it **rejects `no_problem`** (a legitimate rerun scope: re-convert already-clean tasks, e.g. after a worker upgrade) and **accepts `info`**, which `mark_rerun` then silently mis-scopes (severity-only: `TaskStatus::from_key("info")` → `None` → `unwrap_or(NoProblem)` → reruns `no_problem`). The **human** path (`serve_rerun`, reached from `/rerun/<c>/<s>/<severity>` and the report-page modal) does **no** severity validation, so a typo'd / hand-crafted severity silently reruns `no_problem` instead of erroring. Impact is **bounded** — never a mass-rerun (the "entire corpus" branch requires `severity == None`; a bad value lands on a single-status or `LogInfo` branch) — so this is a correctness/transparency papercut, not data loss. **Subtlety blocking a one-line fix:** the *valid* rerun-severity set depends on whether a `category` is present — severity-only resolves through `TaskStatus::from_key` (task statuses incl. `no_problem`), while severity+category resolves through the `Log*` tables (`warning\|error\|fatal\|invalid`, unknowns falling to `LogInfo`). **Fix direction:** add a rerun-specific validator (not the report one), decide the intended set per the category dimension, apply it on **both** `rerun_report` and `serve_rerun`, and replace `mark_rerun`'s silent `unwrap_or(NoProblem)` / `LogInfo` fallbacks with an explicit reject. No test depends on the buggy `info`/`no_problem` behaviour (tests only exercise `severity=warning`). Found 2026-06-16 by a cross-surface rerun audit. `src/frontend/reports.rs::rerun_report`, `src/frontend/concerns.rs::serve_rerun`, `src/backend/mark.rs::mark_rerun`. |
 
 ## Resolved since the reset
 
