@@ -45,7 +45,16 @@ fn iso(time: chrono::NaiveDateTime) -> String {
 }
 
 #[derive(Parser)]
-#[command(name = "cortex", version, about = "CorTeX administration CLI")]
+#[command(
+  name = "cortex",
+  version,
+  about = "CorTeX administration CLI",
+  after_help = "Most commands are the CLI twin of a web screen and a /api endpoint (same backend, \
+                same live + historical state) — pick whichever surface fits. Run `cortex <command> \
+                --help` for the full description of any command. Full operator guide: MANUAL.md \
+                (§14 = the CLI). Consequential mutations (rerun, sandbox, deactivate, delete-*) are \
+                dry-run by default — pass `--yes` to execute."
+)]
 struct Cli {
   #[command(subcommand)]
   command: Command,
