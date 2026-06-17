@@ -7,6 +7,46 @@
   </header>
 
   <div id="report-div">
+    {# While a conversion is in progress (queued > 0), show the run's completed-so-far
+       breakdown. Computed server-side in serve_report (rerun_* globals) — this used to
+       be built client-side by progress_report.js scraping these cells, which truncated
+       counts >= 1000 at the thousands separator. #}
+    {% if global.queued and global.queued != "0" %}
+    <h2>Rerun Progress</h2>
+    <table class="table">
+      <thead>
+        <tr><th class="left">Status</th><th class="right">Percent</th><th class="right">Tasks</th></tr>
+      </thead>
+      <tbody>
+        <tr class="success corpus-report-no-problems">
+          <td class="left">No problems</td>
+          <td class="right">{{ global.rerun_no_problem_percent }}%</td>
+          <td class="right">{{ global.no_problem | group_thousands }}</td>
+        </tr>
+        <tr class="warning corpus-report-warnings">
+          <td class="left">Warning</td>
+          <td class="right">{{ global.rerun_warning_percent }}%</td>
+          <td class="right">{{ global.warning | group_thousands }}</td>
+        </tr>
+        <tr class="error corpus-report-errors">
+          <td class="left">Error</td>
+          <td class="right">{{ global.rerun_error_percent }}%</td>
+          <td class="right">{{ global.error | group_thousands }}</td>
+        </tr>
+        <tr class="danger corpus-report-fatal">
+          <td class="left">Fatal</td>
+          <td class="right">{{ global.rerun_fatal_percent }}%</td>
+          <td class="right">{{ global.fatal | group_thousands }}</td>
+        </tr>
+        <tr class="corpus-report-completed">
+          <td class="left">Completed</td>
+          <td class="right">100%</td>
+          <td class="right">{{ global.rerun_completed | group_thousands }}</td>
+        </tr>
+      </tbody>
+    </table>
+    <h2>Full Corpus</h2>
+    {% endif %}
     <table id="corpus-report" class="table report-table">
       <thead>
         <tr>
@@ -156,7 +196,32 @@
     });
   })();
 </script>
-<script src="/public/js/progress_report.js"></script> {% endblock content %}
+<script>
+  // Auto-reload toggle (the footer "Auto reload" switch), persisted in localStorage.
+  // The Rerun Progress table is now rendered server-side (see above), so this small
+  // toggle is all that remains client-side. Vanilla JS, matching the inline scripts
+  // above; replaces the former /public/js/progress_report.js.
+  (function () {
+    var box = document.querySelector("input[name='refresh']");
+    var timer;
+    function start() {
+      var secs = localStorage.getItem("report-auto-refresh");
+      if (!secs || secs === "undefined") { clearTimeout(timer); return; }
+      if (box) box.checked = true;
+      timer = setTimeout(function () {
+        var sw = document.querySelector("label.switch");
+        if (sw) sw.outerHTML = "<span>Refreshing ...</span>";
+        window.location.reload();
+      }, secs * 1000);
+    }
+    start();
+    if (box) box.addEventListener("change", function () {
+      if (box.checked) localStorage.setItem("report-auto-refresh", 60);
+      else localStorage.removeItem("report-auto-refresh");
+      start();
+    });
+  })();
+</script> {% endblock content %}
 
 {# Rerun + Save snapshot live in the run-control row under the report table on this page, so drop
    them from the shared footer here (severity/category sub-pages keep the footer copies — they have

@@ -160,6 +160,32 @@ pub fn serve_report(
       if severity.is_none() {
         // Top-level report
         report = progress_report(connection, corpus.id, service.id);
+        // Derive the "Rerun Progress" view server-side, from the same counts: the
+        // completed-so-far total and each severity's share of it. report.html.tera
+        // renders this directly while a conversion is in progress, replacing the old
+        // client-side `progress_report.js`, which scraped the formatted Full Corpus
+        // cells and `parseInt`-ed them — truncating any count >= 1000 at the
+        // thousands separator (parseInt("3,312") === 3).
+        let count = |key: &str| *report.get(key).unwrap_or(&0.0);
+        let (np, warn, err, fat) = (
+          count("no_problem"),
+          count("warning"),
+          count("error"),
+          count("fatal"),
+        );
+        let completed = np + warn + err + fat;
+        let pct = |n: f64| {
+          if completed > 0.0 {
+            format!("{:.2}", 100.0 * n / completed)
+          } else {
+            "0.00".to_string()
+          }
+        };
+        global.insert("rerun_completed".to_string(), completed.to_string());
+        global.insert("rerun_no_problem_percent".to_string(), pct(np));
+        global.insert("rerun_warning_percent".to_string(), pct(warn));
+        global.insert("rerun_error_percent".to_string(), pct(err));
+        global.insert("rerun_fatal_percent".to_string(), pct(fat));
         // Record the report into the globals
         for (key, val) in report {
           global.insert(key.clone(), val.to_string());
