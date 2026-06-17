@@ -105,6 +105,7 @@ fn exports_html_into_month_and_severity_archives() {
     &service,
     &[TaskStatus::NoProblem],
     GroupBy::Month,
+    None,
     &out_month,
     |_| {},
   )
@@ -134,6 +135,7 @@ fn exports_html_into_month_and_severity_archives() {
     &service,
     &[TaskStatus::NoProblem],
     GroupBy::Severity,
+    None,
     &out_sev,
     |_| {},
   )
@@ -153,6 +155,7 @@ fn exports_html_into_month_and_severity_archives() {
     &service,
     &[TaskStatus::NoProblem],
     GroupBy::Month,
+    None,
     &out_month,
     |_| {},
   )
@@ -277,6 +280,7 @@ fn streams_multiple_months_and_severities() {
     &service,
     &[TaskStatus::NoProblem, TaskStatus::Warning],
     GroupBy::Month,
+    None,
     &out_month,
     |_| {},
   )
@@ -318,6 +322,7 @@ fn streams_multiple_months_and_severities() {
     &service,
     &[TaskStatus::NoProblem, TaskStatus::Warning],
     GroupBy::Severity,
+    None,
     &out_sev,
     |_| {},
   )
@@ -346,4 +351,118 @@ fn streams_multiple_months_and_severities() {
   let _ = std::fs::remove_dir_all(&base);
   let _ = std::fs::remove_dir_all(&out_month);
   let _ = std::fs::remove_dir_all(&out_sev);
+}
+
+/// Configurable chunking: a per-archive MB cap splits one bucket into numbered chunks
+/// `<corpus>-<key>-NNN.zip`; with no cap the bucket stays a single archive. Three ~600 KB papers in
+/// one month + a 1 MB cap ⇒ 3 chunks (each pair exceeds the cap, so each paper rolls a new chunk).
+#[test]
+fn chunks_a_large_bucket_by_the_configured_mb_cap() {
+  let corpus_name = "export_chunk_test";
+  let service_name = "tex_to_html";
+  let mut db = backend::testdb();
+  if let Ok(prior) = Corpus::find_by_name(corpus_name, &mut db.connection) {
+    prior.destroy(&mut db.connection).expect("clear prior");
+  }
+  let base = std::env::temp_dir().join("cortex_export_chunk_base");
+  let _ = std::fs::remove_dir_all(&base);
+  db.add(&NewCorpus {
+    name: corpus_name.to_string(),
+    path: base.to_string_lossy().into_owned(),
+    complex: true,
+    description: "chunk test".to_string(),
+  })
+  .expect("insert corpus");
+  let corpus = Corpus::find_by_name(corpus_name, &mut db.connection).unwrap();
+  let service = match Service::find_by_name(service_name, &mut db.connection) {
+    Ok(s) => s,
+    Err(_) => {
+      db.add(&NewService {
+        name: service_name.to_string(),
+        version: 0.1,
+        inputformat: "tex".to_string(),
+        outputformat: "html".to_string(),
+        inputconverter: None,
+        complex: true,
+        description: "d".to_string(),
+      })
+      .expect("insert service");
+      Service::find_by_name(service_name, &mut db.connection).unwrap()
+    },
+  };
+
+  // Three ~600 KB papers in one month: 600 KB + 600 KB > 1 MB, so each paper opens its own chunk.
+  let big = "x".repeat(600_000);
+  for paper in ["2401.001", "2401.002", "2401.003"] {
+    let entry_dir = base.join("2401").join(paper);
+    write_result_zip(&entry_dir, paper, &big);
+    db.add(&NewTask {
+      service_id: service.id,
+      corpus_id: corpus.id,
+      status: TaskStatus::NoProblem.raw(),
+      entry: entry_dir
+        .join(format!("{paper}.zip"))
+        .to_string_lossy()
+        .into_owned(),
+    })
+    .expect("insert task");
+  }
+
+  let out = std::env::temp_dir().join("cortex_export_chunk_out");
+  let _ = std::fs::remove_dir_all(&out);
+  let outcome = export_html_dataset(
+    &mut db.connection,
+    &corpus,
+    &service,
+    &[TaskStatus::NoProblem],
+    GroupBy::Month,
+    Some(1),
+    &out,
+    |_| {},
+  )
+  .expect("chunked export");
+  assert_eq!(outcome.total_entries, 3, "all three papers bundled");
+  assert_eq!(
+    outcome.max_archive_mb,
+    Some(1),
+    "the limit is recorded for resume parity"
+  );
+  assert_eq!(
+    outcome.archives.len(),
+    3,
+    "1 MB cap split the ~1.8 MB month into 3 chunks"
+  );
+  for n in 1..=3 {
+    let chunk = out.join(format!("{corpus_name}-2401-{n:03}.zip"));
+    assert!(chunk.exists(), "chunk {n:03} written: {}", chunk.display());
+  }
+
+  // No cap → the same month is a single, un-suffixed archive (backward-compatible naming).
+  let out_nocap = std::env::temp_dir().join("cortex_export_chunk_nocap");
+  let _ = std::fs::remove_dir_all(&out_nocap);
+  let plain = export_html_dataset(
+    &mut db.connection,
+    &corpus,
+    &service,
+    &[TaskStatus::NoProblem],
+    GroupBy::Month,
+    None,
+    &out_nocap,
+    |_| {},
+  )
+  .expect("uncapped export");
+  assert_eq!(
+    plain.archives.len(),
+    1,
+    "no cap → one archive for the bucket"
+  );
+  assert!(
+    out_nocap.join(format!("{corpus_name}-2401.zip")).exists(),
+    "unchunked archive keeps the original <corpus>-<key>.zip name"
+  );
+
+  corpus.destroy(&mut db.connection).expect("cleanup");
+  let _ = std::fs::remove_dir_all(&base);
+  let _ = std::fs::remove_dir_all(&out);
+  let _ = std::fs::remove_dir_all(&out_nocap);
 }

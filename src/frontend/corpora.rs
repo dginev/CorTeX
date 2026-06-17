@@ -427,6 +427,11 @@ pub struct ExportRequest {
   /// `invalid`). Defaults to `no_problem,warning,error` (matching the CLI).
   #[serde(default)]
   pub severities: Option<Vec<String>>,
+  /// Optional per-archive size cap in **MB**: when set, each month/severity bucket is split into
+  /// numbered chunks `<corpus>-<key>-NNN.zip` once it exceeds this many MB of (uncompressed) HTML
+  /// — the published `.zip` is smaller. Omit for one archive per bucket (no size limit).
+  #[serde(default)]
+  pub max_archive_mb: Option<u64>,
 }
 
 /// The default severity set when a caller omits `severities` — kept identical to the
@@ -506,6 +511,7 @@ fn start_export(
   drop(connection);
 
   let out = PathBuf::from(request.out);
+  let max_archive_mb = request.max_archive_mb;
   let database_url = database_url.to_string();
   let params = serde_json::json!({
     "corpus": corpus.name,
@@ -513,6 +519,7 @@ fn start_export(
     "out": out.display().to_string(),
     "group_by": group_by_key,
     "severities": severity_keys,
+    "max_archive_mb": max_archive_mb,
   });
   jobs::spawn_job(
     pool.clone(),
@@ -526,6 +533,7 @@ fn start_export(
         service,
         severities,
         group_by,
+        max_archive_mb,
         out,
         progress,
       )
@@ -538,12 +546,14 @@ fn start_export(
 /// exporter's milestone lines through the job's progress feed, and return the
 /// [`DatasetExportOutcome`](crate::backend::DatasetExportOutcome) (archives + tallies) as the job
 /// result.
+#[allow(clippy::too_many_arguments)] // mirrors export_html_dataset's knobs; a struct is ceremony here
 fn run_export(
   database_url: &str,
   corpus: Corpus,
   service: Service,
   severities: Vec<TaskStatus>,
   group_by: GroupBy,
+  max_archive_mb: Option<u64>,
   out: PathBuf,
   progress: &JobProgress,
 ) -> Result<Value, String> {
@@ -554,6 +564,7 @@ fn run_export(
     &service,
     &severities,
     group_by,
+    max_archive_mb,
     &out,
     |line| progress.step(0, None, line),
   )?;
@@ -571,6 +582,9 @@ pub struct ExportForm {
   pub group_by: String,
   /// The checked severity keys (the multi-value checkbox group; empty = none selected).
   pub severities: Vec<String>,
+  /// Optional per-archive size cap in MB (blank = no limit). A string so a blank field parses to
+  /// "no limit" instead of a form error.
+  pub max_archive_mb: Option<String>,
 }
 
 /// Renders the "Export dataset" form for a `(corpus, service)`. Shared by the GET screen and the
@@ -584,6 +598,7 @@ fn render_export_form(
   out: &str,
   group_by: &str,
   selected: &[String],
+  max_archive_mb: &str,
 ) -> Template {
   let mut global = HashMap::new();
   global.insert("title".to_string(), "Export dataset".to_string());
@@ -595,6 +610,7 @@ fn render_export_form(
   global.insert("service_name".to_string(), service.to_string());
   global.insert("out".to_string(), out.to_string());
   global.insert("group_by".to_string(), group_by.to_string());
+  global.insert("max_archive_mb".to_string(), max_archive_mb.to_string());
   if let Some(message) = error {
     global.insert("error".to_string(), message.to_string());
   }
@@ -635,6 +651,7 @@ pub fn export_dataset_page(
     &default_out,
     "month",
     &default_export_severities(),
+    "",
   ))
 }
 
@@ -663,6 +680,13 @@ pub fn export_dataset_human(
     out: form.out.clone(),
     group_by: Some(form.group_by.clone()),
     severities: Some(form.severities.clone()),
+    // Blank or non-numeric → no limit (a number input keeps it numeric in practice).
+    max_archive_mb: form
+      .max_archive_mb
+      .as_deref()
+      .map(str::trim)
+      .filter(|s| !s.is_empty())
+      .and_then(|s| s.parse::<u64>().ok()),
   };
   match start_export(
     pool,
@@ -687,6 +711,7 @@ pub fn export_dataset_human(
         &form.out,
         &form.group_by,
         &form.severities,
+        form.max_archive_mb.as_deref().unwrap_or(""),
       ))
     },
   }

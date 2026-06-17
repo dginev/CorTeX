@@ -70,6 +70,9 @@ pub struct DatasetExportOutcome {
   pub service: String,
   /// `month` or `severity`
   pub group_by: String,
+  /// per-archive size cap (MB) if chunking was enabled, else `None` (one archive per bucket).
+  /// Recorded so a resumer uses the same limit (boundaries are limit-dependent).
+  pub max_archive_mb: Option<u64>,
   /// the severity keys included (canonical spelling)
   pub severities: Vec<String>,
   /// RFC-3339 UTC time the export finished
@@ -107,12 +110,14 @@ fn zip_options() -> zip::write::FileOptions<'static, ()> {
 ///
 /// Severities are taken in the given order; the canonical [`TaskStatus::to_key`] spelling is used
 /// throughout (no `no-problem`/`no_problem` ambiguity).
+#[allow(clippy::too_many_arguments)] // config-heavy export knobs; a params struct is ceremony here
 pub fn export_html_dataset(
   connection: &mut PgConnection,
   corpus: &Corpus,
   service: &Service,
   severities: &[TaskStatus],
   group_by: GroupBy,
+  max_archive_mb: Option<u64>,
   out_dir: &PathBuf,
   mut progress: impl FnMut(&str),
 ) -> Result<DatasetExportOutcome, String> {
@@ -123,7 +128,9 @@ pub fn export_html_dataset(
   // a time, so the resident footprint is O(page) — not the whole corpus's work-list in a
   // `BTreeMap` (the old KNOWN_ISSUES E-3 gap). Both modes feed the streamer with same-archive-key
   // entries contiguous, which is the streamer's one requirement.
-  let mut streamer = ArchiveStreamer::new(out_dir, corpus, &service.name, group_by);
+  // MB (binary) → bytes; `saturating_mul` so an absurd value can't overflow the cap.
+  let max_bytes = max_archive_mb.map(|mb| mb.saturating_mul(1024 * 1024));
+  let mut streamer = ArchiveStreamer::new(out_dir, corpus, &service.name, group_by, max_bytes);
 
   match group_by {
     // Month: ONE keyset-paginated pass over *all* requested severities, ordered by `entry`. Since
@@ -176,6 +183,7 @@ pub fn export_html_dataset(
       GroupBy::Severity => "severity",
     }
     .to_string(),
+    max_archive_mb,
     severities: severities.iter().map(|s| s.to_key()).collect(),
     generated_at: chrono::Utc::now().to_rfc3339(),
     cortex_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -249,6 +257,17 @@ struct ArchiveStreamer<'a> {
   corpus: &'a Corpus,
   service_name: &'a str,
   group_by: GroupBy,
+  /// Optional per-archive byte cap (configurable chunking): when `Some`, a bucket that exceeds it
+  /// rolls into numbered chunks `<corpus>-<key>-NNN.zip`. Measured on **uncompressed** HTML bytes
+  /// — deterministic, so resume re-derives identical boundaries (the published `.zip` is
+  /// smaller).
+  max_bytes: Option<u64>,
+  /// the current month/severity bucket; the chunk counter resets when it changes
+  cur_base_key: Option<String>,
+  /// 1-based chunk index within `cur_base_key` (only > 1 once chunking rolls)
+  cur_chunk: u32,
+  /// uncompressed bytes accumulated into the current chunk (reset on roll / bucket change)
+  cur_bytes: u64,
   /// the archive currently open for writing (`None` before the first paper / while skipping)
   open: Option<OpenArchive>,
   /// the key currently being skipped because its `.zip` already exists (resume)
@@ -264,17 +283,31 @@ impl<'a> ArchiveStreamer<'a> {
     corpus: &'a Corpus,
     service_name: &'a str,
     group_by: GroupBy,
+    max_bytes: Option<u64>,
   ) -> Self {
     ArchiveStreamer {
       out_dir,
       corpus,
       service_name,
       group_by,
+      max_bytes,
+      cur_base_key: None,
+      cur_chunk: 1,
+      cur_bytes: 0,
       open: None,
       skipping: None,
       archives: Vec::new(),
       total: 0,
       skipped: 0,
+    }
+  }
+
+  /// The archive file key for a bucket + chunk index: `<key>-NNN` when chunking, else just `<key>`
+  /// (so non-chunked exports keep the original `<corpus>-<key>.zip` names + resume parity).
+  fn chunk_key(&self, base_key: &str, chunk: u32) -> String {
+    match self.max_bytes {
+      Some(_) => format!("{base_key}-{chunk:03}"),
+      None => base_key.to_string(),
     }
   }
 
@@ -316,26 +349,49 @@ impl<'a> ArchiveStreamer<'a> {
         return Ok(());
       },
     };
-    let archive_key = match key_override {
+    let base_key = match key_override {
       Some(k) => k.to_string(),
       None => yymm.clone(),
     };
-    self.rotate_to(&archive_key, progress)?;
-    // Resume: the archive for this key already existed → its papers are left untouched.
+    // On a new month/severity bucket, reset the chunk counter and rotate to its first archive.
+    if self.cur_base_key.as_deref() != Some(base_key.as_str()) {
+      self.cur_base_key = Some(base_key.clone());
+      self.cur_chunk = 1;
+      self.cur_bytes = 0;
+      let first = self.chunk_key(&base_key, 1);
+      self.rotate_to(&first, progress)?;
+    }
+    // The internal path is semantic (bucket/paper) — independent of which size-chunk file it lands
+    // in.
     let internal = match self.group_by {
       GroupBy::Month => format!("{yymm}/{paper}.html"),
-      GroupBy::Severity => format!("{archive_key}/{yymm}/{paper}.html"),
+      GroupBy::Severity => format!("{base_key}/{yymm}/{paper}.html"),
     };
     let html = match extract_main_html(&result_zip, &paper) {
       Some(bytes) => bytes,
       None => {
-        // Only count an HTML miss when we'd actually be writing (not while resume-skipping a key).
+        // Only count an HTML miss when we'd actually be writing (not while resume-skipping a
+        // chunk).
         if self.open.is_some() {
           self.skipped += 1;
         }
         return Ok(());
       },
     };
+    // Size-based chunk roll within the bucket (configurable cap): the paper that would overflow the
+    // current chunk starts the next one (a single paper larger than the cap gets its own chunk).
+    // The accumulator advances for resume-skipped papers too, so resume re-derives identical
+    // boundaries.
+    let size = html.len() as u64;
+    if let Some(cap) = self.max_bytes {
+      if self.cur_bytes > 0 && self.cur_bytes + size > cap {
+        self.cur_chunk += 1;
+        self.cur_bytes = 0;
+        let next = self.chunk_key(&base_key, self.cur_chunk);
+        self.rotate_to(&next, progress)?;
+      }
+    }
+    self.cur_bytes += size;
     let Some(open) = self.open.as_mut() else {
       return Ok(());
     };

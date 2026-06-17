@@ -512,6 +512,11 @@ enum Command {
       default_value = "no_problem,warning,error"
     )]
     severity: Vec<String>,
+    /// Optional per-archive size cap in MB: split each bucket into numbered chunks
+    /// `<corpus>-<key>-NNN.zip` once it exceeds this many MB of (uncompressed) HTML. Omit for one
+    /// archive per bucket (no size limit).
+    #[arg(long)]
+    max_archive_mb: Option<u64>,
   },
 }
 
@@ -692,7 +697,8 @@ fn main() {
       out,
       group_by,
       severity,
-    } => run_export_dataset(corpus, service, out, group_by, severity),
+      max_archive_mb,
+    } => run_export_dataset(corpus, service, out, group_by, severity, max_archive_mb),
   }
 }
 
@@ -2108,6 +2114,7 @@ fn run_export_dataset(
   out: PathBuf,
   group_by: String,
   severity: Vec<String>,
+  max_archive_mb: Option<u64>,
 ) {
   let group_by = match GroupBy::from_key(&group_by) {
     Some(group_by) => group_by,
@@ -2157,6 +2164,7 @@ fn run_export_dataset(
     &service,
     &severities,
     group_by,
+    max_archive_mb,
     &out,
     |line| println!("{line}"),
   ) {

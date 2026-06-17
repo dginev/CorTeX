@@ -19,6 +19,9 @@
         <option value="month"{% if global.group_by == "month" %} selected{% endif %}>month &mdash; one zip per year-month</option>
         <option value="severity"{% if global.group_by == "severity" %} selected{% endif %}>severity &mdash; one zip per severity</option>
       </select>
+
+      <label for="export-maxmb">Max archive size (MB) <span class="muted">(optional — split a large month/severity into numbered chunks; blank = one archive per bucket)</span></label>
+      <input id="export-maxmb" type="number" name="max_archive_mb" min="1" placeholder="(no limit)" value="{{ global.max_archive_mb }}">
     </fieldset>
 
     <fieldset class="export-severities">
