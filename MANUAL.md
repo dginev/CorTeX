@@ -20,14 +20,23 @@ parentheses. Run every binary **from the repo root**.
 ### Initialize a local install (once)
 
 ```bash
+# 0. Create an EMPTY Postgres database and point cortex at it — the one bit of config you set.
+#    cortex reads DATABASE_URL with highest precedence (from the working-tree .env or the shell);
+#    `init` migrates THIS database, so it must exist first. Full role/password setup → INSTALL.md.
+createdb cortex                                                  # local peer auth; or: sudo -u postgres createdb -O "$USER" cortex
+echo "DATABASE_URL=postgres:///cortex" >> .env                  # or postgres://USER:PASSWORD@localhost/cortex
+
 cargo run --bin cortex -- init                                   # DB: embedded migrations + scaffold cortex.toml (put the DB on NVMe, not /data)
 cargo run --bin cortex -- set-admin-token --generate --owner you # Auth: mint the first admin token (printed once → recorded in the audit log)
 cargo run --bin cortex -- doctor                                 # verify  => healthy
 cargo run --bin frontend                                         # the web app you sign into (default 127.0.0.1:8000)
 ```
 
-(A real deployment adds a reverse proxy / Anubis + systemd units — see §2 and
-[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md); none of that is needed locally.)
+`cargo run --bin cortex -- <cmd>` builds-and-runs from source (always current); add `--release` for a
+faster binary on the long-running `frontend`/`dispatcher`. Put `--` *before* any flags (e.g.
+`cargo run --bin cortex -- set-admin-token --generate …`) so cargo passes them to the program, not
+itself. A real deployment adds a reverse proxy / Anubis + systemd units — see §2 and
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md); none of that is needed locally.
 
 ### Walk the run
 
@@ -85,16 +94,20 @@ Full, verified steps are in **[`INSTALL.md`](INSTALL.md)**. The short path on a 
 # 1. Build dependencies (Postgres, ZeroMQ, libsodium)
 sudo apt install -y postgresql libpq-dev libzmq3-dev libsodium-dev pkg-config
 
-# 2. Initialize: runs embedded migrations + scaffolds cortex.toml if missing
+# 2. Create an EMPTY database and point cortex at it (init migrates THIS db, so it must exist first)
+createdb cortex                                              # local peer auth; or: sudo -u postgres createdb -O "$USER" cortex
+echo "DATABASE_URL=postgres:///cortex" >> .env               # or postgres://USER:PASSWORD@localhost/cortex
+
+# 3. Initialize: runs embedded migrations + scaffolds cortex.toml if missing
 cargo run --bin cortex -- init
 
-# 3. Create the first admin token (printed once; attributed to an owner in the audit log)
+# 4. Create the first admin token (printed once; attributed to an owner in the audit log)
 cargo run --bin cortex -- set-admin-token --generate --owner alice
 
-# 4. Verify the installation is healthy
+# 5. Verify the installation is healthy
 cargo run --bin cortex -- doctor
 
-# 5. Import your first corpus (registers it + creates one import task per document)
+# 6. Import your first corpus (registers it + creates one import task per document)
 cargo run --bin cortex -- import arxmliv /data/arxmliv        # add --complex for multi-file documents
 ```
 
