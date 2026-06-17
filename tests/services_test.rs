@@ -230,9 +230,10 @@ fn worker_fleet_api_and_screen() {
     Status::Conflict,
     "a duplicate service name is 409"
   );
-  // Human form -> 303 redirect to /services; the service is registered.
+  // Human "Add a service" form (no corpora checked) -> 303 redirect to /services; service
+  // registered.
   let redirected = client
-    .post("/services/register")
+    .post("/services/create")
     .header(ContentType::Form)
     .body(format!(
       "name={FORM_SVC}&version=0.1&inputformat=tex&outputformat=html&complex=true&token=token1"
@@ -241,7 +242,7 @@ fn worker_fleet_api_and_screen() {
   assert_eq!(
     redirected.status(),
     Status::SeeOther,
-    "the human register form redirects (303)"
+    "the human add-service form redirects (303)"
   );
   {
     let mut db = backend::testdb();
@@ -562,7 +563,7 @@ fn service_activation_flows() {
     "an anonymous visitor sees the sign-in hint"
   );
   assert!(
-    !anon_body.contains("<select name=\"service\""),
+    !anon_body.contains("name=\"service\""),
     "an anonymous visitor does NOT see the corpus-actions service picker"
   );
 
@@ -655,7 +656,7 @@ fn service_activation_flows() {
   assert_eq!(page.status(), Status::Ok);
   let body = page.into_string().expect("html");
   assert!(
-    body.contains("<select name=\"service\""),
+    body.contains("name=\"service\""),
     "the corpus page offers a service <select>"
   );
   assert!(

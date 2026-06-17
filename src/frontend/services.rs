@@ -175,10 +175,11 @@ pub struct ServiceRegisterRequest {
   pub description: Option<String>,
 }
 
-/// Registers (defines) a new service in the registry — the agent twin of the registry screen's
-/// "Register a service" form. **Token-gated** via the [`Actor`] guard; `401` without a valid token,
-/// `409` if the service name already exists, `201` with the service on success. (This *defines* a
-/// service; activating it on a corpus — creating tasks — is `POST /api/corpora/<c>/services/<s>`.)
+/// Registers (defines) a new service in the registry — the agent twin of the "Add a service" screen
+/// (`/services/new`, `create_service_human`). **Token-gated** via the [`Actor`] guard; `401`
+/// without a valid token, `409` if the service name already exists, `201` with the service on
+/// success. (This *defines* a service; activating it on a corpus — creating tasks — is `POST
+/// /api/corpora/<c>/services/<s>`.)
 #[rocket_okapi::openapi(tag = "Services")]
 #[post("/api/services", format = "json", data = "<request>")]
 pub fn register_service(
@@ -204,54 +205,6 @@ pub fn register_service(
   let service =
     Service::find_by_name(&name, &mut connection).map_err(|_| Status::InternalServerError)?;
   Ok((Status::Created, Json(ServiceDto::from(service))))
-}
-
-/// Fields of the human "Register a service" form on the service-registry screen.
-#[derive(FromForm)]
-pub struct RegisterServiceForm {
-  /// Service name (external handle).
-  pub name: String,
-  /// Service version.
-  pub version: f32,
-  /// Expected input format.
-  pub inputformat: String,
-  /// Produced output format.
-  pub outputformat: String,
-  /// Prerequisite input-conversion service, if any.
-  pub inputconverter: Option<String>,
-  /// Whether the service is complex.
-  pub complex: bool,
-  /// Optional description.
-  pub description: Option<String>,
-}
-
-/// The human twin of [`register_service`]: the registry screen's "Register a service" form. **Gated
-/// by the signed-in [`AdminSession`] cookie** (the registry screen is itself signed-in-only;
-/// anonymous → sign-in), inserts the service, and redirects back to `/services`. `409` if the name
-/// is taken.
-#[post("/services/register", data = "<form>")]
-pub fn register_service_human(
-  form: Form<RegisterServiceForm>,
-  session: Option<AdminSession>,
-  pool: &State<DbPool>,
-) -> Result<Redirect, Status> {
-  if session.is_none() {
-    return Ok(Redirect::to("/admin/login"));
-  }
-  let form = form.into_inner();
-  insert_service(
-    pool,
-    NewService {
-      name: form.name,
-      version: form.version,
-      inputformat: form.inputformat,
-      outputformat: form.outputformat,
-      inputconverter: form.inputconverter,
-      complex: form.complex,
-      description: form.description.unwrap_or_default(),
-    },
-  )?;
-  Ok(Redirect::to("/services"))
 }
 
 /// The corpus ids a service is already activated on (i.e. has at least one task for) — so the
@@ -722,7 +675,6 @@ pub fn routes() -> Vec<Route> {
   // NB: `api_services` + `api_service_workers` + `register_service` + `delete_service` are mounted
   // via `frontend::apidoc` (rocket_okapi).
   routes![
-    register_service_human,
     add_service_page,
     create_service_human,
     activate_on_corpus_page,
