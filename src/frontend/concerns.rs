@@ -360,6 +360,14 @@ pub fn serve_rerun(
 ) -> Result<Accepted<String>, Status> {
   let corpus_name = corpus_name.to_lowercase();
   let service_name = service_name.to_lowercase();
+  // Reject an out-of-scope / typo'd rerun severity (R-9) up front, instead of letting `mark_rerun`
+  // silently mis-scope it to `no_problem` — the same guard the agent `rerun_report` applies, so the
+  // human and agent surfaces accept/reject the same set.
+  if let Some(ref severity) = severity {
+    if !crate::frontend::reports::is_valid_rerun_severity(severity, category.is_some()) {
+      return Err(Status::BadRequest);
+    }
+  }
   // Structured admin-action log (the audit fairing also records actor + outcome to the DB; this is
   // the operational journal line). Emitted here, before the scope is moved into `RerunOptions`.
   tracing::info!(

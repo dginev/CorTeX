@@ -186,6 +186,25 @@ fn is_rollup_severity(severity: &str) -> bool {
   matches!(severity, "warning" | "error" | "fatal" | "invalid" | "info")
 }
 
+/// Severities valid for a **rerun** filter — which differs from the report rollup, because rerun
+/// filters *tasks* (or their messages), it doesn't aggregate a report (R-9). With a `category` the
+/// scope is over log messages (`warning`/`error`/`fatal`/`invalid` + the all-messages `info`);
+/// without one it is over task *status* (`no_problem`/`warning`/`error`/`fatal`/`invalid` —
+/// `no_problem` IS a legitimate rerun scope, e.g. regenerating output after a worker upgrade, and
+/// `info` is not a task status). One shared validator for the agent (`rerun_report`) and human
+/// (`serve_rerun`) surfaces, so both reject the same typos instead of silently mis-scoping to
+/// `no_problem`.
+pub(crate) fn is_valid_rerun_severity(severity: &str, has_category: bool) -> bool {
+  if has_category {
+    matches!(severity, "warning" | "error" | "fatal" | "invalid" | "info")
+  } else {
+    matches!(
+      severity,
+      "no_problem" | "warning" | "error" | "fatal" | "invalid"
+    )
+  }
+}
+
 /// Resolves a `(corpus, service)` name pair, mapping each miss to `404`.
 fn resolve(
   corpus: &str,
@@ -613,7 +632,7 @@ pub fn rerun_report(
   pool: &State<DbPool>,
 ) -> Result<(Status, Json<RerunAckDto>), Status> {
   if let Some(severity) = severity {
-    if !is_rollup_severity(severity) {
+    if !is_valid_rerun_severity(severity, category.is_some()) {
       return Err(Status::BadRequest);
     }
   }

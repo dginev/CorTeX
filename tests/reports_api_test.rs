@@ -671,6 +671,56 @@ fn human_rerun_requires_session() {
     status == Status::Ok || status == Status::Accepted,
     "a signed-in admin rerun is accepted, got {status}"
   );
+
+  // --- R-9: rerun severity validation is now correct + consistent across surfaces ---------------
+  // Agent: `no_problem` (no category) IS a valid rerun scope (re-convert already-clean tasks) —
+  // accepted, not 400 (the old report validator wrongly rejected it). The seed has no no_problem
+  // tasks, so it is a harmless no-op.
+  let np = client
+    .post(format!(
+      "/api/reports/{CORPUS_NAME}/{SERVICE_NAME}/rerun?severity=no_problem&token=token1"
+    ))
+    .dispatch();
+  assert!(
+    np.status() == Status::Ok || np.status() == Status::Accepted,
+    "no_problem (no category) is a valid rerun scope, got {}",
+    np.status()
+  );
+  // Agent: `info` is not a task status — rejected (was wrongly accepted, then mark_rerun silently
+  // mis-scoped it to no_problem).
+  let info = client
+    .post(format!(
+      "/api/reports/{CORPUS_NAME}/{SERVICE_NAME}/rerun?severity=info&token=token1"
+    ))
+    .dispatch();
+  assert_eq!(
+    info.status(),
+    Status::BadRequest,
+    "info is not a valid no-category rerun severity"
+  );
+  // Agent: a typo'd severity is rejected, not silently mis-scoped.
+  let bad = client
+    .post(format!(
+      "/api/reports/{CORPUS_NAME}/{SERVICE_NAME}/rerun?severity=bogus&token=token1"
+    ))
+    .dispatch();
+  assert_eq!(
+    bad.status(),
+    Status::BadRequest,
+    "a bogus rerun severity is 400"
+  );
+  // Human: the same guard now applies (session established above) — a typo is rejected, not a
+  // silent no_problem rerun.
+  let human_bad = client
+    .post(format!("/rerun/{CORPUS_NAME}/{SERVICE_NAME}/bogus"))
+    .header(ContentType::JSON)
+    .body(r#"{"description":"r9 probe"}"#)
+    .dispatch();
+  assert_eq!(
+    human_bad.status(),
+    Status::BadRequest,
+    "the human rerun path validates severity too (R-9)"
+  );
 }
 
 /// Run control: `POST /api/reports/<c>/<s>/{pause,resume}` blocks every in-progress task
