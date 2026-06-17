@@ -190,15 +190,19 @@ Confirmed by reading `Cargo.toml` + grepping `src/`:
   watch** (don't rewrite the transport).
 - **Git deps** `pericortex` + `libarchive-sys` are pinned by branch; pin to exact rev for
   reproducible builds (ties to Arm 10 provenance).
-- **Build status today:** `libzmq/libarchive/libpq/libsodium` are **not installed** and Postgres
-  isn't present — **the project does not currently build on this box.** (Arm 0.)
-- **CI is stale/broken:** `.github/workflows/CI.yml` installs `diesel_cli --vers 1.1.2` (diesel **1.x**
-  CLI against a diesel **2.2** project) and uses archived `actions-rs/*` + `actions/checkout@v2`.
-- `~113` `unwrap()/expect()/panic!` sites in `src/`+`bin/`; many on DB results inside request
-  handlers (Arm 4).
-- **Dead code:** `src/backend/make_history.rs` (empty stub, **not even declared as a module**) and
-  `src/dispatcher/metadata.rs` (`register_event` no-op, declared but unused). The `dependencies`
-  table. Remove in Arm 12.
+- 🟢 **Build — RESOLVED.** The toolchain + system libs (`libzmq/libarchive/libpq/libsodium`,
+  Postgres 18) are installed; `cargo build` (lib + bins + examples) is clean (Arm 0).
+- 🟢 **CI — RESOLVED (modernized + broadened).** `.github/workflows/CI.yml` now runs on
+  `checkout@v5` + `dtolnay/rust-toolchain@nightly` + `Swatinem/rust-cache`, provisions PG18 with the
+  two test DBs and **diesel_cli 2.x**, and gates on `cargo fmt --check`, `clippy --all-targets -D
+  warnings`, and the full integration suite (`--no-fail-fast`). A second **`supply-chain`** job runs
+  `cargo-deny check advisories licenses sources` (`deny.toml`) — which subsumes `cargo-audit`. Both
+  jobs verified green locally (2026-06-16).
+- ⚠️ `~105` `unwrap()/expect()/panic!` sites in `src/`+`bin/` (down from ~113); the intentional
+  fail-fast ones (dispatcher mutex-poison → abort) stay, the request/dispatch-path ones are the
+  ongoing **Arm 4** target.
+- 🟢 **Dead code — REMOVED (Arm 12).** `src/backend/make_history.rs`, `src/dispatcher/metadata.rs`,
+  and the `dependencies` table are all gone from the tree/schema.
 
 ---
 
