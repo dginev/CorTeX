@@ -1874,6 +1874,15 @@ fn run_extend(corpus_name: String) {
   };
   let corpus_id = corpus.id;
   let corpus_path = corpus.path.clone();
+  // Pre-flight the source path (extend re-scans it): a gone/unreadable mount otherwise silently
+  // yields "0 new" (glob over a missing dir is an empty set, not an error). Fail transparently —
+  // the same guard the web/agent extend applies (422 there, exit 1 here).
+  if !std::path::Path::new(corpus_path.trim_end()).is_dir() {
+    eprintln!(
+      "error: corpus path {corpus_path:?} is not a readable directory — is the data mount present?"
+    );
+    std::process::exit(1);
+  }
   let before = Corpus::document_counts(&mut backend.connection)
     .get(&corpus_id)
     .copied()

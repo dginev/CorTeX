@@ -891,6 +891,16 @@ fn start_extend(
 ) -> Result<Uuid, Status> {
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let corpus = Corpus::find_by_name(name, &mut connection).map_err(|_| Status::NotFound)?;
+  // Pre-flight the corpus source path (extend re-scans it for new entries). If the data mount is
+  // gone/unreadable, fail transparently with `422` instead of spawning a job that silently finds
+  // nothing (`glob` over a missing dir yields an empty set, not an error) and reports "0 new" — the
+  // same courtesy as import, so a vanished mount surfaces as an error rather than a quiet no-op.
+  if !std::fs::metadata(corpus.path.trim_end())
+    .map(|meta| meta.is_dir())
+    .unwrap_or(false)
+  {
+    return Err(Status::UnprocessableEntity);
+  }
   drop(connection);
   let database_url = database_url.to_string();
   let params = serde_json::json!({ "name": name });

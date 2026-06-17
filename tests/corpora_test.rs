@@ -1654,9 +1654,41 @@ fn create_paths_reject_a_blank_name() {
     .ok();
 }
 
+/// Extend re-scans a corpus's stored source path for new entries. If that path is now
+/// unreadable/unmounted, fail transparently with `422` rather than spawning a job that silently
+/// finds nothing (`glob` over a missing dir is an empty set, not an error) and reports "0 new" —
+/// otherwise a vanished data mount reads as "no new documents". Mirrors import's path pre-flight.
+fn extend_rejects_an_unreadable_corpus_path() {
+  let mut db = backend::testdb();
+  let name = "extend_unreadable_path_test";
+  let _ = diesel::delete(corpora::table.filter(corpora::name.eq(name))).execute(&mut db.connection);
+  db.add(&NewCorpus {
+    name: name.to_string(),
+    path: "/no/such/cortex/extend/dir".to_string(),
+    complex: false,
+    description: String::new(),
+  })
+  .expect("seed a corpus whose source path is missing");
+
+  let client = client();
+  let response = client
+    .post(format!("/api/corpora/{name}/extend?token=token1"))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::UnprocessableEntity,
+    "extend on an unreadable corpus path is 422, not a silent 0-new success"
+  );
+
+  diesel::delete(corpora::table.filter(corpora::name.eq(name)))
+    .execute(&mut db.connection)
+    .ok();
+}
+
 fn main() {
   api_corpora_lists_registered_corpora();
   create_paths_reject_a_blank_name();
+  extend_rejects_an_unreadable_corpus_path();
   import_form_reshows_friendly_error_on_name_collision();
   import_rejects_an_unreadable_path();
   api_corpus_detail_reports_services_and_counts();
