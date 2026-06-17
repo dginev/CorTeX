@@ -1424,6 +1424,104 @@ fn import_rejects_an_unreadable_path() {
     .execute(&mut db.connection);
 }
 
+/// The agent dataset-export endpoint (`POST /api/corpora/<c>/services/<s>/export-dataset`) — the
+/// JSON twin of `cortex export-dataset`. Verifies token-gating (401), knob validation (422 on a bad
+/// severity / group_by), unknown corpus (404), and the happy path (202 + a `dataset_export` job
+/// attributed to the token owner). The export *logic* is covered by `export_test`; this pins the
+/// endpoint contract.
+fn export_dataset_endpoint_is_token_gated_and_validated() {
+  let corpus_name = "export_endpoint_test_corpus";
+  let service_name = "tex_to_html";
+  let mut db = backend::testdb();
+  let _ = diesel::delete(corpora::table.filter(corpora::name.eq(corpus_name)))
+    .execute(&mut db.connection);
+  db.add(&NewCorpus {
+    name: corpus_name.to_string(),
+    path: "/tmp/export_endpoint_test_corpus".to_string(),
+    complex: true,
+    description: String::new(),
+  })
+  .expect("add corpus");
+  // tex_to_html is a real service name that may already be seeded — find-or-insert.
+  if Service::find_by_name(service_name, &mut db.connection).is_err() {
+    db.add(&NewService {
+      name: service_name.to_string(),
+      version: 0.1,
+      inputformat: "tex".to_string(),
+      outputformat: "html".to_string(),
+      inputconverter: None,
+      complex: true,
+      description: "export endpoint test".to_string(),
+    })
+    .expect("add service");
+  }
+
+  let client = client();
+  let out = std::env::temp_dir().join("cortex_export_endpoint_test");
+  let path = format!("/api/corpora/{corpus_name}/services/{service_name}/export-dataset");
+  let body = |extra: &str| format!("{{\"out\":\"{}\"{extra}}}", out.display());
+
+  // Token-gated: an untokened export is denied (it reads /data + writes archives server-side).
+  let denied = client
+    .post(&path)
+    .header(ContentType::JSON)
+    .body(body(""))
+    .dispatch();
+  assert_eq!(
+    denied.status(),
+    Status::Unauthorized,
+    "export without a token is 401"
+  );
+
+  // Bad knobs → 422, pre-flighted before any job spawn.
+  let bad_sev = client
+    .post(format!("{path}?token=token1"))
+    .header(ContentType::JSON)
+    .body(body(",\"severities\":[\"bogus\"]"))
+    .dispatch();
+  assert_eq!(
+    bad_sev.status(),
+    Status::UnprocessableEntity,
+    "an unknown severity is 422"
+  );
+  let bad_group = client
+    .post(format!("{path}?token=token1"))
+    .header(ContentType::JSON)
+    .body(body(",\"group_by\":\"bogus\""))
+    .dispatch();
+  assert_eq!(
+    bad_group.status(),
+    Status::UnprocessableEntity,
+    "an unknown group_by is 422"
+  );
+
+  // Unknown corpus → 404.
+  let unknown = client
+    .post("/api/corpora/no_such_export_corpus/services/tex_to_html/export-dataset?token=token1")
+    .header(ContentType::JSON)
+    .body(body(""))
+    .dispatch();
+  assert_eq!(
+    unknown.status(),
+    Status::NotFound,
+    "an unknown corpus is 404"
+  );
+
+  // Happy path → 202 + a dataset_export job attributed to the token owner.
+  let ok = client
+    .post(format!("{path}?token=token1"))
+    .header(ContentType::JSON)
+    .body(body(",\"group_by\":\"month\",\"severities\":[\"warning\"]"))
+    .dispatch();
+  assert_eq!(ok.status(), Status::Accepted, "a valid export returns 202");
+  let job: serde_json::Value = ok.into_json().expect("a job handle");
+  assert_eq!(job["kind"], "dataset_export");
+  assert_eq!(
+    job["actor"], "username1",
+    "the export job is attributed to the token owner"
+  );
+}
+
 fn main() {
   api_corpora_lists_registered_corpora();
   import_form_reshows_friendly_error_on_name_collision();
@@ -1443,6 +1541,7 @@ fn main() {
   sandbox_size_cap_and_entry_filter_limit_the_carve();
   sandbox_name_collision_reshows_a_friendly_error();
   snapshot_tasks_appends_history_and_is_token_gated();
+  export_dataset_endpoint_is_token_gated_and_validated();
   eprintln!("corpora_test: all cases passed");
   unsafe { libc::_exit(0) }
 }

@@ -256,6 +256,19 @@ skipped); writes a `<corpus>-manifest.json` provenance sidecar (corpus/service/s
 counts/version). Severity keys are the canonical `no_problem` / `warning` / `error` / `fatal` /
 `invalid`.
 
+The **agent twin** runs the same export as a background job — `POST
+/api/corpora/<corpus>/services/<service>/export-dataset` (token-gated) with a JSON body
+`{ "out": "/data/datasets/…", "group_by": "month"|"severity", "severities": ["no_problem", …] }`
+(`group_by`/`severities` optional; default `month` + `no_problem,warning,error`). It returns `202` +
+a `dataset_export` job handle to poll at `GET /api/jobs/<uuid>` (the manifest is the job result).
+`404` for an unknown corpus/service, `422` for a bad `group_by`/severity:
+
+```bash
+curl -s -X POST -H "X-Cortex-Token: $TOKEN" -H 'content-type: application/json' \
+  localhost:8000/api/corpora/arxmliv/services/tex_to_html/export-dataset \
+  -d '{"out":"/data/datasets/arxmliv-2024","group_by":"month","severities":["no_problem","warning","error"]}' | jq .
+```
+
 Back up the **Postgres** database (metadata) and the **`/data`** filesystem (document bytes)
 separately; delete a corpus only through the app (orphan-free cascade), never a raw `DELETE`.
 

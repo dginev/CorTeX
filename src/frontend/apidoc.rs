@@ -30,10 +30,11 @@ use crate::frontend::admin::{api_status, okapi_add_operation_for_api_status_};
 use crate::frontend::audit::{api_audit, okapi_add_operation_for_api_audit_};
 use crate::frontend::corpora::{
   activate_service, api_corpora, api_corpus, create_sandbox_corpus, deactivate_service,
-  delete_corpus, extend_corpus, import_corpus, okapi_add_operation_for_activate_service_,
-  okapi_add_operation_for_api_corpora_, okapi_add_operation_for_api_corpus_,
-  okapi_add_operation_for_create_sandbox_corpus_, okapi_add_operation_for_deactivate_service_,
-  okapi_add_operation_for_delete_corpus_, okapi_add_operation_for_extend_corpus_,
+  delete_corpus, export_dataset, extend_corpus, import_corpus,
+  okapi_add_operation_for_activate_service_, okapi_add_operation_for_api_corpora_,
+  okapi_add_operation_for_api_corpus_, okapi_add_operation_for_create_sandbox_corpus_,
+  okapi_add_operation_for_deactivate_service_, okapi_add_operation_for_delete_corpus_,
+  okapi_add_operation_for_export_dataset_, okapi_add_operation_for_extend_corpus_,
   okapi_add_operation_for_import_corpus_, okapi_add_operation_for_snapshot_tasks_, snapshot_tasks,
 };
 use crate::frontend::jobs::{
@@ -153,6 +154,7 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
     delete_service,
     import_corpus,
     extend_corpus,
+    export_dataset,
     create_sandbox_corpus,
     activate_service,
     deactivate_service,

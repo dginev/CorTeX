@@ -25,18 +25,21 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::backend::{
-  create_sandbox, from_address, progress_report, DatabaseUrl, DbPool, SandboxSelection,
+  create_sandbox, export_html_dataset, from_address, progress_report, DatabaseUrl, DbPool, GroupBy,
+  SandboxSelection,
 };
 use crate::concerns::CortexInsertable;
 use crate::frontend::actor::{require_admin_to, Actor, AdminReject, AdminSession, ReturnTo};
 use crate::frontend::helpers::{decorate_uri_encodings, uri_escape};
 use crate::frontend::jobs::JobDto;
 use crate::frontend::params::TemplateContext;
+use crate::helpers::TaskStatus;
 use crate::importer::Importer;
 use crate::jobs::{self, JobProgress};
 use crate::models::{Corpus, NewCorpus, Service};
 use rocket_okapi::openapi;
 use schemars::JsonSchema;
+use std::path::PathBuf;
 
 /// The magic `import` service id. Service ids `1` (`init`) and `2` (`import`) are infrastructure
 /// (CLAUDE.md: real conversion services have id `> 2`); a service with id `≤` this is never
@@ -402,6 +405,156 @@ fn count_service_tasks(connection: &mut PgConnection, corpus: i32, service: i32)
     .count()
     .get_result::<i64>(connection)
     .unwrap_or(0) as i32
+}
+
+/// Request body for exporting a corpus/service's converted HTML into ZIP archives
+/// ([`export_dataset`]). Mirrors the `cortex export-dataset` CLI flags.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ExportRequest {
+  /// Server-side output directory for the archives + the `<corpus>-manifest.json` sidecar (created
+  /// if missing).
+  pub out: String,
+  /// Bucketing: `month` (one archive per year-month) or `severity` (one per severity). Defaults to
+  /// `month`.
+  #[serde(default)]
+  pub group_by: Option<String>,
+  /// Severity keys to include (canonical: `no_problem` | `warning` | `error` | `fatal` |
+  /// `invalid`). Defaults to `no_problem,warning,error` (matching the CLI).
+  #[serde(default)]
+  pub severities: Option<Vec<String>>,
+}
+
+/// The default severity set when a caller omits `severities` — kept identical to the
+/// `cortex export-dataset` CLI default so all three surfaces export the same slice by default.
+fn default_export_severities() -> Vec<String> {
+  vec![
+    "no_problem".to_string(),
+    "warning".to_string(),
+    "error".to_string(),
+  ]
+}
+
+/// Exports a corpus/service's already-converted HTML into ZIP archives off the shared filesystem as
+/// an in-process **background job** (no conversion is run); returns `202 Accepted` + the job
+/// handle, which agents and humans poll via `GET /api/jobs/<uuid>`. The agent twin of `cortex
+/// export-dataset` (and the future web form), over the same [`export_html_dataset`] core.
+/// **Token-gated** via the [`Actor`] guard (it reads `/data` and writes archives server-side);
+/// `401` without a valid token, `404` if the corpus or service is unknown, `422` for an invalid
+/// `group_by` or severity key (pre-flighted so a doomed export never starts).
+#[openapi(tag = "Corpora")]
+#[post(
+  "/api/corpora/<corpus>/services/<service>/export-dataset",
+  format = "json",
+  data = "<request>"
+)]
+pub fn export_dataset(
+  corpus: &str,
+  service: &str,
+  request: Json<ExportRequest>,
+  actor: Actor,
+  pool: &State<DbPool>,
+  database_url: &State<DatabaseUrl>,
+) -> Result<(Status, Json<JobDto>), Status> {
+  let job_uuid = start_export(
+    pool,
+    &database_url.0,
+    &actor.owner,
+    corpus,
+    service,
+    request.into_inner(),
+  )?;
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let job = jobs::find_job(&mut connection, job_uuid).ok_or(Status::InternalServerError)?;
+  Ok((Status::Accepted, Json(JobDto::from(job))))
+}
+
+/// Validates the export request, resolves the corpus/service, and spawns the `dataset_export`
+/// background job — the shared core of the agent endpoint and the (future) human form. `404` if the
+/// corpus/service is unknown; `422` for a bad `group_by`/severity (so the caller gets immediate
+/// feedback instead of a job that fails late).
+fn start_export(
+  pool: &DbPool,
+  database_url: &str,
+  actor: &str,
+  corpus_name: &str,
+  service_name: &str,
+  request: ExportRequest,
+) -> Result<Uuid, Status> {
+  // Pre-flight the knobs (mirrors the CLI's exit-2 validation) before any DB work or job spawn.
+  let group_by_key = request.group_by.unwrap_or_else(|| "month".to_string());
+  let group_by = GroupBy::from_key(&group_by_key).ok_or(Status::UnprocessableEntity)?;
+  let severity_keys = request.severities.unwrap_or_else(default_export_severities);
+  let severities = severity_keys
+    .iter()
+    .map(|key| TaskStatus::from_key(key))
+    .collect::<Option<Vec<_>>>()
+    .ok_or(Status::UnprocessableEntity)?;
+  if severities.is_empty() {
+    return Err(Status::UnprocessableEntity);
+  }
+
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let corpus = Corpus::find_by_name(&corpus_name.to_lowercase(), &mut connection)
+    .map_err(|_| Status::NotFound)?;
+  let service = Service::find_by_name(&service_name.to_lowercase(), &mut connection)
+    .map_err(|_| Status::NotFound)?;
+  drop(connection);
+
+  let out = PathBuf::from(request.out);
+  let database_url = database_url.to_string();
+  let params = serde_json::json!({
+    "corpus": corpus.name,
+    "service": service.name,
+    "out": out.display().to_string(),
+    "group_by": group_by_key,
+    "severities": severity_keys,
+  });
+  jobs::spawn_job(
+    pool.clone(),
+    "dataset_export",
+    actor,
+    params,
+    move |progress| {
+      run_export(
+        &database_url,
+        corpus,
+        service,
+        severities,
+        group_by,
+        out,
+        progress,
+      )
+    },
+  )
+  .map_err(|_| Status::InternalServerError)
+}
+
+/// The body of a `dataset_export` job: stream the corpus/service HTML into archives, threading the
+/// exporter's milestone lines through the job's progress feed, and return the
+/// [`DatasetExportOutcome`](crate::backend::DatasetExportOutcome) (archives + tallies) as the job
+/// result.
+fn run_export(
+  database_url: &str,
+  corpus: Corpus,
+  service: Service,
+  severities: Vec<TaskStatus>,
+  group_by: GroupBy,
+  out: PathBuf,
+  progress: &JobProgress,
+) -> Result<Value, String> {
+  let mut backend = from_address(database_url);
+  let outcome = export_html_dataset(
+    &mut backend.connection,
+    &corpus,
+    &service,
+    &severities,
+    group_by,
+    &out,
+    |line| progress.step(0, None, line),
+  )?;
+  let total = outcome.total_entries as i32;
+  progress.step(total, Some(total), "export complete");
+  serde_json::to_value(&outcome).map_err(|error| error.to_string())
 }
 
 /// Request body for carving a **sandbox** corpus out of a parent by a message-condition filter
