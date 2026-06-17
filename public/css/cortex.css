@@ -1166,6 +1166,19 @@ h3 {
   font-weight: 700;
   font-size: var(--fs-sm);
 }
+/* A labelled sub-divider inside a form section (e.g. "Filters" above the sandbox filter fields): a
+   horizontal rule with an uppercase caption, spanning both grid columns. */
+.corpus-actions .action-divider {
+  grid-column: 1 / -1;
+  margin: var(--space-sm) 0 0;
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--rule);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-muted);
+}
 /* Delete is set apart with a danger accent. */
 .corpus-actions .action-danger {
   border-top-color: var(--bad);

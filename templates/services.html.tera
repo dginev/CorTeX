@@ -89,7 +89,8 @@
       <p class="action-subhead">Carve a sandbox <span class="muted">— a working subset, by message-condition filter</span></p>
       <label for="sbx-name">Sandbox name</label>
       <input id="sbx-name" type="text" name="name" placeholder="new sandbox name" aria-label="New sandbox corpus name" required>
-      <label for="sbx-service">Service</label>
+      <p class="action-divider">Filters</p>
+      <label for="sbx-service">Service for filter</label>
       <select id="sbx-service" name="service_id" aria-label="Service whose results to filter" required>
         {% for service in services %}
         <option value="{{ service.id }}">{{ service.name }}</option>
@@ -111,7 +112,7 @@
       <input id="sbx-entry" type="text" name="entry" placeholder="path contains, e.g. 2506. for one arXiv month" aria-label="Entry path substring filter (optional)">
       <label for="sbx-max">Max entries <span class="muted">(optional)</span></label>
       <input id="sbx-max" type="number" name="max_entries" min="1" placeholder="no limit" aria-label="Maximum entries to capture (optional)">
-      <button type="submit" class="btn-primary action-submit">Carve sandbox</button>
+      <button type="submit" class="btn-primary action-submit">Prepare sandbox</button>
     </form>
     {% endif %}
 
