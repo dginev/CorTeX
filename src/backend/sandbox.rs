@@ -24,9 +24,10 @@ use crate::concerns::CortexInsertable;
 use crate::helpers::TaskStatus;
 use crate::models::{Corpus, NewSandboxCorpus};
 
-/// The message-condition that defines a sandbox: a slice of the parent corpus's reports, addressed
-/// by the same `(service, severity, category, what)` dimensions the reports use. Serialized
-/// verbatim into the sandbox corpus's `selection` JSON.
+/// The filter that defines a sandbox: a slice of the parent corpus addressed by independent,
+/// **intersected** task-status and message (`severity`/`category`/`what`) dimensions (Model C),
+/// plus optional entry/limit narrowing. Serialized verbatim into the sandbox corpus's `selection`
+/// JSON.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SandboxSelection {
   /// the service whose conversion results are being filtered
@@ -84,9 +85,10 @@ pub struct ResolvedFilter {
 
 impl SandboxSelection {
   /// A compact, human-readable summary of the carve filter — e.g.
-  /// `severity=warning, category=missing_file, entry~2506., limit=100`. The single source of truth
-  /// for both the sandbox corpus's stored `description` and the provenance surfaced on its corpus
-  /// page / detail API, so the two never drift.
+  /// `status=no_problem, message=error/missing_file, entry~2506., limit=100`. The single source of
+  /// truth for both the sandbox corpus's stored `description` and the provenance surfaced on its
+  /// corpus page / detail API, so the two never drift. Falls back to the legacy `severity` for
+  /// selections stored before the status/message split.
   pub fn filter_summary(&self) -> String {
     let mut parts: Vec<String> = Vec::new();
     if let Some(status) = &self.status {
@@ -337,14 +339,20 @@ mod tests {
 
   #[test]
   fn model_c_validation_is_status_and_message_intersected() {
-    // The F-7 fix: `info`+category is now VALID (info is a real message severity, `log_infos`).
-    assert!(sel(None, Some("info"), Some("missing_file"), None)
+    // The F-7 fix: `info`+category is now VALID (info is a real message severity, `log_infos`;
+    // `conversion` is a real info category — unlike `missing_file`, which is a *warning* category).
+    assert!(sel(None, Some("info"), Some("conversion"), None)
       .validate()
       .is_ok());
     // status + message intersect; status-only; message-only (any status) — all valid.
-    assert!(sel(Some("no_problem"), Some("info"), Some("x"), None)
-      .validate()
-      .is_ok());
+    assert!(sel(
+      Some("no_problem"),
+      Some("warning"),
+      Some("missing_file"),
+      None
+    )
+    .validate()
+    .is_ok());
     assert!(sel(Some("warning"), None, None, None).validate().is_ok());
     assert!(sel(None, Some("error"), None, None).validate().is_ok());
 
