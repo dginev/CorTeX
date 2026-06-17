@@ -226,15 +226,27 @@ pub fn report_uses_rollup(
   what_opt: Option<&str>,
   all_messages: bool,
 ) -> bool {
-  // Reports are now computed LIVE and per-(corpus,service)-scoped from the indexed task/log tables
-  // (the `task_report_live` path). The global `report_summary` matview was retired: it recomputed
-  // all corpora × five log tables for any single-corpus change (a ~99 GB / 345M-row scan to reflect
-  // one run's worth of logs), and that refresh starved the conversion finalize path under load,
-  // stalling the worker fleet. A scoped live drill-down touches one log table for one
-  // (corpus, service) via the existing per-status indexes, so it is cheap to regenerate on demand.
-  // Always take the live path.
-  let _ = (severity_opt, category_opt, what_opt, all_messages);
-  false
+  // Route the aggregate grains — the category report `(None, None)` and the `what` drill-down
+  // `(Some(category), None)` — through the per-(corpus, service, severity) `report_grain_cache`
+  // (the cached `category_rollup`/`what_rollup`/`severity_total` readers), so the HTML report page
+  // is instant once a scope is warm instead of re-running the live 30M-row aggregation on every
+  // view. The all-severities view and the per-task entry lists (`no_messages`, and the
+  // `what`-detail list) have no cached grain and fall through to the live `task_report_live`
+  // path.
+  if all_messages {
+    return false;
+  }
+  let Some(severity) = severity_opt else {
+    return false;
+  };
+  if !matches!(severity, "warning" | "error" | "fatal" | "invalid" | "info") {
+    return false;
+  }
+  match (category_opt, what_opt) {
+    (None, None) => true,
+    (Some(category), None) => category != "no_messages",
+    _ => false,
+  }
 }
 
 /// Total tasks counted toward percentage denominators: all tasks for the pair minus `Invalid` ones
@@ -1204,23 +1216,22 @@ mod rollup_equivalence_tests {
   }
 
   #[test]
-  fn report_uses_rollup_is_always_live() {
+  fn report_uses_rollup_routes_aggregate_grains_to_cache() {
     use super::report_uses_rollup;
-    // The global `report_summary` matview was retired: every report grain — including the category
-    // and `what` aggregate grains that used to be rollup-served — is now computed LIVE and
-    // per-(corpus,service)-scoped (see `report_uses_rollup`). So the gate returns false for every
-    // input; nothing routes to the matview.
-    for sev in [
-      "warning",
-      "error",
-      "fatal",
-      "invalid",
-      "info",
-      "no_problem",
-      "todo",
-    ] {
-      assert!(!report_uses_rollup(Some(sev), None, None, false));
-      assert!(!report_uses_rollup(Some(sev), Some("cat"), None, false));
+    // The aggregate grains — the category report and the `what` drill-down — are served from the
+    // per-(corpus, service, severity) `report_grain_cache` (the cached readers). Per-task entry
+    // lists (`no_messages`, the `what`-detail list), the all-severities view, and non-drill-down
+    // severities have no cached grain and fall through to the live `task_report_live` path.
+    for sev in ["warning", "error", "fatal", "invalid", "info"] {
+      assert!(
+        report_uses_rollup(Some(sev), None, None, false),
+        "{sev} category report should hit the cache"
+      );
+      assert!(
+        report_uses_rollup(Some(sev), Some("cat"), None, false),
+        "{sev} what drill-down should hit the cache"
+      );
+      // per-task `what`-detail list → live
       assert!(!report_uses_rollup(
         Some(sev),
         Some("cat"),
@@ -1228,6 +1239,17 @@ mod rollup_equivalence_tests {
         false
       ));
     }
+    // `no_messages` is a per-task entry list, not an aggregate grain → live
+    assert!(!report_uses_rollup(
+      Some("warning"),
+      Some("no_messages"),
+      None,
+      false
+    ));
+    // non-drill-down severities have no cached grain → live
+    assert!(!report_uses_rollup(Some("no_problem"), None, None, false));
+    assert!(!report_uses_rollup(Some("todo"), None, None, false));
+    // all-severities view → live
     assert!(!report_uses_rollup(Some("warning"), None, None, true));
     assert!(!report_uses_rollup(None, None, None, false));
   }
