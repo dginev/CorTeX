@@ -85,6 +85,24 @@
       <a href="/runs/{{global.corpus_name_uri}}/{{global.service_name_uri}}/diff"><i class="fa fa-exchange"></i>Diff previous runs</a>
     </nav>
 
+    {% if is_admin %}
+    {# Run control (admin only): pause blocks every in-progress task (status ≥ 0) so the dispatcher
+       stops leasing this (corpus, service); resume returns the blocked tasks to TODO. Agent twins:
+       POST /api/reports/<c>/<s>/{pause,resume}. #}
+    <nav class="report-links run-control" aria-label="Run control">
+      <form method="post" class="inline-form"
+            action="/pause/{{global.corpus_name_uri}}/{{global.service_name_uri}}"
+            onsubmit="return confirm('Pause this run? Every in-progress task becomes Blocked, so the dispatcher stops processing this corpus/service until you resume.');">
+        <button type="submit" class="btn btn-default btn-sm"><i class="fa fa-pause"></i>&nbsp;Pause run</button>
+      </form>
+      <form method="post" class="inline-form"
+            action="/resume/{{global.corpus_name_uri}}/{{global.service_name_uri}}"
+            onsubmit="return confirm('Resume this run? Every Blocked task returns to TODO for the dispatcher to pick up.');">
+        <button type="submit" class="btn btn-default btn-sm"><i class="fa fa-play"></i>&nbsp;Resume run</button>
+      </form>
+    </nav>
+    {% endif %}
+
     {# Direct article forensics — the human twin of the agent's GET /api/corpus/<c>/<svc>/document/<name>
        and `cortex document <c> <s> <name>`: jump straight to one article's per-message report by id,
        instead of drilling the whole severity→category→what ladder. The plain-GET action degrades to a

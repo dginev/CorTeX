@@ -673,6 +673,104 @@ fn human_rerun_requires_session() {
   );
 }
 
+/// Run control: `POST /api/reports/<c>/<s>/{pause,resume}` blocks every in-progress task
+/// (`status >= 0`) and returns every Blocked task (`status < -5`) to TODO — the agent twin of the
+/// report screen's Pause/Resume buttons. Completed tasks (the seed's `-2` warnings) are untouched;
+/// token-gated; unknown corpus 404s.
+fn pause_resume_blocks_and_restores_in_progress_tasks() {
+  seed(); // corpus + service + 3 completed warning tasks (status -2)
+  let mut backend = backend::testdb();
+  let corpus = Corpus::find_by_name(CORPUS_NAME, &mut backend.connection).unwrap();
+  let service = Service::find_by_name(SERVICE_NAME, &mut backend.connection).unwrap();
+  let insert_status = |conn: &mut PgConnection, entry: &str, st: i32| -> i64 {
+    diesel::insert_into(tasks::table)
+      .values((
+        tasks::entry.eq(entry),
+        tasks::service_id.eq(service.id),
+        tasks::corpus_id.eq(corpus.id),
+        tasks::status.eq(st),
+      ))
+      .returning(tasks::id)
+      .get_result(conn)
+      .expect("insert in-progress task")
+  };
+  // 2 TODO (0) + 1 leased/Queued (5) — the in-progress set pause must catch.
+  let todo_a = insert_status(&mut backend.connection, "pr/todo_a", 0);
+  let todo_b = insert_status(&mut backend.connection, "pr/todo_b", 0);
+  let queued = insert_status(&mut backend.connection, "pr/queued", 5);
+  let status_of = |conn: &mut PgConnection, id: i64| -> i32 {
+    tasks::table
+      .find(id)
+      .select(tasks::status)
+      .first(conn)
+      .unwrap()
+  };
+
+  let client = client();
+  // Gated: no token → 401; unknown corpus → 404.
+  assert_eq!(
+    client
+      .post(format!("/api/reports/{CORPUS_NAME}/{SERVICE_NAME}/pause"))
+      .dispatch()
+      .status(),
+    Status::Unauthorized
+  );
+  assert_eq!(
+    client
+      .post("/api/reports/no_such/no_such/pause?token=token1")
+      .dispatch()
+      .status(),
+    Status::NotFound
+  );
+
+  // Pause: the 3 in-progress tasks become Blocked; the completed warnings are untouched.
+  let response = client
+    .post(format!(
+      "/api/reports/{CORPUS_NAME}/{SERVICE_NAME}/pause?token=token1"
+    ))
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  let body: Value = response.into_json().unwrap();
+  assert_eq!(body["action"], "pause");
+  assert_eq!(
+    body["affected"], 3,
+    "the 2 TODO + 1 Queued task were blocked"
+  );
+  assert!(
+    status_of(&mut backend.connection, todo_a) < -5,
+    "TODO → Blocked"
+  );
+  assert!(
+    status_of(&mut backend.connection, queued) < -5,
+    "Queued → Blocked"
+  );
+  let still_warning: i64 = tasks::table
+    .filter(tasks::corpus_id.eq(corpus.id))
+    .filter(tasks::status.eq(WARNING))
+    .count()
+    .get_result(&mut backend.connection)
+    .unwrap();
+  assert!(still_warning >= 1, "completed warning tasks are not paused");
+
+  // Resume: every Blocked task returns to TODO (0).
+  let response = client
+    .post(format!(
+      "/api/reports/{CORPUS_NAME}/{SERVICE_NAME}/resume?token=token1"
+    ))
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  let body: Value = response.into_json().unwrap();
+  assert_eq!(body["action"], "resume");
+  assert_eq!(body["affected"], 3);
+  assert_eq!(
+    status_of(&mut backend.connection, todo_a),
+    0,
+    "Blocked → TODO"
+  );
+  assert_eq!(status_of(&mut backend.connection, todo_b), 0);
+  assert_eq!(status_of(&mut backend.connection, queued), 0);
+}
+
 // Custom harness (`harness = false`): own `main`, so we end with `libc::_exit(0)` while the Client
 // is still alive — skipping the racy libpq/OpenSSL `atexit` teardown that SIGSEGVs a
 // default-harness exit (KNOWN_ISSUES L-1). A panic still aborts non-zero, so a real assertion
@@ -683,6 +781,7 @@ fn main() {
   document_forensics_reports_status_and_messages();
   document_forensics_caps_pathological_message_volume();
   human_rerun_requires_session();
+  pause_resume_blocks_and_restores_in_progress_tasks();
   eprintln!("reports_api_test: all cases passed");
   unsafe { libc::_exit(0) }
 }

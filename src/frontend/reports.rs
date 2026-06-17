@@ -652,6 +652,73 @@ pub fn rerun_report(
   ))
 }
 
+/// Result of a pause/resume run-control action (the agent twin of the report screen's Pause/Resume
+/// buttons).
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct RunControlDto {
+  /// The corpus acted on.
+  pub corpus: String,
+  /// The service acted on.
+  pub service: String,
+  /// `pause` or `resume`.
+  pub action: String,
+  /// Tasks transitioned — blocked (on pause) or returned to TODO (on resume).
+  pub affected: usize,
+  /// The token-resolved actor recorded as the initiator.
+  pub actor: String,
+}
+
+/// Shared core of the agent pause/resume twins: gate via the token-resolved `owner`, run the shared
+/// [`crate::frontend::concerns::serve_pause_resume`], wrap the count in a [`RunControlDto`].
+fn api_run_control(
+  corpus: &str,
+  service: &str,
+  owner: &str,
+  pause: bool,
+  pool: &State<DbPool>,
+) -> Result<Json<RunControlDto>, Status> {
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let affected =
+    crate::frontend::concerns::serve_pause_resume(&mut connection, corpus, service, owner, pause)?;
+  Ok(Json(RunControlDto {
+    corpus: corpus.to_string(),
+    service: service.to_string(),
+    action: if pause { "pause" } else { "resume" }.to_string(),
+    affected,
+    actor: owner.to_string(),
+  }))
+}
+
+/// **Pause a run** — block every in-progress task (`status >= 0`) of a `(corpus, service)` so the
+/// dispatcher stops leasing them. The agent twin of the report screen's "Pause run" button.
+/// **Token-gated** via the [`Actor`] guard; `404` on an unknown corpus/service. Returns the count
+/// blocked. Reversible with the resume twin.
+#[rocket_okapi::openapi(tag = "Reports")]
+#[post("/api/reports/<corpus>/<service>/pause")]
+pub fn pause_run_api(
+  corpus: &str,
+  service: &str,
+  actor: Actor,
+  pool: &State<DbPool>,
+) -> Result<Json<RunControlDto>, Status> {
+  api_run_control(corpus, service, &actor.owner, true, pool)
+}
+
+/// **Resume a run** — return every Blocked task (`status < -5`) of a `(corpus, service)` to TODO so
+/// the dispatcher picks them up again. The agent twin of the report screen's "Resume run" button.
+/// **Token-gated** via the [`Actor`] guard; `404` on an unknown corpus/service. Returns the count
+/// resumed.
+#[rocket_okapi::openapi(tag = "Reports")]
+#[post("/api/reports/<corpus>/<service>/resume")]
+pub fn resume_run_api(
+  corpus: &str,
+  service: &str,
+  actor: Actor,
+  pool: &State<DbPool>,
+) -> Result<Json<RunControlDto>, Status> {
+  api_run_control(corpus, service, &actor.owner, false, pool)
+}
+
 /// Acknowledgement for a forced report-rollup refresh: the background [`crate::jobs`] handle to
 /// poll.
 #[derive(Serialize, schemars::JsonSchema)]

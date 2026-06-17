@@ -49,8 +49,10 @@ use crate::frontend::reports::{
   api_category_report, api_document, api_entry_list, api_service_overview, api_what_report,
   okapi_add_operation_for_api_category_report_, okapi_add_operation_for_api_document_,
   okapi_add_operation_for_api_entry_list_, okapi_add_operation_for_api_service_overview_,
-  okapi_add_operation_for_api_what_report_, okapi_add_operation_for_refresh_reports_,
-  okapi_add_operation_for_rerun_report_, refresh_reports, rerun_report,
+  okapi_add_operation_for_api_what_report_, okapi_add_operation_for_pause_run_api_,
+  okapi_add_operation_for_refresh_reports_, okapi_add_operation_for_rerun_report_,
+  okapi_add_operation_for_resume_run_api_, pause_run_api, refresh_reports, rerun_report,
+  resume_run_api,
 };
 use crate::frontend::retention::{
   api_historical_stats, okapi_add_operation_for_api_historical_stats_,
@@ -157,6 +159,8 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
     snapshot_tasks,
     delete_corpus,
     rerun_report,
+    pause_run_api,
+    resume_run_api,
     refresh_reports,
     reindex,
     analyze,

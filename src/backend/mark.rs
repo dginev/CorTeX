@@ -26,6 +26,40 @@ pub(crate) fn mark_imported(
     .execute(connection)
 }
 
+/// **Pause** a `(corpus, service)` run: transition every **in-progress** task (`status >= 0` — i.e.
+/// TODO plus any leased/Queued mark) to **Blocked**, so the ventilator stops handing them out (it
+/// only fetches `status = TODO`). Completed tasks (`status < 0`) are left alone. Returns the number
+/// paused. The exact inverse of [`resume_blocked`] (Arm 7 run-lifecycle control).
+pub(crate) fn mark_blocked(
+  connection: &mut PgConnection,
+  corpus_id_val: i32,
+  service_id_val: i32,
+) -> Result<usize, Error> {
+  update(tasks::table)
+    .filter(tasks::corpus_id.eq(corpus_id_val))
+    .filter(tasks::service_id.eq(service_id_val))
+    .filter(tasks::status.ge(0))
+    .set(tasks::status.eq(TaskStatus::Blocked(-6).raw()))
+    .execute(connection)
+}
+
+/// **Resume** a paused `(corpus, service)` run: transition every **Blocked** task (`status < -5`)
+/// back to **TODO** (`0`), so the ventilator re-leases it on the next fetch. Returns the number
+/// resumed. The exact inverse of [`mark_blocked`]; completed and already-in-progress tasks are left
+/// alone (Invalid is `-5`, so the `< -5` filter never touches it).
+pub(crate) fn resume_blocked(
+  connection: &mut PgConnection,
+  corpus_id_val: i32,
+  service_id_val: i32,
+) -> Result<usize, Error> {
+  update(tasks::table)
+    .filter(tasks::corpus_id.eq(corpus_id_val))
+    .filter(tasks::service_id.eq(service_id_val))
+    .filter(tasks::status.lt(-5))
+    .set(tasks::status.eq(TaskStatus::TODO.raw()))
+    .execute(connection)
+}
+
 pub(crate) fn mark_done(
   connection: &mut PgConnection,
   reports: &[TaskReport],

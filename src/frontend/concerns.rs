@@ -12,7 +12,8 @@ use std::str;
 use std::sync::Arc;
 
 use crate::backend::{
-  mark_rerun, progress_report, save_historical_tasks, DbPool, PooledConn, RerunOptions,
+  mark_blocked, mark_rerun, progress_report, resume_blocked, save_historical_tasks, DbPool,
+  PooledConn, RerunOptions,
 };
 use crate::frontend::actor::AdminSession;
 use crate::frontend::helpers::*;
@@ -403,6 +404,105 @@ pub fn serve_rerun(
       Ok(Accepted(String::default()))
     },
   }
+}
+
+/// **Pause** (`pause = true`) or **resume** a whole `(corpus, service)` run, over the
+/// caller-supplied (pooled) `connection`, attributed to the authenticated `owner`. Pause blocks
+/// every in-progress task (`status >= 0` → Blocked) so the dispatcher stops leasing them; resume
+/// returns every Blocked task to TODO so the dispatcher picks them up again — the inverse pair.
+/// `404` on an unknown corpus/service, `500` if the status update fails; on success returns the
+/// number of tasks affected. Shared by the human `POST /{pause,resume}/<c>/<s>` (cookie) and the
+/// agent `POST /api/reports/<c>/<s>/{pause,resume}` (token) — one core, identical effect.
+pub fn serve_pause_resume(
+  connection: &mut PgConnection,
+  corpus_name: &str,
+  service_name: &str,
+  owner: &str,
+  pause: bool,
+) -> Result<usize, Status> {
+  let corpus_name = corpus_name.to_lowercase();
+  let service_name = service_name.to_lowercase();
+  let action = if pause { "pause" } else { "resume" };
+  // Operational-journal line (the audit fairing also records actor + outcome to the DB).
+  tracing::info!(
+    actor = owner,
+    corpus = corpus_name,
+    service = service_name,
+    action,
+    "run control requested"
+  );
+  let corpus = Corpus::find_by_name(&corpus_name, connection).map_err(|_| Status::NotFound)?;
+  let service = Service::find_by_name(&service_name, connection).map_err(|_| Status::NotFound)?;
+  let result = if pause {
+    mark_blocked(connection, corpus.id, service.id)
+  } else {
+    resume_blocked(connection, corpus.id, service.id)
+  };
+  match result {
+    Err(error) => {
+      tracing::warn!(actor = owner, action, %error, "run control failed");
+      Err(Status::InternalServerError)
+    },
+    Ok(count) => {
+      // No rollup refresh: pause/resume only move tasks across TODO↔Blocked (neither is in the
+      // completed-task severity matview); the report's live in-progress tally updates on next load.
+      tracing::info!(
+        actor = owner,
+        action,
+        affected = count,
+        "run control committed"
+      );
+      Ok(count)
+    },
+  }
+}
+
+/// Human **pause run** — block every in-progress task of a `(corpus, service)` so the dispatcher
+/// stops. Cookie-gated; a plain form POST that redirects back to the report so the admin sees the
+/// new state (`401` without a session). The agent twin is `POST /api/reports/<c>/<s>/pause`.
+#[post("/pause/<corpus_name>/<service_name>")]
+pub fn pause_run(
+  corpus_name: String,
+  service_name: String,
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+) -> Result<rocket::response::Redirect, Status> {
+  let session = session.ok_or(Status::Unauthorized)?;
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  serve_pause_resume(
+    &mut connection,
+    &corpus_name,
+    &service_name,
+    &session.owner,
+    true,
+  )?;
+  Ok(rocket::response::Redirect::to(format!(
+    "/corpus/{corpus_name}/{service_name}"
+  )))
+}
+
+/// Human **resume run** — return every Blocked task of a `(corpus, service)` to TODO. Cookie-gated;
+/// form POST that redirects back to the report. The agent twin is `POST
+/// /api/reports/<c>/<s>/resume`.
+#[post("/resume/<corpus_name>/<service_name>")]
+pub fn resume_run(
+  corpus_name: String,
+  service_name: String,
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+) -> Result<rocket::response::Redirect, Status> {
+  let session = session.ok_or(Status::Unauthorized)?;
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  serve_pause_resume(
+    &mut connection,
+    &corpus_name,
+    &service_name,
+    &session.owner,
+    false,
+  )?;
+  Ok(rocket::response::Redirect::to(format!(
+    "/corpus/{corpus_name}/{service_name}"
+  )))
 }
 
 /// Save the historical tasks of a corpus run, for reference, for a <corpus,service> pair. Auth is
@@ -820,6 +920,8 @@ pub fn routes() -> Vec<Route> {
     rerun_severity,
     rerun_category,
     rerun_what,
+    pause_run,
+    resume_run,
     savetasks
   ]
 }

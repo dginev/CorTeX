@@ -17,7 +17,7 @@ mod sandbox;
 mod services_aggregate;
 mod tasks_aggregate;
 pub use export::{export_html_dataset, DatasetExportOutcome, GroupBy};
-pub(crate) use mark::{mark_rerun, save_historical_tasks};
+pub(crate) use mark::{mark_blocked, mark_rerun, resume_blocked, save_historical_tasks};
 pub(crate) use reports::list_task_diffs;
 pub(crate) use reports::progress_report;
 pub(crate) use reports::report_uses_rollup;
