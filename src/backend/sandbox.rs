@@ -117,6 +117,18 @@ pub fn create_sandbox(
       ))
     },
   };
+  // F-7: `no_problem` tasks carry no log messages, so a category/`what` narrowing is nonsensical —
+  // and `to_table(NoProblem)` falls through to `log_infos`, which would silently carve info-message
+  // tasks mislabelled as a `no_problem` sandbox. Reject the combo cleanly (transparent failure over
+  // a wrong-scope carve). (Carving info-message tasks needs `severity=info`, F-7's deferred
+  // half.)
+  if status == TaskStatus::NoProblem.raw()
+    && (selection.category.is_some() || selection.what.is_some())
+  {
+    return Err(Error::QueryBuilderError(
+      "severity 'no_problem' has no messages and can't be narrowed by category/what".into(),
+    ));
+  }
   let log_table = TaskStatus::from_raw(status).to_table();
   let selection_json = serde_json::to_value(selection).ok();
 

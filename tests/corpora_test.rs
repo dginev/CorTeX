@@ -1187,6 +1187,23 @@ fn sandbox_size_cap_and_entry_filter_limit_the_carve() {
     "the cap is deterministic — the lexically-first two entries"
   );
 
+  // F-7: `no_problem` carries no messages, so narrowing it by category/`what` is rejected cleanly
+  // rather than silently carving info-message tasks via `to_table`'s `log_infos` fallback.
+  assert!(
+    create_sandbox(
+      &mut db.connection,
+      &parent,
+      "sandbox_no_problem_category",
+      &SandboxSelection {
+        severity: "no_problem".to_string(),
+        category: Some("missing_file".to_string()),
+        ..base.clone()
+      },
+    )
+    .is_err(),
+    "no_problem + category must be rejected, never a silent wrong-scope carve"
+  );
+
   cleanup(&mut db, parent_name, svc_name);
   for name in sandbox_names {
     cleanup_corpus(&mut db, name);
