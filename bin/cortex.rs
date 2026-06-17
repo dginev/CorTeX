@@ -2192,6 +2192,13 @@ fn run_init() {
         "\nNext step — tune PostgreSQL for this host:\n{}",
         bootstrap::db_tuning_guidance()
       );
+      // Bridge a fresh install to the first conversion run: the doctor nudge above covers the admin
+      // token; this points at the end-to-end walkthrough (corpus → service → register → run) so the
+      // operator knows what comes after `init`.
+      println!(
+        "\nThen stand up your first corpus + service and run a conversion — the end-to-end \
+         quickstart is the first tutorial in MANUAL.md (`cortex <command> --help` documents any step)."
+      );
       if !report.ok {
         std::process::exit(1);
       }
