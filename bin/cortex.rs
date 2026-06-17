@@ -436,8 +436,11 @@ enum Command {
     #[arg(long)]
     yes: bool,
   },
-  /// Bundle a corpus/service's converted HTML into ZIP datasets (replaces the
-  /// bundle-html-dataset*.sh scripts). Reads existing result archives off the filesystem.
+  /// Bundle a corpus/service's converted HTML into ZIP datasets — the CLI twin of the web Export
+  /// dataset screen (`/export/<c>/<s>`) and the agent `POST
+  /// /api/corpora/<c>/services/<s>/export-dataset` (replaces the bundle-html-dataset*.sh scripts).
+  /// Reads existing result archives off the filesystem (no conversion); resumable; writes a
+  /// `<corpus>-manifest.json` provenance sidecar alongside the archives.
   ExportDataset {
     /// Corpus name to export.
     corpus: String,
