@@ -1,6 +1,5 @@
 {% extends "layout" %} {% block content %}
-<div class="col-md-2"></div>
-<div class="col-md-8">
+<div class="report-layout">
   <h1>Register service <em>{{ global.service_name }}</em> on a corpus</h1>
   <p><a href="/services">&larr; back to the service registry</a></p>
   {% if global.already_activated %}
@@ -25,5 +24,4 @@
   <p>This service is already activated on every registered corpus (or none are registered yet).</p>
   {% endif %}
 </div>
-<div class="col-md-2"></div>
 {% endblock content %}

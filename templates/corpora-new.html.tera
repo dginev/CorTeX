@@ -1,9 +1,8 @@
 {% extends "layout" %} {% block content %}
-<div class="col-md-2"></div>
-<div class="col-md-8">
+<div class="report-layout">
   <h1>Add a corpus</h1>
   <p><a href="/admin">&larr; back to the admin dashboard</a></p>
-  {% if global.error %}<p class="status-bad"><strong>{{ global.error }}</strong></p>{% endif %}
+  {% if global.error %}<p class="flash-error"><i class="fa fa-exclamation-triangle"></i>&nbsp;{{ global.error }}</p>{% endif %}
   <form method="post" action="/corpus/import">
     <p><label>Name <input type="text" name="name" required placeholder="e.g. arxmliv-2024" value="{{ global.name }}"></label></p>
     <p><label>Path <span class="muted">(server-side corpus root)</span>
@@ -15,5 +14,4 @@
     <p><button type="submit">Register &amp; import</button></p>
   </form>
 </div>
-<div class="col-md-2"></div>
 {% endblock content %}

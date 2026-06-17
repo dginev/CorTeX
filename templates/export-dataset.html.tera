@@ -1,6 +1,5 @@
 {% extends "layout" %} {% block content %}
-<div class="col-md-2"></div>
-<div class="col-md-8">
+<div class="report-layout">
   <h1>Export dataset</h1>
   <p><a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}">&larr; back to the {{global.corpus_name}} / {{global.service_name}} report</a></p>
   {% if global.error %}<p class="flash-error"><i class="fa fa-exclamation-triangle"></i>&nbsp;{{ global.error }}</p>{% endif %}
@@ -27,5 +26,4 @@
     <p><button type="submit" class="btn-primary"><i class="fa fa-file-archive-o"></i>&nbsp;Export dataset</button></p>
   </form>
 </div>
-<div class="col-md-2"></div>
 {% endblock content %}

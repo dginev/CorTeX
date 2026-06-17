@@ -1,9 +1,8 @@
 {% extends "layout" %} {% block content %}
-<div class="col-md-2"></div>
-<div class="col-md-8">
+<div class="report-layout">
   <h1>Add a service</h1>
   <p><a href="/services">&larr; back to the service registry</a></p>
-  {% if global.error %}<p class="status-bad"><strong>{{ global.error }}</strong></p>{% endif %}
+  {% if global.error %}<p class="flash-error"><i class="fa fa-exclamation-triangle"></i>&nbsp;{{ global.error }}</p>{% endif %}
   <form method="post" action="/services/create">
     <h3>Service definition</h3>
     <p><label>Name <input type="text" name="name" required placeholder="e.g. oxidized-tex-to-html" value="{{ global.svc_name }}"></label>
@@ -33,5 +32,4 @@
     <p><button type="submit">Add service</button></p>
   </form>
 </div>
-<div class="col-md-2"></div>
 {% endblock content %}
