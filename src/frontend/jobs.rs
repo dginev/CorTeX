@@ -18,7 +18,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::backend::DbPool;
-use crate::frontend::actor::{require_admin_to, AdminReject, AdminSession, ReturnTo};
+use crate::frontend::actor::{require_admin_to, Actor, AdminReject, AdminSession, ReturnTo};
 use crate::jobs::{self, Job};
 
 /// A job as exposed over the API/UI (uuid handle, no internal serial id).
@@ -104,10 +104,12 @@ impl From<Job> for JobDto {
   fn from(job: Job) -> Self { JobDto::at(job, None) }
 }
 
-/// Polls a job by its uuid (the agent twin of the progress page).
+/// Polls a job by its uuid (the agent twin of the progress page). **Token-gated** ([`Actor`]):
+/// jobs carry admin attribution (`actor`) + operational params, so — like the human `/jobs/<uuid>`
+/// (`require_admin`) and `/api/audit` — they are not public (X-10's sibling read-twin gap).
 #[rocket_okapi::openapi(tag = "Jobs")]
 #[get("/api/jobs/<uuid>")]
-pub fn api_job(uuid: &str, pool: &State<DbPool>) -> Result<Json<JobDto>, Status> {
+pub fn api_job(_caller: Actor, uuid: &str, pool: &State<DbPool>) -> Result<Json<JobDto>, Status> {
   let parsed = Uuid::parse_str(uuid).map_err(|_| Status::NotFound)?;
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let job = jobs::find_job(&mut connection, parsed).ok_or(Status::NotFound)?;
@@ -122,6 +124,7 @@ pub fn api_job(uuid: &str, pool: &State<DbPool>) -> Result<Json<JobDto>, Status>
 #[rocket_okapi::openapi(tag = "Jobs")]
 #[get("/api/jobs?<active>&<limit>")]
 pub fn api_jobs(
+  _caller: Actor,
   active: Option<bool>,
   limit: Option<i64>,
   pool: &State<DbPool>,

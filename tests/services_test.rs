@@ -607,9 +607,9 @@ fn service_activation_flows() {
       "the new service is defined"
     );
   }
-  // The activation spawned a tracked, attributed background job.
+  // The activation spawned a tracked, attributed background job (the jobs API is token-gated).
   let jobs: Value = client
-    .get("/api/jobs")
+    .get("/api/jobs?token=token1")
     .dispatch()
     .into_json()
     .expect("jobs json");

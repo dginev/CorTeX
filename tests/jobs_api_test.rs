@@ -49,7 +49,7 @@ fn api_job_polls_a_spawned_job() {
   .expect("spawn the job");
 
   let client = client();
-  let path = format!("/api/jobs/{uuid}");
+  let path = format!("/api/jobs/{uuid}?token=token1");
   let mut body = serde_json::Value::Null;
   for _ in 0..200 {
     let response = client.get(path.as_str()).dispatch();
@@ -72,8 +72,19 @@ fn api_job_polls_a_spawned_job() {
 
 fn api_job_is_404_for_unknown_uuid() {
   let client = client();
+  // Token-gated (jobs carry admin attribution + params): no token → 401, even for an unknown uuid
+  // (the guard runs before the lookup). X-10's sibling read-twin gap.
+  assert_eq!(
+    client
+      .get("/api/jobs/00000000-0000-0000-0000-000000000000")
+      .dispatch()
+      .status(),
+    Status::Unauthorized,
+    "GET /api/jobs/<uuid> without a token is 401 (jobs are admin-only)"
+  );
+  // With a token, an unknown uuid is a clean 404.
   let response = client
-    .get("/api/jobs/00000000-0000-0000-0000-000000000000")
+    .get("/api/jobs/00000000-0000-0000-0000-000000000000?token=token1")
     .dispatch();
   assert_eq!(response.status(), Status::NotFound);
 }
@@ -129,7 +140,7 @@ fn jobs_list_carries_health_and_duration_and_supports_pending() {
   sign_in(&client); // the /jobs HTML dashboard below is admin-only
 
   // The fleet-wide list carries the observability metadata (health + duration) for every job.
-  let response = client.get("/api/jobs?limit=100").dispatch();
+  let response = client.get("/api/jobs?limit=100&token=token1").dispatch();
   assert_eq!(response.status(), Status::Ok);
   assert_eq!(response.content_type(), Some(ContentType::JSON));
   let body: serde_json::Value = response.into_json().expect("a JSON array");
@@ -169,7 +180,9 @@ fn jobs_list_carries_health_and_duration_and_supports_pending() {
   }
 
   // The pending filter excludes our now-terminal job.
-  let response = client.get("/api/jobs?active=true&limit=100").dispatch();
+  let response = client
+    .get("/api/jobs?active=true&limit=100&token=token1")
+    .dispatch();
   let pending: serde_json::Value = response.into_json().expect("a JSON array");
   assert!(
     !pending
@@ -224,7 +237,7 @@ fn stalled_running_job_reports_a_large_heartbeat_age() {
   .expect("seed a stalled running job");
 
   let client = client();
-  let response = client.get("/api/jobs?limit=200").dispatch();
+  let response = client.get("/api/jobs?limit=200&token=token1").dispatch();
   let body: serde_json::Value = response.into_json().expect("a JSON array");
   let ours = body
     .as_array()
@@ -265,7 +278,7 @@ fn stale_running_job_is_reaped_but_fresh_one_survives() {
 
   // Any jobs listing runs the W-4 runtime reaper first (here via the agent API).
   let client = client();
-  client.get("/api/jobs?limit=200").dispatch();
+  client.get("/api/jobs?limit=200&token=token1").dispatch();
 
   let status_of = |kind: &str, db: &mut cortex::backend::Backend| -> String {
     cortex::schema::jobs::table
