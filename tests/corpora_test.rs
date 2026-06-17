@@ -451,7 +451,7 @@ fn post_corpora_registers_and_imports_via_a_job() {
   let uuid = job["uuid"].as_str().expect("a uuid").to_string();
 
   // Poll the import job to a terminal state.
-  let path = format!("/api/jobs/{uuid}");
+  let path = format!("/api/jobs/{uuid}?token=token1");
   let mut last = serde_json::Value::Null;
   for _ in 0..500 {
     last = client
@@ -636,7 +636,7 @@ fn post_corpora_extend_adds_new_entries() {
   assert_eq!(job["kind"], "corpus_extend");
   let uuid = job["uuid"].as_str().expect("a uuid").to_string();
 
-  let job_path = format!("/api/jobs/{uuid}");
+  let job_path = format!("/api/jobs/{uuid}?token=token1");
   let mut last = serde_json::Value::Null;
   for _ in 0..500 {
     last = client
@@ -952,7 +952,7 @@ fn sandbox_carves_matching_entries_into_a_new_corpus() {
   let uuid = job["uuid"].as_str().expect("a uuid").to_string();
 
   // Poll the carve job to a terminal state.
-  let path = format!("/api/jobs/{uuid}");
+  let path = format!("/api/jobs/{uuid}?token=token1");
   let mut last = serde_json::Value::Null;
   for _ in 0..500 {
     last = client
