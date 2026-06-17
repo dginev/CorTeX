@@ -925,7 +925,7 @@ fn sandbox_carves_matching_entries_into_a_new_corpus() {
   let client = client();
   let body = serde_json::json!({
     "name": sandbox_name, "service_id": svc.id,
-    "severity": "warning", "category": "missing_file", "what": "foo.cls",
+    "message_severity": "warning", "category": "missing_file", "what": "foo.cls",
   });
   // Untokened → 401 (carving a sandbox is a write).
   let denied_url = format!("/api/corpora/{parent_name}/sandbox");
@@ -1015,9 +1015,9 @@ fn sandbox_carves_matching_entries_into_a_new_corpus() {
   );
   let filter = detail["sandbox"]["filter"].as_str().unwrap_or_default();
   assert!(
-    filter.contains("severity=warning")
-      && filter.contains("category=missing_file")
-      && filter.contains("what=foo.cls"),
+    filter.contains("message=warning")
+      && filter.contains("missing_file")
+      && filter.contains("foo.cls"),
     "the detail API summarises the carve filter, got {filter:?}"
   );
   assert!(
@@ -1106,11 +1106,13 @@ fn sandbox_size_cap_and_entry_filter_limit_the_carve() {
 
   let base = SandboxSelection {
     service_id: svc.id,
-    severity: "warning".to_string(),
+    status: Some("warning".to_string()),
+    message_severity: None,
     category: None,
     what: None,
     entry: None,
     max_entries: None,
+    severity: None,
   };
   let load_entries = |db: &mut backend::Backend, corpus_id: i32| -> Vec<String> {
     let mut found: Vec<String> = tasks::table
@@ -1187,21 +1189,22 @@ fn sandbox_size_cap_and_entry_filter_limit_the_carve() {
     "the cap is deterministic — the lexically-first two entries"
   );
 
-  // F-7: `no_problem` carries no messages, so narrowing it by category/`what` is rejected cleanly
-  // rather than silently carving info-message tasks via `to_table`'s `log_infos` fallback.
+  // F-7 (Model C): a `category` needs a `message_severity` to filter on (there's no message table
+  // without one), so `status=no_problem` + category but no message_severity is rejected cleanly
+  // rather than silently carving via a fallback table.
   assert!(
     create_sandbox(
       &mut db.connection,
       &parent,
       "sandbox_no_problem_category",
       &SandboxSelection {
-        severity: "no_problem".to_string(),
+        status: Some("no_problem".to_string()),
         category: Some("missing_file".to_string()),
         ..base.clone()
       },
     )
     .is_err(),
-    "no_problem + category must be rejected, never a silent wrong-scope carve"
+    "category without a message_severity must be rejected, never a silent wrong-scope carve"
   );
 
   cleanup(&mut db, parent_name, svc_name);

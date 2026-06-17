@@ -717,19 +717,27 @@ pub fn export_dataset_human(
   }
 }
 
-/// Request body for carving a **sandbox** corpus out of a parent by a message-condition filter
-/// (Arm 5). The `(service, severity, category, what)` dimensions match the report drill-down.
+/// Request body for carving a **sandbox** corpus out of a parent by a filter (Arm 5). Task-status
+/// and message-severity are independent, intersecting dimensions (Model C); `category`/`what`
+/// narrow the message filter, mirroring the report drill-down.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SandboxRequest {
   /// Name for the new sandbox corpus (its external handle; must be unique).
   pub name: String,
   /// The service whose conversion results are filtered.
   pub service_id: i32,
-  /// Severity key (`no_problem` | `warning` | `error` | `fatal` | `invalid`).
-  pub severity: String,
-  /// Optional message-category narrowing.
+  /// Optional **task-status** filter (`no_problem` | `warning` | `error` | `fatal` | `invalid`).
+  #[serde(default)]
+  pub status: Option<String>,
+  /// Optional **message-severity** filter (`info` | `warning` | `error` | `fatal` | `invalid`) —
+  /// matches tasks that emitted such a message, at any status. `category`/`what` narrow within it.
+  #[serde(default)]
+  pub message_severity: Option<String>,
+  /// Optional message-category narrowing (needs `message_severity`).
+  #[serde(default)]
   pub category: Option<String>,
-  /// Optional `what` narrowing within the category.
+  /// Optional `what` narrowing within the category (needs `category`).
+  #[serde(default)]
   pub what: Option<String>,
   /// Optional substring the parent `entry` path must contain (`entry LIKE '%…%'`, e.g. `2506.` for
   /// one arXiv month). Empty/absent = no narrowing.
@@ -745,11 +753,13 @@ impl From<&SandboxRequest> for SandboxSelection {
   fn from(request: &SandboxRequest) -> Self {
     SandboxSelection {
       service_id: request.service_id,
-      severity: request.severity.clone(),
+      status: request.status.clone(),
+      message_severity: request.message_severity.clone(),
       category: request.category.clone(),
       what: request.what.clone(),
       entry: request.entry.clone(),
       max_entries: request.max_entries,
+      severity: None,
     }
   }
 }
@@ -799,10 +809,10 @@ fn start_sandbox(
   let database_url = database_url.to_string();
   let name = request.name.clone();
   let selection = SandboxSelection::from(request);
-  // Pre-flight the selection's severity (mirrors import/export) so a bad/`no_problem`+category
-  // carve is an immediate 422, not a `202` that an agent has to poll only to find the job failed.
+  // Pre-flight the selection (mirrors import/export) so a bad filter is an immediate 422, not a
+  // `202` that an agent has to poll only to find the job failed.
   selection
-    .validated_status()
+    .validate()
     .map_err(|_| Status::UnprocessableEntity)?;
   let params = serde_json::json!({
     "parent": parent, "name": name, "selection": serde_json::to_value(&selection).ok(),
@@ -824,8 +834,10 @@ pub struct SandboxForm {
   pub name: String,
   /// Service whose results are filtered.
   pub service_id: i32,
-  /// Severity key.
-  pub severity: String,
+  /// Optional task-status filter (empty string = none).
+  pub status: Option<String>,
+  /// Optional message-severity filter (empty string = none).
+  pub message_severity: Option<String>,
   /// Optional category narrowing (empty string = none).
   pub category: Option<String>,
   /// Optional `what` narrowing (empty string = none).
@@ -856,7 +868,8 @@ pub fn create_sandbox_human(
   let request = SandboxRequest {
     name: form.name,
     service_id: form.service_id,
-    severity: form.severity,
+    status: blank_to_none(form.status),
+    message_severity: blank_to_none(form.message_severity),
     category: blank_to_none(form.category),
     what: blank_to_none(form.what),
     entry: blank_to_none(form.entry),

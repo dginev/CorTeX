@@ -349,10 +349,15 @@ enum Command {
     /// Service whose conversion results are filtered (e.g. tex_to_html).
     #[arg(long)]
     service: String,
-    /// Severity to capture (`no_problem`|`warning`|`error`|`fatal`|`invalid`).
+    /// Filter by task status (`no_problem`|`warning`|`error`|`fatal`|`invalid`) — intersected with
+    /// the message filter; supply at least one of the two.
     #[arg(long)]
-    severity: String,
-    /// Restrict to a message category.
+    status: Option<String>,
+    /// Filter by message severity (`info`|`warning`|`error`|`fatal`|`invalid`) — tasks that
+    /// emitted such a message, at any status. `--category`/`--what` narrow within it.
+    #[arg(long)]
+    message_severity: Option<String>,
+    /// Restrict to a message category (needs `--message-severity`).
     #[arg(long)]
     category: Option<String>,
     /// Restrict to a message `what` within the category.
@@ -630,7 +635,8 @@ fn main() {
       parent,
       name,
       service,
-      severity,
+      status,
+      message_severity,
       category,
       what,
       entry,
@@ -640,7 +646,8 @@ fn main() {
       parent,
       name,
       service,
-      severity,
+      status,
+      message_severity,
       category,
       what,
       entry,
@@ -1659,7 +1666,8 @@ fn run_sandbox(
   parent_name: String,
   name: String,
   service_name: String,
-  severity: String,
+  status: Option<String>,
+  message_severity: Option<String>,
   category: Option<String>,
   what: Option<String>,
   entry: Option<String>,
@@ -1681,33 +1689,35 @@ fn run_sandbox(
       std::process::exit(1);
     },
   };
-  if TaskStatus::from_key(&severity).is_none() {
-    eprintln!("Invalid --severity {severity:?} (use no_problem, warning, error, fatal, invalid)");
-    std::process::exit(2);
-  }
   if Corpus::find_by_name(&name.to_lowercase(), &mut backend.connection).is_ok() {
     eprintln!("A corpus named {name:?} already exists — pick a unique sandbox name");
     std::process::exit(1);
   }
 
-  // Normalize the two optional carve narrowings (blank → none, non-positive cap → none).
-  let entry = entry.filter(|e| !e.trim().is_empty());
-  let max_entries = max_entries.filter(|n| *n > 0);
+  // Normalize the optional narrowings (blank → none, non-positive cap → none) + build the filter.
+  let blank_to_none = |value: Option<String>| value.filter(|text| !text.trim().is_empty());
+  let selection = SandboxSelection {
+    service_id: service.id,
+    status: blank_to_none(status),
+    message_severity: blank_to_none(message_severity),
+    category: blank_to_none(category),
+    what: blank_to_none(what),
+    entry: blank_to_none(entry),
+    max_entries: max_entries.filter(|n| *n > 0),
+    severity: None,
+  };
+  // Pre-flight the intersecting status/message filters (the same set as the web/agent path).
+  if let Err(reason) = selection.validate() {
+    eprintln!("Invalid sandbox filter: {reason}");
+    std::process::exit(2);
+  }
 
-  let mut scope = format!("{}/{}  severity={severity}", parent.name, service.name);
-  if let Some(cat) = &category {
-    scope.push_str(&format!("  category={cat}"));
-  }
-  if let Some(w) = &what {
-    scope.push_str(&format!("  what={w}"));
-  }
-  if let Some(e) = &entry {
-    scope.push_str(&format!("  entry~{e}"));
-  }
-  if let Some(n) = &max_entries {
-    scope.push_str(&format!("  limit={n}"));
-  }
-
+  let scope = format!(
+    "{}/{}  {}",
+    parent.name,
+    service.name,
+    selection.filter_summary()
+  );
   if !yes {
     println!("Dry run — would carve sandbox '{name}' from:");
     println!("  {scope}");
@@ -1716,14 +1726,6 @@ fn run_sandbox(
     );
     return;
   }
-  let selection = SandboxSelection {
-    service_id: service.id,
-    severity,
-    category,
-    what,
-    entry,
-    max_entries,
-  };
   match create_sandbox(
     &mut backend.connection,
     &parent,

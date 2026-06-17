@@ -89,7 +89,7 @@
 
     {% if services and services | length > 0 %}
     <form method="post" action="/corpus/{{global.corpus_name_uri}}/sandbox" class="action-section">
-      <p class="action-subhead action-title">Prepare a sandbox <span class="muted">— a working subset, by message-condition filter</span></p>
+      <p class="action-subhead action-title">Prepare a sandbox <span class="muted">— a working subset, by task status &amp;/or message filter (intersected)</span></p>
       <label for="sbx-name">Sandbox name</label>
       <input id="sbx-name" type="text" name="name" placeholder="new sandbox name" aria-label="New sandbox corpus name" required>
       <p class="action-divider">Filters</p>
@@ -99,15 +99,25 @@
         <option value="{{ service.id }}">{{ service.name }}</option>
         {% endfor %}
       </select>
-      <label for="sbx-severity">Severity</label>
-      <select id="sbx-severity" name="severity" aria-label="Severity to capture" required>
+      <label for="sbx-status">Task status <span class="muted">(the task's outcome)</span></label>
+      <select id="sbx-status" name="status" aria-label="Task-status filter (optional)">
+        <option value="">(any status)</option>
         <option value="no_problem">no_problem</option>
         <option value="warning" selected>warning</option>
         <option value="error">error</option>
         <option value="fatal">fatal</option>
         <option value="invalid">invalid</option>
       </select>
-      <label for="sbx-category">Category <span class="muted">(optional)</span></label>
+      <label for="sbx-msev">Message severity <span class="muted">(emitted a message of…)</span></label>
+      <select id="sbx-msev" name="message_severity" aria-label="Message-severity filter (optional)">
+        <option value="" selected>(none)</option>
+        <option value="info">info</option>
+        <option value="warning">warning</option>
+        <option value="error">error</option>
+        <option value="fatal">fatal</option>
+        <option value="invalid">invalid</option>
+      </select>
+      <label for="sbx-category">Category <span class="muted">(optional — needs a message severity)</span></label>
       <input id="sbx-category" type="text" name="category" placeholder="e.g. missing_file" aria-label="Message category (optional)">
       <label for="sbx-what">What <span class="muted">(optional)</span></label>
       <input id="sbx-what" type="text" name="what" placeholder="e.g. foo.cls" aria-label="Message what filter (optional)">
