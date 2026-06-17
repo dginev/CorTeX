@@ -287,6 +287,12 @@ legend {
 .config-page input[type="checkbox"] {
   width: auto;
 }
+/* Items in a checkbox list (e.g. the activate-on-corpora picker) are options, not field labels, so
+   they shouldn't inherit the bold block label styling. */
+.config-page .plain-list label {
+  display: inline;
+  font-weight: 400;
+}
 
 /* Job progress page: themed progress bar + status colours. */
 progress {

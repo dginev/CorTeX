@@ -1,35 +1,53 @@
 {% extends "layout" %} {% block content %}
-<div class="report-layout">
+<div class="report-layout config-page">
   <h1>Add a service</h1>
   <p><a href="/services">&larr; back to the service registry</a></p>
   {% if global.error %}<p class="flash-error"><i class="fa fa-exclamation-triangle"></i>&nbsp;{{ global.error }}</p>{% endif %}
   <form method="post" action="/services/create">
-    <h3>Service definition</h3>
-    <p><label>Name <input type="text" name="name" required placeholder="e.g. oxidized-tex-to-html" value="{{ global.svc_name }}"></label>
-      &nbsp; <label>Version <input type="number" step="0.01" name="version" value="{{ global.svc_version }}" required></label></p>
-    <p><label>Input format <input type="text" name="inputformat" value="{{ global.svc_inputformat }}" required></label>
-      &nbsp; <label>Output format <input type="text" name="outputformat" value="{{ global.svc_outputformat }}" required></label></p>
-    <p><label>Input converter (optional) <input type="text" name="inputconverter" placeholder="e.g. import" value="{{ global.svc_inputconverter }}"></label></p>
-    <p><label>Description <input type="text" name="description" size="60" value="{{ global.svc_description }}"></label></p>
-    <p><label><input type="checkbox" name="complex" value="true"{% if global.svc_complex == "true" %} checked{% endif %}> Complex (needs more than a document's main text)</label></p>
+    <fieldset>
+      <legend>Service definition</legend>
 
-    <hr>
-    <h3>Activate on corpora <span class="muted">(optional — zero or more)</span></h3>
-    {% if corpora and corpora | length > 0 %}
-    <p class="muted">Each checked corpus is registered as a background job (one TODO task per document — a
-      large corpus can run for a while); track them on <a href="/jobs">Background jobs</a>.</p>
-    <ul class="plain-list">
-      {% for corpus in corpora %}
-      <li><label><input type="checkbox" name="corpora" value="{{corpus.name}}"{% if corpus.checked == "true" %} checked{% endif %}> {{corpus.name}}{% if corpus.description %}
-          <span class="muted">— {{corpus.description}}</span>{% endif %}</label></li>
-      {% endfor %}
-    </ul>
-    {% else %}
-    <p class="muted">No corpora are registered yet — the service will be defined only. You can register it on a
-      corpus later from the service registry.</p>
-    {% endif %}
+      <label for="svc-name">Name</label>
+      <input id="svc-name" type="text" name="name" required placeholder="e.g. oxidized-tex-to-html" value="{{ global.svc_name }}">
 
-    <p><button type="submit">Add service</button></p>
+      <label for="svc-version">Version</label>
+      <input id="svc-version" type="number" step="0.01" name="version" value="{{ global.svc_version }}" required>
+
+      <label for="svc-in">Input format</label>
+      <input id="svc-in" type="text" name="inputformat" value="{{ global.svc_inputformat }}" required>
+
+      <label for="svc-out">Output format</label>
+      <input id="svc-out" type="text" name="outputformat" value="{{ global.svc_outputformat }}" required>
+
+      <label for="svc-conv">Input converter <span class="muted">(optional)</span></label>
+      <input id="svc-conv" type="text" name="inputconverter" placeholder="e.g. import" value="{{ global.svc_inputconverter }}">
+
+      <label for="svc-desc">Description <span class="muted">(optional)</span></label>
+      <input id="svc-desc" type="text" name="description" value="{{ global.svc_description }}">
+
+      <p class="checkbox-row">
+        <label><input type="checkbox" name="complex" value="true"{% if global.svc_complex == "true" %} checked{% endif %}> Complex (needs more than a document's main text)</label>
+      </p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Activate on corpora <span class="muted">(optional — zero or more)</span></legend>
+      {% if corpora and corpora | length > 0 %}
+      <p class="muted">Each checked corpus is registered as a background job (one TODO task per document — a
+        large corpus can run for a while); track them on <a href="/jobs">Background jobs</a>.</p>
+      <ul class="plain-list">
+        {% for corpus in corpora %}
+        <li><label><input type="checkbox" name="corpora" value="{{corpus.name}}"{% if corpus.checked == "true" %} checked{% endif %}> {{corpus.name}}{% if corpus.description %}
+            <span class="muted">— {{corpus.description}}</span>{% endif %}</label></li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">No corpora are registered yet — the service will be defined only. You can register it on a
+        corpus later from the service registry.</p>
+      {% endif %}
+    </fieldset>
+
+    <p><button type="submit" class="btn-primary">Add service</button></p>
   </form>
 </div>
 {% endblock content %}
