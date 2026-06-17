@@ -71,18 +71,21 @@ enum Command {
     #[arg(long)]
     json: bool,
   },
-  /// Operational snapshot — the CLI twin of the admin dashboard's live-ops console: pending-task
-  /// backlog, worker fleet, background jobs, and the latest run. (`doctor` checks the install is
-  /// healthy; `status` shows what's happening now.)
+  /// Operational snapshot of live activity — backlog, worker fleet, jobs, latest run.
+  ///
+  /// The CLI twin of the admin dashboard's live-ops console: pending-task backlog, worker fleet,
+  /// background jobs, and the latest run. (`doctor` checks the install is healthy; `status` shows
+  /// what's happening now.)
   Status {
     /// Emit JSON (the same shape as the admin `/admin/status.json` feed) instead of a text
     /// summary.
     #[arg(long)]
     json: bool,
   },
-  /// List recent background jobs (imports, reruns, reindex/analyze, sandbox carves) with health,
-  /// progress, and heartbeat age — the CLI twin of the `/jobs` dashboard and the agent
-  /// `GET /api/jobs`. (`status` shows job *counts*; `jobs` shows the list.)
+  /// List recent background jobs with health, progress, and heartbeat age.
+  ///
+  /// Imports, reruns, reindex/analyze, sandbox carves — the CLI twin of the `/jobs` dashboard and
+  /// the agent `GET /api/jobs`. (`status` shows job *counts*; `jobs` shows the list.)
   Jobs {
     /// Show only pending/running jobs (omit terminal ones).
     #[arg(long)]
@@ -94,9 +97,11 @@ enum Command {
     #[arg(long)]
     json: bool,
   },
-  /// Review the accountability audit log — who did what, when — the CLI twin of the `/admin/audit`
-  /// screen and the agent `GET /api/audit`. Every mutating admin action (rerun, import, delete,
-  /// config change, …) is recorded with its actor + outcome.
+  /// Review the accountability audit log — who did what, when.
+  ///
+  /// The CLI twin of the `/admin/audit` screen and the agent `GET /api/audit`. Every mutating
+  /// admin action (rerun, import, delete, config change, …) is recorded with its actor +
+  /// outcome.
   Audit {
     /// Restrict to a single actor (the owner credited for the action).
     #[arg(long)]
@@ -108,20 +113,22 @@ enum Command {
     #[arg(long)]
     json: bool,
   },
-  /// List all registered corpora — the CLI twin of the overview screen and the agent
-  /// `GET /api/corpora`, sharing the `CorpusDto`. Shows each corpus's stable `public_id` handle,
-  /// name, ingested-document count, and path — the handles/names the other `cortex` subcommands
-  /// take as input (so this is how you discover them). `--json` mirrors the agent `CorpusDto`
-  /// list.
+  /// List all registered corpora (handles, names, document counts, paths).
+  ///
+  /// The CLI twin of the overview screen and the agent `GET /api/corpora`, sharing the
+  /// `CorpusDto`. Shows each corpus's stable `public_id` handle, name, ingested-document count,
+  /// and path — the handles/names the other `cortex` subcommands take as input (so this is how
+  /// you discover them). `--json` mirrors the agent `CorpusDto` list.
   Corpora {
     /// Emit JSON (the same shape as the agent `CorpusDto` list) instead of a text table.
     #[arg(long)]
     json: bool,
   },
-  /// List the service registry — the CLI twin of the registry screen and the agent
-  /// `GET /api/services`, sharing the `ServiceDto`. Shows each service's `public_id`, name,
-  /// version, and input→output formats (incl. the magic `init`/`import` services). `--json`
-  /// mirrors the agent `ServiceDto` list.
+  /// List the service registry (names, versions, input→output formats).
+  ///
+  /// The CLI twin of the registry screen and the agent `GET /api/services`, sharing the
+  /// `ServiceDto`. Shows each service's `public_id`, name, version, and input→output formats
+  /// (incl. the magic `init`/`import` services). `--json` mirrors the agent `ServiceDto` list.
   Services {
     /// Emit JSON (the same shape as the agent `ServiceDto` list) instead of a text table.
     #[arg(long)]
@@ -140,12 +147,13 @@ enum Command {
     #[arg(long, default_value = "admin")]
     owner: String,
   },
-  /// Print the conversion report for a `(corpus, service)` — the CLI twin of the web/agent report
-  /// ladder. With no drill flags: the service overview (valid-task total + per-status shares,
-  /// `GET /api/reports/<c>/<s>`). Add `--severity` for the category breakdown, `--severity
-  /// --category` for the `what` breakdown, and `--severity --category --what` for the affected-
-  /// document list (paper ids to feed `cortex document`) — the same rollup-backed grains the agent
-  /// `/api/reports/...` rungs serve.
+  /// Print the conversion report for a `(corpus, service)`.
+  ///
+  /// The CLI twin of the web/agent report ladder. With no drill flags: the service overview
+  /// (valid-task total + per-status shares, `GET /api/reports/<c>/<s>`). Add `--severity` for the
+  /// category breakdown, `--severity --category` for the `what` breakdown, and `--severity
+  /// --category --what` for the affected-document list (paper ids to feed `cortex document`) — the
+  /// same rollup-backed grains the agent `/api/reports/...` rungs serve.
   Report {
     /// Corpus name.
     corpus: String,
@@ -172,9 +180,11 @@ enum Command {
     #[arg(long)]
     json: bool,
   },
-  /// Run history for a `(corpus, service)` — the CLI twin of the web run-history screen + agent
-  /// `GET /api/runs/<c>/<s>`: each conversion run with its per-severity tallies (live for the open
-  /// run). The macro view of how conversion quality moved over time.
+  /// Run history for a `(corpus, service)` — per-run severity tallies over time.
+  ///
+  /// The CLI twin of the web run-history screen + agent `GET /api/runs/<c>/<s>`: each conversion
+  /// run with its per-severity tallies (live for the open run). The macro view of how conversion
+  /// quality moved over time.
   Runs {
     /// Corpus name.
     corpus: String,
@@ -184,11 +194,13 @@ enum Command {
     #[arg(long)]
     json: bool,
   },
-  /// Compare two saved task-status snapshots of a `(corpus, service)` — the run-diff summary (the
-  /// CLI twin of the web `/runs/<c>/<s>/diff` screen + agent `GET /api/runs/<c>/<s>/diff`). The
-  /// status-transition matrix: how many tasks moved between severities. With no `--previous`/
-  /// `--current`, compares the most recent saved pair. Take a baseline with `cortex snapshot`
-  /// before a rerun campaign, then `cortex diff` to quantify what moved.
+  /// Compare two saved task-status snapshots of a `(corpus, service)`.
+  ///
+  /// The run-diff summary (the CLI twin of the web `/runs/<c>/<s>/diff` screen + agent
+  /// `GET /api/runs/<c>/<s>/diff`): the status-transition matrix — how many tasks moved between
+  /// severities. With no `--previous`/`--current`, compares the most recent saved pair. Take a
+  /// baseline with `cortex snapshot` before a rerun campaign, then `cortex diff` to quantify what
+  /// moved.
   Diff {
     /// Corpus name.
     corpus: String,
@@ -224,9 +236,10 @@ enum Command {
     #[arg(long)]
     json: bool,
   },
-  /// Per-article forensics for one document — the CLI twin of the web forensic screen + agent
-  /// `GET /api/corpus/<c>/<svc>/document/<name>`: the document's status + every worker-log
-  /// message.
+  /// Per-article forensics for one document — its status + every log message.
+  ///
+  /// The CLI twin of the web forensic screen + agent `GET /api/corpus/<c>/<svc>/document/<name>`:
+  /// the document's status + every worker-log message.
   Document {
     /// Corpus name.
     corpus: String,
@@ -241,11 +254,12 @@ enum Command {
     #[arg(long)]
     json: bool,
   },
-  /// Freeze the current per-task statuses of a `(corpus, service)` into `historical_tasks` — the
-  /// CLI twin of the web/agent save-snapshot (`POST /api/corpora/<c>/services/<s>/snapshot`).
-  /// Capture a baseline before a rerun campaign, then diff against it with `cortex runs` /
-  /// `/runs/.../tasks`. Append-only (history stays immutable); executes directly
-  /// (non-destructive).
+  /// Freeze the current per-task statuses of a `(corpus, service)` into history.
+  ///
+  /// Writes `historical_tasks` — the CLI twin of the web/agent save-snapshot
+  /// (`POST /api/corpora/<c>/services/<s>/snapshot`). Capture a baseline before a rerun campaign,
+  /// then diff against it with `cortex runs` / `/runs/.../tasks`. Append-only (history stays
+  /// immutable); executes directly (non-destructive).
   Snapshot {
     /// Corpus name.
     corpus: String,
@@ -255,9 +269,11 @@ enum Command {
     #[arg(long)]
     json: bool,
   },
-  /// **Pause** a `(corpus, service)` run — block every in-progress task (`status >= 0`) so the
-  /// dispatcher stops leasing them. CLI twin of the report screen's "Pause run" and
-  /// `POST /api/reports/<c>/<s>/pause`. Reversible with `cortex resume`.
+  /// Pause a `(corpus, service)` run — block in-progress tasks from being leased.
+  ///
+  /// Blocks every in-progress task (`status >= 0`) so the dispatcher stops leasing them. CLI twin
+  /// of the report screen's "Pause run" and `POST /api/reports/<c>/<s>/pause`. Reversible with
+  /// `cortex resume`.
   Pause {
     /// Corpus name.
     corpus: String,
@@ -267,8 +283,10 @@ enum Command {
     #[arg(long)]
     json: bool,
   },
-  /// **Resume** a paused `(corpus, service)` run — return every Blocked task to TODO so the
-  /// dispatcher picks them up. CLI twin of "Resume run" and `POST /api/reports/<c>/<s>/resume`.
+  /// Resume a paused `(corpus, service)` run — return Blocked tasks to TODO.
+  ///
+  /// Returns every Blocked task to TODO so the dispatcher picks them up. CLI twin of "Resume run"
+  /// and `POST /api/reports/<c>/<s>/resume`.
   Resume {
     /// Corpus name.
     corpus: String,
@@ -278,9 +296,10 @@ enum Command {
     #[arg(long)]
     json: bool,
   },
-  /// Mark a filtered scope of a `(corpus, service)` for reconversion — the CLI twin of the
-  /// web/agent rerun. Resets the matching tasks to TODO so the dispatcher re-runs them.
-  /// **Dry-run by default** (prints the scope); pass `--yes` to execute.
+  /// Mark a filtered scope of a `(corpus, service)` for reconversion.
+  ///
+  /// The CLI twin of the web/agent rerun. Resets the matching tasks to TODO so the dispatcher
+  /// re-runs them. **Dry-run by default** (prints the scope); pass `--yes` to execute.
   Rerun {
     /// Corpus name.
     corpus: String,
@@ -306,10 +325,11 @@ enum Command {
     #[arg(long)]
     yes: bool,
   },
-  /// Carve a sandbox corpus out of a parent by a message-condition filter — the CLI twin of the
-  /// web/agent sandbox. A sandbox is a first-class corpus (its own tasks/runs/reports) you can
-  /// then run/rerun to iterate a campaign on a subset. Dry-run by default; pass `--yes` to
-  /// create.
+  /// Carve a sandbox corpus out of a parent by a message-condition filter.
+  ///
+  /// The CLI twin of the web/agent sandbox. A sandbox is a first-class corpus (its own
+  /// tasks/runs/reports) you can then run/rerun to iterate a campaign on a subset. Dry-run by
+  /// default; pass `--yes` to create.
   Sandbox {
     /// Parent corpus to carve from.
     parent: String,
@@ -338,11 +358,13 @@ enum Command {
     #[arg(long)]
     yes: bool,
   },
-  /// Register a corpus and import its documents — the CLI twin of the web "Add a corpus" form and
-  /// the agent `POST /api/corpora`. Walks the corpus path creating one import task per document,
-  /// so the dispatcher can then convert them (the usual first step after `cortex init`). Runs
-  /// synchronously to completion (the web/agent run it as a background job); exits `1` on a name
-  /// clash, an unreadable path, or an import error.
+  /// Register a corpus and import its documents.
+  ///
+  /// The CLI twin of the web "Add a corpus" form and the agent `POST /api/corpora`. Walks the
+  /// corpus path creating one import task per document, so the dispatcher can then convert them
+  /// (the usual first step after `cortex init`). Runs synchronously to completion (the web/agent
+  /// run it as a background job); exits `1` on a name clash, an unreadable path, or an import
+  /// error.
   Import {
     /// Corpus name — the unique handle used everywhere else.
     name: String,
@@ -355,20 +377,24 @@ enum Command {
     #[arg(long, default_value = "")]
     description: String,
   },
-  /// Re-scan a corpus's path for newly-arrived documents and import them — the CLI twin of the
-  /// corpus screen's "Extend" button and the agent `POST /api/corpora/<name>/extend`. Adds an
-  /// import task per new document and extends each already-active service to cover them (so new
-  /// documents get conversion tasks), leaving existing tasks + results untouched. The incremental
-  /// companion to `import` for a growing corpus.
+  /// Re-scan a corpus's path for newly-arrived documents and import them.
+  ///
+  /// The CLI twin of the corpus screen's "Extend" button and the agent
+  /// `POST /api/corpora/<name>/extend`. Adds an import task per new document and extends each
+  /// already-active service to cover them (so new documents get conversion tasks), leaving
+  /// existing tasks + results untouched. The incremental companion to `import` for a growing
+  /// corpus.
   Extend {
     /// Corpus name to re-scan.
     corpus: String,
   },
-  /// Define a new conversion service in the registry — the CLI twin of the registry screen's
-  /// "Register a service" form and the agent `POST /api/services`. This *defines* a service (e.g.
-  /// tex_to_html); activating it on a corpus (creating tasks) is `cortex activate`. The step a
-  /// fresh-box deploy needs before `activate`, since only the built-in init/import services are
-  /// seeded. Exits `1` if the name already exists.
+  /// Define a new conversion service in the registry.
+  ///
+  /// The CLI twin of the registry screen's "Register a service" form and the agent
+  /// `POST /api/services`. This *defines* a service (e.g. tex_to_html); activating it on a corpus
+  /// (creating tasks) is `cortex activate`. The step a fresh-box deploy needs before `activate`,
+  /// since only the built-in init/import services are seeded. Exits `1` if the name already
+  /// exists.
   CreateService {
     /// Service name — the handle used in `activate`/`report`/etc.
     name: String,
@@ -391,11 +417,12 @@ enum Command {
     #[arg(long, default_value = "")]
     description: String,
   },
-  /// Activate a service on a corpus — the CLI twin of the corpus screen's "Register a service"
-  /// form and the agent `POST /api/corpora/<c>/services/<s>`. Creates one TODO task per imported
-  /// document so the dispatcher converts them (the step after `import`). Refuses an
-  /// already-activated pair (use `rerun` to re-process) and the infrastructure init/import
-  /// services.
+  /// Activate a service on a corpus (create its conversion tasks).
+  ///
+  /// The CLI twin of the corpus screen's "Register a service" form and the agent
+  /// `POST /api/corpora/<c>/services/<s>`. Creates one TODO task per imported document so the
+  /// dispatcher converts them (the step after `import`). Refuses an already-activated pair (use
+  /// `rerun` to re-process) and the infrastructure init/import services.
   Activate {
     /// Corpus name.
     corpus: String,
@@ -408,11 +435,13 @@ enum Command {
     #[arg(long, default_value = "activated via cortex CLI")]
     description: String,
   },
-  /// Deactivate (retire) a service from a corpus — the CLI twin of the corpus screen's per-service
-  /// "deactivate" form and the agent `DELETE /api/corpora/<c>/services/<s>`. Deletes the pair's
-  /// tasks + log messages for this corpus (the service definition and its work elsewhere survive;
-  /// run tallies are immutable). The inverse of `activate`. Dry-run by default (prints the blast
-  /// radius); pass `--yes` to deactivate.
+  /// Deactivate (retire) a service from a corpus.
+  ///
+  /// The CLI twin of the corpus screen's per-service "deactivate" form and the agent
+  /// `DELETE /api/corpora/<c>/services/<s>`. Deletes the pair's tasks + log messages for this
+  /// corpus (the service definition and its work elsewhere survive; run tallies are immutable).
+  /// The inverse of `activate`. Dry-run by default (prints the blast radius); pass `--yes` to
+  /// deactivate.
   Deactivate {
     /// Corpus name.
     corpus: String,
@@ -423,10 +452,11 @@ enum Command {
     #[arg(long)]
     yes: bool,
   },
-  /// Delete a corpus (or sandbox) and all of its tasks + log messages — the CLI twin of the
-  /// web/agent `DELETE /api/corpora/<name>`, via the transactional, orphan-free `Corpus::destroy`.
-  /// Dry-run by default (prints the blast radius); pass `--yes` to delete. Historical run tallies
-  /// are immutable and survive.
+  /// Delete a corpus (or sandbox) and all of its tasks + log messages.
+  ///
+  /// The CLI twin of the web/agent `DELETE /api/corpora/<name>`, via the transactional,
+  /// orphan-free `Corpus::destroy`. Dry-run by default (prints the blast radius); pass `--yes`
+  /// to delete. Historical run tallies are immutable and survive.
   DeleteCorpus {
     /// Corpus name to delete.
     name: String,
@@ -434,9 +464,10 @@ enum Command {
     #[arg(long)]
     yes: bool,
   },
-  /// Delete a service definition and ALL of its work across every corpus — the inverse of
-  /// `create-service` and the CLI twin of the agent `DELETE /api/services/<name>`, via the
-  /// transactional, orphan-free `Service::destroy`. Refuses the infrastructure init/import
+  /// Delete a service definition and ALL of its work across every corpus.
+  ///
+  /// The inverse of `create-service` and the CLI twin of the agent `DELETE /api/services/<name>`,
+  /// via the transactional, orphan-free `Service::destroy`. Refuses the infrastructure init/import
   /// services. Dry-run by default (prints the blast radius); pass `--yes` to delete. Run tallies
   /// are immutable and survive.
   DeleteService {
@@ -446,11 +477,12 @@ enum Command {
     #[arg(long)]
     yes: bool,
   },
-  /// Bundle a corpus/service's converted HTML into ZIP datasets — the CLI twin of the web Export
-  /// dataset screen (`/export/<c>/<s>`) and the agent `POST
-  /// /api/corpora/<c>/services/<s>/export-dataset` (replaces the bundle-html-dataset*.sh scripts).
-  /// Reads existing result archives off the filesystem (no conversion); resumable; writes a
-  /// `<corpus>-manifest.json` provenance sidecar alongside the archives.
+  /// Bundle a corpus/service's converted HTML into ZIP datasets.
+  ///
+  /// The CLI twin of the web Export dataset screen (`/export/<c>/<s>`) and the agent
+  /// `POST /api/corpora/<c>/services/<s>/export-dataset` (replaces the bundle-html-dataset*.sh
+  /// scripts). Reads existing result archives off the filesystem (no conversion); resumable;
+  /// writes a `<corpus>-manifest.json` provenance sidecar alongside the archives.
   ExportDataset {
     /// Corpus name to export.
     corpus: String,
