@@ -193,7 +193,8 @@ corpus at **`/corpus/<name>`**; delete it (cascade-clean, orphan-free) from its 
 1. Start the **dispatcher** (`cargo run --bin dispatcher`) — it leases `TODO` tasks, streams sources
    to workers (ventilator), and ingests result archives (sink), persisting each result's status.
 2. Start **workers** (the external `pericortex` processes) pointed at this host's ventilator/sink
-   ports. They request work, convert, and return result archives.
+   ports. They request work, convert, and return result archives. For the production TeX→HTML
+   fleet, see [The latexml-oxide worker fleet](#the-latexml-oxide-worker-fleet) below.
 3. **Activate a service on a corpus** to create the `TODO` tasks for the fleet to chew through.
 4. **Rerun** a slice (clear results back to `TODO`) from a report screen or
    `POST /api/reports/<c>/<s>/rerun?<severity>&<category>&<what>&<description>` to reprocess (e.g. after
@@ -203,6 +204,57 @@ Task status is a signed int (`TODO=0`, `NoProblem=-1`, `Warning=-2`, `Error=-3`,
 `Invalid=-5`, `Blocked<-5`, `Queued>0` while leased). A leased task is marked `Queued` durably; a
 crash recovers it (`Queued`→`TODO` on dispatcher restart), and a lease unreturned past its
 visibility timeout is re-queued (with a bounded retry budget before it dead-letters).
+
+### The latexml-oxide worker fleet
+
+The production TeX→HTML worker is latexml-oxide's `cortex_worker` binary (in-process Rust engine,
+per-paper panic/OOM/timeout isolation). Workers are **separate processes, not started by CorTeX** —
+run them on the worker host(s), pointed at the dispatcher's ports. The robust model is **one
+conversion per process** with a per-process RAM cap, so a runaway paper kills only its own worker
+(the dispatcher's lease reaper recovers the task) and the worker is respawned.
+
+Run the whole fleet with one self-supervising command (`--harness` spawns and respawns
+single-conversion children; sane memory defaults need no flags):
+
+```bash
+cortex_worker --harness \
+  --service oxidized-tex-to-html \             # MUST match the registered service name exactly
+  --source-address tcp://DISPATCHER_HOST:51695 \
+  --sink-address   tcp://DISPATCHER_HOST:51696 \
+  --profile ar5iv
+# Optional overrides:
+#   --workers N               # default: CPU-derived (a deliberate over-commit)
+#   --child-mem-limit-mb 8192  # per-child RLIMIT_AS hard cap (default 8 GiB)
+#   --mem-pressure-floor-mb N  # fleet governor floor (default: max(cap, 10% RAM); 0 disables)
+```
+
+- **Service name must match exactly.** The ventilator leases tasks for this name and the sink
+  re-validates each returned result against the task's service id — a mismatch **silently discards**
+  the result. The CorTeX preview registers this service as `oxidized-tex-to-html` (hyphenated).
+- **Deliberate over-commit.** The worker count defaults to CPU-derived, *not* sized to
+  `workers × cap` — most papers use a fraction of the per-child cap, so sizing to the cap would idle
+  the box. Two limits keep it safe: the **per-child cap** below contains a *single* runaway job, and
+  the **fleet governor** contains the *aggregate*.
+- **Per-child cap.** `--child-mem-limit-mb` (default 8192) enforces a per-child `setrlimit(RLIMIT_AS)`;
+  a breach surfaces as a clean `Fatal:oom` + `Status:conversion:3` (exit 137), then a respawn. This
+  bounds *address space* (VSZ), not RSS — with the worker's mimalloc allocator the true resident kill
+  point sits below the number; 8 GiB is sized so a legitimate ~6 GB job reliably completes
+  (effective resident ceiling ≈6.5–7 GB RSS).
+- **Fleet memory-pressure governor.** While system `MemAvailable` drops below `--mem-pressure-floor-mb`
+  (auto = `max(cap, 10% RAM)`), the harness SIGTERMs its **largest-RSS** child (task re-leased) and
+  pauses respawns until memory recovers — a deliberate, attributable shed in place of a random kernel
+  OOM-kill, surviving a rare cluster of concurrently-heavy jobs. For a hard backstop, also run the
+  harness inside a memory-limited container or `systemd-run --scope -p MemoryMax=…`; the cgroup,
+  governor, and per-child `RLIMIT_AS` compose.
+- **Per-paper exit codes** (all recorded as `Status:conversion:3`, task re-leased + worker
+  respawned): `124` wall-clock timeout, `137` memory ceiling / alloc failure, `70` repeated panics →
+  clean restart.
+- **Avoid `--pool-size N`** for production: N conversion threads in one process share one RAM
+  ceiling and false-positive the memory guards on every in-flight paper.
+
+Watch the fleet at **`/workers/oxidized-tex-to-html`** (per-worker dispatch/return tallies, in-flight
+backlog, liveness age). Full design and tuning: latexml-oxide
+`docs/CORTEX_WORKER_HARNESS.md`; the supervision mechanism: pericortex `docs/HARNESS.md`.
 
 ## 8. Background jobs
 
