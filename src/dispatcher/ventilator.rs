@@ -81,9 +81,37 @@ impl Ventilator {
     // fail-fast (the manager aborts the thread → external restart), but with a diagnosable cause
     // and consistent with every other fallible call here + the sink's bind (KNOWN_ISSUES
     // robustness: no bare `unwrap` on the dispatch path).
-    ventilator.bind(&address).map_err(|e| {
-      std::io::Error::other(format!("ventilator: zeromq bind {address} failed: {e}"))
-    })?;
+    // Retry the bind briefly: on a clean restart the previous dispatcher can still
+    // hold the port for a second or two (its graceful-shutdown drain, or socket
+    // TIME_WAIT), so a one-shot bind crash-loops the new process on EADDRINUSE — the
+    // "Failed to start TaskManager" abort seen restarting the dispatcher (2026-06-17).
+    // Retry with backoff; if it still fails, propagate (the manager aborts → external
+    // restart) with a diagnosable cause.
+    {
+      const BIND_ATTEMPTS: u32 = 15;
+      let mut attempt = 1u32;
+      loop {
+        match ventilator.bind(&address) {
+          Ok(()) => break,
+          Err(e) if attempt < BIND_ATTEMPTS => {
+            warn!(
+              "ventilator: bind {address} attempt {attempt}/{BIND_ATTEMPTS} failed ({e}); \
+               retrying in 500ms (port handover from a restarting dispatcher?)"
+            );
+            std::thread::sleep(Duration::from_millis(500));
+            attempt += 1;
+          },
+          Err(e) => {
+            return Err(
+              std::io::Error::other(format!(
+                "ventilator: zeromq bind {address} failed after {BIND_ATTEMPTS} attempts: {e}"
+              ))
+              .into(),
+            );
+          },
+        }
+      }
+    }
     let mut source_job_count: usize = 0;
     // Count of *fresh* tasks actually leased to a worker (a `retries == 0` lease), as distinct from
     // `source_job_count` which counts every request — including the mock-replies (unknown service,

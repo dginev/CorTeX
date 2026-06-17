@@ -251,10 +251,32 @@ impl Sink {
       .build()?;
 
     let recv_result: Result<(), Box<dyn Error>> = runtime.block_on(async {
-      let mut pull = PullSocket::new();
-      pull.bind(&address).await.map_err(|e| {
-        io::Error::other(format!("sink: zeromq bind {address} failed: {e}"))
-      })?;
+      // Retry the bind briefly (mirrors the ventilator) so a port handover from a
+      // restarting dispatcher doesn't crash-loop the sink on EADDRINUSE.
+      let mut pull = {
+        const BIND_ATTEMPTS: u32 = 15;
+        let mut attempt = 1u32;
+        loop {
+          let mut p = PullSocket::new();
+          match p.bind(&address).await {
+            Ok(_) => break p,
+            Err(e) if attempt < BIND_ATTEMPTS => {
+              warn!(
+                "sink: bind {address} attempt {attempt}/{BIND_ATTEMPTS} failed ({e}); \
+                 retrying in 500ms (port handover from a restarting dispatcher?)"
+              );
+              tokio::time::sleep(Duration::from_millis(500)).await;
+              attempt += 1;
+            },
+            Err(e) => {
+              return Err(io::Error::other(format!(
+                "sink: zeromq bind {address} failed after {BIND_ATTEMPTS} attempts: {e}"
+              ))
+              .into());
+            },
+          }
+        }
+      };
 
       let mut sink_job_count: usize = 0;
       // Rate-limited logging for discarded replies (malformed envelopes, unknown task ids). A
