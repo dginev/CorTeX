@@ -153,15 +153,15 @@ where
 /// The job `kind` for a `report_summary` rollup refresh.
 pub const REFRESH_REPORTS_KIND: &str = "refresh_reports";
 
-/// Spawns a background job that rebuilds the `report_summary` rollup — a multi-minute
-/// `REFRESH ... CONCURRENTLY` at production scale (see `docs/archive/REPORT_FRESHNESS.md`) —
-/// **off** the request path, so the caller (a force-refresh endpoint, or the rerun path) returns
-/// immediately.
+/// Spawns a background job for the manual "Force refresh" action. The global `report_summary`
+/// matview was retired in favour of a per-(corpus, service, severity) cache (`report_grain_cache`),
+/// so this no longer does a multi-minute rebuild: it **invalidates** the whole cache (a cheap
+/// `DELETE`, never a scan), and each report slice then repopulates lazily, per scope, on its next
+/// view. Run **off** the request path so the caller returns immediately.
 ///
-/// **Debounced:** a single global refresh already updates the data behind *every* report page, so
-/// if one is already queued or running its uuid is returned instead of spawning another (concurrent
-/// rebuilds would only serialize on the matview lock anyway). Poll `GET /api/jobs/<uuid>` for
-/// status/health.
+/// **Debounced:** one global invalidation suffices for every report page, so if a job is already
+/// queued or running its uuid is returned instead of spawning another. Poll `GET /api/jobs/<uuid>`
+/// for status/health.
 pub fn spawn_report_refresh(pool: DbPool, actor: &str) -> Result<Uuid, String> {
   // Debounce against an already-active refresh before inserting a new job row.
   {
@@ -175,8 +175,8 @@ pub fn spawn_report_refresh(pool: DbPool, actor: &str) -> Result<Uuid, String> {
   }
   spawn_job(pool, REFRESH_REPORTS_KIND, actor, Value::Null, |progress| {
     let mut connection = progress.pool.get().map_err(|e| e.to_string())?;
-    crate::backend::refresh_report_summary(&mut connection).map_err(|e| e.to_string())?;
-    Ok(serde_json::json!({ "status": "refreshed" }))
+    crate::backend::invalidate_all(&mut connection).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "status": "cache-invalidated" }))
   })
 }
 

@@ -226,30 +226,15 @@ pub fn report_uses_rollup(
   what_opt: Option<&str>,
   all_messages: bool,
 ) -> bool {
-  if all_messages {
-    return false;
-  }
-  let Some(severity) = severity_opt else {
-    return false;
-  };
-  if !is_rollup_severity(severity) {
-    return false;
-  }
-  match (category_opt, what_opt) {
-    (None, None) => true,
-    // `no_messages` is a per-task entry list, not an aggregate grain → live path.
-    (Some(category), None) => category != "no_messages",
-    _ => false,
-  }
-}
-
-/// The five severities the `report_summary` matview aggregates: the four message severities (keyed
-/// off task status) plus **`info`** (the all-messages dimension over `log_infos`, across all
-/// completed non-invalid tasks). Other severity keys (`no_problem`, `todo`, …) have no aggregate
-/// matview grain and stay on the live path. The URL severity string is also the matview's
-/// `severity` key, so it can be passed straight to the rollup readers.
-fn is_rollup_severity(severity: &str) -> bool {
-  matches!(severity, "warning" | "error" | "fatal" | "invalid" | "info")
+  // Reports are now computed LIVE and per-(corpus,service)-scoped from the indexed task/log tables
+  // (the `task_report_live` path). The global `report_summary` matview was retired: it recomputed
+  // all corpora × five log tables for any single-corpus change (a ~99 GB / 345M-row scan to reflect
+  // one run's worth of logs), and that refresh starved the conversion finalize path under load,
+  // stalling the worker fleet. A scoped live drill-down touches one log table for one
+  // (corpus, service) via the existing per-status indexes, so it is cheap to regenerate on demand.
+  // Always take the live path.
+  let _ = (severity_opt, category_opt, what_opt, all_messages);
+  false
 }
 
 /// Total tasks counted toward percentage denominators: all tasks for the pair minus `Invalid` ones
@@ -1003,7 +988,7 @@ mod rollup_equivalence_tests {
   }
 
   #[test]
-  fn rollup_path_matches_live_path() {
+  fn live_report_grains_are_correct() {
     let mut backend = backend::testdb();
 
     // --- Clean slate -----------------------------------------------------------------------------
@@ -1089,9 +1074,38 @@ mod rollup_equivalence_tests {
     add_info(conn, e, "load", "package");
     add_info(conn, g, "load", "class");
 
-    rollup::refresh_report_summary(conn).expect("refresh rollup");
+    // The category/what/severity-total readers now compute live + per-(corpus,service)-scoped (the
+    // global report_summary matview was retired). Pin them directly against the seeded data.
+    let warning_cats = rollup::category_rollup(conn, corpus.id, service.id, "warning", 100, 0)
+      .expect("category_rollup");
+    assert_eq!(warning_cats.len(), 2, "warning categories: math, font");
+    assert_eq!(warning_cats[0].category, "math", "busiest category first");
+    assert_eq!(warning_cats[0].task_count, 2, "math distinct tasks A,B");
+    assert_eq!(
+      warning_cats[0].message_count, 3,
+      "math messages: 2 (A) + 1 (B)"
+    );
+    assert_eq!(warning_cats[1].category, "font");
+    assert_eq!(warning_cats[1].task_count, 1);
+    let math_whats = rollup::what_rollup(conn, corpus.id, service.id, "warning", "math", 100, 0)
+      .expect("what_rollup");
+    assert_eq!(math_whats.len(), 2, "math whats: undefined_x, undefined_y");
+    let warning_total = rollup::severity_total(conn, corpus.id, service.id, "warning")
+      .expect("severity_total query")
+      .expect("warning has messages");
+    assert_eq!(
+      warning_total.task_count, 3,
+      "distinct warning-logged tasks A,B,C (silent D has no logs)"
+    );
+    assert_eq!(warning_total.message_count, 4, "total warning messages");
+    assert!(
+      rollup::severity_total(conn, corpus.id, service.id, "fatal")
+        .expect("severity_total query")
+        .is_none(),
+      "a severity with no messages yields None"
+    );
 
-    // --- Equivalence across both severities and both aggregate grains ----------------------------
+    // --- The dispatcher routes every grain to the live path; cross-check task_report == live -----
     let cases = [
       ("warning", None),
       ("warning", Some("math")),
@@ -1114,11 +1128,11 @@ mod rollup_equivalence_tests {
       ));
       assert_eq!(
         fast, live,
-        "rollup vs live mismatch for severity={severity} category={category:?}"
+        "task_report (live) vs task_report_live mismatch for severity={severity} category={category:?}"
       );
       assert!(
         !fast.is_empty(),
-        "rollup path produced an empty report for severity={severity} category={category:?}"
+        "live path produced an empty report for severity={severity} category={category:?}"
       );
     }
 
@@ -1190,38 +1204,31 @@ mod rollup_equivalence_tests {
   }
 
   #[test]
-  fn report_uses_rollup_routes_aggregate_grains_only() {
+  fn report_uses_rollup_is_always_live() {
     use super::report_uses_rollup;
-    // The five matview severities, at the category grain, are rollup-served — INCLUDING `info`
-    // (the all-messages dimension; the bug that made /info do a live log_infos scan).
-    for sev in ["warning", "error", "fatal", "invalid", "info"] {
-      assert!(
-        report_uses_rollup(Some(sev), None, None, false),
-        "{sev} category report should use the rollup"
-      );
-      // `what` drill-down is also an aggregate grain.
-      assert!(report_uses_rollup(Some(sev), Some("cat"), None, false));
+    // The global `report_summary` matview was retired: every report grain — including the category
+    // and `what` aggregate grains that used to be rollup-served — is now computed LIVE and
+    // per-(corpus,service)-scoped (see `report_uses_rollup`). So the gate returns false for every
+    // input; nothing routes to the matview.
+    for sev in [
+      "warning",
+      "error",
+      "fatal",
+      "invalid",
+      "info",
+      "no_problem",
+      "todo",
+    ] {
+      assert!(!report_uses_rollup(Some(sev), None, None, false));
+      assert!(!report_uses_rollup(Some(sev), Some("cat"), None, false));
+      assert!(!report_uses_rollup(
+        Some(sev),
+        Some("cat"),
+        Some("w"),
+        false
+      ));
     }
-    // Non-rollup severities, per-task lists, and the all-severities view stay live.
-    assert!(!report_uses_rollup(Some("no_problem"), None, None, false));
-    assert!(!report_uses_rollup(Some("todo"), None, None, false));
-    assert!(!report_uses_rollup(
-      Some("warning"),
-      Some("no_messages"),
-      None,
-      false
-    ));
-    assert!(
-      !report_uses_rollup(Some("warning"), None, None, true),
-      "all=true is the live all-severities view"
-    );
+    assert!(!report_uses_rollup(Some("warning"), None, None, true));
     assert!(!report_uses_rollup(None, None, None, false));
-    // `what`-detail (per-task list) stays live.
-    assert!(!report_uses_rollup(
-      Some("warning"),
-      Some("cat"),
-      Some("w"),
-      false
-    ));
   }
 }

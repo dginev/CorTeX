@@ -336,6 +336,11 @@ pub(crate) fn mark_rerun<'a>(
       .set(status.eq(TaskStatus::TODO.raw()))
       .execute(connection)?;
 
+    // The reran scope's reports are now stale (logs deleted, statuses reset). Drop its cached
+    // report grains inside the same transaction so the next report view repopulates from the
+    // fresh data — scoped to exactly this (corpus, service), never the global cube.
+    super::rollup::invalidate_scope(connection, corpus.id, service.id)?;
+
     Ok(())
   })
 }

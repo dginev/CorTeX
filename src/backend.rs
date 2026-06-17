@@ -36,8 +36,8 @@ pub(crate) use reports::task_report;
 pub use reports::{DOCUMENT_MESSAGE_CAP, MessageCounts, task_messages};
 pub use rollup::ReportSummaryRow;
 pub(crate) use rollup::{
-  category_rollup, category_total, refresh_report_summary, report_summary_refreshed_at,
-  severity_total, what_rollup,
+  category_rollup, category_total, invalidate_all, report_summary_refreshed_at, severity_total,
+  what_rollup,
 };
 pub use sandbox::{SandboxOutcome, SandboxSelection, create_sandbox};
 
@@ -301,6 +301,12 @@ impl Backend {
   /// cheap category/what report reads stay fresh.
   pub fn refresh_report_summary(&mut self) -> Result<(), Error> {
     rollup::refresh_report_summary(&mut self.connection)
+  }
+  /// Drop the cached report grains for one `(corpus, service)` scope so the next report view
+  /// repopulates from current data. Called per touched scope on the run-completion path — scoped, a
+  /// cheap keyed `DELETE`, never the global all-corpora scan that used to stall conversions.
+  pub fn invalidate_report_cache(&mut self, corpus_id: i32, service_id: i32) -> Result<(), Error> {
+    rollup::invalidate_scope(&mut self.connection, corpus_id, service_id)
   }
   /// Category-grain report for `(corpus, service, severity)`, read from the `report_summary`
   /// rollup, windowed to `[offset, offset + limit)` (ordered by descending task count).

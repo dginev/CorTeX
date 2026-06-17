@@ -377,7 +377,7 @@ pub fn serve_report(
 #[allow(clippy::too_many_arguments)]
 pub fn serve_rerun(
   connection: &mut PgConnection,
-  pool: &DbPool,
+  _pool: &DbPool,
   corpus_name: String,
   service_name: String,
   severity: Option<String>,
@@ -434,9 +434,9 @@ pub fn serve_rerun(
         duration_ms = report_duration,
         "rerun committed"
       );
-      // Reflect the rerun in reports without blocking this request: refresh the rollup off the
-      // request path (debounced, observable via `/api/jobs`). Best-effort — the rerun committed.
-      let _ = crate::jobs::spawn_report_refresh(pool.clone(), owner);
+      // The reran (corpus, service) scope's report cache was already invalidated inside the rerun
+      // transaction (`mark_rerun`), so its reports repopulate fresh on the next view — no separate,
+      // globally-scoped refresh job needed.
       Ok(Accepted(String::default()))
     },
   }

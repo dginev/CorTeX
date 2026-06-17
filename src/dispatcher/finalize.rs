@@ -1,6 +1,7 @@
 use crate::backend;
 use crate::dispatcher::server;
 use crate::helpers::TaskReport;
+use std::collections::HashSet;
 use std::error::Error;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
@@ -83,6 +84,10 @@ impl Finalize {
     // refresh happened — together these drive a "refresh on drain, but at least daily" cadence.
     let mut reports_dirty = false;
     let mut last_report_refresh = Instant::now();
+    // Distinct (corpus_id, service_id) scopes whose tasks we've persisted since the last report
+    // invalidation. On drain / periodic tick we drop ONLY these scopes' cached report grains (a
+    // cheap keyed DELETE), so each repopulates lazily on its next view — never a global scan.
+    let mut touched: HashSet<(i32, i32)> = HashSet::new();
     loop {
       match done_rx.recv_timeout(Duration::from_secs(1)) {
         Ok(first) => {
@@ -93,6 +98,9 @@ impl Finalize {
           server::mark_done_batch(&mut backend, &batch)?;
           jobs_count += 1;
           reports_dirty = true;
+          for report in &batch {
+            touched.insert((report.task.corpus_id, report.task.service_id));
+          }
           // Pipeline health signals (Arm 8 / phase-5 observability; transport-independent): batch
           // size, DB persist latency, and whether the batch hit the size cap. `size_capped` is the
           // backpressure/lag proxy — the bounded done channel already had a full batch queued (std
@@ -108,14 +116,14 @@ impl Finalize {
           );
           // Long runs may never idle, so bound report staleness with a periodic refresh.
           if last_report_refresh.elapsed() >= report_refresh_interval() {
-            refresh_reports(&mut backend);
+            invalidate_touched(&mut backend, &mut touched);
             reports_dirty = false;
             last_report_refresh = Instant::now();
           }
           if disconnected {
             // Producers vanished mid-batch: we persisted what we had; make it visible and stop.
             if reports_dirty {
-              refresh_reports(&mut backend);
+              invalidate_touched(&mut backend, &mut touched);
             }
             break;
           }
@@ -124,7 +132,7 @@ impl Finalize {
           // The queue just drained: recompute the rollup so finished work shows up in reports
           // immediately, then keep waiting.
           if reports_dirty {
-            refresh_reports(&mut backend);
+            invalidate_touched(&mut backend, &mut touched);
             reports_dirty = false;
             last_report_refresh = Instant::now();
           }
@@ -132,7 +140,7 @@ impl Finalize {
         Err(RecvTimeoutError::Disconnected) => {
           // Every producer (sink + ventilator) has gone — clean shutdown. Flush and stop.
           if reports_dirty {
-            refresh_reports(&mut backend);
+            invalidate_touched(&mut backend, &mut touched);
           }
           break;
         },
@@ -142,11 +150,17 @@ impl Finalize {
   }
 }
 
-/// Best-effort refresh of the `report_summary` rollup. A failure here (e.g. a transient lock) must
-/// not take down the finalize thread — log it and carry on; the next drain or daily tick retries.
-fn refresh_reports(backend: &mut backend::Backend) {
-  if let Err(e) = backend.refresh_report_summary() {
-    warn!("finalize: report_summary refresh failed (non-fatal): {e:?}");
+/// Drop the cached report grains for the `(corpus, service)` scopes touched since the last
+/// invalidation (drains `touched`). DELETE-only and per-scope — the finalize thread does no heavy
+/// scan; each scope's report repopulates lazily on its next view. A failure (e.g. a transient lock)
+/// must not take down the finalize thread — log it and carry on; the next tick retries.
+fn invalidate_touched(backend: &mut backend::Backend, touched: &mut HashSet<(i32, i32)>) {
+  for (corpus_id, service_id) in touched.drain() {
+    if let Err(e) = backend.invalidate_report_cache(corpus_id, service_id) {
+      warn!(
+        "finalize: report-cache invalidate ({corpus_id}, {service_id}) failed (non-fatal): {e:?}"
+      );
+    }
   }
 }
 

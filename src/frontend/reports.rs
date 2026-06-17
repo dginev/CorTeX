@@ -629,7 +629,7 @@ pub fn rerun_report(
   description: Option<&str>,
   actor: Actor,
   database_url: &State<DatabaseUrl>,
-  pool: &State<DbPool>,
+  _pool: &State<DbPool>,
 ) -> Result<(Status, Json<RerunAckDto>), Status> {
   if let Some(severity) = severity
     && !is_valid_rerun_severity(severity, category.is_some())
@@ -656,10 +656,9 @@ pub fn rerun_report(
     })
     .map_err(|_| Status::InternalServerError)?;
   tracing::info!(actor = %actor.owner, corpus, service, severity = ?severity, category = ?category, what = ?what, "rerun via API");
-  // Reflect the rerun in reports without blocking this request: spawn the rollup refresh off the
-  // request path (debounced, observable via `/api/jobs`). Best-effort — the rerun already
-  // committed.
-  let _ = jobs::spawn_report_refresh(pool.inner().clone(), &actor.owner);
+  // The reran (corpus, service) scope's report cache was already invalidated inside the rerun
+  // transaction (`mark_rerun`), so its reports repopulate fresh on the next view — no separate,
+  // globally-scoped refresh job needed.
   Ok((
     Status::Accepted,
     Json(RerunAckDto {
