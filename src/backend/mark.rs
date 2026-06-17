@@ -92,17 +92,28 @@ pub(crate) fn mark_done(
   // drain, so a batched `task_id = ANY(...)` deletes exactly the same rows as the old per-task
   // loop — far fewer round-trips on the hot finalize path (KNOWN_ISSUES D-8 write-amplification).
   let task_ids: Vec<i64> = reports.iter().map(|report| report.task.id).collect();
+  // PostgreSQL caps a single statement at 65535 bind parameters. The finalize path
+  // batches across an entire drained burst of reports, so at fleet scale (many papers
+  // × many log messages) the per-severity INSERTs and the `eq_any` id lists overflow
+  // that cap — which made the whole statement fail (`number of parameters must be
+  // between 0 and 65535`), the finalize thread panic, and the dispatcher wedge
+  // (observed on a 64-worker run, 2026-06-17). Chunk every batched statement to stay
+  // under the cap: `eq_any` binds 1 param per id; a log row binds 4 columns
+  // (task_id, category, what, details), so 16k rows ≈ 64k params.
+  const ID_CHUNK: usize = 50_000;
+  const LOG_INSERT_CHUNK: usize = 16_000;
   connection.transaction::<(), Error, _>(|t_connection| {
-    // Clear the prior log messages for every finalized task (one statement per severity table).
-    delete(log_infos::table.filter(log_infos::task_id.eq_any(&task_ids))).execute(t_connection)?;
-    delete(log_warnings::table.filter(log_warnings::task_id.eq_any(&task_ids)))
-      .execute(t_connection)?;
-    delete(log_errors::table.filter(log_errors::task_id.eq_any(&task_ids)))
-      .execute(t_connection)?;
-    delete(log_fatals::table.filter(log_fatals::task_id.eq_any(&task_ids)))
-      .execute(t_connection)?;
-    delete(log_invalids::table.filter(log_invalids::task_id.eq_any(&task_ids)))
-      .execute(t_connection)?;
+    // Clear the prior log messages for every finalized task (one statement per severity
+    // table), chunked over the task-id list to respect the bind-parameter cap.
+    for ids in task_ids.chunks(ID_CHUNK) {
+      delete(log_infos::table.filter(log_infos::task_id.eq_any(ids))).execute(t_connection)?;
+      delete(log_warnings::table.filter(log_warnings::task_id.eq_any(ids)))
+        .execute(t_connection)?;
+      delete(log_errors::table.filter(log_errors::task_id.eq_any(ids))).execute(t_connection)?;
+      delete(log_fatals::table.filter(log_fatals::task_id.eq_any(ids))).execute(t_connection)?;
+      delete(log_invalids::table.filter(log_invalids::task_id.eq_any(ids)))
+        .execute(t_connection)?;
+    }
     // Group the finalized task ids by their target status, and partition the new messages by
     // severity table, in one pass — so both the status UPDATEs and the message INSERTs become a
     // handful of batched statements below instead of two-per-task in a loop (the finalize hot
@@ -137,35 +148,38 @@ pub(crate) fn mark_done(
     // set — NoProblem/Warning/Error/Fatal/Invalid), each over the disjoint id set that resolved
     // to it.
     for (status_value, status_ids) in &ids_by_status {
-      update(tasks::table)
-        .filter(id.eq_any(status_ids))
-        .set(status.eq(*status_value))
-        .execute(t_connection)?;
+      for ids in status_ids.chunks(ID_CHUNK) {
+        update(tasks::table)
+          .filter(id.eq_any(ids))
+          .set(status.eq(*status_value))
+          .execute(t_connection)?;
+      }
     }
-    // One batched INSERT per non-empty severity table.
-    if !new_infos.is_empty() {
+    // Batched INSERT per severity table, chunked to respect the bind-parameter cap.
+    // (`chunks` over an empty Vec yields nothing, so no `is_empty` guard is needed.)
+    for chunk in new_infos.chunks(LOG_INSERT_CHUNK) {
       insert_into(log_infos::table)
-        .values(&new_infos)
+        .values(chunk)
         .execute(t_connection)?;
     }
-    if !new_warnings.is_empty() {
+    for chunk in new_warnings.chunks(LOG_INSERT_CHUNK) {
       insert_into(log_warnings::table)
-        .values(&new_warnings)
+        .values(chunk)
         .execute(t_connection)?;
     }
-    if !new_errors.is_empty() {
+    for chunk in new_errors.chunks(LOG_INSERT_CHUNK) {
       insert_into(log_errors::table)
-        .values(&new_errors)
+        .values(chunk)
         .execute(t_connection)?;
     }
-    if !new_fatals.is_empty() {
+    for chunk in new_fatals.chunks(LOG_INSERT_CHUNK) {
       insert_into(log_fatals::table)
-        .values(&new_fatals)
+        .values(chunk)
         .execute(t_connection)?;
     }
-    if !new_invalids.is_empty() {
+    for chunk in new_invalids.chunks(LOG_INSERT_CHUNK) {
       insert_into(log_invalids::table)
-        .values(&new_invalids)
+        .values(chunk)
         .execute(t_connection)?;
     }
     Ok(())

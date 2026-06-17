@@ -170,6 +170,26 @@ impl TaskManager {
           )
           .unwrap_or_else(|e| panic!("Failed in ventilator thread: {e:?}"));
       });
+      // Wait for the ventilator to return, but POLL rather than block — so a dead
+      // finalize/sink thread is detected even while the ventilator is actively leasing.
+      // Under load the ventilator can run indefinitely, so the plain blocking `join()`
+      // that used to be here starved the perpetual-mode health checks below: a
+      // finalize/sink thread that panicked (e.g. a `mark_done` DB bind-parameter
+      // overflow) left the pipeline silently wedged — workers converting into a dead
+      // sink forever — instead of aborting for a supervised restart. (2026-06-17.)
+      while !vent_thread.is_finished() {
+        if job_limit.is_none() {
+          if finalize_thread.is_finished() {
+            error!("Finalize (DB) thread died unexpectedly! Aborting for a supervised restart.");
+            return Err(zmq::Error::ETERM);
+          }
+          if sink_thread.is_finished() {
+            error!("Sink thread died unexpectedly! Aborting for a supervised restart.");
+            return Err(zmq::Error::ETERM);
+          }
+        }
+        sleep(Duration::from_millis(500));
+      }
       if vent_thread.join().is_err() {
         error!("Ventilator thread died unexpectedly!");
         return Err(zmq::Error::ETERM);
