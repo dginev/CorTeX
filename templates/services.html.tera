@@ -64,7 +64,7 @@
 
     {% if all_services and all_services | length > 0 %}
     <form method="post" action="/corpus/{{global.corpus_name_uri}}/activate">
-      <label for="ca-register">Register a service</label>
+      <label for="ca-register" class="action-title">Register a service</label>
       <div class="action-control">
         <select id="ca-register" name="service" aria-label="Service to register on this corpus" required>
           {% for service in all_services %}
@@ -77,7 +77,7 @@
     {% endif %}
 
     <form method="post" action="/corpus/{{global.corpus_name_uri}}/extend">
-      <span class="action-label">Re-scan corpus path</span>
+      <span class="action-label action-title">Re-scan corpus path</span>
       <div class="action-control">
         <button type="submit" class="btn-default">Extend</button>
         <span class="muted">Pick up newly-arrived entries.</span>
@@ -85,8 +85,8 @@
     </form>
 
     {% if services and services | length > 0 %}
-    <form method="post" action="/corpus/{{global.corpus_name_uri}}/sandbox">
-      <p class="action-subhead">Carve a sandbox <span class="muted">— a working subset, by message-condition filter</span></p>
+    <form method="post" action="/corpus/{{global.corpus_name_uri}}/sandbox" class="action-section">
+      <p class="action-subhead action-title">Carve a sandbox <span class="muted">— a working subset, by message-condition filter</span></p>
       <label for="sbx-name">Sandbox name</label>
       <input id="sbx-name" type="text" name="name" placeholder="new sandbox name" aria-label="New sandbox corpus name" required>
       <p class="action-divider">Filters</p>
@@ -117,7 +117,7 @@
     {% endif %}
 
     <form method="post" action="/corpus/{{global.corpus_name_uri}}/delete" class="action-danger">
-      <label for="ca-delete">Delete this corpus</label>
+      <label for="ca-delete" class="action-title">Delete this corpus</label>
       <div class="action-control">
         <input id="ca-delete" type="text" name="confirm" placeholder="type «{{global.corpus_name}}» to confirm" aria-label="Type the corpus name to confirm deletion" required>
         <button type="submit" class="danger">Delete corpus</button>

@@ -1136,6 +1136,17 @@ h3 {
   font-size: var(--fs-sm);
   font-weight: 600;
 }
+/* Top-level action titles (Register / Re-scan / Carve a sandbox / Delete) read as peers — bold and
+   flush to the action's left edge. */
+.corpus-actions .action-title {
+  font-weight: 700;
+}
+/* A multi-field action's sub-fields (the sandbox filters) are indented under its title so the
+   hierarchy is unambiguous; the title and the submit button stay flush left. */
+.corpus-actions .action-section > label,
+.corpus-actions .action-section > .action-divider {
+  padding-left: var(--space-lg);
+}
 /* Sandbox fields are direct grid children — they fill the control column. */
 .corpus-actions form > input,
 .corpus-actions form > select {
