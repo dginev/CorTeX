@@ -372,8 +372,14 @@ impl<'a> ArchiveStreamer<'a> {
       progress(&format!("  {name} exists — skipping"));
       self.skipping = Some(key.to_string());
     } else {
-      let file =
-        File::create(&path).map_err(|e| format!("cannot create {}: {e}", path.display()))?;
+      // Atomic publish: write to `<name>.partial` and rename to the final name only after the zip
+      // is finalized (`close_open`). A crash mid-write then leaves a `.partial`, **not** a
+      // truncated `.zip` — so the resume (which skips by final-name existence) re-writes it
+      // instead of treating a corrupt half-archive as done. `File::create` truncates any
+      // `.partial` orphaned by a prior crash, so the re-write starts clean.
+      let tmp_path = self.out_dir.join(format!("{name}.partial"));
+      let file = File::create(&tmp_path)
+        .map_err(|e| format!("cannot create {}: {e}", tmp_path.display()))?;
       self.open = Some(OpenArchive {
         key: key.to_string(),
         name,
@@ -387,10 +393,17 @@ impl<'a> ArchiveStreamer<'a> {
   /// Finalize the currently-open archive (if any), recording it in the outcome.
   fn close_open(&mut self, progress: &mut impl FnMut(&str)) -> Result<(), String> {
     if let Some(open) = self.open.take() {
-      open
+      let file = open
         .zip
         .finish()
         .map_err(|e| format!("finalizing {} failed: {e}", open.name))?;
+      drop(file); // close the handle before the rename (atomic publish)
+                  // Publish atomically: now that the central directory is written, rename `<name>.partial` →
+                  // `<name>` — only a complete archive ever gets the final name (the resume's skip key).
+      let tmp_path = self.out_dir.join(format!("{}.partial", open.name));
+      let final_path = self.out_dir.join(&open.name);
+      fs::rename(&tmp_path, &final_path)
+        .map_err(|e| format!("publishing {} failed: {e}", open.name))?;
       progress(&format!("  {}: {} document(s)", open.name, open.written));
       self.archives.push(DatasetArchive {
         name: open.name,
