@@ -756,6 +756,19 @@ fn drill_window(args: &ReportArgs) -> (i64, i64) {
   (offset, limit)
 }
 
+/// On the human (text) drill surfaces, prints a one-line hint when a page came back **full** — so a
+/// capped result never silently reads as "that's everything" (the no-silent-caps rule, on the CLI).
+/// Silent when the page wasn't full; `--json` callers paginate from `offset`/`page_size`
+/// themselves.
+fn print_page_hint(shown: usize, offset: i64, page_size: i64) {
+  if shown as i64 >= page_size {
+    println!(
+      "  … page full ({page_size} shown); more may exist — continue with `--offset {}`",
+      offset + page_size
+    );
+  }
+}
+
 /// Exits `1` with a helpful message if the severity has no message breakdown.
 fn require_drillable(severity: &str) {
   if !is_drillable_severity(severity) {
@@ -837,6 +850,7 @@ fn report_categories(
       total_messages,
       &rows,
     );
+    print_page_hint(rows.len(), offset, limit);
   }
 }
 
@@ -888,6 +902,7 @@ fn report_whats(
       total_messages,
       &rows,
     );
+    print_page_hint(rows.len(), offset, limit);
   }
 }
 
@@ -963,6 +978,7 @@ fn report_entries(
         println!("  {label}  #{task_id}   {}", details.trim());
       }
     }
+    print_page_hint(entries.len(), offset, page_size);
   }
 }
 
@@ -1240,13 +1256,15 @@ fn run_diff_tasks(
 
   // Bound offset/page_size exactly like the agent endpoint (R-8 / P-4): never an unpaginated or
   // scan-and-discard task-diff.
+  let bounded_offset = offset.unwrap_or(0).min(MAX_REPORT_OFFSET as usize);
+  let page_size = limit.unwrap_or(100).clamp(1, MAX_REPORT_PAGE_SIZE as usize);
   let filters = DiffStatusFilter {
     previous_status,
     current_status,
     previous_date,
     current_date,
-    offset: offset.unwrap_or(0).min(MAX_REPORT_OFFSET as usize),
-    page_size: limit.unwrap_or(100).clamp(1, MAX_REPORT_PAGE_SIZE as usize),
+    offset: bounded_offset,
+    page_size,
   };
   let tasks = list_task_diffs(&mut backend.connection, &corpus, &service, filters);
 
@@ -1284,6 +1302,7 @@ fn run_diff_tasks(
       task.previous_status, task.current_status, task.entry
     );
   }
+  print_page_hint(tasks.len(), bounded_offset as i64, page_size as i64);
 }
 
 /// Freezes the current per-task statuses of a `(corpus, service)` into `historical_tasks` — the CLI
