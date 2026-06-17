@@ -86,13 +86,14 @@ impl NewAuditEntry {
 }
 
 impl AuditEntry {
-  /// Lists recent audit entries, most-recent first, optionally filtered to a single `actor`, capped
-  /// at `limit`. The caller is responsible for clamping `limit` to a sane bound (see the read
-  /// view).
+  /// Lists audit entries, most-recent first, optionally filtered to a single `actor`, capped at
+  /// `limit` and starting at `offset` (for page-based pagination). The caller is responsible for
+  /// clamping `limit`/`offset` to sane bounds (see the read view).
   pub fn list(
     connection: &mut PgConnection,
     actor: Option<&str>,
     limit: i64,
+    offset: i64,
   ) -> Result<Vec<Self>, Error> {
     let mut query = audit_log::table.into_boxed();
     if let Some(actor) = actor {
@@ -101,11 +102,12 @@ impl AuditEntry {
     query
       .order(audit_log::at.desc())
       .limit(limit)
+      .offset(offset)
       .get_results(connection)
   }
 
   /// Lists recent audit entries, most-recent first, capped at `limit` (no actor filter).
   pub fn recent(connection: &mut PgConnection, limit: i64) -> Result<Vec<Self>, Error> {
-    Self::list(connection, None, limit)
+    Self::list(connection, None, limit, 0)
   }
 }

@@ -2488,7 +2488,7 @@ fn run_jobs(active: bool, limit: Option<i64>, json: bool) {
 fn run_audit(actor: Option<String>, limit: Option<i64>, json: bool) {
   let mut backend = backend::from_address(default_db_address());
   let limit = limit.unwrap_or(50).clamp(1, 500);
-  let entries = match AuditEntry::list(&mut backend.connection, actor.as_deref(), limit) {
+  let entries = match AuditEntry::list(&mut backend.connection, actor.as_deref(), limit, 0) {
     Ok(entries) => entries,
     Err(error) => {
       eprintln!("Could not read the audit log: {error}");

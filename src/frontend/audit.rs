@@ -25,11 +25,10 @@ use crate::frontend::actor::{
 };
 use crate::models::{AuditEntry, NewAuditEntry};
 
-/// The default and maximum number of audit rows a read returns (the read is most-recent-first, so
-/// the cap bounds the response without hiding recent activity).
-const DEFAULT_AUDIT_LIMIT: i64 = 100;
-/// The hard cap on a single audit read, so a hostile `limit` can't ask for the whole table.
-const MAX_AUDIT_LIMIT: i64 = 500;
+/// Rows per audit page. The read is most-recent-first and **page-based** (`?page=`), so this bounds
+/// every response and lets an admin walk back through history 100 at a time — never asking for the
+/// whole table.
+const AUDIT_PAGE_SIZE: i64 = 100;
 
 /// Records every **mutating** request (`POST`/`PUT`/`PATCH`/`DELETE`) to the `audit_log`: the
 /// resolved [`crate::frontend::actor`] (empty if unauthenticated — itself a useful signal), the
@@ -124,35 +123,55 @@ impl From<AuditEntry> for AuditDto {
   }
 }
 
-/// Loads the audit log (most-recent first, optional `actor` filter, `limit` clamped to a sane
-/// bound) as DTOs — the shared core of the agent endpoint and the human screen (symmetry contract).
-fn load_audit(
-  pool: &DbPool,
-  actor: Option<&str>,
-  limit: Option<i64>,
-) -> Result<Vec<AuditDto>, Status> {
-  let limit = limit
-    .unwrap_or(DEFAULT_AUDIT_LIMIT)
-    .clamp(1, MAX_AUDIT_LIMIT);
-  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
-  let entries =
-    AuditEntry::list(&mut connection, actor, limit).map_err(|_| Status::InternalServerError)?;
-  Ok(entries.into_iter().map(AuditDto::from).collect())
+/// One page of the audit log — the shared shape for the agent endpoint and the human screen.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct AuditPage {
+  /// The audit rows for this page, most-recent first (at most [`AUDIT_PAGE_SIZE`]).
+  pub entries: Vec<AuditDto>,
+  /// The 0-based page index this response covers.
+  pub page: i64,
+  /// Rows per page (the cap).
+  pub page_size: i64,
+  /// Whether an older page exists (more history beyond this one).
+  pub has_next: bool,
 }
 
-/// The audit log (agent twin of the `/admin/audit` screen): recent admin actions, most-recent
-/// first, optionally filtered to one `actor`, capped at `limit` (default 100, max 500).
-/// **Token-gated** — reading who-did-what is sensitive, so it takes an [`Actor`] like the writes it
-/// records. `503` if the pool is exhausted.
+/// Loads one page of the audit log (most-recent first, optional `actor` filter, [`AUDIT_PAGE_SIZE`]
+/// rows per page) as the shared [`AuditPage`] — the core of the agent endpoint and the human screen
+/// (symmetry contract). Fetches one extra row to report `has_next` without a second COUNT query.
+fn load_audit(pool: &DbPool, actor: Option<&str>, page: i64) -> Result<AuditPage, Status> {
+  let page = page.max(0);
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let mut entries = AuditEntry::list(
+    &mut connection,
+    actor,
+    AUDIT_PAGE_SIZE + 1,
+    page * AUDIT_PAGE_SIZE,
+  )
+  .map_err(|_| Status::InternalServerError)?;
+  let has_next = entries.len() as i64 > AUDIT_PAGE_SIZE;
+  entries.truncate(AUDIT_PAGE_SIZE as usize);
+  Ok(AuditPage {
+    entries: entries.into_iter().map(AuditDto::from).collect(),
+    page,
+    page_size: AUDIT_PAGE_SIZE,
+    has_next,
+  })
+}
+
+/// The audit log (agent twin of the `/admin/audit` screen): admin actions, most-recent first,
+/// optionally filtered to one `actor`, **paginated** — [`AUDIT_PAGE_SIZE`] rows per `page`
+/// (0-based; `has_next` flags more history). **Token-gated** — reading who-did-what is sensitive,
+/// so it takes an [`Actor`] like the writes it records. `503` if the pool is exhausted.
 #[rocket_okapi::openapi(tag = "Management")]
-#[get("/api/audit?<limit>&<actor>")]
+#[get("/api/audit?<page>&<actor>")]
 pub fn api_audit(
-  limit: Option<i64>,
+  page: Option<i64>,
   actor: Option<String>,
   _caller: Actor,
   pool: &State<DbPool>,
-) -> Result<Json<Vec<AuditDto>>, Status> {
-  Ok(Json(load_audit(pool, actor.as_deref(), limit)?))
+) -> Result<Json<AuditPage>, Status> {
+  Ok(Json(load_audit(pool, actor.as_deref(), page.unwrap_or(0))?))
 }
 
 /// The audit-log screen (`GET /admin/audit`): the human view of recent admin actions, **signed-in
@@ -161,24 +180,39 @@ pub fn api_audit(
 // `Redirect` is a chunky responder, so the `Err` variant trips `result_large_err` — irrelevant for
 // a one-shot page handler (mirrors `admin::admin_page`).
 #[allow(clippy::result_large_err)]
-#[get("/admin/audit?<limit>&<actor>")]
+#[get("/admin/audit?<page>&<actor>")]
 pub fn audit_page(
-  limit: Option<i64>,
+  page: Option<i64>,
   actor: Option<String>,
   session: Option<AdminSession>,
   return_to: ReturnTo,
   pool: &State<DbPool>,
 ) -> Result<Template, Redirect> {
   let session = session.ok_or_else(|| Redirect::to(sign_in_url(false, Some(&return_to.0))))?;
-  // Best-effort, like the dashboard: a pool/db hiccup renders an empty table, never an error page.
-  let rows = load_audit(pool, actor.as_deref(), limit).unwrap_or_default();
+  // Best-effort, like the dashboard: a pool/db hiccup renders an empty page, never an error page.
+  let audit = load_audit(pool, actor.as_deref(), page.unwrap_or(0)).unwrap_or(AuditPage {
+    entries: Vec::new(),
+    page: 0,
+    page_size: AUDIT_PAGE_SIZE,
+    has_next: false,
+  });
   let global = serde_json::json!({
     "title": "Audit log",
     "description": "Recent CorTeX admin actions and who took them",
   });
   Ok(Template::render(
     "audit",
-    context! { global, owner: session.owner, rows, actor_filter: actor },
+    context! {
+      global,
+      owner: session.owner,
+      rows: audit.entries,
+      page: audit.page,
+      has_next: audit.has_next,
+      has_prev: audit.page > 0,
+      prev_page: (audit.page - 1).max(0),
+      next_page: audit.page + 1,
+      actor_filter: actor,
+    },
   ))
 }
 

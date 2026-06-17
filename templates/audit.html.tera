@@ -39,6 +39,14 @@
       {% endfor %}
     </tbody>
   </table>
+
+  {% if has_prev or has_next %}
+  <nav class="center" aria-label="Audit log pages">
+    {% if has_prev %}<a href="/admin/audit?page={{ prev_page }}{% if actor_filter %}&amp;actor={{ actor_filter }}{% endif %}">&larr; newer</a>{% else %}<span class="muted">&larr; newer</span>{% endif %}
+    &nbsp;&middot;&nbsp;<span class="muted">page {{ page + 1 }}</span>&nbsp;&middot;&nbsp;
+    {% if has_next %}<a href="/admin/audit?page={{ next_page }}{% if actor_filter %}&amp;actor={{ actor_filter }}{% endif %}">older &rarr;</a>{% else %}<span class="muted">older &rarr;</span>{% endif %}
+  </nav>
+  {% endif %}
 </div>
 <div class="col-md-1"></div>
 {% endblock content %}

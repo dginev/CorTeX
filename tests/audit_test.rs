@@ -123,6 +123,30 @@ fn audit_read_view() {
     "the audit read surfaces the recorded analyze action, got: {body}"
   );
 
+  // Pagination (owner: cap 100 per page): the response is a page object (not a bare array), echoes
+  // the page index + size, and a page far beyond the data is empty with has_next=false.
+  let page0 = client
+    .get("/api/audit?page=0")
+    .header(Header::new("X-Cortex-Token", "token1"))
+    .dispatch()
+    .into_json::<serde_json::Value>()
+    .expect("audit page json");
+  assert_eq!(page0["page"], 0, "page index echoed");
+  assert_eq!(page0["page_size"], 100, "100 rows per page");
+  assert!(page0["entries"].is_array(), "entries is the row array");
+  let page_far = client
+    .get("/api/audit?page=9999")
+    .header(Header::new("X-Cortex-Token", "token1"))
+    .dispatch()
+    .into_json::<serde_json::Value>()
+    .expect("audit page json");
+  assert_eq!(
+    page_far["entries"].as_array().map(|rows| rows.len()),
+    Some(0),
+    "a page far beyond the data is empty"
+  );
+  assert_eq!(page_far["has_next"], false, "no older page beyond the data");
+
   // Human screen: an unauthenticated browser is redirected to the sign-in page.
   let response = client.get("/admin/audit").dispatch();
   assert!(
