@@ -11,6 +11,58 @@ runs. This is the **admin journey**; for the *why* behind the architecture see
 > [`cortex` CLI](#14-command-line-management-cli). Machine-readable docs live at **`/api/docs`**
 > (RapiDoc) and **`/api/openapi.json`**.
 
+## Tutorial — your first run, end to end
+
+Take one corpus through one service, from a blank database to a saved historical run (~15 min on a
+local box). The walkthrough is the **web** path; the CLI/agent twin of each step is noted in
+parentheses. Run every binary **from the repo root**.
+
+### Initialize a local install (once)
+
+```bash
+cargo run --bin cortex -- init                                   # DB: embedded migrations + scaffold cortex.toml (put the DB on NVMe, not /data)
+cargo run --bin cortex -- set-admin-token --generate --owner you # Auth: mint the first admin token (printed once → recorded in the audit log)
+cargo run --bin cortex -- doctor                                 # verify  => healthy
+cargo run --bin frontend                                         # the web app you sign into (default 127.0.0.1:8000)
+```
+
+(A real deployment adds a reverse proxy / Anubis + systemd units — see §2 and
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md); none of that is needed locally.)
+
+### Walk the run
+
+1. **Sign in.** Open `http://127.0.0.1:8000/admin/login` and paste the token. You land on **`/admin`**,
+   the command center. *(Agents/CLI carry the token as `X-Cortex-Token` / config instead.)*
+2. **Create a corpus.** `/admin` → **Add a corpus** (`/corpora/new`): give it a name and the documents'
+   path under `/data`. Import runs as a background job — watch it on **`/jobs`**.
+   *(`cortex import <name> <path>`.)*
+3. **Create a service.** `/admin` → **Add a service** (`/services/new`): a name + input/output formats,
+   e.g. `tex_to_html`, tex → html.
+   *(`cortex create-service tex_to_html --inputformat tex --outputformat html`.)*
+4. **Register the service on the corpus.** **`/corpus/<name>`** → **Register a service** → pick it →
+   **Register**. This queues one `TODO` task per document. *(`cortex activate <name> tex_to_html`.)*
+5. **Start the dispatcher + a worker.** In two more terminals:
+   ```bash
+   cargo run --bin dispatcher                  # leases TODO tasks; ventilator :51695 / sink :51696
+   cargo run --example tex_to_html_worker       # the sample worker — needs latexmlc on PATH
+   ```
+   The worker connects to the dispatcher and starts pulling tasks. Watch the fleet at
+   **`/workers/tex_to_html`** (dispatched / returned tallies + liveness).
+6. **Watch the run complete.** The dispatcher leases `TODO` → streams each source to the worker →
+   ingests the result archive → records a status. The report **`/corpus/<name>/tex_to_html`** fills in
+   (TODO drains into no_problem / warning / error) and **`/runs/<name>/tex_to_html`** shows the live
+   run. It's done when TODO reaches 0.
+7. **Save a snapshot.** On the report page click **Save snapshot** (enabled once nothing is in
+   progress) — it freezes the per-task statuses into history. The run now appears on **History**
+   (`/history/<name>/tex_to_html`, plotted) and in **`/admin/runs`**.
+   *(`cortex snapshot <name> tex_to_html`.)*
+8. **Shut down gracefully.** `Ctrl-C` the worker, then the dispatcher. A task left leased mid-flight is
+   recovered (`Queued` → `TODO`) on the next dispatcher start, so nothing is lost either way.
+
+That's the whole loop: **install → corpus → service → register → run → snapshot → history.** Scale it by
+starting more workers (step 5); reprocess a filtered slice with **Rerun** and quantify the effect with
+the run-to-run diff ([§11](#11-managing-historical-runs)).
+
 ## 1. The pieces
 
 CorTeX is three binaries over one Postgres database and a shared `/data` filesystem:
