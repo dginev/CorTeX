@@ -1193,6 +1193,46 @@ fn sandbox_size_cap_and_entry_filter_limit_the_carve() {
   }
 }
 
+// A human sandbox-form name collision re-shows the corpus page with a friendly flash (a redirect to
+// `?sandbox_taken=`), not a bare 409 page — the same courtesy the import form gives. (The agent
+// twin keeps its 409, asserted in the carve test above.)
+fn sandbox_name_collision_reshows_a_friendly_error() {
+  let parent_name = "sandbox_collision_parent";
+  let mut db = backend::testdb();
+  cleanup_corpus(&mut db, parent_name);
+  db.add(&NewCorpus {
+    name: parent_name.to_string(),
+    path: "/tmp/sandbox_collision".to_string(),
+    complex: true,
+    description: "p".to_string(),
+  })
+  .expect("parent corpus");
+
+  let client = client();
+  sign_in(&client);
+  // Carve a sandbox whose name collides with an existing corpus (the parent itself). The collision
+  // is caught before any service lookup, so a placeholder service_id is fine.
+  let response = client
+    .post(format!("/corpus/{parent_name}/sandbox"))
+    .header(ContentType::Form)
+    .body(format!("name={parent_name}&service_id=1&severity=warning"))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::SeeOther,
+    "a name collision redirects (friendly) instead of returning a bare error"
+  );
+  // The redirect lands on the corpus page with the sandbox_taken flash (the path/query are
+  // uri-escaped like every other corpus link — `_`→`%5F` — so match structurally, not literally).
+  let location = response.headers().get_one("Location").unwrap_or_default();
+  assert!(
+    location.starts_with("/corpus/") && location.contains("?sandbox_taken="),
+    "redirects back to the corpus page with the sandbox_taken flash, got {location:?}"
+  );
+
+  cleanup_corpus(&mut db, parent_name);
+}
+
 /// Save-snapshot freezes the current per-task statuses into `historical_tasks` (the agent twin of
 /// the report screen's "save snapshot"). Token-gated, append-only, attributed to the token owner.
 fn snapshot_tasks_appends_history_and_is_token_gated() {
@@ -1401,6 +1441,7 @@ fn main() {
   deactivate_service_removes_pair_tasks_and_logs();
   sandbox_carves_matching_entries_into_a_new_corpus();
   sandbox_size_cap_and_entry_filter_limit_the_carve();
+  sandbox_name_collision_reshows_a_friendly_error();
   snapshot_tasks_appends_history_and_is_token_gated();
   eprintln!("corpora_test: all cases passed");
   unsafe { libc::_exit(0) }

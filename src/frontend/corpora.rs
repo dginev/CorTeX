@@ -29,7 +29,7 @@ use crate::backend::{
 };
 use crate::concerns::CortexInsertable;
 use crate::frontend::actor::{require_admin_to, Actor, AdminReject, AdminSession, ReturnTo};
-use crate::frontend::helpers::decorate_uri_encodings;
+use crate::frontend::helpers::{decorate_uri_encodings, uri_escape};
 use crate::frontend::jobs::JobDto;
 use crate::frontend::params::TemplateContext;
 use crate::importer::Importer;
@@ -541,8 +541,17 @@ pub fn create_sandbox_human(
     // A non-positive cap is treated as "no cap" (create_sandbox ignores it); keep the raw value.
     max_entries: form.max_entries.filter(|n| *n > 0),
   };
-  let uuid = start_sandbox(pool, &database_url.0, &session.owner, parent, &request)?;
-  Ok(Redirect::to(format!("/jobs/{uuid}")))
+  match start_sandbox(pool, &database_url.0, &session.owner, parent, &request) {
+    Ok(uuid) => Ok(Redirect::to(format!("/jobs/{uuid}"))),
+    // A name collision re-shows the corpus page with a friendly flash instead of a bare 409 page —
+    // the same courtesy the import form gives. The agent twin keeps its 409 status.
+    Err(status) if status == Status::Conflict => Ok(Redirect::to(format!(
+      "/corpus/{}?sandbox_taken={}",
+      uri_escape(Some(parent.to_string())).unwrap_or_default(),
+      uri_escape(Some(request.name)).unwrap_or_default()
+    ))),
+    Err(status) => Err(status),
+  }
 }
 
 /// The body of a `corpus_sandbox` job: carve the sandbox in-process and report the captured-entry
@@ -1064,10 +1073,11 @@ pub fn overview_page(deleted: Option<&str>, pool: &State<DbPool>) -> Result<Temp
 
 /// The corpus screen (HTML twin of [`api_corpus`]): the services registered on a corpus. `404` if
 /// the corpus is unknown, `503` if the pool is exhausted.
-#[get("/corpus/<name>?<deactivated>")]
+#[get("/corpus/<name>?<deactivated>&<sandbox_taken>")]
 pub fn corpus_page(
   name: &str,
   deactivated: Option<&str>,
+  sandbox_taken: Option<&str>,
   session: Option<AdminSession>,
   pool: &State<DbPool>,
 ) -> Result<Template, Status> {
@@ -1077,6 +1087,14 @@ pub fn corpus_page(
   // `?deactivated=<service>` flashes a confirmation after a service deactivation lands back here.
   if let Some(service) = deactivated {
     global.insert("deactivated".to_string(), service.to_string());
+  }
+  // `?sandbox_taken=<name>` flashes a friendly error after a sandbox name collision (the human form
+  // redirects here instead of dumping a bare 409 page).
+  if let Some(taken) = sandbox_taken {
+    global.insert(
+      "sandbox_error".to_string(),
+      format!("A corpus named “{taken}” already exists — choose a different sandbox name."),
+    );
   }
   global.insert(
     "title".to_string(),

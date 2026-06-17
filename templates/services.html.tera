@@ -9,6 +9,9 @@
   {% if global.deactivated %}
   <p class="flash-saved"><i class="fa fa-check-circle"></i>&nbsp;Service <strong>{{ global.deactivated }}</strong> was deactivated from this corpus (its tasks and log messages here were deleted).</p>
   {% endif %}
+  {% if global.sandbox_error %}
+  <p class="flash-error"><i class="fa fa-exclamation-triangle"></i>&nbsp;{{ global.sandbox_error }}</p>
+  {% endif %}
   <br>
   <div>
     <table id="service-report" class="table">
