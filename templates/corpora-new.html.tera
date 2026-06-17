@@ -1,17 +1,29 @@
 {% extends "layout" %} {% block content %}
-<div class="report-layout">
+<div class="report-layout config-page">
   <h1>Add a corpus</h1>
   <p><a href="/admin">&larr; back to the admin dashboard</a></p>
   {% if global.error %}<p class="flash-error"><i class="fa fa-exclamation-triangle"></i>&nbsp;{{ global.error }}</p>{% endif %}
   <form method="post" action="/corpus/import">
-    <p><label>Name <input type="text" name="name" required placeholder="e.g. arxmliv-2024" value="{{ global.name }}"></label></p>
-    <p><label>Path <span class="muted">(server-side corpus root)</span>
-        <input type="text" name="path" size="52" required placeholder="/data/&hellip;" value="{{ global.path }}"></label></p>
-    <p><label>Description <input type="text" name="description" size="60" value="{{ global.corpus_description }}"></label></p>
-    <p><label><input type="checkbox" name="complex" value="true"{% if global.complex == "true" %} checked{% endif %}> Multi-file documents (complex)</label></p>
+    <fieldset>
+      <legend>New corpus</legend>
+
+      <label for="corpus-name">Name</label>
+      <input id="corpus-name" type="text" name="name" required placeholder="e.g. arxmliv-2024" value="{{ global.name }}">
+
+      <label for="corpus-path">Path <span class="muted">(server-side folder, under <code>/data</code>)</span></label>
+      <input id="corpus-path" type="text" name="path" required placeholder="/data/&hellip;" value="{{ global.path }}">
+
+      <label for="corpus-desc">Description <span class="muted">(optional)</span></label>
+      <input id="corpus-desc" type="text" name="description" value="{{ global.corpus_description }}">
+
+      <p class="checkbox-row">
+        <label><input type="checkbox" name="complex" value="true"{% if global.complex == "true" %} checked{% endif %}> Multi-file documents (complex)</label>
+      </p>
+    </fieldset>
+
     <p class="muted">Registers the corpus and starts a background import job — track it on
       <a href="/jobs">Background jobs</a>.</p>
-    <p><button type="submit">Register &amp; import</button></p>
+    <p><button type="submit" class="btn-primary">Register &amp; import</button></p>
   </form>
 </div>
 {% endblock content %}

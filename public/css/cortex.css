@@ -278,6 +278,10 @@ legend {
   width: 100%;
   max-width: 26rem;
 }
+/* A checkbox is an inline control, not a full-width field — don't let the rule above stretch it. */
+.config-page input[type="checkbox"] {
+  width: auto;
+}
 
 /* Job progress page: themed progress bar + status colours. */
 progress {
