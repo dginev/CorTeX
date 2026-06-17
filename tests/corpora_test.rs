@@ -1235,7 +1235,7 @@ fn sandbox_name_collision_reshows_a_friendly_error() {
   let response = client
     .post(format!("/corpus/{parent_name}/sandbox"))
     .header(ContentType::Form)
-    .body(format!("name={parent_name}&service_id=1&severity=warning"))
+    .body(format!("name={parent_name}&service_id=1&status=warning"))
     .dispatch();
   assert_eq!(
     response.status(),
@@ -1248,6 +1248,23 @@ fn sandbox_name_collision_reshows_a_friendly_error() {
   assert!(
     location.starts_with("/corpus/") && location.contains("?sandbox_taken="),
     "redirects back to the corpus page with the sandbox_taken flash, got {location:?}"
+  );
+
+  // An invalid Model C filter (a category with no message severity) flashes inline, not a bare 422.
+  let invalid = client
+    .post(format!("/corpus/{parent_name}/sandbox"))
+    .header(ContentType::Form)
+    .body("name=sandbox_collision_child&service_id=1&category=missing_file")
+    .dispatch();
+  assert_eq!(
+    invalid.status(),
+    Status::SeeOther,
+    "an invalid filter redirects (friendly) instead of a bare 422"
+  );
+  let invalid_loc = invalid.headers().get_one("Location").unwrap_or_default();
+  assert!(
+    invalid_loc.starts_with("/corpus/") && invalid_loc.contains("?sandbox_invalid="),
+    "redirects back with the sandbox_invalid flash, got {invalid_loc:?}"
   );
 
   cleanup_corpus(&mut db, parent_name);

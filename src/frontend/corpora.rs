@@ -876,6 +876,16 @@ pub fn create_sandbox_human(
     // A non-positive cap is treated as "no cap" (create_sandbox ignores it); keep the raw value.
     max_entries: form.max_entries.filter(|n| *n > 0),
   };
+  // Pre-validate the Model C filter for a friendly inline error — a bad combo (a category without a
+  // message severity, no dimension at all, …) would otherwise be a bare 422 from start_sandbox. The
+  // job path re-checks, so this never lets an invalid carve through.
+  if let Err(reason) = SandboxSelection::from(&request).validate() {
+    return Ok(Redirect::to(format!(
+      "/corpus/{}?sandbox_invalid={}",
+      uri_escape(Some(parent.to_string())).unwrap_or_default(),
+      uri_escape(Some(reason)).unwrap_or_default()
+    )));
+  }
   match start_sandbox(pool, &database_url.0, &session.owner, parent, &request) {
     Ok(uuid) => Ok(Redirect::to(format!("/jobs/{uuid}"))),
     // A name collision re-shows the corpus page with a friendly flash instead of a bare 409 page —
@@ -1418,11 +1428,12 @@ pub fn overview_page(deleted: Option<&str>, pool: &State<DbPool>) -> Result<Temp
 
 /// The corpus screen (HTML twin of [`api_corpus`]): the services registered on a corpus. `404` if
 /// the corpus is unknown, `503` if the pool is exhausted.
-#[get("/corpus/<name>?<deactivated>&<sandbox_taken>")]
+#[get("/corpus/<name>?<deactivated>&<sandbox_taken>&<sandbox_invalid>")]
 pub fn corpus_page(
   name: &str,
   deactivated: Option<&str>,
   sandbox_taken: Option<&str>,
+  sandbox_invalid: Option<&str>,
   session: Option<AdminSession>,
   pool: &State<DbPool>,
 ) -> Result<Template, Status> {
@@ -1439,6 +1450,14 @@ pub fn corpus_page(
     global.insert(
       "sandbox_error".to_string(),
       format!("A corpus named “{taken}” already exists — choose a different sandbox name."),
+    );
+  }
+  // `?sandbox_invalid=<reason>` flashes the Model C filter-validation reason (e.g. a category needs
+  // a message severity) instead of a bare 422 page.
+  if let Some(reason) = sandbox_invalid {
+    global.insert(
+      "sandbox_error".to_string(),
+      format!("That sandbox filter isn't valid: {reason}."),
     );
   }
   global.insert(
