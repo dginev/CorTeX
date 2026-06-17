@@ -899,6 +899,24 @@ h1 {
 .flash-error .fa-exclamation-triangle {
   color: var(--bad);
 }
+/* Export-dataset form: the severities are a tidy bordered group of spaced inline checkboxes. */
+.export-severities {
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: var(--space-sm) var(--space-md);
+  margin: var(--space-sm) 0;
+}
+.export-severities legend {
+  padding: 0 var(--space-xs);
+  color: var(--ink-muted);
+  font-size: var(--fs-sm);
+}
+.export-severities label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-right: var(--space-md);
+}
 /* Sandbox provenance banner on a carved corpus's page — a compact accent pill linking the parent
    corpus + showing the carve filter (the page wrapper is .center, so inline-flex centres it). */
 .sandbox-provenance {

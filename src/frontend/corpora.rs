@@ -557,6 +557,136 @@ fn run_export(
   serde_json::to_value(&outcome).map_err(|error| error.to_string())
 }
 
+/// Fields of the human "Export dataset" form (the web twin of [`export_dataset`]).
+#[derive(FromForm)]
+pub struct ExportForm {
+  /// Server-side output directory for the archives.
+  pub out: String,
+  /// Bucketing: `month` or `severity`.
+  pub group_by: String,
+  /// The checked severity keys (the multi-value checkbox group; empty = none selected).
+  pub severities: Vec<String>,
+}
+
+/// Renders the "Export dataset" form for a `(corpus, service)`. Shared by the GET screen and the
+/// POST error path, so a failed submit re-renders with a friendly `error` and every typed value
+/// preserved (the output path, grouping, and which severities were checked) instead of a bare error
+/// page. Admin-only page (`is_admin`).
+fn render_export_form(
+  corpus: &str,
+  service: &str,
+  error: Option<&str>,
+  out: &str,
+  group_by: &str,
+  selected: &[String],
+) -> Template {
+  let mut global = HashMap::new();
+  global.insert("title".to_string(), "Export dataset".to_string());
+  global.insert(
+    "description".to_string(),
+    format!("Bundle {corpus} / {service} converted HTML into ZIP archives"),
+  );
+  global.insert("corpus_name".to_string(), corpus.to_string());
+  global.insert("service_name".to_string(), service.to_string());
+  global.insert("out".to_string(), out.to_string());
+  global.insert("group_by".to_string(), group_by.to_string());
+  if let Some(message) = error {
+    global.insert("error".to_string(), message.to_string());
+  }
+  // Per-severity checked flags (the form preserves the admin's selection across a re-render). The
+  // key set matches the canonical `TaskStatus` severities the exporter accepts.
+  for key in ["no_problem", "warning", "error", "fatal", "invalid"] {
+    let checked = selected.iter().any(|s| s == key);
+    global.insert(format!("sev_{key}_checked"), checked.to_string());
+  }
+  let mut context = TemplateContext {
+    global,
+    is_admin: true,
+    ..TemplateContext::default()
+  };
+  decorate_uri_encodings(&mut context);
+  Template::render("export-dataset", context)
+}
+
+/// The "Export dataset" screen (`GET /export/<c>/<s>`): the human form that drives the same export
+/// as `cortex export-dataset` and the agent [`export_dataset`]. **Signed-in admins only**
+/// (anonymous → sign-in). Pre-fills a default output path + the CLI's default severity set. A
+/// sibling top-level path (like `/runs/<c>/<s>`, `/history/<c>/<s>`) so it never collides with the
+/// report ladder's `/corpus/<c>/<s>/<severity>` rung.
+#[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
+#[get("/export/<corpus>/<service>")]
+pub fn export_dataset_page(
+  corpus: &str,
+  service: &str,
+  session: Option<AdminSession>,
+  return_to: ReturnTo,
+) -> Result<Template, AdminReject> {
+  require_admin_to(session, &return_to)?;
+  let default_out = format!("/data/datasets/{corpus}-{service}");
+  Ok(render_export_form(
+    corpus,
+    service,
+    None,
+    &default_out,
+    "month",
+    &default_export_severities(),
+  ))
+}
+
+/// The human twin of [`export_dataset`]: the "Export dataset" form post. **Gated by the signed-in
+/// [`AdminSession`] cookie** (anonymous → sign-in); spawns the background export via the shared
+/// [`start_export`] core and redirects to the job's live-progress page. A failed submit re-renders
+/// the form with a friendly message + the values preserved (404 unknown corpus/service, 422 bad
+/// grouping / no severity).
+// The Err variant is a re-rendered form `Template` (the friendly-error path), which is chunky —
+// fine for a one-shot request handler.
+#[allow(clippy::result_large_err)]
+#[post("/export/<corpus>/<service>", data = "<form>")]
+pub fn export_dataset_human(
+  corpus: &str,
+  service: &str,
+  form: Form<ExportForm>,
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+  database_url: &State<DatabaseUrl>,
+) -> Result<Redirect, Template> {
+  let Some(session) = session else {
+    return Ok(Redirect::to("/admin/login"));
+  };
+  let form = form.into_inner();
+  let request = ExportRequest {
+    out: form.out.clone(),
+    group_by: Some(form.group_by.clone()),
+    severities: Some(form.severities.clone()),
+  };
+  match start_export(
+    pool,
+    &database_url.0,
+    &session.owner,
+    corpus,
+    service,
+    request,
+  ) {
+    Ok(uuid) => Ok(Redirect::to(format!("/jobs/{uuid}"))),
+    Err(status) => {
+      let message = match status.code {
+        404 => format!("Corpus “{corpus}” / service “{service}” not found — check the names."),
+        422 => "Pick a grouping and at least one valid severity.".to_string(),
+        503 => "The database is temporarily unavailable — please try again.".to_string(),
+        _ => "Could not start the export — check the values and try again.".to_string(),
+      };
+      Err(render_export_form(
+        corpus,
+        service,
+        Some(&message),
+        &form.out,
+        &form.group_by,
+        &form.severities,
+      ))
+    },
+  }
+}
+
 /// Request body for carving a **sandbox** corpus out of a parent by a message-condition filter
 /// (Arm 5). The `(service, severity, category, what)` dimensions match the report drill-down.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1382,6 +1512,8 @@ pub fn routes() -> Vec<Route> {
     activate_service_human,
     deactivate_service_human,
     create_sandbox_human,
+    export_dataset_page,
+    export_dataset_human,
     overview_page,
     new_corpus_page,
     corpus_page

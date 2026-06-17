@@ -1429,7 +1429,7 @@ fn import_rejects_an_unreadable_path() {
 /// severity / group_by), unknown corpus (404), and the happy path (202 + a `dataset_export` job
 /// attributed to the token owner). The export *logic* is covered by `export_test`; this pins the
 /// endpoint contract.
-fn export_dataset_endpoint_is_token_gated_and_validated() {
+fn export_dataset_endpoint_and_human_form() {
   let corpus_name = "export_endpoint_test_corpus";
   let service_name = "tex_to_html";
   let mut db = backend::testdb();
@@ -1520,6 +1520,76 @@ fn export_dataset_endpoint_is_token_gated_and_validated() {
     job["actor"], "username1",
     "the export job is attributed to the token owner"
   );
+
+  // --- The human web form (the session-gated twin over the same `start_export` core) -------------
+  // A sibling top-level path (like /runs, /history) so it never collides with the report ladder's
+  // /corpus/<c>/<s>/<severity> rung.
+  let human_path = format!("/export/{corpus_name}/{service_name}");
+
+  // Anonymous GET → sign-in redirect.
+  let anon = client.get(&human_path).dispatch();
+  assert!(
+    anon
+      .headers()
+      .get_one("Location")
+      .unwrap_or("")
+      .starts_with("/admin/login"),
+    "anonymous export screen redirects to sign-in"
+  );
+
+  sign_in(&client);
+
+  // Signed-in GET → the export form renders.
+  let page = client.get(&human_path).dispatch();
+  assert_eq!(page.status(), Status::Ok);
+  let page_body = page.into_string().expect("html");
+  assert!(
+    page_body.contains("Export dataset"),
+    "renders the export form"
+  );
+  assert!(
+    page_body.contains("name=\"out\""),
+    "the form carries an output-path field"
+  );
+
+  // Signed-in POST (valid) → 303 to the job's live-progress page.
+  let posted = client
+    .post(&human_path)
+    .header(ContentType::Form)
+    .body("out=/tmp/cortex_export_form_test&group_by=month&severities=warning")
+    .dispatch();
+  assert_eq!(
+    posted.status(),
+    Status::SeeOther,
+    "a valid export form redirects (303)"
+  );
+  assert!(
+    posted
+      .headers()
+      .get_one("Location")
+      .unwrap_or("")
+      .starts_with("/jobs/"),
+    "the export form lands on the job's live-progress page"
+  );
+
+  // Signed-in POST with NO severities checked → friendly re-render, not a bare error page.
+  let none = client
+    .post(&human_path)
+    .header(ContentType::Form)
+    .body("out=/tmp/cortex_export_form_test&group_by=month")
+    .dispatch();
+  assert_eq!(
+    none.status(),
+    Status::Ok,
+    "a no-severity submit re-renders the form"
+  );
+  assert!(
+    none
+      .into_string()
+      .expect("html")
+      .contains("at least one valid severity"),
+    "the re-render explains why nothing happened"
+  );
 }
 
 fn main() {
@@ -1541,7 +1611,7 @@ fn main() {
   sandbox_size_cap_and_entry_filter_limit_the_carve();
   sandbox_name_collision_reshows_a_friendly_error();
   snapshot_tasks_appends_history_and_is_token_gated();
-  export_dataset_endpoint_is_token_gated_and_validated();
+  export_dataset_endpoint_and_human_form();
   eprintln!("corpora_test: all cases passed");
   unsafe { libc::_exit(0) }
 }

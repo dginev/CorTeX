@@ -269,6 +269,10 @@ curl -s -X POST -H "X-Cortex-Token: $TOKEN" -H 'content-type: application/json' 
   -d '{"out":"/data/datasets/arxmliv-2024","group_by":"month","severities":["no_problem","warning","error"]}' | jq .
 ```
 
+The **web twin** is the **Export dataset** action in a service report's admin row (`/corpus/<c>/<s>`),
+or its screen directly at **`/export/<corpus>/<service>`** — the same fields (output path, grouping,
+severities), redirecting to the job's live-progress page. So export is available on all three surfaces.
+
 Back up the **Postgres** database (metadata) and the **`/data`** filesystem (document bytes)
 separately; delete a corpus only through the app (orphan-free cascade), never a raw `DELETE`.
 

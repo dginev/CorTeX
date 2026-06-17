@@ -57,7 +57,7 @@ from *two* surfaces to *three* (add the CLI). The corollary that drives sequenci
 | Extend corpus | ✓ | ✓ | ✗ |
 | Sandbox via filter | ✓ | ✓ | ✓ (`cortex sandbox`, dry-run+`--yes`) |
 | Service register / activate / delete | ✓ | ✓ | ✗ |
-| Export dataset | ✗ (web form pending) | ✓ **landed** (`POST …/services/<s>/export-dataset` → `dataset_export` job) | ✓ (`cortex export-dataset`) |
+| Export dataset | ✓ **landed** (`/export/<c>/<s>` screen + report-page action) | ✓ **landed** (`POST …/services/<s>/export-dataset` → `dataset_export` job) | ✓ (`cortex export-dataset`) |
 | Live ops console | ✓ (landed) | `/metrics` | ✗ |
 | Init / configure / health | ✓ | ✓ | ✓ (install only) |
 
@@ -89,9 +89,11 @@ discoverable JSON DTOs (each also the future HTML/CLI source).
   /api/corpora/<c>/services/<s>/export-dataset` (token-gated) spawns a `dataset_export` background
   job over the shared `export_html_dataset` core (the CLI twin's exact validation: `422` bad
   `group_by`/severity, `404` unknown corpus/service), returning `202` + the job handle. Pinned by
-  `corpora_test::export_dataset_endpoint_is_token_gated_and_validated`. **Remaining:** the human web
-  form (C-scope) — `start_export` is already the shared core, so the form is a thin twin like
-  `import_corpus_human`.
+  `corpora_test::export_dataset_endpoint_and_human_form`. The **human web form ✅ LANDED** too — the
+  `/export/<c>/<s>` screen (a sibling top-level path like `/runs`, `/history`, so it never collides
+  with the report ladder) + an **Export dataset** action in the report-page admin row, over the same
+  `start_export` core (a thin twin of `import_corpus_human`: 303 → the job page on success, friendly
+  re-render on 404/422). Export is now complete across all three surfaces (web · agent · CLI).
 
 ### Arm B — CLI as a first-class surface (direction 4)
 - **B1 — Management subcommands.** `cortex report|runs|document|rerun|extend|sandbox …` — thin

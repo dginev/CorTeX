@@ -116,6 +116,8 @@
       <a class="footer-action" href="#modal-savetasks" data-toggle="modal" data-target="#modal-savetasks"
          title="Save the current task statuses as a historical snapshot"><i class="fa fa-save"></i>&nbsp;Save&nbsp;snapshot</a>
       {% endif %}
+      <a class="footer-action" href="/export/{{global.corpus_name_uri}}/{{global.service_name_uri}}"
+         title="Bundle this service's converted HTML into ZIP archives (a background job)"><i class="fa fa-file-archive-o"></i>&nbsp;Export&nbsp;dataset</a>
     </div>
     {% endif %}
 
