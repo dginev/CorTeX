@@ -99,17 +99,19 @@ pub fn serve_report(
       // Metadata in all reports
       global.insert(
         "title".to_string(),
-        "Corpus Report for ".to_string() + &corpus_name,
+        "Corpus Report for ".to_string() + &corpus.name,
       );
       global.insert(
         "description".to_string(),
         "An analysis framework for corpora of TeX/LaTeX documents - statistical reports for "
           .to_string()
-          + &corpus_name,
+          + &corpus.name,
       );
-      global.insert("corpus_name".to_string(), corpus_name);
+      // Render the STORED names (case-insensitive lookup preserves the display case, e.g. `arXiv`),
+      // not the lowercased URL params.
+      global.insert("corpus_name".to_string(), corpus.name.clone());
       global.insert("corpus_description".to_string(), corpus.description.clone());
-      global.insert("service_name".to_string(), service_name);
+      global.insert("service_name".to_string(), service.name.clone());
       global.insert(
         "service_description".to_string(),
         service.description.clone(),

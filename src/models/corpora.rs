@@ -42,11 +42,21 @@ pub struct Corpus {
   pub public_id: uuid::Uuid,
 }
 
+diesel::define_sql_function! {
+  /// SQL `LOWER()`, for case-insensitive corpus-name matching in `find_by_name`.
+  fn lower(x: diesel::sql_types::Text) -> diesel::sql_types::Text;
+}
+
 impl Corpus {
   /// ORM-like until diesel.rs introduces finders for more fields
   pub fn find_by_name(name_query: &str, connection: &mut PgConnection) -> Result<Self, Error> {
     use crate::schema::corpora::name;
-    corpora::table.filter(name.eq(name_query)).first(connection)
+    // Case-insensitive: a corpus name matches regardless of case, so a mixed-case display name like
+    // `arXiv` resolves at any URL case (no functional index, but the corpora set is tiny). The
+    // stored case is preserved — callers render `corpus.name`, not the URL string.
+    corpora::table
+      .filter(lower(name).eq(name_query.to_lowercase()))
+      .first(connection)
   }
   /// Find a corpus by its primary key (used to resolve a sandbox's parent).
   pub fn find_by_id(id_query: i32, connection: &mut PgConnection) -> Result<Self, Error> {

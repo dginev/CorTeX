@@ -281,3 +281,32 @@ fn can_import_complex() {
     .execute(&mut test_backend.connection);
   assert!(clean_slate_post.is_ok());
 }
+
+#[test]
+fn find_by_name_is_case_insensitive_and_preserves_stored_case() {
+  // A mixed-case display name (e.g. `arXiv`) must resolve at any URL case, and the stored case is
+  // preserved so the report title reads `arXiv`, not `arxiv`.
+  let mut test_backend = backend::testdb();
+  let name = "ArXiv-CaseTest";
+  let _ = delete(corpora::table)
+    .filter(corpora::name.eq(name))
+    .execute(&mut test_backend.connection);
+  test_backend
+    .add(&NewCorpus {
+      name: name.to_string(),
+      path: "tests/data/".to_string(),
+      complex: false,
+      description: String::new(),
+    })
+    .expect("add mixed-case corpus");
+
+  for query in ["arxiv-casetest", "ARXIV-CASETEST", "ArXiv-CaseTest"] {
+    let found = Corpus::find_by_name(query, &mut test_backend.connection)
+      .unwrap_or_else(|_| panic!("corpus must resolve for query {query:?}"));
+    assert_eq!(found.name, name, "the stored case is preserved");
+  }
+
+  let _ = delete(corpora::table)
+    .filter(corpora::name.eq(name))
+    .execute(&mut test_backend.connection);
+}
