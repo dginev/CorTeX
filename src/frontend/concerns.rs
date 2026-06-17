@@ -517,6 +517,16 @@ pub fn serve_savetasks(
   let service_name = service_name.to_lowercase();
   let corpus = Corpus::find_by_name(&corpus_name, connection).map_err(|_| Status::NotFound)?;
   let service = Service::find_by_name(&service_name, connection).map_err(|_| Status::NotFound)?;
+  // A snapshot taken mid-run is a moving target (the in-progress tasks will resolve to a different
+  // status moments later), so refuse it while any task is still TODO or Queued (status >= 0). The
+  // UI disables the button on the same condition; this is the authoritative guard for both the
+  // human and agent paths.
+  let progress = progress_report(connection, corpus.id, service.id);
+  let in_progress =
+    progress.get("todo").copied().unwrap_or(0.0) + progress.get("queued").copied().unwrap_or(0.0);
+  if in_progress > 0.0 {
+    return Err(Status::Conflict);
+  }
   match save_historical_tasks(connection, &corpus, &service) {
     Err(_) => Err(Status::InternalServerError),
     Ok(count) => Ok(Accepted(format!("Saved {count} tasks"))),

@@ -898,6 +898,15 @@ pub fn snapshot_tasks(
     Corpus::find_by_name(corpus, &mut backend.connection).map_err(|_| Status::NotFound)?;
   let service_record =
     Service::find_by_name(service, &mut backend.connection).map_err(|_| Status::NotFound)?;
+  // Refuse a mid-run snapshot (in-progress tasks would resolve to a different status moments
+  // later), matching the human `serve_savetasks` guard so both surfaces agree. `409` while any
+  // task is TODO or Queued (status >= 0).
+  let progress = progress_report(&mut backend.connection, corpus_record.id, service_record.id);
+  let in_progress =
+    progress.get("todo").copied().unwrap_or(0.0) + progress.get("queued").copied().unwrap_or(0.0);
+  if in_progress > 0.0 {
+    return Err(Status::Conflict);
+  }
   let saved = backend
     .save_historical_tasks(&corpus_record, &service_record)
     .map_err(|_| Status::InternalServerError)?;

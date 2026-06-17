@@ -29,6 +29,9 @@
      status colors already pass AA, so they're unchanged. */
   --ok: #286c36;
   --warn: #855511;
+  /* Brighter amber for the progress-bar fill only (a block fill needs no text-contrast darkening,
+     so it isn't tied to the WCAG-tuned --warn above). */
+  --bar-warn: #ca8119;
   --orange-deep: #9b470c;
   --bad: #b32424;
   --serif: "Roboto Slab", "Iowan Old Style", Charter, Georgia, serif;
@@ -62,6 +65,7 @@
   --shadow-lg: 0 6px 24px rgba(0, 0, 0, 0.5);
   --ok: #6dd28a;
   --warn: #f5b042;
+  --bar-warn: #f5b042;
   --orange-deep: #e8884a;
   --bad: #f06363;
 }
@@ -1377,7 +1381,7 @@ h3 {
   background-color: var(--ok);
 }
 .bar.warn {
-  background-color: var(--warn);
+  background-color: var(--bar-warn);
 }
 .bar.error,
 .bar.fatal {
@@ -1540,6 +1544,30 @@ h3 {
   color: var(--link);
   border-color: var(--accent);
   text-decoration: none;
+}
+/* Disabled footer pill (e.g. Save snapshot while a run is in progress): muted + non-interactive,
+   no hover-accent. It's a <span>, not an <a>, so it isn't focusable. */
+.footer-action-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+/* Run-control row under the report table (report.html.tera): the same footer pills, but left-aligned
+   in the report column instead of pinned bottom-right. Reset the in-row <form> wrappers so the pills
+   sit flush together. */
+.report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin: var(--space-md) 0;
+}
+.report-actions .inline-form {
+  display: inline-flex;
+  margin: 0;
+}
+.report-actions .footer-action {
+  cursor: pointer;
 }
 /* Auto-refresh toggle hosted in the same pill card as the footer actions (consistent control group;
    not a link, so no hover-accent — the switch inside is the control). */

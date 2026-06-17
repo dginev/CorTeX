@@ -78,30 +78,34 @@
       </tbody>
     </table>
 
-    <nav class="report-links">
-      <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/info"><i class="fa fa-info-circle"></i>Info-level messages</a>
-      <a href="/runs/{{global.corpus_name_uri}}/{{global.service_name_uri}}"><i class="fa fa-history"></i>Run history</a>
-      <a href="/history/{{global.corpus_name_uri}}/{{global.service_name_uri}}"><i class="fa fa-line-chart"></i>History chart</a>
-      <a href="/runs/{{global.corpus_name_uri}}/{{global.service_name_uri}}/diff"><i class="fa fa-exchange"></i>Diff previous runs</a>
-    </nav>
-
     {% if is_admin %}
-    {# Run control (admin only): pause blocks every in-progress task (status ≥ 0) so the dispatcher
-       stops leasing this (corpus, service); resume returns the blocked tasks to TODO. Agent twins:
-       POST /api/reports/<c>/<s>/{pause,resume}. #}
-    <nav class="report-links run-control" aria-label="Run control">
+    {# Run control (admin only) — the first row under the report table, in the footer-button pill
+       style. Pause blocks every in-progress task (status >= 0) so the dispatcher stops leasing this
+       (corpus, service); resume returns the blocked tasks to TODO; rerun re-queues the reported
+       tasks via the shared modal (the footer's own Rerun is suppressed on this page — see the
+       footer_rerun block below). Agent twins: POST /api/reports/<c>/<s>/{pause,resume,rerun}. #}
+    <div class="report-actions" aria-label="Run control">
       <form method="post" class="inline-form"
             action="/pause/{{global.corpus_name_uri}}/{{global.service_name_uri}}"
             onsubmit="return confirm('Pause this run? Every in-progress task becomes Blocked, so the dispatcher stops processing this corpus/service until you resume.');">
-        <button type="submit" class="btn btn-default btn-sm"><i class="fa fa-pause"></i>&nbsp;Pause run</button>
+        <button type="submit" class="footer-action"><i class="fa fa-pause"></i>&nbsp;Pause run</button>
       </form>
       <form method="post" class="inline-form"
             action="/resume/{{global.corpus_name_uri}}/{{global.service_name_uri}}"
             onsubmit="return confirm('Resume this run? Every Blocked task returns to TODO for the dispatcher to pick up.');">
-        <button type="submit" class="btn btn-default btn-sm"><i class="fa fa-play"></i>&nbsp;Resume run</button>
+        <button type="submit" class="footer-action"><i class="fa fa-play"></i>&nbsp;Resume run</button>
       </form>
-    </nav>
+      <a class="footer-action" href="#modal-rerun" data-toggle="modal" data-target="#modal-rerun"
+         title="Re-queue the reported tasks for conversion"><i class="fa fa-refresh"></i>&nbsp;Rerun</a>
+    </div>
     {% endif %}
+
+    <nav class="report-links">
+      <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/info"><i class="fa fa-info-circle"></i>Info-level messages</a>
+      <a href="/runs/{{global.corpus_name_uri}}/{{global.service_name_uri}}"><i class="fa fa-history"></i>History</a>
+      <a href="/history/{{global.corpus_name_uri}}/{{global.service_name_uri}}"><i class="fa fa-line-chart"></i>History chart</a>
+      <a href="/runs/{{global.corpus_name_uri}}/{{global.service_name_uri}}/diff"><i class="fa fa-exchange"></i>Diff previous runs</a>
+    </nav>
 
     {# Direct article forensics — the human twin of the agent's GET /api/corpus/<c>/<svc>/document/<name>
        and `cortex document <c> <s> <name>`: jump straight to one article's per-message report by id,
@@ -132,6 +136,10 @@
   })();
 </script>
 <script src="/public/js/progress_report.js"></script> {% endblock content %}
+
+{# Rerun lives in the run-control row under the report table on this page, so drop it from the
+   shared footer here (severity/category sub-pages keep the footer Rerun — they have no row). #}
+{% block footer_rerun %}{% endblock footer_rerun %}
 
 {% block footer_extra %} {% if global.corpus_description %}
 <p class="corpus-description">
