@@ -15,7 +15,7 @@
       "values": {{ history_serialized | safe}}
     },
     "title": {
-      "text": "Success rates from {{ global.history_length }} runs of {{global.service_name}} over {{global.corpus_name | safe}}",
+      "text": "Success rates from {{ global.history_length }} runs of {{global.service_name}} over {{global.corpus_name}}",
       "anchor": "start"
     },
     "mark": "bar",

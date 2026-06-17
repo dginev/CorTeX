@@ -86,6 +86,101 @@ fn seed() {
 // Custom harness (`harness = false` in Cargo.toml): run the cases, then `process::exit(0)` to skip
 // the racy diesel/libpq/Tokio teardown that SIGSEGVs *after* assertions pass (KNOWN_ISSUES L-1).
 // A panic in any case still aborts the process non-zero, so real failures fail CI.
+/// Security regression: a run `description` is user-controlled (rerun/snapshot `--description`) and
+/// is serialized into the history chart's `<script>` block; `/history` is **public**. A `</script>`
+/// payload must NOT break out of the script tag (stored XSS) — the handler escapes `<`/`>`/`&` to
+/// their JSON `\uXXXX` forms, which `JSON.parse` decodes back so the chart is unchanged.
+fn history_chart_escapes_script_breakout_in_a_description(client: &Client) {
+  let mut backend = backend::testdb();
+  let corpus_name = "xss_history_test_corpus";
+  let service_name = "xss_history_test_svc";
+  if let Ok(existing) = Corpus::find_by_name(corpus_name, &mut backend.connection) {
+    diesel::delete(historical_runs::table.filter(historical_runs::corpus_id.eq(existing.id)))
+      .execute(&mut backend.connection)
+      .ok();
+    diesel::delete(corpora::table.filter(corpora::id.eq(existing.id)))
+      .execute(&mut backend.connection)
+      .ok();
+  }
+  diesel::delete(services::table.filter(services::name.eq(service_name)))
+    .execute(&mut backend.connection)
+    .ok();
+  backend
+    .add(&NewCorpus {
+      name: corpus_name.to_string(),
+      path: "/tmp/xss-history".to_string(),
+      complex: false,
+      description: String::new(),
+    })
+    .expect("corpus");
+  let corpus = Corpus::find_by_name(corpus_name, &mut backend.connection).unwrap();
+  backend
+    .add(&NewService {
+      name: service_name.to_string(),
+      version: 0.1,
+      inputformat: "tex".to_string(),
+      outputformat: "html".to_string(),
+      inputconverter: None,
+      complex: false,
+      description: String::new(),
+    })
+    .expect("service");
+  let service = Service::find_by_name(service_name, &mut backend.connection).unwrap();
+  // Give the run live tallies (two warning tasks) so it appears in the chart series carrying its
+  // description — an empty run produces no bars and would not exercise the serialization.
+  for i in 0..2 {
+    backend
+      .add(&NewTask {
+        entry: format!("/tmp/xss-history/{i}.zip"),
+        service_id: service.id,
+        corpus_id: corpus.id,
+        status: TaskStatus::Warning.raw(),
+      })
+      .expect("add task");
+  }
+  const PAYLOAD: &str = "XSSPROBE</script><svg onload=alert(1)>";
+  backend
+    .mark_new_run(&corpus, &service, "tester".into(), PAYLOAD.to_string())
+    .expect("run with an XSS payload description");
+  // A second run completes the payload run (sets its end_time), so it counts toward
+  // `history_length` and renders in the chart series (the chart skips when no run is completed).
+  backend
+    .mark_new_run(
+      &corpus,
+      &service,
+      "tester".into(),
+      "closing run".to_string(),
+    )
+    .expect("closing run");
+
+  let body = client
+    .get(format!("/history/{corpus_name}/{service_name}"))
+    .dispatch()
+    .into_string()
+    .expect("history html");
+  // The chart series is present (a completed run with tallies) and carries the payload description.
+  assert!(
+    body.contains("XSSPROBE"),
+    "the payload run's description is serialized into the chart"
+  );
+  // The raw breakout sequence must NOT appear — the `<` was escaped to `<`.
+  assert!(
+    !body.contains("XSSPROBE</script>"),
+    "a </script> in a run description must NOT break out of the chart <script> (stored XSS)"
+  );
+  assert!(
+    body.contains("XSSPROBE\\u003c"),
+    "the payload's `<` is escaped to \\u003c (JSON.parse decodes it back; the chart is unchanged)"
+  );
+
+  diesel::delete(corpora::table.filter(corpora::name.eq(corpus_name)))
+    .execute(&mut backend.connection)
+    .ok();
+  diesel::delete(services::table.filter(services::name.eq(service_name)))
+    .execute(&mut backend.connection)
+    .ok();
+}
+
 fn main() {
   // Own the Client in `main` and `process::exit(0)` while it is still alive — never dropping it, so
   // the racy libpq/Tokio/r2d2 teardown never runs (the bench's `process::exit` trick).
@@ -96,6 +191,7 @@ fn main() {
   api_runs_is_404_for_unknown_corpus(&client);
   overview_overlays_live_tallies_via_batch(&client);
   overview_lists_runs_system_wide(&client);
+  history_chart_escapes_script_breakout_in_a_description(&client);
   eprintln!("runs_test: all cases passed");
   // `_exit` (not `process::exit`): skip C atexit handlers — libpq/OpenSSL global cleanup races with
   // the still-live Tokio/r2d2 threads and SIGSEGVs (L-1). The OS reclaims everything cleanly.

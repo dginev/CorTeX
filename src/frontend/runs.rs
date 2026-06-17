@@ -765,7 +765,17 @@ pub fn history_page(corpus: &str, service: &str, pool: &State<DbPool>) -> Result
     let runs_meta_stack = RunMetadataStack::transform(&runs_meta);
     // Soften the legacy `.unwrap()` (a request-path panic on a serialization error) to an empty
     // series: the chart renders nothing rather than crashing the request.
-    context.history_serialized = Some(serde_json::to_string(&runs_meta_stack).unwrap_or_default());
+    // The result is embedded **inside a `<script>` block** (`{{ history_serialized | safe }}`), and
+    // serde_json escapes `"`/control chars but NOT `<` — so a user-set run `description` containing
+    // `</script>` would break out of the script tag (stored XSS, and `/history` is public). Escape
+    // `<`/`>`/`&` to their JSON `\uXXXX` forms — `JSON.parse` decodes them back, so the chart data
+    // is byte-identical while the markup can no longer be escaped.
+    let history_json = serde_json::to_string(&runs_meta_stack)
+      .unwrap_or_default()
+      .replace('<', "\\u003c")
+      .replace('>', "\\u003e")
+      .replace('&', "\\u0026");
+    context.history_serialized = Some(history_json);
     global.insert(
       "history_length".to_string(),
       runs_meta
