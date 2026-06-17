@@ -1460,7 +1460,8 @@ h3 {
 /* Direct "look up an article" shortcut under the report links — the human entry to per-article
    forensics by id (the twin of the agent API + `cortex document`). */
 .document-lookup {
-  margin-top: 1rem;
+  /* Extra separation from the report links / run-control row above (owner request). */
+  margin-top: var(--space-xl);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1566,8 +1567,29 @@ h3 {
   display: inline-flex;
   margin: 0;
 }
+/* The run-control pills read as the active accent (purple) at rest, and reset <button> chrome so the
+   <button> actions (Pause/Resume) render identically to the <a> actions (Rerun/Save). */
 .report-actions .footer-action {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
   cursor: pointer;
+  color: var(--accent);
+  border-color: var(--accent);
+  background-color: var(--bg-elev);
+}
+.report-actions .footer-action:hover,
+.report-actions .footer-action:focus {
+  /* accent-soft fill + accent text reads correctly in both themes (unlike a solid fill, whose text
+     contrast flips between the light/dark accent). */
+  color: var(--accent);
+  background-color: var(--accent-soft);
+  border-color: var(--accent);
+}
+/* A disabled pill in the row drops the accent for a muted, clearly-inert look. */
+.report-actions .footer-action-disabled {
+  color: var(--ink-muted);
+  border-color: var(--rule);
 }
 /* Auto-refresh toggle hosted in the same pill card as the footer actions (consistent control group;
    not a link, so no hover-accent — the switch inside is the control). */

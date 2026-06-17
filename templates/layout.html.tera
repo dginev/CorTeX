@@ -125,8 +125,11 @@
                     <a class="footer-action" href="#modal-rerun" data-toggle="modal" data-target="#modal-rerun"
                         title="Re-queue the reported tasks for conversion"><i class="fa fa-refresh"></i>&nbsp;Rerun</a>
                     {% endblock footer_rerun %}
-                    {# A snapshot mid-run is a moving target, so disable Save while any task is still
-                       in progress (status >= 0 → todo or queued). serve_savetasks enforces the same. #}
+                    {# Save snapshot: the report page overrides this block to empty (it shows Save in its
+                       own run-control row instead); severity/category sub-pages render it here. A
+                       snapshot mid-run is a moving target, so disable it while any task is still in
+                       progress (status >= 0 → todo or queued). serve_savetasks enforces the same. #}
+                    {% block footer_save %}
                     {% if (global.todo and global.todo != "0") or (global.queued and global.queued != "0") %}
                     <span class="footer-action footer-action-disabled"
                         title="Saving a snapshot is disabled while tasks are still in progress — pause or finish the run first."><i class="fa fa-save"></i>&nbsp;Save&nbsp;snapshot</span>
@@ -134,6 +137,7 @@
                     <a class="footer-action" href="#modal-savetasks" data-toggle="modal" data-target="#modal-savetasks"
                         title="Save the current task statuses as a historical snapshot"><i class="fa fa-save"></i>&nbsp;Save&nbsp;snapshot</a>
                     {% endif %}
+                    {% endblock footer_save %}
                     <a class="footer-action" href="#" id="footer-force-refresh"
                         title="Rebuild the report data (materialized rollup) now, then reload this page"><i class="fa fa-database"></i>&nbsp;Force&nbsp;refresh</a>
                     {% else %}
