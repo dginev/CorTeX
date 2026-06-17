@@ -89,9 +89,9 @@ fn worker_fleet_api_and_screen() {
   );
   sign_in(&client);
 
-  // --- Agent API: the worker with its tallies + computed in-flight backlog --------------------
+  // --- Agent API (token-gated, like the admin-only /workers screen): worker tallies + in-flight --
   let response = client
-    .get(format!("/api/services/{SERVICE_NAME}/workers"))
+    .get(format!("/api/services/{SERVICE_NAME}/workers?token=token1"))
     .dispatch();
   assert_eq!(response.status(), Status::Ok);
   assert_eq!(response.content_type(), Some(ContentType::JSON));
@@ -147,8 +147,13 @@ fn worker_fleet_api_and_screen() {
     "an empty-identity worker renders as (unnamed), not a blank row"
   );
 
-  // --- Service registry: the agent API lists our service, the HTML screen renders it ----------
-  let response = client.get("/api/services").dispatch();
+  // --- Service registry: token-gated agent API lists our service; the HTML screen renders it ----
+  assert_eq!(
+    client.get("/api/services").dispatch().status(),
+    Status::Unauthorized,
+    "GET /api/services without a token is 401 (registry is admin-only, like the /services page)"
+  );
+  let response = client.get("/api/services?token=token1").dispatch();
   assert_eq!(response.status(), Status::Ok);
   assert_eq!(response.content_type(), Some(ContentType::JSON));
   let services: Value = response.into_json().expect("services json");
@@ -171,9 +176,17 @@ fn worker_fleet_api_and_screen() {
     "lists the registered service server-side"
   );
 
-  // --- Guards: unknown service is 404 on both surfaces ----------------------------------------
+  // --- Guards: token-gated; unknown service is 404 on both surfaces ----------------------------
+  assert_eq!(
+    client
+      .get("/api/services/no_such_svc_xyz/workers")
+      .dispatch()
+      .status(),
+    Status::Unauthorized,
+    "GET .../workers without a token is 401 (the worker fleet is admin-only)"
+  );
   let response = client
-    .get("/api/services/no_such_svc_xyz/workers")
+    .get("/api/services/no_such_svc_xyz/workers?token=token1")
     .dispatch();
   assert_eq!(response.status(), Status::NotFound);
   let response = client.get("/workers/no_such_svc_xyz").dispatch();
@@ -279,7 +292,7 @@ fn worker_fleet_api_and_screen() {
   );
   // The agent twin clamps the skewed liveness age to 0 (never negative, never a panic).
   let response = client
-    .get(format!("/api/services/{SERVICE_NAME}/workers"))
+    .get(format!("/api/services/{SERVICE_NAME}/workers?token=token1"))
     .dispatch();
   let workers: Value = response.into_json().expect("workers json");
   let skewed = workers

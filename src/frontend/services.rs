@@ -136,7 +136,7 @@ fn resolve(service: &str, connection: &mut diesel::PgConnection) -> Result<Servi
 /// pool is exhausted.
 #[rocket_okapi::openapi(tag = "Services")]
 #[get("/api/services")]
-pub fn api_services(pool: &State<DbPool>) -> Result<Json<Vec<ServiceDto>>, Status> {
+pub fn api_services(_caller: Actor, pool: &State<DbPool>) -> Result<Json<Vec<ServiceDto>>, Status> {
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let services = Service::all(&mut connection).unwrap_or_default();
   Ok(Json(services.into_iter().map(ServiceDto::from).collect()))
@@ -523,6 +523,7 @@ pub fn services_page(
 #[rocket_okapi::openapi(tag = "Services")]
 #[get("/api/services/<service>/workers")]
 pub fn api_service_workers(
+  _caller: Actor,
   service: &str,
   pool: &State<DbPool>,
 ) -> Result<Json<Vec<WorkerDto>>, Status> {
