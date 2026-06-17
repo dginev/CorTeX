@@ -37,6 +37,14 @@ pub struct SandboxSelection {
   pub category: Option<String>,
   /// optional `what` narrowing within the category
   pub what: Option<String>,
+  /// optional substring the parent `entry` path must contain, matched as `entry LIKE '%…%'` (e.g.
+  /// `2506.` carves one arXiv month). `None`/empty = no narrowing.
+  #[serde(default)]
+  pub entry: Option<String>,
+  /// optional hard cap on how many entries the carve captures — the first `n` by `entry` order
+  /// (deterministic). `None`/non-positive = no cap.
+  #[serde(default)]
+  pub max_entries: Option<i64>,
 }
 
 /// The result of carving a sandbox: the new corpus plus how many entries it captured.
@@ -91,6 +99,31 @@ pub fn create_sandbox(
   if let Some(what) = &selection.what {
     filter.push_str(&format!(", what={what}"));
   }
+
+  // Optional entry-substring narrowing: `2506.` → `LIKE '%2506.%'`. Always bound (default `%` =
+  // match every entry) so the three SQL branches share one extra bind slot. Trimmed; blank = no
+  // narrowing.
+  let entry_filter = selection
+    .entry
+    .as_deref()
+    .map(str::trim)
+    .filter(|e| !e.is_empty());
+  let entry_pattern = entry_filter.map_or_else(|| "%".to_string(), |e| format!("%{e}%"));
+  if let Some(entry) = entry_filter {
+    filter.push_str(&format!(", entry~{entry}"));
+  }
+
+  // Optional deterministic size cap: the first `n` entries by `entry` order. `n` is a validated
+  // i64, so it is safe to inline (no bind needed; an integer has no injection surface).
+  // Non-positive caps are ignored. Appended after the WHERE clause of each branch.
+  let limit_clause = match selection.max_entries {
+    Some(n) if n > 0 => {
+      filter.push_str(&format!(", limit={n}"));
+      format!(" ORDER BY t.entry LIMIT {n}")
+    },
+    _ => String::new(),
+  };
+
   let description = format!("Sandbox of '{}' (filter: {filter})", parent.name);
 
   let new_sandbox = NewSandboxCorpus {
@@ -113,22 +146,25 @@ pub fn create_sandbox(
     // Server-side carve: stream the matching parent entries straight into new sandbox tasks. The
     // affected-row count is the number of entries captured (no rows cross into the application).
     let entry_count = match (selection.category.as_deref(), selection.what.as_deref()) {
-      (None, None) => sql_query(
+      (None, None) => sql_query(format!(
         "INSERT INTO tasks (service_id, corpus_id, status, entry) \
          SELECT $1, $2, $3, t.entry FROM tasks t \
-         WHERE t.corpus_id = $4 AND t.service_id = $5 AND t.status = $6",
-      )
+         WHERE t.corpus_id = $4 AND t.service_id = $5 AND t.status = $6 \
+         AND t.entry LIKE $7{limit_clause}"
+      ))
       .bind::<Integer, _>(service_id)
       .bind::<Integer, _>(sandbox.id)
       .bind::<Integer, _>(todo)
       .bind::<Integer, _>(parent_id)
       .bind::<Integer, _>(service_id)
       .bind::<Integer, _>(status)
+      .bind::<Text, _>(&entry_pattern)
       .execute(t_connection)?,
       (Some(category), None) => sql_query(format!(
         "INSERT INTO tasks (service_id, corpus_id, status, entry) \
          SELECT DISTINCT $1, $2, $3, t.entry FROM tasks t JOIN {log_table} l ON l.task_id = t.id \
-         WHERE t.corpus_id = $4 AND t.service_id = $5 AND t.status = $6 AND l.category = $7"
+         WHERE t.corpus_id = $4 AND t.service_id = $5 AND t.status = $6 AND l.category = $7 \
+         AND t.entry LIKE $8{limit_clause}"
       ))
       .bind::<Integer, _>(service_id)
       .bind::<Integer, _>(sandbox.id)
@@ -137,12 +173,13 @@ pub fn create_sandbox(
       .bind::<Integer, _>(service_id)
       .bind::<Integer, _>(status)
       .bind::<Text, _>(category)
+      .bind::<Text, _>(&entry_pattern)
       .execute(t_connection)?,
       (category, Some(what)) => sql_query(format!(
         "INSERT INTO tasks (service_id, corpus_id, status, entry) \
          SELECT DISTINCT $1, $2, $3, t.entry FROM tasks t JOIN {log_table} l ON l.task_id = t.id \
          WHERE t.corpus_id = $4 AND t.service_id = $5 AND t.status = $6 AND l.category = $7 \
-         AND l.what = $8"
+         AND l.what = $8 AND t.entry LIKE $9{limit_clause}"
       ))
       .bind::<Integer, _>(service_id)
       .bind::<Integer, _>(sandbox.id)
@@ -152,6 +189,7 @@ pub fn create_sandbox(
       .bind::<Integer, _>(status)
       .bind::<Text, _>(category.unwrap_or(""))
       .bind::<Text, _>(what)
+      .bind::<Text, _>(&entry_pattern)
       .execute(t_connection)?,
     };
 

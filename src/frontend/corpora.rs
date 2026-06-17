@@ -369,6 +369,14 @@ pub struct SandboxRequest {
   pub category: Option<String>,
   /// Optional `what` narrowing within the category.
   pub what: Option<String>,
+  /// Optional substring the parent `entry` path must contain (`entry LIKE '%…%'`, e.g. `2506.` for
+  /// one arXiv month). Empty/absent = no narrowing.
+  #[serde(default)]
+  pub entry: Option<String>,
+  /// Optional hard cap on the number of entries captured (the first `n` by `entry` order). Absent
+  /// or non-positive = no cap.
+  #[serde(default)]
+  pub max_entries: Option<i64>,
 }
 
 impl From<&SandboxRequest> for SandboxSelection {
@@ -378,6 +386,8 @@ impl From<&SandboxRequest> for SandboxSelection {
       severity: request.severity.clone(),
       category: request.category.clone(),
       what: request.what.clone(),
+      entry: request.entry.clone(),
+      max_entries: request.max_entries,
     }
   }
 }
@@ -449,6 +459,10 @@ pub struct SandboxForm {
   pub category: Option<String>,
   /// Optional `what` narrowing (empty string = none).
   pub what: Option<String>,
+  /// Optional `entry` substring filter (empty string = none).
+  pub entry: Option<String>,
+  /// Optional hard cap on captured entries (empty/zero = none).
+  pub max_entries: Option<i64>,
 }
 
 /// The human twin of [`create_sandbox_corpus`]: the corpus page's "Create a sandbox" form. **Gated
@@ -474,6 +488,9 @@ pub fn create_sandbox_human(
     severity: form.severity,
     category: blank_to_none(form.category),
     what: blank_to_none(form.what),
+    entry: blank_to_none(form.entry),
+    // A non-positive cap is treated as "no cap" (create_sandbox ignores it); keep the raw value.
+    max_entries: form.max_entries.filter(|n| *n > 0),
   };
   let uuid = start_sandbox(pool, &database_url.0, &session.owner, parent, &request)?;
   Ok(Redirect::to(format!("/jobs/{uuid}")))

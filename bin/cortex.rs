@@ -275,6 +275,12 @@ enum Command {
     /// Restrict to a message `what` within the category.
     #[arg(long)]
     what: Option<String>,
+    /// Restrict to entries whose path contains this substring (e.g. `2506.` for one arXiv month).
+    #[arg(long)]
+    entry: Option<String>,
+    /// Cap the carve at the first N entries (by entry order) — a deterministic size limit.
+    #[arg(long)]
+    max_entries: Option<i64>,
     /// Actually create the sandbox (without this, the command is a dry run that only prints the
     /// scope).
     #[arg(long)]
@@ -496,8 +502,20 @@ fn main() {
       severity,
       category,
       what,
+      entry,
+      max_entries,
       yes,
-    } => run_sandbox(parent, name, service, severity, category, what, yes),
+    } => run_sandbox(
+      parent,
+      name,
+      service,
+      severity,
+      category,
+      what,
+      entry,
+      max_entries,
+      yes,
+    ),
     Command::Import {
       name,
       path,
@@ -1254,6 +1272,8 @@ fn run_sandbox(
   severity: String,
   category: Option<String>,
   what: Option<String>,
+  entry: Option<String>,
+  max_entries: Option<i64>,
   yes: bool,
 ) {
   let mut backend = backend::from_address(default_db_address());
@@ -1280,12 +1300,22 @@ fn run_sandbox(
     std::process::exit(1);
   }
 
+  // Normalize the two optional carve narrowings (blank → none, non-positive cap → none).
+  let entry = entry.filter(|e| !e.trim().is_empty());
+  let max_entries = max_entries.filter(|n| *n > 0);
+
   let mut scope = format!("{}/{}  severity={severity}", parent.name, service.name);
   if let Some(cat) = &category {
     scope.push_str(&format!("  category={cat}"));
   }
   if let Some(w) = &what {
     scope.push_str(&format!("  what={w}"));
+  }
+  if let Some(e) = &entry {
+    scope.push_str(&format!("  entry~{e}"));
+  }
+  if let Some(n) = &max_entries {
+    scope.push_str(&format!("  limit={n}"));
   }
 
   if !yes {
@@ -1301,6 +1331,8 @@ fn run_sandbox(
     severity,
     category,
     what,
+    entry,
+    max_entries,
   };
   match create_sandbox(
     &mut backend.connection,

@@ -1067,15 +1067,13 @@ h3 {
 
 /* Cards / panels. */
 .card,
-.admin-card,
-.action-panel {
+.admin-card {
   background-color: var(--bg-elev);
   border: 1px solid var(--rule);
   border-radius: 8px;
   box-shadow: var(--shadow);
 }
-.card,
-.action-panel {
+.card {
   padding: 1rem 1.15rem;
   margin: 1rem 0;
 }
@@ -1098,11 +1096,75 @@ h3 {
   white-space: nowrap;
 }
 
-/* The corpus "Corpus actions" panel — cards the inline forms together. */
-.action-panel form {
-  display: inline-block;
-  vertical-align: top;
-  margin: 0 0.75rem;
+/* The corpus "Corpus actions" panel (services.html.tera) — one carded fieldset; each action is a
+   rigid label:control grid row so everything aligns under one fixed label column, independent of the
+   .center page wrapper. Collapses to stacked (label above control) on narrow screens. */
+.corpus-actions {
+  max-width: 46rem;
+  margin: var(--space-lg) auto 0;
+  text-align: left;
+}
+.corpus-actions form {
+  display: grid;
+  grid-template-columns: 12rem minmax(0, 1fr);
+  gap: var(--space-sm) var(--space-md);
+  align-items: center;
+  padding: var(--space-md) 0;
+}
+.corpus-actions form + form {
+  border-top: 1px solid var(--rule);
+}
+.corpus-actions label,
+.corpus-actions .action-label {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+/* Sandbox fields are direct grid children — they fill the control column. */
+.corpus-actions form > input,
+.corpus-actions form > select {
+  width: 100%;
+  max-width: 24rem;
+}
+/* A control cell pairing a field + button (+ hint) on one line (Register / Extend / Delete). */
+.corpus-actions .action-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+}
+.corpus-actions .action-control input,
+.corpus-actions .action-control select {
+  flex: 1 1 12rem;
+  min-width: 10rem;
+  max-width: 22rem;
+}
+/* A standalone submit (no label in column 1) aligns under the controls. */
+.corpus-actions .action-submit {
+  grid-column: 2;
+  justify-self: start;
+}
+.corpus-actions .action-subhead {
+  grid-column: 1 / -1;
+  margin: 0 0 var(--space-xs);
+  font-weight: 700;
+  font-size: var(--fs-sm);
+}
+/* Delete is set apart with a danger accent. */
+.corpus-actions .action-danger {
+  border-top-color: var(--bad);
+}
+.corpus-actions .action-danger > label {
+  color: var(--bad);
+}
+@media (max-width: 560px) {
+  .corpus-actions form {
+    grid-template-columns: 1fr;
+    gap: var(--space-xs);
+  }
+  .corpus-actions .action-submit {
+    grid-column: 1;
+  }
 }
 
 /* Report / registry / jobs grid — a clean scholarly table. */

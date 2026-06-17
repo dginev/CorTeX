@@ -7,7 +7,7 @@
 
 //! High-level contract test for the corpus-management capability (read side).
 
-use cortex::backend::{self, test_db_address};
+use cortex::backend::{self, create_sandbox, test_db_address, SandboxSelection};
 use cortex::frontend::server::mount_api_with;
 use cortex::helpers::TaskStatus;
 use cortex::models::{
@@ -998,6 +998,152 @@ fn sandbox_carves_matching_entries_into_a_new_corpus() {
   cleanup_corpus(&mut db, sandbox_name);
 }
 
+// The optional carve narrowings (U-9): an `entry` substring filter restricts the carve to matching
+// parent entries (`entry LIKE '%…%'`), and `max_entries` caps it deterministically at the first N
+// by entry order. Exercises `backend::create_sandbox` directly (the shared op behind all three
+// surfaces). Severity-only branch — the entry-pattern bind + LIMIT clause are identical in the
+// category/what branches.
+fn sandbox_size_cap_and_entry_filter_limit_the_carve() {
+  let parent_name = "sandbox_cap_parent";
+  let svc_name = "sandbox_cap_svc";
+  let sandbox_names = [
+    "sandbox_cap_june",
+    "sandbox_cap_june_top2",
+    "sandbox_cap_first2",
+  ];
+  let mut db = backend::testdb();
+  cleanup(&mut db, parent_name, svc_name);
+  for name in sandbox_names {
+    cleanup_corpus(&mut db, name);
+  }
+
+  db.add(&NewCorpus {
+    name: parent_name.to_string(),
+    path: "/tmp/sandbox_cap".to_string(),
+    complex: true,
+    description: "p".to_string(),
+  })
+  .expect("parent corpus");
+  let parent = Corpus::find_by_name(parent_name, &mut db.connection).unwrap();
+  db.add(&NewService {
+    name: svc_name.to_string(),
+    version: 0.1,
+    inputformat: "tex".to_string(),
+    outputformat: "html".to_string(),
+    inputconverter: None,
+    complex: true,
+    description: "svc".to_string(),
+  })
+  .expect("service");
+  let svc = Service::find_by_name(svc_name, &mut db.connection).unwrap();
+
+  // Five converted documents (all warnings): three from arXiv month 2506, two from 2505.
+  let entries = [
+    "/tmp/sandbox_cap/2506.00001.zip",
+    "/tmp/sandbox_cap/2506.00002.zip",
+    "/tmp/sandbox_cap/2506.00003.zip",
+    "/tmp/sandbox_cap/2505.00008.zip",
+    "/tmp/sandbox_cap/2505.00009.zip",
+  ];
+  for entry in entries {
+    db.add(&NewTask {
+      service_id: svc.id,
+      corpus_id: parent.id,
+      status: TaskStatus::Warning.raw(),
+      entry: entry.to_string(),
+    })
+    .expect("task");
+  }
+
+  let base = SandboxSelection {
+    service_id: svc.id,
+    severity: "warning".to_string(),
+    category: None,
+    what: None,
+    entry: None,
+    max_entries: None,
+  };
+  let load_entries = |db: &mut backend::Backend, corpus_id: i32| -> Vec<String> {
+    let mut found: Vec<String> = tasks::table
+      .filter(tasks::corpus_id.eq(corpus_id))
+      .select(tasks::entry)
+      .load(&mut db.connection)
+      .expect("sandbox tasks");
+    found.sort();
+    found
+  };
+
+  // Entry filter alone: only the three 2506 entries match `LIKE '%2506.%'`.
+  let june = create_sandbox(
+    &mut db.connection,
+    &parent,
+    "sandbox_cap_june",
+    &SandboxSelection {
+      entry: Some("2506.".to_string()),
+      ..base.clone()
+    },
+  )
+  .expect("june carve");
+  assert_eq!(
+    june.entry_count, 3,
+    "entry filter '2506.' captures the three June entries"
+  );
+
+  // Entry filter + cap: the first two 2506 entries by entry order.
+  let june_top2 = create_sandbox(
+    &mut db.connection,
+    &parent,
+    "sandbox_cap_june_top2",
+    &SandboxSelection {
+      entry: Some("2506.".to_string()),
+      max_entries: Some(2),
+      ..base.clone()
+    },
+  )
+  .expect("june top2 carve");
+  assert_eq!(
+    june_top2.entry_count, 2,
+    "max_entries caps the filtered carve at 2"
+  );
+  assert_eq!(
+    load_entries(&mut db, june_top2.sandbox.id),
+    vec![
+      "/tmp/sandbox_cap/2506.00001.zip".to_string(),
+      "/tmp/sandbox_cap/2506.00002.zip".to_string(),
+    ],
+    "the cap keeps the first two entries by entry order"
+  );
+
+  // Cap alone (no filter): the first two of all five by entry order — the two 2505 entries.
+  let first2 = create_sandbox(
+    &mut db.connection,
+    &parent,
+    "sandbox_cap_first2",
+    &SandboxSelection {
+      max_entries: Some(2),
+      ..base.clone()
+    },
+  )
+  .expect("first2 carve");
+  assert_eq!(
+    first2.entry_count, 2,
+    "max_entries caps the unfiltered carve at 2"
+  );
+  assert_eq!(
+    load_entries(&mut db, first2.sandbox.id),
+    vec![
+      "/tmp/sandbox_cap/2505.00008.zip".to_string(),
+      "/tmp/sandbox_cap/2505.00009.zip".to_string(),
+    ],
+    "the cap is deterministic — the lexically-first two entries"
+  );
+
+  cleanup(&mut db, parent_name, svc_name);
+  for name in sandbox_names {
+    cleanup_corpus(&mut db, name);
+  }
+}
+
 /// Save-snapshot freezes the current per-task statuses into `historical_tasks` (the agent twin of
 /// the report screen's "save snapshot"). Token-gated, append-only, attributed to the token owner.
 fn snapshot_tasks_appends_history_and_is_token_gated() {
@@ -1205,6 +1351,7 @@ fn main() {
   human_corpus_forms_are_session_and_confirm_gated();
   deactivate_service_removes_pair_tasks_and_logs();
   sandbox_carves_matching_entries_into_a_new_corpus();
+  sandbox_size_cap_and_entry_filter_limit_the_carve();
   snapshot_tasks_appends_history_and_is_token_gated();
   eprintln!("corpora_test: all cases passed");
   unsafe { libc::_exit(0) }

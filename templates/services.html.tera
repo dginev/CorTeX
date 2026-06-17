@@ -54,56 +54,71 @@
   </div>
 
   {% if is_admin %}
-  <hr>
-  <h3>Corpus actions</h3>
-  <div class="action-panel">
-  {% if all_services and all_services | length > 0 %}
-  <form method="post" action="/corpus/{{global.corpus_name_uri}}/activate">
-    <p>Register a service on this corpus:</p>
-    <p>
-      <select name="service" aria-label="Service to register on this corpus" required>
-        {% for service in all_services %}
-        <option value="{{ service.name }}">{{ service.name }}</option>
-        {% endfor %}
-      </select>
-      <button type="submit">Register</button>
-    </p>
-  </form>
-  {% endif %}
-  <form method="post" action="/corpus/{{global.corpus_name_uri}}/extend">
-    <p>Re-scan the corpus path for newly-arrived entries:</p>
-    <p><button type="submit">Extend</button></p>
-  </form>
-  {% if services and services | length > 0 %}
-  <form method="post" action="/corpus/{{global.corpus_name_uri}}/sandbox">
-    <p>Carve a sandbox corpus from a message-condition filter:</p>
-    <p>
-      <input type="text" name="name" placeholder="new sandbox name" aria-label="New sandbox corpus name" size="20" required>
-      <select name="service_id" aria-label="Service whose results to filter" required>
+  <fieldset class="corpus-actions">
+    <legend>Corpus actions</legend>
+
+    {% if all_services and all_services | length > 0 %}
+    <form method="post" action="/corpus/{{global.corpus_name_uri}}/activate">
+      <label for="ca-register">Register a service</label>
+      <div class="action-control">
+        <select id="ca-register" name="service" aria-label="Service to register on this corpus" required>
+          {% for service in all_services %}
+          <option value="{{ service.name }}">{{ service.name }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn-default">Register</button>
+      </div>
+    </form>
+    {% endif %}
+
+    <form method="post" action="/corpus/{{global.corpus_name_uri}}/extend">
+      <span class="action-label">Re-scan corpus path</span>
+      <div class="action-control">
+        <button type="submit" class="btn-default">Extend</button>
+        <span class="muted">Pick up newly-arrived entries.</span>
+      </div>
+    </form>
+
+    {% if services and services | length > 0 %}
+    <form method="post" action="/corpus/{{global.corpus_name_uri}}/sandbox">
+      <p class="action-subhead">Carve a sandbox <span class="muted">— a working subset, by message-condition filter</span></p>
+      <label for="sbx-name">Sandbox name</label>
+      <input id="sbx-name" type="text" name="name" placeholder="new sandbox name" aria-label="New sandbox corpus name" required>
+      <label for="sbx-service">Service</label>
+      <select id="sbx-service" name="service_id" aria-label="Service whose results to filter" required>
         {% for service in services %}
         <option value="{{ service.id }}">{{ service.name }}</option>
         {% endfor %}
       </select>
-      <select name="severity" aria-label="Severity to capture" required>
+      <label for="sbx-severity">Severity</label>
+      <select id="sbx-severity" name="severity" aria-label="Severity to capture" required>
         <option value="no_problem">no_problem</option>
         <option value="warning" selected>warning</option>
         <option value="error">error</option>
         <option value="fatal">fatal</option>
         <option value="invalid">invalid</option>
       </select>
-      <input type="text" name="category" placeholder="category (optional)" aria-label="Message category (optional)" size="16">
-      <input type="text" name="what" placeholder="what (optional)" aria-label="Message what filter (optional)" size="16">
-      <button type="submit">Create sandbox</button>
-    </p>
-  </form>
-  {% endif %}
-  <form method="post" action="/corpus/{{global.corpus_name_uri}}/delete">
-    <p>Delete this corpus and all its tasks &amp; logs (irreversible):</p>
-    <p><input type="text" name="confirm" placeholder="type «{{global.corpus_name}}» to confirm" size="28"
-        required>
-      <button type="submit">Delete corpus</button></p>
-  </form>
-  </div>
+      <label for="sbx-category">Category <span class="muted">(optional)</span></label>
+      <input id="sbx-category" type="text" name="category" placeholder="e.g. missing_file" aria-label="Message category (optional)">
+      <label for="sbx-what">What <span class="muted">(optional)</span></label>
+      <input id="sbx-what" type="text" name="what" placeholder="e.g. foo.cls" aria-label="Message what filter (optional)">
+      <label for="sbx-entry">Entry filter <span class="muted">(optional)</span></label>
+      <input id="sbx-entry" type="text" name="entry" placeholder="path contains, e.g. 2506. for one arXiv month" aria-label="Entry path substring filter (optional)">
+      <label for="sbx-max">Max entries <span class="muted">(optional)</span></label>
+      <input id="sbx-max" type="number" name="max_entries" min="1" placeholder="no limit" aria-label="Maximum entries to capture (optional)">
+      <button type="submit" class="btn-primary action-submit">Carve sandbox</button>
+    </form>
+    {% endif %}
+
+    <form method="post" action="/corpus/{{global.corpus_name_uri}}/delete" class="action-danger">
+      <label for="ca-delete">Delete this corpus</label>
+      <div class="action-control">
+        <input id="ca-delete" type="text" name="confirm" placeholder="type «{{global.corpus_name}}» to confirm" aria-label="Type the corpus name to confirm deletion" required>
+        <button type="submit" class="danger">Delete corpus</button>
+        <span class="muted">Irreversible — removes all tasks &amp; logs.</span>
+      </div>
+    </form>
+  </fieldset>
   {% else %}
   <p class="admin-hint"><a href="/admin/login?next=/corpus/{{global.corpus_name_uri}}">Log in here for admin actions</a></p>
   {% endif %}
