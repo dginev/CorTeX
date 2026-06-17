@@ -151,6 +151,20 @@ impl Backend {
     mark::mark_rerun(&mut self.connection, options)
   }
 
+  /// **Pause** a `(corpus, service)` run: block every in-progress task (`status >= 0`) so the
+  /// dispatcher stops leasing them. Returns the number paused. The CLI/agent twin of the report
+  /// screen's "Pause run". Reversible with [`Backend::resume_run`].
+  pub fn pause_run(&mut self, corpus_id: i32, service_id: i32) -> Result<usize, Error> {
+    mark::mark_blocked(&mut self.connection, corpus_id, service_id)
+  }
+
+  /// **Resume** a paused `(corpus, service)` run: return every Blocked task (`status < -5`) to TODO
+  /// so the dispatcher picks them up. Returns the number resumed. The inverse of
+  /// [`Backend::pause_run`].
+  pub fn resume_run(&mut self, corpus_id: i32, service_id: i32) -> Result<usize, Error> {
+    mark::resume_blocked(&mut self.connection, corpus_id, service_id)
+  }
+
   /// While not changing any status information for Tasks, add a new historical run bookmark
   pub fn mark_new_run(
     &mut self,

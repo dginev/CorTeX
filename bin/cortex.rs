@@ -203,6 +203,29 @@ enum Command {
     #[arg(long)]
     json: bool,
   },
+  /// **Pause** a `(corpus, service)` run — block every in-progress task (`status >= 0`) so the
+  /// dispatcher stops leasing them. CLI twin of the report screen's "Pause run" and
+  /// `POST /api/reports/<c>/<s>/pause`. Reversible with `cortex resume`.
+  Pause {
+    /// Corpus name.
+    corpus: String,
+    /// Service name (e.g. tex_to_html).
+    service: String,
+    /// Emit JSON (corpus/service/action/affected) instead of a text line.
+    #[arg(long)]
+    json: bool,
+  },
+  /// **Resume** a paused `(corpus, service)` run — return every Blocked task to TODO so the
+  /// dispatcher picks them up. CLI twin of "Resume run" and `POST /api/reports/<c>/<s>/resume`.
+  Resume {
+    /// Corpus name.
+    corpus: String,
+    /// Service name (e.g. tex_to_html).
+    service: String,
+    /// Emit JSON (corpus/service/action/affected) instead of a text line.
+    #[arg(long)]
+    json: bool,
+  },
   /// Mark a filtered scope of a `(corpus, service)` for reconversion — the CLI twin of the
   /// web/agent rerun. Resets the matching tasks to TODO so the dispatcher re-runs them.
   /// **Dry-run by default** (prints the scope); pass `--yes` to execute.
@@ -430,6 +453,16 @@ fn main() {
       service,
       json,
     } => run_snapshot(corpus, service, json),
+    Command::Pause {
+      corpus,
+      service,
+      json,
+    } => run_pause_resume(corpus, service, json, true),
+    Command::Resume {
+      corpus,
+      service,
+      json,
+    } => run_pause_resume(corpus, service, json, false),
     Command::Document {
       corpus,
       service,
@@ -1084,6 +1117,58 @@ fn run_document(corpus_name: String, service_name: String, name: String, all: bo
         counts.info
       );
     }
+  }
+}
+
+/// Pause/resume a `(corpus, service)` run — the CLI surface of the web/agent run control, via the
+/// shared `Backend::{pause_run, resume_run}` (block in-progress tasks / restore blocked tasks to
+/// TODO). Executes directly (status-only, reversible); `--json` emits the affected count. Exits `1`
+/// on an unknown corpus/service or a DB error.
+fn run_pause_resume(corpus_name: String, service_name: String, json: bool, pause: bool) {
+  let mut backend = backend::from_address(default_db_address());
+  let corpus = match Corpus::find_by_name(&corpus_name.to_lowercase(), &mut backend.connection) {
+    Ok(corpus) => corpus,
+    Err(_) => {
+      eprintln!("No such corpus: {corpus_name}");
+      std::process::exit(1);
+    },
+  };
+  let service = match Service::find_by_name(&service_name.to_lowercase(), &mut backend.connection) {
+    Ok(service) => service,
+    Err(_) => {
+      eprintln!("No such service: {service_name}");
+      std::process::exit(1);
+    },
+  };
+  let action = if pause { "pause" } else { "resume" };
+  let result = if pause {
+    backend.pause_run(corpus.id, service.id)
+  } else {
+    backend.resume_run(corpus.id, service.id)
+  };
+  let affected = match result {
+    Ok(count) => count,
+    Err(error) => {
+      eprintln!("Failed to {action} run: {error}");
+      std::process::exit(1);
+    },
+  };
+  if json {
+    println!(
+      "{}",
+      serde_json::to_string_pretty(&serde_json::json!({
+        "corpus": corpus.name, "service": service.name, "action": action, "affected": affected,
+      }))
+      .unwrap_or_default()
+    );
+  } else {
+    let verb = if pause { "Blocked" } else { "Returned to TODO" };
+    println!(
+      "{verb} {} task(s) for {} / {} ({action}d the run).",
+      group_thousands(affected as i64),
+      corpus.name,
+      service.name
+    );
   }
 }
 

@@ -339,6 +339,16 @@ backend, so all three surfaces see the same live + historical state.
 cortex snapshot arxmliv tex_to_html    # freeze current per-task statuses into historical_tasks
 ```
 
+**Run control — pause/resume a run (status-only, reversible, runs directly):**
+
+```bash
+cortex pause  arxmliv tex_to_html    # block every in-progress task (status ≥ 0) so the dispatcher stops leasing this pair
+cortex resume arxmliv tex_to_html    # return the blocked tasks to TODO so the dispatcher picks them up again
+```
+
+These are the CLI twins of the report screen's **Pause run** / **Resume run** buttons and the agent
+`POST /api/reports/<c>/<s>/{pause,resume}` — block in-progress tasks, then restore them, no data lost.
+
 Take a snapshot before a rerun campaign, then compare the run's effect with `cortex runs` (the
 run-over-run deltas) or the run-task-diff screens. The web "save snapshot" button and the agent
 `POST /api/corpora/<corpus>/services/<service>/snapshot` do the same thing; history is **append-only
