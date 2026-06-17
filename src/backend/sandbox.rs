@@ -47,6 +47,34 @@ pub struct SandboxSelection {
   pub max_entries: Option<i64>,
 }
 
+impl SandboxSelection {
+  /// A compact, human-readable summary of the carve filter — e.g.
+  /// `severity=warning, category=missing_file, entry~2506., limit=100`. The single source of truth
+  /// for both the sandbox corpus's stored `description` and the provenance surfaced on its corpus
+  /// page / detail API, so the two never drift.
+  pub fn filter_summary(&self) -> String {
+    let mut summary = format!("severity={}", self.severity);
+    if let Some(category) = &self.category {
+      summary.push_str(&format!(", category={category}"));
+    }
+    if let Some(what) = &self.what {
+      summary.push_str(&format!(", what={what}"));
+    }
+    if let Some(entry) = self
+      .entry
+      .as_deref()
+      .map(str::trim)
+      .filter(|e| !e.is_empty())
+    {
+      summary.push_str(&format!(", entry~{entry}"));
+    }
+    if let Some(n) = self.max_entries.filter(|n| *n > 0) {
+      summary.push_str(&format!(", limit={n}"));
+    }
+    summary
+  }
+}
+
 /// The result of carving a sandbox: the new corpus plus how many entries it captured.
 pub struct SandboxOutcome {
   /// the freshly-created sandbox corpus
@@ -92,39 +120,29 @@ pub fn create_sandbox(
   let log_table = TaskStatus::from_raw(status).to_table();
   let selection_json = serde_json::to_value(selection).ok();
 
-  let mut filter = format!("severity={}", selection.severity);
-  if let Some(category) = &selection.category {
-    filter.push_str(&format!(", category={category}"));
-  }
-  if let Some(what) = &selection.what {
-    filter.push_str(&format!(", what={what}"));
-  }
-
   // Optional entry-substring narrowing: `2506.` → `LIKE '%2506.%'`. Always bound (default `%` =
   // match every entry) so the three SQL branches share one extra bind slot. Trimmed; blank = no
   // narrowing.
-  let entry_filter = selection
+  let entry_pattern = selection
     .entry
     .as_deref()
     .map(str::trim)
-    .filter(|e| !e.is_empty());
-  let entry_pattern = entry_filter.map_or_else(|| "%".to_string(), |e| format!("%{e}%"));
-  if let Some(entry) = entry_filter {
-    filter.push_str(&format!(", entry~{entry}"));
-  }
+    .filter(|e| !e.is_empty())
+    .map_or_else(|| "%".to_string(), |e| format!("%{e}%"));
 
   // Optional deterministic size cap: the first `n` entries by `entry` order. `n` is a validated
   // i64, so it is safe to inline (no bind needed; an integer has no injection surface).
   // Non-positive caps are ignored. Appended after the WHERE clause of each branch.
   let limit_clause = match selection.max_entries {
-    Some(n) if n > 0 => {
-      filter.push_str(&format!(", limit={n}"));
-      format!(" ORDER BY t.entry LIMIT {n}")
-    },
+    Some(n) if n > 0 => format!(" ORDER BY t.entry LIMIT {n}"),
     _ => String::new(),
   };
 
-  let description = format!("Sandbox of '{}' (filter: {filter})", parent.name);
+  let description = format!(
+    "Sandbox of '{}' (filter: {})",
+    parent.name,
+    selection.filter_summary()
+  );
 
   let new_sandbox = NewSandboxCorpus {
     path: parent.path.clone(),

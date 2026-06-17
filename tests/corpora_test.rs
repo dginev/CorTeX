@@ -156,6 +156,10 @@ fn api_corpus_detail_reports_services_and_counts() {
     .expect("the activated service is listed");
   assert_eq!(svc["total"], 1);
   assert_eq!(svc["no_problem"], 1);
+  assert!(
+    body["sandbox"].is_null(),
+    "an ordinary (non-carved) corpus has no sandbox provenance"
+  );
 
   cleanup(&mut db, corpus_name, service_name);
 }
@@ -992,6 +996,29 @@ fn sandbox_carves_matching_entries_into_a_new_corpus() {
     carved,
     vec![warn_match.to_string()],
     "only the warning+missing_file:foo.cls entry is carved"
+  );
+
+  // The detail API surfaces the sandbox provenance (parent + carve filter + structured selection) —
+  // the agent twin of the corpus page's provenance banner.
+  let detail: serde_json::Value = client
+    .get(format!("/api/corpora/{sandbox_name}"))
+    .dispatch()
+    .into_json()
+    .expect("sandbox detail json");
+  assert_eq!(
+    detail["sandbox"]["parent"], parent_name,
+    "the detail API names the parent corpus"
+  );
+  let filter = detail["sandbox"]["filter"].as_str().unwrap_or_default();
+  assert!(
+    filter.contains("severity=warning")
+      && filter.contains("category=missing_file")
+      && filter.contains("what=foo.cls"),
+    "the detail API summarises the carve filter, got {filter:?}"
+  );
+  assert!(
+    detail["sandbox"]["selection"].is_object(),
+    "the detail API echoes the structured selection predicate"
   );
 
   cleanup(&mut db, parent_name, svc_name);

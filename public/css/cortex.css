@@ -883,6 +883,22 @@ h1 {
 .flash-saved .fa-check-circle {
   color: var(--ok);
 }
+/* Sandbox provenance banner on a carved corpus's page — a compact accent pill linking the parent
+   corpus + showing the carve filter (the page wrapper is .center, so inline-flex centres it). */
+.sandbox-provenance {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 var(--space-md);
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background-color: var(--accent-soft);
+  font-size: var(--fs-sm);
+}
+.sandbox-provenance .fa-cube {
+  color: var(--accent);
+}
 
 /* #report-div is visible by default (graceful degradation — the report shows even if the CDN jQuery
    that drives the live rerun-progress overlay fails to load); progress_report.js only *adds* to it. */

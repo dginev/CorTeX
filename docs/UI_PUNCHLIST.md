@@ -25,6 +25,7 @@ Status: 🔴 open · 🟡 in progress · 🟢 done (kept for history).
 
 - 🟢 **Production cutover** — `cortex_load` renamed → `cortex` (main DB), `productize-2026` deployed (Arm 3 migrations applied online, zero downtime), owner-verified. See the deployment memory.
 - 🟢 **Entry downloads named by document** — `/entry/import/39135` → `0811.0417.zip` (`Content-Disposition` from `helpers::entry_document_name`). Deployed + verified live.
+- 🟢 **Sandbox provenance surfaced** (both surfaces) — a carved sandbox stored `parent_corpus_id` + `selection` but nothing showed it. Now the corpus page shows a `.sandbox-provenance` accent pill ("Sandbox carved from <parent-link> · <filter>") and the agent `GET /api/corpora/<name>` gains `CorpusDetailDto.sandbox` (`{parent, filter, selection}`, `null` for ordinary corpora). The filter summary is DRY'd into `SandboxSelection::filter_summary()` (one source of truth for the stored description + both surfaces). Pinned by `corpora_test` (provenance present on a carve; `null` on a plain corpus).
 - 🟢 **Brighter light-theme warning bar** (744ad91) — `.bar.warn` now uses a bar-only `--bar-warn` (`#ca8119`, owner's pick) instead of the WCAG-darkened text `--warn` (a block fill needs no text-contrast darkening); midnight keeps `#f5b042`.
 - 🟢 **/jobs table centering** — `.table { margin-inline: auto }` (c58b848).
 - 🟢 **Admin stat-card widening** — large corpus counts no longer break mid-number (2b2f67d).

@@ -119,6 +119,19 @@ pub struct ServiceStatusDto {
   pub todo: i64,
 }
 
+/// Provenance of a **sandbox** corpus: the parent it was carved from and the carve predicate. Only
+/// present on sandbox corpora (`null` for ordinary corpora).
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct SandboxProvenanceDto {
+  /// Name of the parent corpus this sandbox was carved from.
+  pub parent: String,
+  /// Compact human-readable summary of the carve filter (e.g. `severity=warning, entry~2506.`).
+  pub filter: String,
+  /// The structured selection predicate (`service_id`, `severity`, `category`, `what`, `entry`,
+  /// `max_entries`) — the same JSON stored on the corpus.
+  pub selection: Option<serde_json::Value>,
+}
+
 /// A corpus with its activated services and their status counts.
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct CorpusDetailDto {
@@ -130,6 +143,8 @@ pub struct CorpusDetailDto {
   pub description: String,
   /// Whether documents are multi-file.
   pub complex: bool,
+  /// Sandbox provenance (parent + carve filter), or `null` if this is an ordinary corpus.
+  pub sandbox: Option<SandboxProvenanceDto>,
   /// Services activated on this corpus, with status counts.
   pub services: Vec<ServiceStatusDto>,
 }
@@ -157,13 +172,35 @@ pub fn api_corpus(name: &str, pool: &State<DbPool>) -> Result<Json<CorpusDetailD
       todo: count("todo"),
     });
   }
+  let sandbox =
+    sandbox_provenance(&corpus, &mut connection).map(|(parent, filter)| SandboxProvenanceDto {
+      parent,
+      filter,
+      selection: corpus.selection.clone(),
+    });
   Ok(Json(CorpusDetailDto {
     name: corpus.name,
     path: corpus.path,
     description: corpus.description,
     complex: corpus.complex,
+    sandbox,
     services: service_status,
   }))
+}
+
+/// A corpus's sandbox provenance — the parent name + a human-readable carve-filter summary — or
+/// `None` if it is an ordinary (non-sandbox) corpus. Shared by the agent detail API and the human
+/// corpus page so both surfaces show identical provenance.
+fn sandbox_provenance(corpus: &Corpus, connection: &mut PgConnection) -> Option<(String, String)> {
+  let parent_id = corpus.parent_corpus_id?;
+  let parent = Corpus::find_by_id(parent_id, connection).ok()?;
+  let filter = corpus
+    .selection
+    .as_ref()
+    .and_then(|value| serde_json::from_value::<SandboxSelection>(value.clone()).ok())
+    .map(|selection| selection.filter_summary())
+    .unwrap_or_default();
+  Some((parent.name, filter))
 }
 
 /// Request body for registering and importing a corpus.
@@ -1032,6 +1069,13 @@ pub fn corpus_page(
   );
   global.insert("corpus_name".to_string(), corpus.name.clone());
   global.insert("corpus_description".to_string(), corpus.description.clone());
+  // Sandbox provenance: if this corpus was carved from a parent, surface the parent + carve filter
+  // (the agent twin `api_corpus` exposes the same via `CorpusDetailDto.sandbox`). `sandbox_parent`
+  // gets a `_uri` variant from `decorate_uri_encodings` for the parent link.
+  if let Some((parent, filter)) = sandbox_provenance(&corpus, &mut connection) {
+    global.insert("sandbox_parent".to_string(), parent);
+    global.insert("sandbox_filter".to_string(), filter);
+  }
   // Each activated service, enriched with its per-severity task counts (the same numbers the agent
   // `api_corpus` reports) so the corpus screen is a progress dashboard, not just a service list.
   let service_records = corpus.select_services(&mut connection).unwrap_or_default();

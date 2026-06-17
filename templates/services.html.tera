@@ -1,6 +1,11 @@
 {% extends "layout" %} {% block content %}
 <div class="center">
   <h1>Services for {{global.corpus_name}}</h1>
+  {% if global.sandbox_parent %}
+  <p class="sandbox-provenance"><i class="fa fa-cube"></i>&nbsp;Sandbox carved from
+    <a href="/corpus/{{global.sandbox_parent_uri}}">{{global.sandbox_parent}}</a>{% if global.sandbox_filter %}
+    <span class="report-sep">·</span> <span class="muted">{{global.sandbox_filter}}</span>{% endif %}</p>
+  {% endif %}
   {% if global.deactivated %}
   <p class="flash-saved"><i class="fa fa-check-circle"></i>&nbsp;Service <strong>{{ global.deactivated }}</strong> was deactivated from this corpus (its tasks and log messages here were deleted).</p>
   {% endif %}
