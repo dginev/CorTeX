@@ -56,7 +56,12 @@ fn metrics_is_token_gated_and_exposes_gauges() {
     body.contains("cortex_db_reachable 1"),
     "the database is reachable in the test, got: {body}"
   );
+  // Pin the full ops-contract gauge set — these names are what operators' dashboards/alerts scrape
+  // (and DEPLOYMENT.md documents), so a silent rename/drop must fail the build, not break alerting.
   for metric in [
+    "cortex_pool_max",
+    "cortex_pool_connections",
+    "cortex_pool_idle",
     "cortex_pool_in_use",
     "cortex_corpora_total",
     "cortex_services_total",
@@ -65,6 +70,7 @@ fn metrics_is_token_gated_and_exposes_gauges() {
     "cortex_jobs_interrupted_recent",
     "cortex_sessions_active",
     "cortex_workers_total",
+    "cortex_workers_in_flight_total",
     "cortex_tasks_todo",
   ] {
     assert!(body.contains(metric), "the {metric} gauge is exposed");
