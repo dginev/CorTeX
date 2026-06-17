@@ -48,22 +48,24 @@ from *two* surfaces to *three* (add the CLI). The corollary that drives sequenci
 
 | Capability | Web UI | Agent API | CLI |
 |---|---|---|---|
-| Reports: severity → category → `what` | ✓ | ✓ JSON | ✗ |
-| Run list / current / **diff** / changed-tasks | ✓ | ✓ JSON | ✗ |
-| **Per-article forensics** ("errors of this article") | partial (`/preview`) | ✓ **A1 landed** | ✗ |
-| **Macro history trend** (rate over time) | ✓ Vega chart | ✓ (via `/api/runs/<c>/<s>` tallies) | ✗ |
-| Top-of-service severity summary (`progress_report`) | ✓ | ✓ **A3 landed** (`/api/reports/<c>/<s>`) | ✗ |
+| Reports: severity → category → `what` | ✓ | ✓ JSON | ✓ (`cortex report --severity/--category/--what`) |
+| Run list / current / **diff** / changed-tasks | ✓ | ✓ JSON | ✓ list+current (`cortex runs`) + **diff** (`cortex diff`); per-task changed-tasks still web/agent-only |
+| **Per-article forensics** ("errors of this article") | ✓ (`/document/<c>/<s>/<name>`) | ✓ **A1 landed** | ✓ (`cortex document`) |
+| **Macro history trend** (rate over time) | ✓ Vega chart | ✓ (via `/api/runs/<c>/<s>` tallies) | ✓ (`cortex runs` tallies + deltas) |
+| Top-of-service severity summary (`progress_report`) | ✓ | ✓ **A3 landed** (`/api/reports/<c>/<s>`) | ✓ (`cortex report`) |
 | Rerun / reconvert (filtered) | ✓ | ✓ | ✓ (`cortex rerun`, dry-run+`--yes`) |
-| Extend corpus | ✓ | ✓ | ✗ |
+| Extend corpus | ✓ | ✓ | ✓ (`cortex extend`) |
 | Sandbox via filter | ✓ | ✓ | ✓ (`cortex sandbox`, dry-run+`--yes`) |
-| Service register / activate / delete | ✓ | ✓ | ✗ |
+| Service register / activate / delete | ✓ | ✓ | ✓ (`cortex create-service/activate/deactivate/delete-service`) |
 | Export dataset | ✓ **landed** (`/export/<c>/<s>` screen + report-page action) | ✓ **landed** (`POST …/services/<s>/export-dataset` → `dataset_export` job) | ✓ (`cortex export-dataset`) |
-| Live ops console | ✓ (landed) | `/metrics` | ✗ |
-| Init / configure / health | ✓ | ✓ | ✓ (install only) |
+| Live ops console | ✓ (landed) | `/metrics` + `/api/status` | ✓ (`cortex status`) |
+| Init / configure / health | ✓ | ✓ | ✓ (`init`/`doctor`/`set-admin-token`) |
 
-Reading: the **agent micro + macro magnifications are the biggest gaps**, the **CLI is install-only**
-(no management), and the web has cohesion/workflow polish debt. Everything else is one backend op
-already shipped — the work is *projection + gap-fill*, not new pipelines.
+Reading (updated 2026-06-16): the three-surface symmetry is **essentially complete** — every
+capability is now on web · agent · CLI. The sole remaining sliver is the **per-task changed-tasks
+diff** (which individual entries moved status), still web+agent only (`/runs/<c>/<s>/tasks`); the
+CLI has the *summary* matrix via `cortex diff`. What's left is polish (web cohesion C1/C2, guided
+`init` TUI D-B2), not capability gaps — the work was *projection + gap-fill*, and it is done.
 
 ## 4. The arms (sequenced; agent-API-first)
 
@@ -117,9 +119,13 @@ discoverable JSON DTOs (each also the future HTML/CLI source).
   the task count + which kind, sandbox vs corpus), `--yes` to delete; closes the **sandbox lifecycle**
   (create → iterate → delete) end-to-end on the CLI (previously a sandbox could only be removed via
   the web or raw SQL). Historical run tallies are immutable and survive. Verified end-to-end (CLI
-  create → CLI delete → zero orphaned tasks, parent untouched). **Next:** `extend` (the
-  importer/filesystem re-scan path — deferred to owner-watch like the guided init, since it needs
-  real corpus mounts to verify and would mutate `/data` scan state).
+  create → CLI delete → zero orphaned tasks, parent untouched). `extend` ✅ LANDED too (`cortex
+  extend <corpus>` — the CLI twin of the corpus screen's Extend + agent `POST
+  /api/corpora/<name>/extend`, driving the same `Importer::extend_corpus` + `Backend::extend_service`).
+  `cortex diff <c> <s>` ✅ LANDED — the CLI twin of the web `/runs/<c>/<s>/diff` + agent `GET
+  /api/runs/<c>/<s>/diff`, over the shared `summary_task_diffs` (now `pub` for the third surface),
+  closing the snapshot→rerun→**diff** improvement loop on the terminal. **B1 management surface is
+  complete** (the lone remaining sliver is the per-task changed-tasks drill, web/agent-only).
 - **B2 — Guided init.** An interactive `cortex init --guided` walking the strategic choices (database,
   admin token, services, dispatcher knobs). **Decision D-B2 (see §5): ratatui rich TUI vs a plain
   guided prompt flow.** Default lazy: ship the plain prompt flow first (no heavy new dep; 90% of the

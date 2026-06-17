@@ -21,7 +21,10 @@ pub(crate) use mark::{mark_blocked, mark_rerun, resume_blocked, save_historical_
 pub(crate) use reports::list_task_diffs;
 pub(crate) use reports::progress_report;
 pub(crate) use reports::report_uses_rollup;
-pub(crate) use reports::summary_task_diffs;
+// `pub` (not `pub(crate)`): the `cortex` CLI's `diff` subcommand calls it directly, so the run-diff
+// summary has a third (CLI) surface alongside the agent `/api/runs/<c>/<s>/diff` and the web
+// screen.
+pub use reports::summary_task_diffs;
 pub(crate) use reports::task_report;
 pub use reports::TaskReportOptions;
 pub use reports::{task_messages, MessageCounts, DOCUMENT_MESSAGE_CAP};

@@ -326,7 +326,8 @@ curl -s -G localhost:8000/api/runs/$C/$S/diff \
 ```
 
 The CLI (§14) mirrors every step one-to-one (`cortex report … --json`, `cortex document`,
-`cortex snapshot`, `cortex rerun --yes`, `cortex runs`), so the same workflows run from a terminal.
+`cortex snapshot`, `cortex rerun --yes`, `cortex runs`, `cortex diff`), so the same workflows — including
+the snapshot→rerun→**diff** improvement loop — run from a terminal.
 
 ## 14. Command-line management (CLI)
 
@@ -380,6 +381,7 @@ cortex report   arxmliv tex_to_html --severity warning                         #
 cortex report   arxmliv tex_to_html --severity warning --category not_parsed   # what breakdown
 cortex report   arxmliv tex_to_html --severity warning --category not_parsed --what '>OPEN'  # affected docs (paper ids → feed `document`)
 cortex runs     arxmliv tex_to_html             # run history: per-severity tallies + run-over-run delta vs the previous run (live for the open run)
+cortex diff     arxmliv tex_to_html             # run-diff: the (previous → current) status-transition matrix between two snapshots (latest pair by default; --previous/--current to pick)
 cortex document arxmliv tex_to_html 2105.13573  # per-article forensics: status + every worker-log message
 ```
 
@@ -419,7 +421,8 @@ These are the CLI twins of the report screen's **Pause run** / **Resume run** bu
 `POST /api/reports/<c>/<s>/{pause,resume}` — block in-progress tasks, then restore them, no data lost.
 
 Take a snapshot before a rerun campaign, then compare the run's effect with `cortex runs` (the
-run-over-run deltas) or the run-task-diff screens. The web "save snapshot" button and the agent
+run-over-run deltas), `cortex diff` (the snapshot-to-snapshot transition matrix), or the run-task-diff
+screens. The web "save snapshot" button and the agent
 `POST /api/corpora/<corpus>/services/<service>/snapshot` do the same thing; history is **append-only
 over the API** (snapshots are never deleted/modified there — pruning old snapshots is a human-admin
 operation, `/admin/retention`).

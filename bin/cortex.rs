@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 use cortex::backend::{
-  self, create_sandbox, default_db_address, export_html_dataset, task_messages,
+  self, create_sandbox, default_db_address, export_html_dataset, summary_task_diffs, task_messages,
   DatasetExportOutcome, GroupBy, RerunOptions, SandboxSelection, TaskReportOptions,
 };
 use cortex::bootstrap::{self, DoctorReport};
@@ -169,6 +169,27 @@ enum Command {
     /// Service name (e.g. tex_to_html).
     service: String,
     /// Emit JSON (the same shape as the agent `RunDto` list) instead of a text table.
+    #[arg(long)]
+    json: bool,
+  },
+  /// Compare two saved task-status snapshots of a `(corpus, service)` — the run-diff summary (the
+  /// CLI twin of the web `/runs/<c>/<s>/diff` screen + agent `GET /api/runs/<c>/<s>/diff`). The
+  /// status-transition matrix: how many tasks moved between severities. With no `--previous`/
+  /// `--current`, compares the most recent saved pair. Take a baseline with `cortex snapshot`
+  /// before a rerun campaign, then `cortex diff` to quantify what moved.
+  Diff {
+    /// Corpus name.
+    corpus: String,
+    /// Service name (e.g. tex_to_html).
+    service: String,
+    /// Earlier snapshot timestamp (`YYYY-MM-DD HH:MM:SS`, from the listed available dates). Omit
+    /// for the most recent saved pair.
+    #[arg(long)]
+    previous: Option<String>,
+    /// Later snapshot timestamp. Omit for the most recent saved pair.
+    #[arg(long)]
+    current: Option<String>,
+    /// Emit JSON (the same shape as the agent `RunDiffDto`) instead of a text table.
     #[arg(long)]
     json: bool,
   },
@@ -454,6 +475,13 @@ fn main() {
       service,
       json,
     } => run_runs(corpus, service, json),
+    Command::Diff {
+      corpus,
+      service,
+      previous,
+      current,
+      json,
+    } => run_diff(corpus, service, previous, current, json),
     Command::Snapshot {
       corpus,
       service,
@@ -981,6 +1009,121 @@ fn run_runs(corpus_name: String, service_name: String, json: bool) {
         println!("       {}", r.description.trim());
       }
     }
+  }
+}
+
+/// Parses an optional `--previous`/`--current` snapshot timestamp (the `available_dates` format,
+/// `YYYY-MM-DD HH:MM:SS[.f]`). `None`/empty means "let the backend pick the default pair". The raw
+/// string is returned as the `Err` so the caller can name it in the error message.
+fn parse_cli_snapshot_date(raw: Option<&str>) -> Result<Option<chrono::NaiveDateTime>, String> {
+  match raw.map(str::trim).filter(|value| !value.is_empty()) {
+    None => Ok(None),
+    Some(value) => chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f")
+      .map(Some)
+      .map_err(|_| value.to_string()),
+  }
+}
+
+/// Compares two saved task-status snapshots of a `(corpus, service)` — the CLI twin of the web
+/// `/runs/<c>/<s>/diff` screen + agent `GET /api/runs/<c>/<s>/diff`, over the shared
+/// `summary_task_diffs`. Prints the snapshots available to compare and the (previous → current)
+/// status-transition matrix; `--json` mirrors the agent `RunDiffDto` shape exactly.
+fn run_diff(
+  corpus_name: String,
+  service_name: String,
+  previous: Option<String>,
+  current: Option<String>,
+  json: bool,
+) {
+  let previous_date = match parse_cli_snapshot_date(previous.as_deref()) {
+    Ok(date) => date,
+    Err(raw) => {
+      eprintln!("error: --previous {raw:?} is not a YYYY-MM-DD HH:MM:SS timestamp");
+      std::process::exit(2);
+    },
+  };
+  let current_date = match parse_cli_snapshot_date(current.as_deref()) {
+    Ok(date) => date,
+    Err(raw) => {
+      eprintln!("error: --current {raw:?} is not a YYYY-MM-DD HH:MM:SS timestamp");
+      std::process::exit(2);
+    },
+  };
+
+  let mut backend = backend::from_address(default_db_address());
+  let corpus = match Corpus::find_by_name(&corpus_name.to_lowercase(), &mut backend.connection) {
+    Ok(corpus) => corpus,
+    Err(_) => {
+      eprintln!("No such corpus: {corpus_name}");
+      std::process::exit(1);
+    },
+  };
+  let service = match Service::find_by_name(&service_name.to_lowercase(), &mut backend.connection) {
+    Ok(service) => service,
+    Err(_) => {
+      eprintln!("No such service: {service_name}");
+      std::process::exit(1);
+    },
+  };
+
+  let (available_dates, rows) = summary_task_diffs(
+    &mut backend.connection,
+    &corpus,
+    &service,
+    previous_date,
+    current_date,
+  );
+
+  if json {
+    let transitions: Vec<_> = rows
+      .iter()
+      .map(|row| {
+        serde_json::json!({
+          "previous_status": row.previous_status,
+          "current_status": row.current_status,
+          "task_count": row.task_count,
+        })
+      })
+      .collect();
+    let dto = serde_json::json!({
+      "available_dates": available_dates,
+      "transitions": transitions,
+    });
+    println!("{}", serde_json::to_string_pretty(&dto).unwrap_or_default());
+    return;
+  }
+
+  println!("Run diff: {} / {}", corpus.name, service.name);
+  if available_dates.is_empty() {
+    println!(
+      "  no saved snapshots yet — take a baseline with `cortex snapshot {} {}`",
+      corpus.name, service.name
+    );
+    return;
+  }
+  println!(
+    "  snapshots available to compare: {}",
+    available_dates.join(" · ")
+  );
+  // The matrix carries every (previous × current) cell of the 4 completed severities, including the
+  // unchanged diagonal; only nonzero cells are worth printing. `→` marks a real transition,
+  // `=` an unchanged count (stable tasks).
+  let moved: Vec<_> = rows.iter().filter(|row| row.task_count > 0).collect();
+  if moved.is_empty() {
+    println!("  no tasks in the compared snapshots (or no changes to report).");
+    return;
+  }
+  println!("  transitions (previous → current : tasks):");
+  for row in moved {
+    let arrow = if row.previous_status == row.current_status {
+      '='
+    } else {
+      '→'
+    };
+    println!(
+      "    {:>10} {arrow} {:<10} : {}",
+      row.previous_status, row.current_status, row.task_count
+    );
   }
 }
 
