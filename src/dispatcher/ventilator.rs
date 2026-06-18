@@ -112,6 +112,12 @@ impl Ventilator {
         }
       }
     }
+    // Wake the blocking `recv` periodically instead of blocking forever when idle, so the
+    // graceful-shutdown flag (checked at the top of the loop) is observed promptly even with no
+    // worker traffic. Without this an idle ventilator blocks in `recv` until the supervisor's
+    // stop-timeout SIGKILL — the ~120s `systemctl restart` hang (KNOWN_ISSUES D-15). 250ms matches
+    // the sink's termination poll; the only cost is one no-op wakeup per quarter-second while idle.
+    ventilator.set_rcvtimeo(250)?;
     let mut source_job_count: usize = 0;
     // Count of *fresh* tasks actually leased to a worker (a `retries == 0` lease), as distinct from
     // `source_job_count` which counts every request — including the mock-replies (unknown service,
@@ -135,9 +141,9 @@ impl Ventilator {
       // Graceful shutdown (O-1): a SIGTERM/SIGINT set the flag. Stop leasing new work, signal
       // completion (so the sink drains the in-flight set and finalize flushes its last batch), and
       // return cleanly — the manager then takes the drain path instead of restarting us. Reached on
-      // the next loop iteration; under load that's each worker request, so the response is prompt.
-      // A *fully idle* dispatcher (no workers connected) has nothing in flight, so the
-      // supervisor's stop-timeout SIGKILL is loss-free there.
+      // the next loop iteration; the recv below polls on a 250ms `RCVTIMEO`, so even a *fully idle*
+      // dispatcher (no worker requests to cycle the loop) observes the flag within ~250ms and stops
+      // promptly — no waiting out the supervisor's stop timeout (KNOWN_ISSUES D-15).
       if server::shutdown_requested() {
         info!(
           "ventilator: graceful shutdown requested — ceasing to lease; the sink will drain in-flight work"
@@ -159,7 +165,13 @@ impl Ventilator {
       // message boundary), drain any unexpected trailing frames to stay aligned, and *skip* a
       // malformed request rather than restarting. This mirrors the sink's `[identity,
       // service, taskid, …]` envelope hardening.
-      ventilator.recv(&mut identity, 0)?;
+      match ventilator.recv(&mut identity, 0) {
+        Ok(()) => {},
+        // RCVTIMEO elapsed with no request — loop back to re-check the shutdown flag (D-15: an idle
+        // ventilator now stops within ~250ms of SIGTERM instead of hanging the supervisor stop).
+        Err(zmq::Error::EAGAIN) => continue,
+        Err(e) => return Err(e.into()),
+      }
       if !ventilator.get_rcvmore().unwrap_or(false) {
         // `[identity]` with no service frame — truncated. Skipping consumes nothing further, so the
         // next request's frames are left intact (no desync).
