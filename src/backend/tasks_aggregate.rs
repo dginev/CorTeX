@@ -4,7 +4,7 @@ use crate::models::{Service, Task};
 use crate::schema::tasks;
 use diesel::result::Error;
 use diesel::*;
-use rand::{Rng, thread_rng};
+use rand::RngExt;
 
 pub(crate) fn fetch_tasks(
   connection: &mut PgConnection,
@@ -12,8 +12,8 @@ pub(crate) fn fetch_tasks(
   queue_size: usize,
 ) -> Result<Vec<Task>, Error> {
   use crate::schema::tasks::dsl::{service_id, status};
-  let mut rng = thread_rng();
-  let mark: u16 = 1 + rng.r#gen::<u16>();
+  let mut rng = rand::rng();
+  let mark: u16 = 1 + rng.random::<u16>();
 
   let mut marked_tasks: Vec<Task> = Vec::new();
   connection.transaction::<(), Error, _>(|t_connection| {

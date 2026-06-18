@@ -13,8 +13,8 @@
 use chrono::{Duration, NaiveDateTime, Utc};
 use diesel::prelude::*;
 use diesel::result::Error;
-use rand::distributions::Alphanumeric;
-use rand::{Rng, thread_rng};
+use rand::RngExt;
+use rand::distr::Alphanumeric;
 
 use crate::schema::sessions;
 
@@ -54,7 +54,7 @@ impl Session {
   pub fn open(connection: &mut PgConnection, owner: &str, method: &str) -> Result<String, Error> {
     let _ = Self::prune_expired(connection);
     // 48 url-safe chars (~285 bits) — an unguessable bearer; the security rests on this randomness.
-    let id: String = thread_rng()
+    let id: String = rand::rng()
       .sample_iter(&Alphanumeric)
       .take(48)
       .map(char::from)

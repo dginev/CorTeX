@@ -21,8 +21,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use rand::distributions::Alphanumeric;
-use rand::{Rng, thread_rng};
+use rand::RngExt;
+use rand::distr::Alphanumeric;
 use rocket::http::{Cookie, CookieJar, SameSite, Status};
 use rocket::response::Redirect;
 use rocket::serde::json::Json;
@@ -113,7 +113,7 @@ impl CeremonyStore {
 
   /// Stores a ceremony, pruning expired entries, and returns its random id (for the cookie).
   pub fn put(&self, ceremony: Ceremony) -> String {
-    let id: String = thread_rng()
+    let id: String = rand::rng()
       .sample_iter(&Alphanumeric)
       .take(32)
       .map(char::from)

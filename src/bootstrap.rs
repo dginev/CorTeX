@@ -14,8 +14,8 @@ use std::path::Path;
 
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
-use rand::distributions::Alphanumeric;
-use rand::{Rng, thread_rng};
+use rand::RngExt;
+use rand::distr::Alphanumeric;
 use serde::Serialize;
 
 use crate::config::{CortexConfig, to_persisted_toml};
@@ -206,7 +206,7 @@ pub struct SetTokenOutcome {
 /// lightweight scheme — see `docs/archive/AAA_DESIGN.md`); hashing-at-rest is a documented later
 /// step.
 pub fn generate_token() -> String {
-  thread_rng()
+  rand::rng()
     .sample_iter(&Alphanumeric)
     .take(32)
     .map(char::from)
