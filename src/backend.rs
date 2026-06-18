@@ -36,7 +36,7 @@ pub(crate) use reports::task_report;
 pub use reports::{DOCUMENT_MESSAGE_CAP, MessageCounts, task_messages};
 pub use rollup::ReportSummaryRow;
 pub(crate) use rollup::{
-  category_rollup, category_total, invalidate_all, report_summary_refreshed_at, severity_total,
+  category_rollup, category_total, invalidate_all, report_cache_computed_at, severity_total,
   what_rollup,
 };
 pub use sandbox::{SandboxOutcome, SandboxSelection, create_sandbox};

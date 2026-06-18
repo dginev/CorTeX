@@ -1,10 +1,3 @@
 [print_schema]
 file = "src/schema.rs"
 with_docs = true
-# `report_grain_cache` is a code-managed report cache accessed only via raw `sql_query`
-# (see src/backend/rollup.rs), never the Diesel DSL — and it is intentionally keyless
-# (a unique index on the grain tuple, with nullable category/what, serves as its identity).
-# Exclude it from schema generation so `diesel migration run`'s post-apply regeneration
-# doesn't abort with "Diesel only supports tables with primary keys" (it has none).
-[print_schema.filter]
-except_tables = ["report_grain_cache"]

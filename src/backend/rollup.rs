@@ -34,7 +34,9 @@
 
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::{BigInt, Integer, Text};
+use diesel::sql_types::{Integer, Text};
+
+use crate::schema::report_grain_cache::dsl as rgc;
 
 /// One report row at a given grain: a `what` (the drill-down report), a category-grain rollup
 /// (`what = None`, the "category" report), or the per-severity grand total (`category = ""`,
@@ -82,11 +84,34 @@ fn severity_scope(severity: &str) -> Option<(&'static str, &'static str)> {
 /// stays valid and does no work — a report refresh can no longer take a lock or starve conversions.
 pub(crate) fn refresh_report_summary(_connection: &mut PgConnection) -> QueryResult<()> { Ok(()) }
 
-/// Always `None`: report freshness is now per-scope (the cache row's `computed_at`), not a single
-/// global stamp. Callers branch on `report_uses_rollup` (always false) and render a live timestamp
-/// instead of consulting this, so it is no longer reached on the report path.
-pub(crate) fn report_summary_refreshed_at(_connection: &mut PgConnection) -> Option<(i64, String)> {
-  None
+/// Freshness of the cached `(corpus, service, severity)` slice, for the report footer's "generated
+/// at" pill: the slice's `computed_at` (every row in a slice shares one stamp, set by
+/// [`populate_scope`]'s upsert), as `(epoch_millis, human)`. `None` when the slice isn't cached yet
+/// — the footer then shows nothing rather than a wrong time. The drill-down report path stamps the
+/// footer with this; the live-computed top-level overview stamps "just now" instead.
+pub(crate) fn report_cache_computed_at(
+  connection: &mut PgConnection,
+  corpus_id: i32,
+  service_id: i32,
+  severity: &str,
+) -> Option<(i64, String)> {
+  rgc::report_grain_cache
+    .filter(rgc::corpus_id.eq(corpus_id))
+    .filter(rgc::service_id.eq(service_id))
+    .filter(rgc::severity.eq(severity))
+    .select(rgc::computed_at)
+    .first::<chrono::DateTime<chrono::Utc>>(connection)
+    .optional()
+    .ok()
+    .flatten()
+    .map(|ts| {
+      (
+        ts.timestamp_millis(),
+        ts.with_timezone(&chrono::Local)
+          .format("%a, %d %b %Y %H:%M %Z")
+          .to_string(),
+      )
+    })
 }
 
 /// Whether `report_grain_cache` already holds the given `(corpus, service, severity)` slice. A
@@ -154,6 +179,7 @@ pub(crate) fn populate_scope(
        FROM tasks t JOIN {table} l ON l.task_id = t.id \
        WHERE t.corpus_id = $1 AND t.service_id = $2 AND {status_pred} \
        GROUP BY ROLLUP(COALESCE(l.category, ''), COALESCE(l.what, '')) \
+       HAVING COUNT(*) > 0 \
        ON CONFLICT (corpus_id, service_id, severity, category_is_total, what_is_total, category, what) \
          DO UPDATE SET task_count = EXCLUDED.task_count, \
                        message_count = EXCLUDED.message_count, \
@@ -219,19 +245,28 @@ pub(crate) fn category_rollup(
     return Ok(Vec::new());
   }
   ensure_scope(connection, corpus_id, service_id, severity)?;
-  sql_query(
-    "SELECT COALESCE(category, '') AS category, NULL::text AS what, task_count, message_count \
-     FROM report_grain_cache \
-     WHERE corpus_id = $1 AND service_id = $2 AND severity = $3 \
-       AND category_is_total = 0 AND what_is_total = 1 \
-     ORDER BY task_count DESC, category ASC LIMIT $4 OFFSET $5",
+  let rows: Vec<(Option<String>, i64, i64)> = rgc::report_grain_cache
+    .filter(rgc::corpus_id.eq(corpus_id))
+    .filter(rgc::service_id.eq(service_id))
+    .filter(rgc::severity.eq(severity))
+    .filter(rgc::category_is_total.eq(0))
+    .filter(rgc::what_is_total.eq(1))
+    .select((rgc::category, rgc::task_count, rgc::message_count))
+    .order((rgc::task_count.desc(), rgc::category.asc()))
+    .limit(limit)
+    .offset(offset)
+    .load(connection)?;
+  Ok(
+    rows
+      .into_iter()
+      .map(|(category, task_count, message_count)| ReportSummaryRow {
+        category: category.unwrap_or_default(),
+        what: None,
+        task_count,
+        message_count,
+      })
+      .collect(),
   )
-  .bind::<Integer, _>(corpus_id)
-  .bind::<Integer, _>(service_id)
-  .bind::<Text, _>(severity)
-  .bind::<BigInt, _>(limit)
-  .bind::<BigInt, _>(offset)
-  .get_results(connection)
 }
 
 /// The single category-grain row for one `(corpus, service, severity, category)`, i.e. its distinct
@@ -248,18 +283,24 @@ pub(crate) fn category_total(
     return Ok(None);
   }
   ensure_scope(connection, corpus_id, service_id, severity)?;
-  sql_query(
-    "SELECT COALESCE(category, '') AS category, NULL::text AS what, task_count, message_count \
-     FROM report_grain_cache \
-     WHERE corpus_id = $1 AND service_id = $2 AND severity = $3 \
-       AND category_is_total = 0 AND what_is_total = 1 AND COALESCE(category, '') = $4",
+  let row: Option<(Option<String>, i64, i64)> = rgc::report_grain_cache
+    .filter(rgc::corpus_id.eq(corpus_id))
+    .filter(rgc::service_id.eq(service_id))
+    .filter(rgc::severity.eq(severity))
+    .filter(rgc::category_is_total.eq(0))
+    .filter(rgc::what_is_total.eq(1))
+    .filter(rgc::category.eq(category))
+    .select((rgc::category, rgc::task_count, rgc::message_count))
+    .first(connection)
+    .optional()?;
+  Ok(
+    row.map(|(category, task_count, message_count)| ReportSummaryRow {
+      category: category.unwrap_or_default(),
+      what: None,
+      task_count,
+      message_count,
+    }),
   )
-  .bind::<Integer, _>(corpus_id)
-  .bind::<Integer, _>(service_id)
-  .bind::<Text, _>(severity)
-  .bind::<Text, _>(category)
-  .get_result(connection)
-  .optional()
 }
 
 /// `what`-grain drill-down for a `(corpus, service, severity, category)`: one row per `what`,
@@ -278,20 +319,29 @@ pub(crate) fn what_rollup(
     return Ok(Vec::new());
   }
   ensure_scope(connection, corpus_id, service_id, severity)?;
-  sql_query(
-    "SELECT COALESCE(category, '') AS category, COALESCE(what, '') AS what, task_count, message_count \
-     FROM report_grain_cache \
-     WHERE corpus_id = $1 AND service_id = $2 AND severity = $3 \
-       AND category_is_total = 0 AND what_is_total = 0 AND COALESCE(category, '') = $4 \
-     ORDER BY task_count DESC, what ASC LIMIT $5 OFFSET $6",
+  let rows: Vec<(Option<String>, i64, i64)> = rgc::report_grain_cache
+    .filter(rgc::corpus_id.eq(corpus_id))
+    .filter(rgc::service_id.eq(service_id))
+    .filter(rgc::severity.eq(severity))
+    .filter(rgc::category_is_total.eq(0))
+    .filter(rgc::what_is_total.eq(0))
+    .filter(rgc::category.eq(category))
+    .select((rgc::what, rgc::task_count, rgc::message_count))
+    .order((rgc::task_count.desc(), rgc::what.asc()))
+    .limit(limit)
+    .offset(offset)
+    .load(connection)?;
+  Ok(
+    rows
+      .into_iter()
+      .map(|(what, task_count, message_count)| ReportSummaryRow {
+        category: category.to_string(),
+        what: Some(what.unwrap_or_default()),
+        task_count,
+        message_count,
+      })
+      .collect(),
   )
-  .bind::<Integer, _>(corpus_id)
-  .bind::<Integer, _>(service_id)
-  .bind::<Text, _>(severity)
-  .bind::<Text, _>(category)
-  .bind::<BigInt, _>(limit)
-  .bind::<BigInt, _>(offset)
-  .get_results(connection)
 }
 
 /// The per-severity grand total for a `(corpus, service, severity)`: distinct tasks that carry at
@@ -308,14 +358,18 @@ pub(crate) fn severity_total(
     return Ok(None);
   }
   ensure_scope(connection, corpus_id, service_id, severity)?;
-  sql_query(
-    "SELECT ''::text AS category, NULL::text AS what, task_count, message_count \
-     FROM report_grain_cache \
-     WHERE corpus_id = $1 AND service_id = $2 AND severity = $3 AND category_is_total = 1 LIMIT 1",
-  )
-  .bind::<Integer, _>(corpus_id)
-  .bind::<Integer, _>(service_id)
-  .bind::<Text, _>(severity)
-  .get_result(connection)
-  .optional()
+  let row: Option<(i64, i64)> = rgc::report_grain_cache
+    .filter(rgc::corpus_id.eq(corpus_id))
+    .filter(rgc::service_id.eq(service_id))
+    .filter(rgc::severity.eq(severity))
+    .filter(rgc::category_is_total.eq(1))
+    .select((rgc::task_count, rgc::message_count))
+    .first(connection)
+    .optional()?;
+  Ok(row.map(|(task_count, message_count)| ReportSummaryRow {
+    category: String::new(),
+    what: None,
+    task_count,
+    message_count,
+  }))
 }

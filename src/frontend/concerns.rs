@@ -148,6 +148,9 @@ pub fn serve_report(
         what.as_deref(),
         all_messages,
       );
+      // Cloned so the freshness footer can look up this drill-down's cache slice *after*
+      // `task_report` populates it below (the owned `severity` is moved into `task_report`).
+      let report_severity = severity.clone();
       match service.inputconverter {
         Some(ref ic_service_name) => {
           global.insert("inputconverter".to_string(), ic_service_name.clone())
@@ -344,7 +347,10 @@ pub fn serve_report(
       // about freshness — so branch on `used_rollup`. The footer renders a colour-coded "data
       // refreshed N ago" from this epoch (localized to the viewer's zone).
       if used_rollup {
-        if let Some((epoch_ms, human)) = crate::backend::report_summary_refreshed_at(connection) {
+        // Cache-backed drill-down: the footer's "generated at" is the slice's `computed_at`.
+        if let Some((epoch_ms, human)) = report_severity.as_deref().and_then(|sev| {
+          crate::backend::report_cache_computed_at(connection, corpus.id, service.id, sev)
+        }) {
           context.global.insert("report_time".to_string(), human);
           context
             .global
