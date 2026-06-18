@@ -7,8 +7,8 @@ use diesel::*;
 use crate::schema::services;
 use crate::schema::worker_metadata;
 
-use crate::concerns::CortexInsertable;
 use super::worker_metadata::WorkerMetadata;
+use crate::concerns::CortexInsertable;
 
 // Services
 #[derive(Identifiable, Queryable, AsChangeset, Clone, Debug)]
@@ -33,6 +33,9 @@ pub struct Service {
   pub complex: bool,
   /// a human-readable description
   pub description: String,
+  /// Stable external handle (UUIDv7, DB-generated), independent of the mutable `name` — for
+  /// public/API references that must survive a rename. Immutable once assigned (Arm 3 / D8).
+  pub public_id: uuid::Uuid,
 }
 /// Insertable struct for `Service`
 #[derive(Insertable, Clone, Debug)]
@@ -73,6 +76,14 @@ impl Service {
       .get_result(connection)
   }
 
+  /// Returns all registered services, ordered by name (the service registry). Includes the magic
+  /// `init` (id 1) and `import` (id 2) services alongside the real conversion services (id > 2).
+  pub fn all(connection: &mut PgConnection) -> Result<Vec<Self>, Error> {
+    services::table
+      .order(services::name.asc())
+      .get_results(connection)
+  }
+
   /// Returns a hash representation of the `Service`, usually for frontend reports
   pub fn to_hash(&self) -> HashMap<String, String> {
     let mut hm = HashMap::new();
@@ -93,12 +104,130 @@ impl Service {
     hm
   }
 
-  /// Return a vector of services currently activated on this corpus
-  pub fn select_workers(&self, connection: &mut PgConnection) -> Result<Vec<WorkerMetadata>, Error> {
+  /// Return the dispatcher's registered workers for this service
+  pub fn select_workers(
+    &self,
+    connection: &mut PgConnection,
+  ) -> Result<Vec<WorkerMetadata>, Error> {
     let workers_query = worker_metadata::table
       .filter(worker_metadata::service_id.eq(self.id))
       .order(worker_metadata::name.asc());
     let workers: Vec<WorkerMetadata> = workers_query.get_results(connection)?;
     Ok(workers)
+  }
+
+  /// Counts this service's tasks on a given corpus — the size of what
+  /// [`Self::deactivate_from_corpus`] would delete. Used to preview the blast radius of a
+  /// destructive deactivation before executing.
+  pub fn task_count_for_corpus(
+    &self,
+    corpus: &super::Corpus,
+    connection: &mut PgConnection,
+  ) -> Result<i64, Error> {
+    use crate::schema::tasks;
+    tasks::table
+      .filter(tasks::service_id.eq(self.id))
+      .filter(tasks::corpus_id.eq(corpus.id))
+      .count()
+      .get_result(connection)
+  }
+
+  /// Counts this service's tasks **across every corpus** — the size of what [`Self::destroy`] would
+  /// delete. Used to preview the blast radius of a registry-wide service deletion before executing.
+  pub fn total_task_count(&self, connection: &mut PgConnection) -> Result<i64, Error> {
+    use crate::schema::tasks;
+    tasks::table
+      .filter(tasks::service_id.eq(self.id))
+      .count()
+      .get_result(connection)
+  }
+
+  /// Deactivates (retires) this service from a single corpus: deletes the `(corpus, service)`
+  /// pair's tasks **and their `log_*` rows** in one transaction, returning the number of tasks
+  /// removed. The service *definition* and its work on other corpora are untouched. The `log_*`
+  /// tables have no FK to `tasks`, so their rows are deleted explicitly **before** the tasks or
+  /// they orphan (the same hazard closed in [`super::Corpus::destroy`]); transactional so a crash
+  /// can't half-delete. `historical_runs` tallies survive (no FK to tasks), while per-task
+  /// `historical_tasks` snapshots cascade away with the tasks — the same semantics as deleting a
+  /// corpus.
+  pub fn deactivate_from_corpus(
+    &self,
+    corpus: &super::Corpus,
+    connection: &mut PgConnection,
+  ) -> Result<usize, Error> {
+    use crate::schema::tasks;
+    use crate::schema::{log_errors, log_fatals, log_infos, log_invalids, log_warnings};
+    let service_id_val = self.id;
+    let corpus_id_val = corpus.id;
+    connection.transaction(|t_connection| {
+      let pair_task_ids = || {
+        tasks::table
+          .filter(tasks::service_id.eq(service_id_val))
+          .filter(tasks::corpus_id.eq(corpus_id_val))
+          .select(tasks::id)
+      };
+      delete(log_infos::table.filter(log_infos::task_id.eq_any(pair_task_ids())))
+        .execute(t_connection)?;
+      delete(log_warnings::table.filter(log_warnings::task_id.eq_any(pair_task_ids())))
+        .execute(t_connection)?;
+      delete(log_errors::table.filter(log_errors::task_id.eq_any(pair_task_ids())))
+        .execute(t_connection)?;
+      delete(log_fatals::table.filter(log_fatals::task_id.eq_any(pair_task_ids())))
+        .execute(t_connection)?;
+      delete(log_invalids::table.filter(log_invalids::task_id.eq_any(pair_task_ids())))
+        .execute(t_connection)?;
+      delete(
+        tasks::table
+          .filter(tasks::service_id.eq(service_id_val))
+          .filter(tasks::corpus_id.eq(corpus_id_val)),
+      )
+      .execute(t_connection)
+    })
+  }
+
+  /// Permanently deletes this service **and all of its work across every corpus** — the `log_*`
+  /// messages and tasks of every `(*, service)` pair, then the `services` row itself — consuming
+  /// the object and returning the number of rows the final `services` delete removed. One
+  /// transaction, so a crash can't leave the service half-deleted (crash-consistency,
+  /// `docs/DESIGN_PRINCIPLES.md`). The `log_*` tables have no FK to `tasks`, so their rows are
+  /// deleted explicitly **before** the tasks or they orphan — the hazard closed in
+  /// [`super::Corpus::destroy`] and the reason this is one primitive rather than a bare
+  /// `DELETE FROM services` (which is exactly the latent `delete_service_by_name` orphan bug, R-6).
+  /// `historical_runs` tallies survive (no FK to tasks), while per-task `historical_tasks`
+  /// snapshots cascade away with the tasks — the same semantics as
+  /// [`Self::deactivate_from_corpus`] and corpus deletion.
+  ///
+  /// **Caller's contract:** the magic `init` (1) and `import` (2) services are infrastructure and
+  /// must never be destroyed; this method does not itself guard them (mirroring
+  /// [`super::Corpus::destroy`], which guards nothing). [`crate::backend`]'s
+  /// `destroy_service_by_name` enforces the guard, and the frontend rejects them with `403` before
+  /// ever reaching here.
+  pub fn destroy(self, connection: &mut PgConnection) -> Result<usize, Error> {
+    use crate::schema::tasks;
+    use crate::schema::{log_errors, log_fatals, log_infos, log_invalids, log_warnings};
+    let service_id_val = self.id;
+    connection.transaction(|t_connection| {
+      // The task ids of this service across all corpora, rebuilt per delete (the subquery is
+      // consumed by `eq_any`).
+      let service_task_ids = || {
+        tasks::table
+          .filter(tasks::service_id.eq(service_id_val))
+          .select(tasks::id)
+      };
+      delete(log_infos::table.filter(log_infos::task_id.eq_any(service_task_ids())))
+        .execute(t_connection)?;
+      delete(log_warnings::table.filter(log_warnings::task_id.eq_any(service_task_ids())))
+        .execute(t_connection)?;
+      delete(log_errors::table.filter(log_errors::task_id.eq_any(service_task_ids())))
+        .execute(t_connection)?;
+      delete(log_fatals::table.filter(log_fatals::task_id.eq_any(service_task_ids())))
+        .execute(t_connection)?;
+      delete(log_invalids::table.filter(log_invalids::task_id.eq_any(service_task_ids())))
+        .execute(t_connection)?;
+      // all tasks for this service (cascades to historical_tasks via its FK)
+      delete(tasks::table.filter(tasks::service_id.eq(service_id_val))).execute(t_connection)?;
+      // the service registration itself
+      delete(services::table.filter(services::id.eq(service_id_val))).execute(t_connection)
+    })
   }
 }

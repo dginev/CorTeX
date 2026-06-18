@@ -7,22 +7,21 @@
 use diesel::result::Error;
 use diesel::*;
 use std::env;
+use std::io::Read;
 use std::path::PathBuf;
 use std::str;
-use Archive::*;
 
 use cortex::backend::Backend;
 use cortex::concerns::CortexInsertable;
 use cortex::helpers::TaskStatus;
-use cortex::helpers::{NewTaskMessage, LOADING_LINE_REGEX};
+use cortex::helpers::{LOADING_LINE_REGEX, NewTaskMessage};
 use cortex::models::{Corpus, Service};
 
 static MESSAGE_BUFFER_SIZE: usize = 1_000;
 
 /// traverse a (corpus,service) pair's results into a self-contained redistributable dataset.
 fn main() -> Result<(), Error> {
-  let start_traverse = time::get_time();
-  let chunk_size = 10_240;
+  let start_traverse = chrono::Utc::now();
   // Setup CorTeX backend data
   let mut backend = Backend::default();
   let mut input_args = env::args();
@@ -41,7 +40,7 @@ fn main() -> Result<(), Error> {
 
   let mut total_entries = 0;
   let mut messages = Vec::new(); // persist MESSAGE_BUFFER_SIZE messages at a time
-                                 // Traverse each status code with produced HTML:
+  // Traverse each status code with produced HTML:
   for status in [
     TaskStatus::NoProblem,
     TaskStatus::Warning,
@@ -60,48 +59,37 @@ fn main() -> Result<(), Error> {
       dir.pop();
       dir.push(&service_filename);
       let service_entry = dir.to_string_lossy();
-      // Let's open the zip file and grab the result from it
-      if let Ok(archive_reader) = Reader::new()
-        .unwrap()
-        .support_filter_all()
-        .support_format_all()
-        .open_filename(&service_entry, chunk_size)
+      // Open the result .zip and grab cortex.log out of it (random-access `by_name`, pure-Rust).
+      if let Ok(file) = std::fs::File::open(&*service_entry)
+        && let Ok(mut archive) = zip::ZipArchive::new(file)
+        && let Ok(mut entry) = archive.by_name("cortex.log")
       {
-        while let Ok(e) = archive_reader.next_header() {
-          // Which file are we looking at?
-          let pathname = e.pathname();
-          if pathname != "cortex.log" {
-            continue;
-          }
-          let mut raw_entry_data = Vec::new();
-          while let Ok(chunk) = archive_reader.read_data(chunk_size) {
-            raw_entry_data.extend(chunk.into_iter());
-          }
-          if let Ok(log_string) = str::from_utf8(&raw_entry_data) {
-            for line in log_string.lines() {
-              if line.is_empty() {
-                continue;
-              }
-              // Special cases are:
-              // - "Loading..." info messages
-              // - "Processing definitions..." info messages
-              if let Some(cap) = LOADING_LINE_REGEX.captures(line) {
-                let mut filepath = cap.get(1).map_or("", |m| m.as_str()).to_string();
-                let mut filename = cap.get(2).map_or("", |m| m.as_str()).to_string();
-                cortex::helpers::utf_truncate(&mut filename, 50);
-                filepath += &filename;
-                cortex::helpers::utf_truncate(&mut filepath, 50);
-                messages.push(NewTaskMessage::new(
-                  task.id,
-                  "info",
-                  "loaded_file".to_string(),
-                  filename,
-                  filepath,
-                ));
-              }
+        let mut raw_entry_data = Vec::new();
+        if entry.read_to_end(&mut raw_entry_data).is_ok()
+          && let Ok(log_string) = str::from_utf8(&raw_entry_data)
+        {
+          for line in log_string.lines() {
+            if line.is_empty() {
+              continue;
+            }
+            // Special cases are:
+            // - "Loading..." info messages
+            // - "Processing definitions..." info messages
+            if let Some(cap) = LOADING_LINE_REGEX.captures(line) {
+              let mut filepath = cap.get(1).map_or("", |m| m.as_str()).to_string();
+              let mut filename = cap.get(2).map_or("", |m| m.as_str()).to_string();
+              cortex::helpers::utf_truncate(&mut filename, 50);
+              filepath += &filename;
+              cortex::helpers::utf_truncate(&mut filepath, 50);
+              messages.push(NewTaskMessage::new(
+                task.id,
+                "info",
+                "loaded_file".to_string(),
+                filename,
+                filepath,
+              ));
             }
           }
-          break; // only one log file per archive
         }
       }
 
@@ -128,7 +116,7 @@ fn main() -> Result<(), Error> {
     })?;
   }
 
-  let end_traverse = time::get_time();
+  let end_traverse = chrono::Utc::now();
 
   let traverse_duration = (end_traverse - start_traverse).num_milliseconds();
   println!(

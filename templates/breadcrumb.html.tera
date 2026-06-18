@@ -1,0 +1,18 @@
+{# Report-ladder breadcrumb. Renders the path corpus / service / severity / category / what, with
+   every *ancestor* level a link up and the *current* (deepest present) level plain text. Reads
+   `global.*` directly — Tera `{% include %}` shares the parent template's context — so each drill
+   screen drops in `{% include "breadcrumb" %}` without wiring extra params. A level being present
+   implies all shallower levels are too, so the conditionals nest by depth. The `?all=` param is
+   carried up so the all-messages toggle state survives navigation. #}
+<nav class="report-breadcrumb report-sub" aria-label="Breadcrumb">
+  <a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}">{{global.corpus_name}} <span class="report-sep">/</span> {{global.service_name}}</a>
+  {% if global.severity %}<span class="report-sep">/</span>
+    {% if global.category or global.what %}<a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity_uri}}?all={{global.all_messages}}">{{global.severity}}</a>
+    {% else %}<span class="crumb-current">{{global.severity}}</span>{% endif %}
+  {% endif %}
+  {% if global.category %}<span class="report-sep">/</span>
+    {% if global.what %}<a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity_uri}}/{{global.category_uri}}?all={{global.all_messages}}">{{global.category}}</a>
+    {% else %}<span class="crumb-current">{{global.category}}</span>{% endif %}
+  {% endif %}
+  {% if global.what %}<span class="report-sep">/</span><span class="crumb-current">{{global.what}}</span>{% endif %}
+</nav>

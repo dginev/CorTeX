@@ -14,8 +14,10 @@ use crate::helpers::TaskStatus;
 use crate::models::{Corpus, Service};
 use crate::schema::historical_runs;
 
-#[derive(Identifiable, Queryable, Clone, Debug, PartialEq, Eq, QueryableByName)]
+#[derive(Identifiable, Queryable, Associations, Clone, Debug, PartialEq, Eq, QueryableByName)]
 #[diesel(table_name = historical_runs)]
+#[diesel(belongs_to(Corpus, foreign_key = corpus_id))]
+#[diesel(belongs_to(Service, foreign_key = service_id))]
 /// Historical `(Corpus, Service)` run records
 pub struct HistoricalRun {
   /// id of the historical run
@@ -46,9 +48,12 @@ pub struct HistoricalRun {
   pub owner: String,
   /// description of the purpose of this run
   pub description: String,
+  /// Stable external handle (UUIDv7, DB-generated) for referencing this specific run independently
+  /// of its (corpus, service, start_time) coordinates. Immutable once assigned (Arm 3 / D8).
+  pub public_id: uuid::Uuid,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, Default)]
 /// A JSON-friendly data structure, used for the frontend reports
 pub struct RunMetadata {
   /// total tasks in run
@@ -85,7 +90,10 @@ impl RunMetadata {
       "warning" => self.warning,
       "no_problem" => self.no_problem,
       "in_progress" => self.in_progress,
-      _ => unimplemented!(),
+      // An unknown field is a programming error (callers pass fixed keys), but this feeds the
+      // **public** `/history` chart — degrade to 0 rather than `panic!` on a request path
+      // (robustness: no panic where a `Result`/default will do).
+      _ => 0,
     };
     field_i32 as f32
   }
@@ -133,6 +141,14 @@ impl RunMetadataStack {
         }
       }
       let total = run.field_f32("total");
+      // A run with no valid tasks (total 0 — all-invalid, or an open run before any completion) has
+      // no success-rate to plot, and `field / 0.0` yields NaN/Inf which `serde_json` cannot encode.
+      // Critically, that failure is on the WHOLE array — one such run would blank the *entire*
+      // chart (the serialized payload falls back to empty) — so skip it rather than poison
+      // the series.
+      if total <= 0.0 {
+        continue;
+      }
       for field in ["fatal", "error", "warning", "no_problem", "in_progress"].iter() {
         runs_meta_vega.push(RunMetadataStack {
           severity: (*field).to_string(),
@@ -188,6 +204,42 @@ impl HistoricalRun {
     Ok(runs)
   }
 
+  /// The most recent historical runs across **all** corpora/services, newest first — the
+  /// system-wide run-management overview. Capped at `limit`.
+  pub fn recent_all(
+    connection: &mut PgConnection,
+    limit: i64,
+  ) -> Result<Vec<HistoricalRun>, Error> {
+    Self::recent_filtered(connection, None, None, None, limit)
+  }
+
+  /// The most recent historical runs, newest first, optionally narrowed to a `corpus_id`,
+  /// `service_id`, and/or exact `owner` — the filter-driven run-management overview. Capped at
+  /// `limit`. Any combination of filters may be `None` (no constraint on that field).
+  pub fn recent_filtered(
+    connection: &mut PgConnection,
+    corpus: Option<i32>,
+    service: Option<i32>,
+    owner: Option<&str>,
+    limit: i64,
+  ) -> Result<Vec<HistoricalRun>, Error> {
+    use crate::schema::historical_runs::dsl;
+    let mut query = dsl::historical_runs.into_boxed();
+    if let Some(corpus) = corpus {
+      query = query.filter(dsl::corpus_id.eq(corpus));
+    }
+    if let Some(service) = service {
+      query = query.filter(dsl::service_id.eq(service));
+    }
+    if let Some(owner) = owner {
+      query = query.filter(dsl::owner.eq(owner.to_string()));
+    }
+    query
+      .order(dsl::start_time.desc())
+      .limit(limit)
+      .get_results(connection)
+  }
+
   /// Obtain a currently ongoing run entry for a  `(Corpus, Service)` pair, if any
   pub fn find_current(
     corpus: &Corpus,
@@ -207,34 +259,169 @@ impl HistoricalRun {
   pub fn mark_completed(&self, connection: &mut PgConnection) -> Result<(), Error> {
     use diesel::dsl::now;
     if self.end_time.is_none() {
-      // gather the current statistics for this run, then update.
-      let report = progress_report(connection, self.corpus_id, self.service_id);
-      let total = *report.get("total").unwrap_or(&0.0) as i32;
-      let no_problem = *report.get("no_problem").unwrap_or(&0.0) as i32;
-      let warning = *report.get("warning").unwrap_or(&0.0) as i32;
-      let error = *report.get("error").unwrap_or(&0.0) as i32;
-      let fatal = *report.get("fatal").unwrap_or(&0.0) as i32;
-      let invalid = *report.get("invalid").unwrap_or(&0.0) as i32;
-      let queued_count_f64: f64 =
-        report.get("queued").unwrap_or(&0.0) + report.get("todo").unwrap_or(&0.0);
-      let in_progress = queued_count_f64 as i32;
-
-      //
+      // Freeze the current statistics for this run, then close it.
+      let t = live_tally_fields(connection, self.corpus_id, self.service_id);
       update(self)
         .set((
           historical_runs::end_time.eq(now),
-          historical_runs::total.eq(total),
-          historical_runs::in_progress.eq(in_progress),
-          historical_runs::invalid.eq(invalid),
-          historical_runs::no_problem.eq(no_problem),
-          historical_runs::warning.eq(warning),
-          historical_runs::error.eq(error),
-          historical_runs::fatal.eq(fatal),
+          historical_runs::total.eq(t.total),
+          historical_runs::in_progress.eq(t.in_progress),
+          historical_runs::invalid.eq(t.invalid),
+          historical_runs::no_problem.eq(t.no_problem),
+          historical_runs::warning.eq(t.warning),
+          historical_runs::error.eq(t.error),
+          historical_runs::fatal.eq(t.fatal),
         ))
         .execute(connection)?;
     }
     Ok(())
   }
+
+  /// Returns this run with its per-severity tallies reflecting **live** task state *when the run is
+  /// still open* (`end_time` is `None`). A run only freezes its tallies at [`Self::mark_completed`]
+  /// (i.e. when the next run supersedes it), so an open run's stored tallies are all zero;
+  /// overlaying the current progress makes the in-progress run show its real state across the
+  /// run-management surfaces — the "live + historical run state" north star — instead of a
+  /// misleading row of zeros (most visible on the *current* run and the dashboard's "last run").
+  /// A completed run is returned unchanged: its frozen snapshot is authoritative and this is a
+  /// no-op (no extra query). Cost is one grouped `progress_report` per *open* run only.
+  #[must_use]
+  pub fn with_live_tallies(mut self, connection: &mut PgConnection) -> HistoricalRun {
+    if self.end_time.is_none() {
+      let t = live_tally_fields(connection, self.corpus_id, self.service_id);
+      self.total = t.total;
+      self.no_problem = t.no_problem;
+      self.warning = t.warning;
+      self.error = t.error;
+      self.fatal = t.fatal;
+      self.invalid = t.invalid;
+      self.in_progress = t.in_progress;
+    }
+    self
+  }
+
+  /// Overlays live tallies onto every **open** run in `runs` using a **single** batched query,
+  /// replacing the per-open-run [`with_live_tallies`](Self::with_live_tallies) N+1 that made the
+  /// system-wide run overview cost one `progress_report` per open run (O(open runs) — a real drag
+  /// when many corpora convert at once). Completed runs keep their frozen tallies untouched. Use
+  /// this for any **multi-`(corpus, service)`** run list; a single-pair list (≤1 open run) can
+  /// keep `with_live_tallies`.
+  #[must_use]
+  pub fn overlay_live_tallies(
+    mut runs: Vec<HistoricalRun>,
+    connection: &mut PgConnection,
+  ) -> Vec<HistoricalRun> {
+    let pairs: Vec<(i32, i32)> = runs
+      .iter()
+      .filter(|run| run.end_time.is_none())
+      .map(|run| (run.corpus_id, run.service_id))
+      .collect::<HashSet<_>>()
+      .into_iter()
+      .collect();
+    if pairs.is_empty() {
+      return runs; // no open runs → nothing live to overlay
+    }
+    let tallies = live_tally_fields_batch(connection, &pairs);
+    for run in runs.iter_mut().filter(|run| run.end_time.is_none()) {
+      if let Some(t) = tallies.get(&(run.corpus_id, run.service_id)) {
+        run.total = t.total;
+        run.no_problem = t.no_problem;
+        run.warning = t.warning;
+        run.error = t.error;
+        run.fatal = t.fatal;
+        run.invalid = t.invalid;
+        run.in_progress = t.in_progress;
+      }
+    }
+    runs
+  }
+}
+
+/// The per-severity tallies of a `(corpus, service)` at a point in time.
+#[derive(Default)]
+struct RunTallies {
+  total: i32,
+  no_problem: i32,
+  warning: i32,
+  error: i32,
+  fatal: i32,
+  invalid: i32,
+  in_progress: i32,
+}
+
+/// Computes the live per-severity tallies for a `(corpus, service)` from the **current** task
+/// status distribution — the single source of truth shared by [`HistoricalRun::mark_completed`]
+/// (which freezes it) and [`HistoricalRun::with_live_tallies`] (which overlays it on an open run),
+/// so the in-progress numbers are identical to what gets frozen at completion. `in_progress` folds
+/// the not-yet-finished `todo` + `queued` tasks; `total` excludes invalids (as `progress_report`
+/// does).
+fn live_tally_fields(connection: &mut PgConnection, corpus_id: i32, service_id: i32) -> RunTallies {
+  let report = progress_report(connection, corpus_id, service_id);
+  let get = |key: &str| *report.get(key).unwrap_or(&0.0);
+  RunTallies {
+    total: get("total") as i32,
+    no_problem: get("no_problem") as i32,
+    warning: get("warning") as i32,
+    error: get("error") as i32,
+    fatal: get("fatal") as i32,
+    invalid: get("invalid") as i32,
+    in_progress: (get("queued") + get("todo")) as i32,
+  }
+}
+
+/// Live tallies for **several** `(corpus, service)` pairs in **one** grouped query — the batched
+/// twin of [`live_tally_fields`], so overlaying live progress onto a list of open runs costs one DB
+/// round-trip instead of one per run (the N+1 that made the system-wide run overview O(open runs);
+/// see [`HistoricalRun::overlay_live_tallies`]). The `ANY` filters may select cross pairs that were
+/// not requested; those are dropped via `wanted`, so the result is exact. Folds the status
+/// distribution exactly as [`live_tally_fields`]/`progress_report` do (total excludes invalids;
+/// `in_progress` = the unfinished `todo` + `queued` leases).
+fn live_tally_fields_batch(
+  connection: &mut PgConnection,
+  pairs: &[(i32, i32)],
+) -> std::collections::HashMap<(i32, i32), RunTallies> {
+  use crate::schema::tasks::dsl::{corpus_id, service_id, status, tasks};
+  use diesel::dsl::sql;
+  use diesel::sql_types::BigInt;
+  let mut out: std::collections::HashMap<(i32, i32), RunTallies> = std::collections::HashMap::new();
+  if pairs.is_empty() {
+    return out;
+  }
+  let wanted: HashSet<(i32, i32)> = pairs.iter().copied().collect();
+  let corpus_ids: Vec<i32> = wanted.iter().map(|(corpus, _)| *corpus).collect();
+  let service_ids: Vec<i32> = wanted.iter().map(|(_, service)| *service).collect();
+  // Raw `count(*)` (as `progress_report` does) sidesteps Diesel's aggregate/group-by type check
+  // while staying parameterized everywhere else.
+  let rows: Vec<(i32, i32, i32, i64)> = tasks
+    .select((corpus_id, service_id, status, sql::<BigInt>("count(*)")))
+    .filter(corpus_id.eq_any(&corpus_ids))
+    .filter(service_id.eq_any(&service_ids))
+    .group_by((corpus_id, service_id, status))
+    .load(connection)
+    .unwrap_or_default();
+  for (corpus, service, raw_status, count) in rows {
+    if !wanted.contains(&(corpus, service)) {
+      continue; // an over-selected cross pair (ANY × ANY) we did not ask for
+    }
+    let count = count as i32;
+    let tally = out.entry((corpus, service)).or_default();
+    let task_status = TaskStatus::from_raw(raw_status);
+    if task_status != TaskStatus::Invalid {
+      tally.total += count; // total excludes only invalids (matches progress_report)
+    }
+    match task_status {
+      TaskStatus::NoProblem => tally.no_problem += count,
+      TaskStatus::Warning => tally.warning += count,
+      TaskStatus::Error => tally.error += count,
+      TaskStatus::Fatal => tally.fatal += count,
+      TaskStatus::Invalid => tally.invalid += count,
+      // unfinished work: TODO (0) and any positive lease mark (Queued) fold into in_progress
+      TaskStatus::TODO => tally.in_progress += count,
+      _ if raw_status > TaskStatus::TODO.raw() => tally.in_progress += count,
+      _ => {}, // Blocked and other negatives count toward total only, as above
+    }
+  }
+  out
 }
 
 impl From<HistoricalRun> for RunMetadata {
@@ -269,5 +456,41 @@ impl From<HistoricalRun> for RunMetadata {
       owner,
       description,
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{RunMetadata, RunMetadataStack};
+
+  /// A zero-total run (all-invalid, or an open run before any completion) must not blank the whole
+  /// history chart: it is skipped (no `field / 0.0` NaN/Inf percents, which would fail `serde_json`
+  /// on the *whole array* and empty the series), while runs with valid tasks still chart.
+  #[test]
+  fn transform_skips_zero_total_runs_so_one_doesnt_blank_the_chart() {
+    let zero_total = RunMetadata {
+      invalid: 5, // all-invalid → total 0 (the total excludes invalids)
+      start_time: "2026-01-01 00:00:00".to_string(),
+      end_time: "2026-01-01 01:00:00".to_string(),
+      ..Default::default()
+    };
+    let real = RunMetadata {
+      total: 4,
+      warning: 1,
+      no_problem: 3,
+      start_time: "2026-01-02 00:00:00".to_string(),
+      end_time: "2026-01-02 01:00:00".to_string(),
+      ..Default::default()
+    };
+    let stack = RunMetadataStack::transform(&[zero_total, real]);
+    assert!(!stack.is_empty(), "the valid run still charts");
+    assert!(
+      stack.iter().all(|row| row.percent.is_finite()),
+      "no NaN/Inf percents — a zero-total run is skipped, never divided by zero"
+    );
+    assert!(
+      serde_json::to_string(&stack).is_ok(),
+      "the series serializes — the bug was serde failing on a NaN and blanking the chart"
+    );
   }
 }

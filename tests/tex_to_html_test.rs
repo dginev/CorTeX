@@ -5,7 +5,7 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 use cortex::backend;
-use cortex::backend::TEST_DB_ADDRESS;
+use cortex::backend::test_db_address;
 use cortex::dispatcher::manager::TaskManager;
 use cortex::helpers::TaskStatus;
 use cortex::importer::Importer;
@@ -93,7 +93,7 @@ fn mock_tex_to_html() {
   // Start up a ventilator/sink pair
   let manager_thread = thread::spawn(move || {
     let manager = TaskManager {
-      backend_address: TEST_DB_ADDRESS.to_string(),
+      backend_address: test_db_address().to_string(),
       source_port: 52695,
       result_port: 52696,
       ..TaskManager::default()

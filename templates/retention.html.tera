@@ -1,0 +1,46 @@
+{% extends "layout" %} {% block content %}
+<div class="col-md-1"></div>
+<div class="col-md-10">
+  <div class="center">
+    <h1>Historical data retention</h1>
+    <p>Signed in as <strong>{{ owner }}</strong> &nbsp;·&nbsp; <a href="/admin">back to dashboard</a> &nbsp;·&nbsp; <a href="/api/historical/stats">view as JSON</a></p>
+  </div>
+
+  {% if pruned is defined and pruned %}
+  <p class="flash-saved"><i class="fa fa-check-circle"></i>&nbsp;Pruned <strong>{{ pruned }}</strong> per-task snapshot(s).</p>
+  {% endif %}
+
+  <p>Each "save snapshot" copies one status row per task into <code>historical_tasks</code> — the only
+    unbounded-growth table. The run <em>summaries</em> (and their history charts) are never pruned; only
+    these bulky per-task snapshots age out, so old per-task diffs are what you lose.</p>
+
+  <table class="table narrow-form">
+    <tr><td>Per-task snapshot rows</td><td class="right"><strong>{{ snapshot_rows }}</strong></td></tr>
+    <tr><td>Oldest snapshot</td><td class="right"><time datetime="{{ oldest }}">{{ oldest }}</time></td></tr>
+  </table>
+
+  <hr>
+  <h3>Prune old snapshots</h3>
+  <form method="get" action="/admin/retention">
+    <label>Preview deleting snapshots older than
+      <input type="date" name="before" value="{{ preview.before | default(value='') }}" required></label>
+    <button type="submit">Preview</button>
+  </form>
+
+  {% if preview is defined and preview %}
+  <p class="gap-top">
+    <strong>{{ preview.count | group_thousands }}</strong> snapshot(s) are older than <strong>{{ preview.before }}</strong>.
+    {% if preview.count > 0 %}
+  <form method="post" action="/admin/retention/prune" class="inline-form gap-left"
+    onsubmit="return confirm('Permanently delete {{ preview.count | group_thousands }} per-task snapshots older than {{ preview.before }}? This cannot be undone.');">
+    <input type="hidden" name="before" value="{{ preview.before }}">
+    <button type="submit" class="status-bad">Delete {{ preview.count | group_thousands }} snapshot(s) permanently</button>
+  </form>
+  {% else %}
+  <span class="muted">nothing to prune.</span>
+  {% endif %}
+  </p>
+  {% endif %}
+</div>
+<div class="col-md-1"></div>
+{% endblock content %}

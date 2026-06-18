@@ -1,0 +1,19 @@
+[Unit]
+Description=CorTeX reverse SSH tunnel to the public edge (corpora.latexml.rs)
+Documentation=file:/home/deyan/git/cortex/deploy/README.md
+After=network-online.target
+Wants=network-online.target
+# Keep retrying forever (a tunnel must); don't let systemd give up after N fast restarts.
+StartLimitIntervalSec=0
+
+[Service]
+User=deyan
+Group=deyan
+# -R binds 127.0.0.1:8000 on the edge -> this host's frontend on 127.0.0.1:8000.
+# ExitOnForwardFailure: die (and let systemd restart) if the remote bind can't be claimed.
+ExecStart=/usr/bin/ssh -NT -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o TCPKeepAlive=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/home/deyan/.ssh/known_hosts -o IdentitiesOnly=yes -i /home/deyan/.ssh/cortex_tunnel_ed25519 -R 127.0.0.1:8000:127.0.0.1:8000 cortextunnel@corpora.latexml.rs
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

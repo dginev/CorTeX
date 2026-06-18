@@ -1,0 +1,78 @@
+{% extends "layout" %} {% block content %}
+<div class="col-md-1"></div>
+<div class="col-md-10">
+  <div class="center">
+    <h1>Historical runs</h1>
+    <p>Signed in as <strong>{{ owner }}</strong> &nbsp;·&nbsp; <a href="/admin">back to dashboard</a> &nbsp;·&nbsp; <a href="/api/runs">view as JSON</a></p>
+    <p>The most recent conversion runs across every corpus and service. Follow a row into its
+      per-service history, run-to-run diff, and per-task drill-down.</p>
+  </div>
+
+  <form method="get" action="/admin/runs" class="center gap-bottom">
+    <label>Corpus
+      <select name="corpus">
+        <option value="">(any)</option>
+        {% for name in corpus_names %}
+        <option value="{{ name }}"{% if name == filter_corpus %} selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Service
+      <select name="service">
+        <option value="">(any)</option>
+        {% for name in service_names %}
+        <option value="{{ name }}"{% if name == filter_service %} selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Owner
+      <input type="text" name="owner" value="{{ filter_owner | default(value='') }}" placeholder="(any)" size="12">
+    </label>
+    <button type="submit">Filter</button>
+    {% if filter_corpus or filter_service or filter_owner %}<a href="/admin/runs" class="gap-left">clear</a>{% endif %}
+  </form>
+
+  <table id="historical-runs" class="table">
+    <thead>
+      <tr>
+        <th scope="col" class="left">Corpus</th>
+        <th scope="col" class="left">Service</th>
+        <th scope="col" class="left">Started</th>
+        <th scope="col" class="left">By</th>
+        <th scope="col" class="right">Total</th>
+        <th scope="col" class="right">No&nbsp;problem</th>
+        <th scope="col" class="right">Warning</th>
+        <th scope="col" class="right">Error</th>
+        <th scope="col" class="right">Fatal</th>
+        <th scope="col" class="left">Status</th>
+        <th scope="col" class="left">Inspect</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in runs %}
+      <tr>
+        <td class="left">{{ run.corpus }}</td>
+        <td class="left">{{ run.service }}</td>
+        <td class="left"><time datetime="{{ run.start_time }}">{{ run.start_time }}</time></td>
+        <td class="left">{{ run.owner }}</td>
+        <td class="right">{{ run.total | group_thousands }}</td>
+        <td class="right">{{ run.no_problem | group_thousands }}</td>
+        <td class="right">{{ run.warning | group_thousands }}</td>
+        <td class="right">{{ run.error | group_thousands }}</td>
+        <td class="right">{{ run.fatal | group_thousands }}</td>
+        <td class="left">{% if run.completed %}completed{% else %}<strong>open</strong>{% if run.in_progress > 0 %} &middot; {{ run.in_progress | group_thousands }} in&nbsp;progress{% endif %}{% endif %}</td>
+        <td class="left">
+          {% set c = run.corpus | urlencode %}{% set s = run.service | urlencode %}
+          <a href="/runs/{{ c }}/{{ s }}">runs</a> &middot;
+          <a href="/runs/{{ c }}/{{ s }}/diff">diff</a> &middot;
+          <a href="/history/{{ c }}/{{ s }}">chart</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="11" class="center"><em>No historical runs recorded yet.</em></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="col-md-1"></div>
+{% endblock content %}

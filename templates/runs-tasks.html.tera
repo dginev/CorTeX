@@ -1,0 +1,82 @@
+{% extends "layout" %} {% block content %}
+<div class="center">
+  <h1>Task severity changes</h1>
+  <h5>{{service}} over {{corpus}}</h5>
+  <p>
+    <a href="/runs/{{corpus}}/{{service}}">&larr; Run history</a>
+    &nbsp;·&nbsp;
+    <a href="/runs/{{corpus}}/{{service}}/diff">Run differences</a>
+    &nbsp;·&nbsp;
+    <a href="/api/runs/{{corpus}}/{{service}}/tasks?previous_status={{selected_previous}}&current_status={{selected_current}}&previous={{previous_date}}&current={{current_date}}&offset={{offset}}&page_size={{page_size}}">JSON</a>
+  </p>
+
+  <form class="pick-transition" method="get" action="/runs/{{corpus}}/{{service}}/tasks">
+    <label for="select-previous-status">Previous status</label>
+    <select name="previous_status" id="select-previous-status">
+      <option value="">(any)</option>
+      {% for key in severities %}
+      <option value="{{key}}" {% if key == selected_previous %}selected{% endif %}>{{key}}</option>
+      {% endfor %}
+    </select>
+    <span>&rarr;</span>
+    <label for="select-current-status">Current status</label>
+    <select name="current_status" id="select-current-status">
+      <option value="">(any)</option>
+      {% for key in severities %}
+      <option value="{{key}}" {% if key == selected_current %}selected{% endif %}>{{key}}</option>
+      {% endfor %}
+    </select>
+    <input type="hidden" name="previous" value="{{previous_date}}">
+    <input type="hidden" name="current" value="{{current_date}}">
+    <input type="hidden" name="page_size" value="{{page_size}}">
+    <button type="submit">Filter</button>
+  </form>
+  <br>
+
+  {% if tasks | length == 0 %}
+  <p>No task severity changes match this filter.</p>
+  {% else %}
+  <div class="row">
+    <div class="col-md-1"></div>
+    <div class="col-md-10">
+      <table id="task-diff-report" class="table table-striped">
+        <thead>
+          <tr>
+            <th scope="col" class="left">Entry</th>
+            <th scope="col" class="left">Preview</th>
+            <th scope="col" class="left">Source</th>
+            <th scope="col" class="left">Previous status</th>
+            <th scope="col" class="left">Current status</th>
+            <th scope="col" class="left">Previous save</th>
+            <th scope="col" class="left">Current save</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for task in tasks %}
+          <tr>
+            <td class="left">{{task.entry}}</td>
+            <td class="left"><a target="_blank" rel="noopener" href="/preview/{{corpus}}/{{service}}/{{task.entry}}">preview</a></td>
+            <td class="left"><a href="/entry/import/{{task.task_id}}" download>source</a></td>
+            <td class="left"><span class="sev sev-{{task.previous_status}}">{{task.previous_status}}</span></td>
+            <td class="left"><span class="sev sev-{{task.current_status}}">{{task.current_status}}</span></td>
+            <td class="left">{{task.previous_saved_at}}</td>
+            <td class="left">{{task.current_saved_at}}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="col-md-1"></div>
+  </div>
+  <div class="pagination-controls">
+    {% if has_prev %}
+    <span><a href="/runs/{{corpus}}/{{service}}/tasks?previous_status={{selected_previous}}&current_status={{selected_current}}&previous={{previous_date}}&current={{current_date}}&offset={{prev_offset}}&page_size={{page_size}}">&lt;&lt; previous</a></span>
+    {% endif %}
+    <span>[{{from_offset}}&ndash;{{to_offset}}]</span>
+    {% if has_next %}
+    <span><a href="/runs/{{corpus}}/{{service}}/tasks?previous_status={{selected_previous}}&current_status={{selected_current}}&previous={{previous_date}}&current={{current_date}}&offset={{next_offset}}&page_size={{page_size}}">next &gt;&gt;</a></span>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock content %}

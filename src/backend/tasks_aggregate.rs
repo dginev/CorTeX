@@ -4,7 +4,7 @@ use crate::models::{Service, Task};
 use crate::schema::tasks;
 use diesel::result::Error;
 use diesel::*;
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 
 pub(crate) fn fetch_tasks(
   connection: &mut PgConnection,
@@ -13,7 +13,7 @@ pub(crate) fn fetch_tasks(
 ) -> Result<Vec<Task>, Error> {
   use crate::schema::tasks::dsl::{service_id, status};
   let mut rng = thread_rng();
-  let mark: u16 = 1 + rng.gen::<u16>();
+  let mark: u16 = 1 + rng.r#gen::<u16>();
 
   let mut marked_tasks: Vec<Task> = Vec::new();
   connection.transaction::<(), Error, _>(|t_connection| {
@@ -38,9 +38,24 @@ pub(crate) fn fetch_tasks(
 }
 
 pub(crate) fn clear_limbo_tasks(connection: &mut PgConnection) -> Result<usize, Error> {
-  use crate::schema::tasks::dsl::status;
+  clear_limbo_tasks_except(connection, &[])
+}
+
+/// Reset every Queued (positive-`status` lease mark) task back to `TODO`, **except** the given
+/// in-flight task ids. At process start (nothing in flight) pass `&[]` to recover all leftover
+/// Queued tasks from a previously-crashed run. On a ventilator **restart** mid-operation
+/// (KNOWN_ISSUES D-4 band-aid), pass the live `progress_queue` ids so tasks a worker is *currently
+/// processing* are NOT reset — resetting an in-flight task re-leases it while its original result
+/// is still pending (a double-dispatch). With an empty slice this is exactly the old blunt reset
+/// (`x <> ALL('{}')` is vacuously true), so process-start behaviour is unchanged.
+pub(crate) fn clear_limbo_tasks_except(
+  connection: &mut PgConnection,
+  in_flight: &[i64],
+) -> Result<usize, Error> {
+  use crate::schema::tasks::dsl::{id, status};
   update(tasks::table)
     .filter(status.gt(&TaskStatus::TODO.raw()))
+    .filter(id.ne_all(in_flight))
     .set(status.eq(&TaskStatus::TODO.raw()))
     .execute(connection)
 }

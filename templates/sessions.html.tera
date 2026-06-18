@@ -1,0 +1,42 @@
+{% extends "layout" %} {% block content %}
+<div class="col-md-1"></div>
+<div class="col-md-10">
+  <div class="center">
+    <h1>Active sessions</h1>
+    <p>Signed in as <strong>{{ owner }}</strong> &nbsp;·&nbsp; <a href="/admin">back to dashboard</a> &nbsp;·&nbsp; <a href="/api/sessions">view as JSON</a></p>
+    <p>Admins currently signed in (by admin token or passkey). Revoking an identity ends every one of
+      its sessions immediately — use it to sign yourself out everywhere, or to lock out a compromised account.</p>
+  </div>
+
+  <table id="sessions" class="table">
+    <thead>
+      <tr>
+        <th scope="col" class="left">Who</th>
+        <th scope="col" class="left">Method</th>
+        <th scope="col" class="left">Signed in</th>
+        <th scope="col" class="left">Expires</th>
+        <th scope="col" class="right"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sessions %}
+      <tr>
+        <td class="left">{{ s.owner }}{% if s.current %} <span class="muted">(this device)</span>{% endif %}</td>
+        <td class="left">{{ s.method }}</td>
+        <td class="left"><time datetime="{{ s.created_at }}">{{ s.created_at }}</time></td>
+        <td class="left"><time datetime="{{ s.expires_at }}">{{ s.expires_at }}</time></td>
+        <td class="right">
+          <form method="post" action="/admin/sessions/revoke?owner={{ s.owner }}" class="inline-form"
+            onsubmit="return confirm('Revoke ALL sessions for &quot;{{ s.owner }}&quot;? They will have to sign in again{% if s.current %} — including you, on this device{% endif %}.');">
+            <button type="submit" class="btn btn-link btn-link-danger">revoke {{ s.owner }}</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="center"><em>No active sessions.</em></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="col-md-1"></div>
+{% endblock content %}

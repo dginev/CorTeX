@@ -9,30 +9,53 @@
 //! a `Backend` object.
 
 mod corpora_aggregate;
+mod export;
 mod mark;
 mod reports;
+mod rollup;
+mod sandbox;
 mod services_aggregate;
 mod tasks_aggregate;
+pub use export::{DatasetExportOutcome, GroupBy, export_html_dataset};
+pub(crate) use mark::{
+  mark_all_blocked, mark_blocked, mark_rerun, resume_all_blocked, resume_blocked,
+  save_historical_tasks,
+};
+// `pub` (not `pub(crate)`): the `cortex diff --tasks` subcommand calls it directly, giving the
+// per-task changed-tasks drill a third (CLI) surface alongside the agent `/api/runs/<c>/<s>/tasks`
+// and the web screen.
+pub use reports::list_task_diffs;
 pub(crate) use reports::progress_report;
+pub(crate) use reports::report_uses_rollup;
+// `pub` (not `pub(crate)`): the `cortex` CLI's `diff` subcommand calls it directly, so the run-diff
+// summary has a third (CLI) surface alongside the agent `/api/runs/<c>/<s>/diff` and the web
+// screen.
 pub use reports::TaskReportOptions;
+pub use reports::summary_task_diffs;
+pub(crate) use reports::task_report;
+pub use reports::{DOCUMENT_MESSAGE_CAP, MessageCounts, task_messages};
+pub use rollup::ReportSummaryRow;
+pub(crate) use rollup::{
+  category_rollup, category_total, invalidate_all, invalidate_scope, report_cache_computed_at,
+  severity_total, what_rollup,
+};
+pub use sandbox::{SandboxOutcome, SandboxSelection, create_sandbox};
 
+use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use diesel::result::Error;
 use diesel::*;
-use dotenv::dotenv;
 use std::collections::HashMap;
 use std::fmt;
 
 use crate::concerns::{CortexDeletable, CortexInsertable};
+use crate::config::config;
 use crate::helpers::{TaskReport, TaskStatus};
-use crate::models::{
-  Corpus, DiffStatusFilter, DiffStatusRow, NewTask, Service, Task, TaskRunMetadata,
-};
-use chrono::NaiveDateTime;
+use crate::models::{Corpus, NewTask, Service, Task};
 
-/// The production database postgresql address, set from the .env configuration file
-pub const DEFAULT_DB_ADDRESS: &str = dotenv!("DATABASE_URL");
-/// The test database postgresql address, set from the .env configuration file
-pub const TEST_DB_ADDRESS: &str = dotenv!("TEST_DATABASE_URL");
+/// The production database postgresql address, from the runtime [`crate::config`] configuration
+pub fn default_db_address() -> &'static str { &config().database.url }
+/// The test database postgresql address, from the runtime [`crate::config`] configuration
+pub fn test_db_address() -> &'static str { &config().database.test_url }
 
 /// Provides an interface to the Postgres task store
 pub struct Backend {
@@ -44,22 +67,54 @@ impl fmt::Debug for Backend {
 }
 impl Default for Backend {
   fn default() -> Self {
-    dotenv().ok();
-    let connection = connection_at(DEFAULT_DB_ADDRESS);
-
+    let connection = connection_at(default_db_address());
     Backend { connection }
   }
 }
 
-/// Constructs a new Task store representation from a Postgres DB address
+/// Constructs a new Task store representation from a Postgres DB address.
+///
+/// A transient connect failure — a momentary `too many clients` / a DB restarting — is retried a
+/// few times with linear backoff before giving up, so a blip doesn't become an instant fatal panic
+/// (the robustness mandate: degrade through transients, fail fast only when the DB is truly down).
 pub fn connection_at(address: &str) -> PgConnection {
-  PgConnection::establish(address).expect("Error connecting to {address}")
+  const MAX_ATTEMPTS: u32 = 5;
+  let mut attempt = 1;
+  loop {
+    match PgConnection::establish(address) {
+      Ok(connection) => return connection,
+      Err(e) if attempt < MAX_ATTEMPTS => {
+        eprintln!(
+          "-- connect to {address} failed (attempt {attempt}/{MAX_ATTEMPTS}): {e}; retrying"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(100 * u64::from(attempt)));
+        attempt += 1;
+      },
+      Err(e) => panic!("Error connecting to {address} after {MAX_ATTEMPTS} attempts: {e}"),
+    }
+  }
 }
+
+/// A pool of PostgreSQL connections (Diesel + r2d2).
+pub type DbPool = Pool<ConnectionManager<PgConnection>>;
+/// A connection checked out from a [`DbPool`]; dereferences to a `PgConnection`.
+pub type PooledConn = PooledConnection<ConnectionManager<PgConnection>>;
+
+/// Builds a lazily-initialized connection pool: connections are established on first checkout, so
+/// this never blocks or fails at startup even if the database is momentarily unavailable.
+pub fn build_pool(database_url: &str, max_size: u32) -> DbPool {
+  let manager = ConnectionManager::<PgConnection>::new(database_url);
+  Pool::builder().max_size(max_size).build_unchecked(manager)
+}
+
+/// The configured database URL, managed as Rocket state so background jobs open their own
+/// connection against the same database as the request pool (notably the test database in
+/// integration tests).
+pub struct DatabaseUrl(pub String);
 /// Constructs the default Backend struct for testing
 pub fn testdb() -> Backend {
-  dotenv().ok();
   Backend {
-    connection: connection_at(TEST_DB_ADDRESS),
+    connection: connection_at(test_db_address()),
   }
 }
 /// Constructs a Backend at a given address
@@ -103,6 +158,20 @@ impl Backend {
   /// and `what` mark all matching tasks to be rerun
   pub fn mark_rerun(&mut self, options: RerunOptions) -> Result<(), Error> {
     mark::mark_rerun(&mut self.connection, options)
+  }
+
+  /// **Pause** a `(corpus, service)` run: block every in-progress task (`status >= 0`) so the
+  /// dispatcher stops leasing them. Returns the number paused. The CLI/agent twin of the report
+  /// screen's "Pause run". Reversible with [`Backend::resume_run`].
+  pub fn pause_run(&mut self, corpus_id: i32, service_id: i32) -> Result<usize, Error> {
+    mark::mark_blocked(&mut self.connection, corpus_id, service_id)
+  }
+
+  /// **Resume** a paused `(corpus, service)` run: return every Blocked task (`status < -5`) to TODO
+  /// so the dispatcher picks them up. Returns the number resumed. The inverse of
+  /// [`Backend::pause_run`].
+  pub fn resume_run(&mut self, corpus_id: i32, service_id: i32) -> Result<usize, Error> {
+    mark::resume_blocked(&mut self.connection, corpus_id, service_id)
   }
 
   /// While not changing any status information for Tasks, add a new historical run bookmark
@@ -155,11 +224,31 @@ impl Backend {
     tasks_aggregate::clear_limbo_tasks(&mut self.connection)
   }
 
+  /// Like [`Self::clear_limbo_tasks`], but preserves the given in-flight task ids (the live
+  /// `progress_queue` on a ventilator restart) so tasks a worker is actively processing are not
+  /// reset to `TODO` and double-dispatched. See `tasks_aggregate::clear_limbo_tasks_except`.
+  pub fn clear_limbo_tasks_except(&mut self, in_flight: &[i64]) -> Result<usize, Error> {
+    tasks_aggregate::clear_limbo_tasks_except(&mut self.connection, in_flight)
+  }
+
   /// Activates an existing service on a given corpus (via PATH)
   /// if the service has previously been registered, this call will `RESET` the service into a mint
-  /// state also removing any related log messages.
-  pub fn register_service(&mut self, service: &Service, corpus_path: &str) -> Result<(), Error> {
-    services_aggregate::register_service(&mut self.connection, service, corpus_path)
+  /// state also removing any related log messages. The new run is attributed to `owner` with
+  /// `description` (the UI/API thread the actor; the CLI passes a default).
+  pub fn register_service(
+    &mut self,
+    service: &Service,
+    corpus_path: &str,
+    owner: String,
+    description: String,
+  ) -> Result<(), Error> {
+    services_aggregate::register_service(
+      &mut self.connection,
+      service,
+      corpus_path,
+      owner,
+      description,
+    )
   }
 
   /// Extends an existing service on a given corpus (via PATH)
@@ -169,9 +258,11 @@ impl Backend {
     services_aggregate::extend_service(&mut self.connection, service, corpus_path)
   }
 
-  /// Deletes a service by name
-  pub fn delete_service_by_name(&mut self, name: &str) -> Result<usize, Error> {
-    services_aggregate::delete_service_by_name(&mut self.connection, name)
+  /// Permanently destroys a service by name — its definition plus all of its tasks + `log_*` rows
+  /// across every corpus, in one transaction (orphan-free + crash-consistent; closes R-6). Refuses
+  /// the magic `init`/`import` services. See [`services_aggregate::destroy_service_by_name`].
+  pub fn destroy_service_by_name(&mut self, name: &str) -> Result<usize, Error> {
+    services_aggregate::destroy_service_by_name(&mut self.connection, name)
   }
 
   /// Returns a vector of currently available corpora in the Task store
@@ -206,30 +297,90 @@ impl Backend {
     reports::progress_report(&mut self.connection, corpus.id, service.id)
   }
 
-  /// Prepares a template-friendly report of task differences
-  pub fn list_task_diffs(
-    &mut self,
-    corpus: &Corpus,
-    service: &Service,
-    filters: DiffStatusFilter,
-  ) -> Vec<TaskRunMetadata> {
-    reports::list_task_diffs(&mut self.connection, corpus, service, filters)
+  /// Recomputes the `report_summary` rollup (Arm 14 #6); call on the run-completion path so the
+  /// cheap category/what report reads stay fresh.
+  pub fn refresh_report_summary(&mut self) -> Result<(), Error> {
+    rollup::refresh_report_summary(&mut self.connection)
   }
-
-  /// Prepares a template-friendly summary of task differences
-  pub fn summary_task_diffs(
+  /// Drop the cached report grains for one `(corpus, service)` scope so the next report view
+  /// repopulates from current data. Called per touched scope on the run-completion path — scoped, a
+  /// cheap keyed `DELETE`, never the global all-corpora scan that used to stall conversions.
+  pub fn invalidate_report_cache(&mut self, corpus_id: i32, service_id: i32) -> Result<(), Error> {
+    rollup::invalidate_scope(&mut self.connection, corpus_id, service_id)
+  }
+  /// Category-grain report for `(corpus, service, severity)`, read from the `report_summary`
+  /// rollup, windowed to `[offset, offset + limit)` (ordered by descending task count).
+  pub fn category_rollup(
     &mut self,
     corpus: &Corpus,
     service: &Service,
-    previous_date: Option<NaiveDateTime>,
-    current_date: Option<NaiveDateTime>,
-  ) -> (Vec<String>, Vec<DiffStatusRow>) {
-    reports::summary_task_diffs(
+    severity: &str,
+    limit: i64,
+    offset: i64,
+  ) -> Vec<ReportSummaryRow> {
+    rollup::category_rollup(
       &mut self.connection,
-      corpus,
-      service,
-      previous_date,
-      current_date,
+      corpus.id,
+      service.id,
+      severity,
+      limit,
+      offset,
     )
+    .unwrap_or_default()
+  }
+  /// `what`-grain drill-down for `(corpus, service, severity, category)`, read from the rollup,
+  /// windowed to `[offset, offset + limit)` (ordered by descending task count).
+  pub fn what_rollup(
+    &mut self,
+    corpus: &Corpus,
+    service: &Service,
+    severity: &str,
+    category: &str,
+    limit: i64,
+    offset: i64,
+  ) -> Vec<ReportSummaryRow> {
+    rollup::what_rollup(
+      &mut self.connection,
+      corpus.id,
+      service.id,
+      severity,
+      category,
+      limit,
+      offset,
+    )
+    .unwrap_or_default()
+  }
+  /// The per-severity grand totals `(distinct tasks, total messages)` for `(corpus, service,
+  /// severity)`, read from the rollup — the denominators the category-grain report shows. `(0, 0)`
+  /// when the severity has no logged messages.
+  pub fn severity_totals(
+    &mut self,
+    corpus: &Corpus,
+    service: &Service,
+    severity: &str,
+  ) -> (i64, i64) {
+    rollup::severity_total(&mut self.connection, corpus.id, service.id, severity)
+      .unwrap_or_default()
+      .map_or((0, 0), |row| (row.task_count, row.message_count))
+  }
+  /// The category-grain totals `(distinct tasks, total messages)` for `(corpus, service, severity,
+  /// category)` — the denominators the `what` drill-down shows. `(0, 0)` when the category is
+  /// empty.
+  pub fn category_totals(
+    &mut self,
+    corpus: &Corpus,
+    service: &Service,
+    severity: &str,
+    category: &str,
+  ) -> (i64, i64) {
+    rollup::category_total(
+      &mut self.connection,
+      corpus.id,
+      service.id,
+      severity,
+      category,
+    )
+    .unwrap_or_default()
+    .map_or((0, 0), |row| (row.task_count, row.message_count))
   }
 }

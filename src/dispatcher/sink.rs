@@ -1,17 +1,183 @@
-use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io;
 use std::io::Write;
-use std::ops::Deref;
-use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
+use tracing::{info, trace, warn};
+use zeromq::{PullSocket, Socket, SocketRecv, ZmqMessage};
+
+use crate::config::config;
 use crate::dispatcher::server;
 use crate::helpers;
-use crate::helpers::{TaskProgress, TaskReport, TaskStatus};
-use crate::models::{Service, WorkerMetadata};
+use crate::helpers::{NewTaskMessage, TaskReport, TaskStatus};
+use crate::models::{Task, WorkerMetadataSender};
+
+/// Capacity of each archive-writer's command channel. A small bound keeps resident memory at
+/// O(chunk) per writer (a handful of `message_size` chunks at most) while letting a writer stay a
+/// little ahead of the receive loop; a full channel simply makes the receive loop wait, which is
+/// the correct backpressure when the disk cannot keep up.
+const SINK_WRITER_CHANNEL_CAPACITY: usize = 64;
+
+/// How often a **bounded** (`job_limit = Some(_)`) sink wakes from a blocked `recv()` to re-check
+/// the shared completion signal, so it can terminate once the ventilator has finished dispatching
+/// and the in-flight set has drained (KNOWN_ISSUES D-5). `recv()` is cancel-safe — its `FairQueue`
+/// buffers messages behind a `Mutex` and the `recv` future holds no message — so a timed-out poll
+/// loses nothing. Perpetual production runs (`job_limit = None`) never use this; they block
+/// plainly.
+const SINK_TERMINATION_POLL: Duration = Duration::from_millis(250);
+
+/// A unit of work streamed from the sink's receive loop to an archive-writer thread (dispatcher
+/// rationalization phase 3 — D-7 sink fan-out). The receive loop owns the ZMQ socket and reads each
+/// result's frames; rather than block on the `/data` write itself, it hands a writer the task, then
+/// the received chunks, then a commit/reject — so receiving the next result is no longer hostage to
+/// the current one's disk latency.
+enum WriteCommand {
+  /// Begin a new result file for `task` at `recv_path`.
+  Begin {
+    /// the task this result belongs to (moved to the writer, which reports it on commit)
+    task: Box<Task>,
+    /// `<entry-dir>/<service>.zip` — where the result archive is written
+    recv_path: PathBuf,
+  },
+  /// Append a received data chunk to the in-progress result file. The bytes are owned/moved here
+  /// and dropped right after the write, so the per-job footprint stays O(chunk), never the whole
+  /// archive.
+  Chunk(Vec<u8>),
+  /// Close the in-progress file, parse its `cortex.log` into a report, and hand it to finalize.
+  Commit,
+  /// Reject the in-progress (over-cap) result: remove the partial file and report the task
+  /// `Invalid` (`result_too_large`).
+  Reject {
+    /// the configured cap, for the rejection message
+    max_result_bytes: usize,
+  },
+}
+
+/// One archive-writer thread. It drains [`WriteCommand`]s for the tasks the receive loop assigns
+/// it, performing the blocking `/data` write + `cortex.log` parse + finalize hand-off **off** the
+/// receive loop. Per-task ordering is guaranteed because the receive loop sends a task's
+/// `Begin → Chunk* → Commit|Reject` contiguously to one writer's FIFO channel; fan-out is across
+/// *different* tasks. The writer exits when its channel disconnects (the sink shutting down on
+/// `job_limit`), after draining any buffered commands (so the last result's `Commit` still reaches
+/// finalize — loss-free). A panic here is surfaced by the receive loop (its liveness check / a
+/// send error) → the manager aborts the dispatcher (fail-fast preserved).
+fn run_writer(rx: &Receiver<WriteCommand>, done_tx: &SyncSender<TaskReport>) {
+  // In-progress job state: the task, its result path, and the open file (`None` if create/write
+  // failed — then the result is abandoned and the task is left `Queued` for the reaper, matching
+  // the legacy inline behavior but without the socket desync the old early `continue` caused).
+  let mut current: Option<(Task, PathBuf, Option<File>)> = None;
+  while let Ok(cmd) = rx.recv() {
+    match cmd {
+      WriteCommand::Begin { task, recv_path } => {
+        let file = match File::create(&recv_path) {
+          Ok(f) => Some(f),
+          Err(e) => {
+            warn!(
+              "sink writer: File::create({recv_path:?}) failed ({e:?}); task {} left Queued for the reaper",
+              task.id
+            );
+            None
+          },
+        };
+        current = Some((*task, recv_path, file));
+      },
+      WriteCommand::Chunk(bytes) => {
+        if let Some((_, _, slot)) = current.as_mut()
+          && let Some(file) = slot
+          && let Err(e) = file.write_all(&bytes)
+        {
+          warn!("sink writer: write to result file failed ({e:?}); abandoning result");
+          // Stop writing; the (now-partial) file makes the result untrustworthy, so Commit
+          // skips the report and the task is recovered by the reaper.
+          *slot = None;
+        }
+        // `bytes` dropped here — tight deallocation, O(chunk) resident.
+      },
+      WriteCommand::Commit => {
+        if let Some((task, recv_path, file)) = current.take() {
+          match file {
+            Some(f) => {
+              drop(f); // flush + close before generate_report reads the archive back
+              let report = helpers::generate_report(task, &recv_path);
+              server::send_done(done_tx, report);
+            },
+            None => {
+              warn!(
+                "sink writer: no result file for task {} (create/write failed); skipping report (reaper will recover)",
+                task.id
+              );
+            },
+          }
+        }
+      },
+      WriteCommand::Reject { max_result_bytes } => {
+        if let Some((task, recv_path, file)) = current.take() {
+          drop(file);
+          std::fs::remove_file(&recv_path).ok();
+          let taskid = task.id;
+          warn!(
+            "sink: result for task {taskid} exceeded the {max_result_bytes}-byte cap — rejected (Invalid)"
+          );
+          let report = TaskReport {
+            task,
+            status: TaskStatus::Invalid,
+            messages: vec![NewTaskMessage::new(
+              taskid,
+              "invalid",
+              "cortex".to_string(),
+              "result_too_large".to_string(),
+              format!("worker result exceeded the {max_result_bytes}-byte hard cap"),
+            )],
+          };
+          server::send_done(done_tx, report);
+        }
+      },
+    }
+  }
+}
+
+/// The parsed header of a worker reply envelope `[identity, service, taskid, <≥1 data frame>]`.
+/// The data frames (index 3..) are read directly off the [`ZmqMessage`] by the caller.
+struct ReplyHeader {
+  /// the worker's ZMQ identity (for metadata + logs)
+  identity: String,
+  /// the service name the worker claims to have run
+  service: String,
+  /// the task id this result is for (`-1` if the frame wasn't a valid integer)
+  taskid: i64,
+}
+
+/// Validates + parses the reply envelope from one **atomically-received** `zeromq` message. Because
+/// `zeromq` delivers the whole multipart message at once (unlike libzmq's frame-by-frame `recv` +
+/// `RCVMORE`), a short/truncated/malformed reply is simply a message with too few frames — dropping
+/// it cannot desync the *next* reply, so the entire libzmq desync bug class (KNOWN_ISSUES D-4/D-12)
+/// is structurally gone and a frame-count check replaces the four chained `RCVMORE` guards. A valid
+/// reply has **≥4** frames (`identity, service, taskid`, then ≥1 data frame — even an empty result
+/// carries one empty data frame); fewer ⇒ `Err(reason)` for the rate-limited discard log. Pure
+/// (no I/O), so it is unit-tested directly.
+fn parse_reply_envelope(msg: &ZmqMessage) -> Result<ReplyHeader, &'static str> {
+  if msg.len() < 4 {
+    return Err("truncated reply: fewer than 4 frames (no data frame after taskid)");
+  }
+  let frame_str = |i: usize, default: &str| -> String {
+    msg
+      .get(i)
+      .and_then(|f| std::str::from_utf8(f).ok())
+      .unwrap_or(default)
+      .to_string()
+  };
+  Ok(ReplyHeader {
+    identity: frame_str(0, "_worker_"),
+    service: frame_str(1, "_unknown_"),
+    taskid: frame_str(2, "-1").parse::<i64>().unwrap_or(-1),
+  })
+}
 
 /// Specifies the binding and operation parameters for a ZMQ sink component
 pub struct Sink {
@@ -25,6 +191,8 @@ pub struct Sink {
   pub message_size: usize,
   /// address for the Task store postgres endpoint
   pub backend_address: String,
+  /// non-blocking handle to the background worker-metadata writer
+  pub metadata: WorkerMetadataSender,
 }
 
 impl Sink {
@@ -32,156 +200,353 @@ impl Sink {
   /// The sink shares state with other manager threads via queues for tasks in progress,
   /// as well as a queue for completed tasks pending persisting to disk.
   /// A job limit can be provided as a termination condition for the sink server.
+  ///
+  /// **Phase 5a (transport swap):** the receive loop now runs on the pure-Rust async `zeromq`
+  /// transport, driven by a current-thread tokio runtime this sink thread owns. `zeromq` delivers
+  /// each result as **one atomic multipart [`ZmqMessage`]**, which retires the libzmq
+  /// frame-by-frame desync bug class (D-4/D-12): a malformed reply is just a message with too few
+  /// frames, discarded by dropping it — it can no longer swallow the next reply. The blocking
+  /// `/data` write + `cortex.log` parse stay fanned out to the **unchanged** phase-3
+  /// [`run_writer`] std-thread pool (size `dispatcher.sink_writers`); the blocking channel sends
+  /// to it (and to the done channel) from this single-task runtime are the correct backpressure —
+  /// when the disk or DB can't keep up, the loop stops receiving and the workers back off.
+  /// **Note:** `zeromq` exposes no TCP-keepalive knob, so `dispatcher.tcp_keepalive_idle_seconds`
+  /// no longer applies to the sink PULL socket; keepalive was stability-only (remote-worker NAT
+  /// mappings) and the lease reaper remains the correctness net.
   pub fn start(
     &self,
-    services_arc: &Arc<Mutex<HashMap<String, Option<Service>>>>,
-    progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>,
-    done_queue_arc: &Arc<Mutex<Vec<TaskReport>>>,
+    services_arc: &Arc<server::ServiceCache>,
+    sandboxes_arc: &Arc<server::SandboxCache>,
+    progress_queue_arc: &Arc<server::InFlightSet>,
+    done_tx: &SyncSender<TaskReport>,
     job_limit: Option<usize>,
+    dispatch_complete: &Arc<AtomicBool>,
   ) -> Result<(), Box<dyn Error>> {
-    // Ok, let's bind to a port and start broadcasting
-    let context = zmq::Context::new();
-    let sink = context.socket(zmq::PULL)?;
-    let address = format!("tcp://*:{}", self.port);
-    sink.bind(&address).unwrap();
+    // Hard cap on a single result's on-disk size (config `dispatcher.max_result_bytes`, default
+    // 2 GiB): a runaway worker must not fill `/data`.
+    let max_result_bytes = config().dispatcher.max_result_bytes;
 
-    let mut sink_job_count: usize = 0;
+    // Spin up the archive-writer pool (D-7 fan-out). Each writer owns a bounded command channel and
+    // a clone of the done sender; the receive loop keeps the senders + handles to stream work and
+    // to detect a writer death.
+    let num_writers = config().dispatcher.sink_writers.max(1);
+    let mut writer_txs: Vec<SyncSender<WriteCommand>> = Vec::with_capacity(num_writers);
+    let mut writer_handles: Vec<JoinHandle<()>> = Vec::with_capacity(num_writers);
+    for _ in 0..num_writers {
+      let (tx, rx) = sync_channel::<WriteCommand>(SINK_WRITER_CHANNEL_CAPACITY);
+      let writer_done_tx = done_tx.clone();
+      writer_txs.push(tx);
+      writer_handles.push(thread::spawn(move || run_writer(&rx, &writer_done_tx)));
+    }
+    let mut next_writer = 0_usize;
 
-    loop {
-      let mut recv_msg = zmq::Message::new();
-      let mut identity_msg = zmq::Message::new();
-      let mut taskid_msg = zmq::Message::new();
-      let mut service_msg = zmq::Message::new();
+    let address = format!("tcp://0.0.0.0:{}", self.port);
 
-      sink.recv(&mut identity_msg, 0)?;
-      let identity = identity_msg.as_str().unwrap_or("_worker_");
+    // A current-thread runtime is right: there is one PULL socket and one receive loop, and
+    // blocking it on writer/done-channel backpressure is exactly the flow control we want (stop
+    // receiving when the pipeline downstream is full). The writer pool threads drain
+    // independently, so a blocking send here always makes progress.
+    let runtime = tokio::runtime::Builder::new_current_thread()
+      .enable_all()
+      .build()?;
 
-      sink.recv(&mut service_msg, 0)?;
-      let service_name = service_msg.as_str().unwrap_or("_unknown_");
-
-      sink.recv(&mut taskid_msg, 0)?;
-      let taskid_str = taskid_msg.as_str().unwrap_or("-1");
-      let taskid = taskid_str.parse::<i64>().unwrap_or(-1);
-
-      // We have a job, count it
-      sink_job_count += 1;
-      let mut total_incoming = 0;
-      let request_time = time::get_time();
-      println!(
-        "sink {sink_job_count:?}: incoming result for {service_name:?}, worker {identity:?}, taskid: {taskid}");
-
-      if let Some(task_progress) = server::pop_progress_task(progress_queue_arc, taskid) {
-        let task = task_progress.task;
-        match server::get_service(service_name, services_arc) {
-          None => {
-            return Err(Box::new(io::Error::other(
-              "TODO: Server::get_service found nothing.",
-            )));
-          }, // TODO: Handle errors
-          Some(service) => {
-            if service.id == task.service_id {
-              // println!("Task and Service match up.");
-              if service.id == 1 {
-                // No payload needed for init
-                sink.recv(&mut recv_msg, 0)?;
-                let done_report = TaskReport {
-                  task: task.clone(),
-                  status: TaskStatus::NoProblem,
-                  messages: Vec::new(),
-                };
-                server::push_done_queue(done_queue_arc, done_report);
-              } else {
-                // Receive the rest of the input in the correct file
-                match Path::new(&task.entry.clone()).parent() {
-                  None => {
-                    println!("-- Error TODO: Path::new(&task.entry).parent() failed.");
-                  },
-                  Some(recv_dir) => {
-                    match recv_dir.to_str() {
-                      None => {
-                        println!("-- Error TODO: recv_dir.to_str() failed");
-                      },
-                      Some(recv_dir_str) => {
-                        let recv_dir_string = recv_dir_str.to_string();
-                        let recv_pathname = recv_dir_string + "/" + &service.name + ".zip";
-                        let recv_path = Path::new(&recv_pathname);
-                        // println!("Will write to {:?}", recv_path);
-                        {
-                          // Explicitly scope file, so that we drop it the moment we are done
-                          // writing.
-                          let mut file = match File::create(recv_path) {
-                            Ok(f) => f,
-                            Err(e) => {
-                              println!("-- Error TODO: File::create(recv_path): {e:?}");
-                              continue;
-                            },
-                          };
-                          while sink.recv(&mut recv_msg, 0).is_ok() {
-                            match file.write(recv_msg.deref()) {
-                              Ok(written_bytes) => total_incoming += written_bytes,
-                              Err(e) => {
-                                println!(
-                                  "-- Error TODO: file.write(recv_msg.deref()) failed: {e:?}"
-                                );
-                                break;
-                              },
-                            };
-                            match sink.get_rcvmore() {
-                              Ok(true) => {}, // keep receiving
-                              _ => break,     /* println!("Error TODO: sink.get_rcvmore failed:
-                                                * {:?}", e); */
-                            };
-                          }
-                          drop(file);
-                        }
-                        // Then mark the task done. This can be in a new thread later on
-                        let done_report = helpers::generate_report(task, recv_path);
-                        server::push_done_queue(done_queue_arc, done_report);
-                      },
-                    }
-                  },
-                }
-              }
-              // Also update worker metadata for transparency
-              WorkerMetadata::record_received(
-                identity.to_string(),
-                service.id,
-                taskid,
-                self.backend_address.clone(),
-              )?;
-            } else {
-              // Otherwise just discard the rest of the message
-              println!(
-                "-- Mismatch between requested service id {:?} and task's service id {:?} for task {:?}, discarding response",
-                service.id, task.service_id, taskid
+    let recv_result: Result<(), Box<dyn Error>> = runtime.block_on(async {
+      // Retry the bind briefly (mirrors the ventilator) so a port handover from a
+      // restarting dispatcher doesn't crash-loop the sink on EADDRINUSE.
+      let mut pull = {
+        const BIND_ATTEMPTS: u32 = 15;
+        let mut attempt = 1u32;
+        loop {
+          let mut p = PullSocket::new();
+          match p.bind(&address).await {
+            Ok(_) => break p,
+            Err(e) if attempt < BIND_ATTEMPTS => {
+              warn!(
+                "sink: bind {address} attempt {attempt}/{BIND_ATTEMPTS} failed ({e}); \
+                 retrying in 500ms (port handover from a restarting dispatcher?)"
               );
-              while sink.recv(&mut recv_msg, 0).is_ok() {
-                if !sink.get_rcvmore()? {
-                  break;
-                }
-              }
-            }
-          },
-        };
-      } else {
-        // No such task, just discard the next message from the sink
-        println!("-- No such task id found in dispatcher queue: {taskid:?}");
-        while sink.recv(&mut recv_msg, 0).is_ok() {
-          if !sink.get_rcvmore()? {
-            break;
+              tokio::time::sleep(Duration::from_millis(500)).await;
+              attempt += 1;
+            },
+            Err(e) => {
+              return Err(io::Error::other(format!(
+                "sink: zeromq bind {address} failed after {BIND_ATTEMPTS} attempts: {e}"
+              ))
+              .into());
+            },
           }
         }
-      }
-      let responded_time = time::get_time();
-      let request_duration = (responded_time - request_time).num_milliseconds();
-      println!("sink {sink_job_count}: message size: {total_incoming}, took {request_duration}ms.");
-      if let Some(limit_number) = job_limit {
-        if sink_job_count >= limit_number {
-          println!("sink {limit_number}: job limit reached, terminating Sink thread...");
+      };
+
+      let mut sink_job_count: usize = 0;
+      // Rate-limited logging for discarded replies (malformed envelopes, unknown task ids). A
+      // sustained bad-reply flood must not turn per-message `stderr` writes into a throughput-DoS
+      // (KNOWN_ISSUES D-11) — count, don't narrate.
+      let mut discard_log = server::RateLimitedLog::new(Duration::from_secs(5));
+      // A bounded run (`job_limit = Some(_)`) must be able to stop once the ventilator signals
+      // dispatching is done and the in-flight set has drained; a perpetual production run
+      // (`job_limit = None`) blocks plainly forever (terminated only by the manager's supervised
+      // abort), exactly as before.
+      let bounded = job_limit.is_some();
+
+      loop {
+        // Fail-fast: a writer thread that died (e.g. a panic in `generate_report`) must bring down
+        // the dispatcher, not leave a half-working pipeline. Detect it promptly here (and again via
+        // a send error below) so the manager aborts for a supervised restart (CLAUDE.md fail-fast).
+        if let Some(idx) = writer_handles.iter().position(JoinHandle::is_finished) {
+          return Err(Box::<dyn Error>::from(io::Error::other(format!(
+            "sink writer thread {idx} died unexpectedly; aborting for a supervised restart"
+          ))));
+        }
+
+        // One atomic multipart message: `[identity, service, taskid, ...data]`. No RCVMORE dance —
+        // the whole message arrives at once, so a short/malformed reply is just a short frame
+        // vector (handled by `parse_reply_envelope`), never a desync of the next reply.
+        //
+        // Bounded run: poll the recv so we wake to re-check the shared completion signal even when
+        // no result is arriving (e.g. the ventilator finished and the last result already landed
+        // before `dispatch_complete` flipped). The timeout only ever fires while idle — i.e. with
+        // nothing mid-delivery — and `recv()` is cancel-safe, so dropping the timed-out future
+        // loses no message (KNOWN_ISSUES D-5).
+        let recv_outcome = if bounded {
+          match tokio::time::timeout(SINK_TERMINATION_POLL, pull.recv()).await {
+            Ok(inner) => inner,
+            Err(_elapsed) => {
+              if dispatch_complete.load(Ordering::Acquire) && progress_queue_arc.is_empty() {
+                info!("sink: dispatching complete and in-flight drained; terminating sink");
+                break;
+              }
+              continue;
+            },
+          }
+        } else {
+          pull.recv().await
+        };
+        let msg = match recv_outcome {
+          Ok(m) => m,
+          Err(e) => {
+            return Err(Box::<dyn Error>::from(io::Error::other(format!(
+              "sink: zeromq recv failed: {e}"
+            ))))
+          },
+        };
+
+        let header = match parse_reply_envelope(&msg) {
+          Ok(h) => h,
+          Err(reason) => {
+            if let Some(n) = discard_log.record() {
+              warn!("sink: discarded {n} malformed reply(ies) [latest: {reason}] (rate-limited)");
+            }
+            continue;
+          },
+        };
+
+        sink_job_count += 1;
+        let taskid = header.taskid;
+        let request_time = chrono::Utc::now();
+        trace!(
+          "sink {sink_job_count}: incoming result for {:?}, worker {:?}, taskid: {taskid}",
+          header.service,
+          header.identity
+        );
+
+        if let Some(task_progress) = progress_queue_arc.remove(taskid) {
+          let task = task_progress.task;
+          match server::get_service(&header.service, services_arc) {
+            None => {
+              return Err(Box::<dyn Error>::from(io::Error::other(
+                "sink: get_service found nothing",
+              )));
+            },
+            Some(service) => {
+              if service.id == task.service_id {
+                if service.id == 1 {
+                  // No payload needed for init — its (empty) data frames are ignored; report inline,
+                  // no disk write, so no writer involved.
+                  server::send_done(
+                    done_tx,
+                    TaskReport {
+                      task,
+                      status: TaskStatus::NoProblem,
+                      messages: Vec::new(),
+                    },
+                  );
+                } else {
+                  // Derive the result path (cheap, no I/O): `<entry-dir>/<service>.zip`, or a
+                  // sandbox-scoped name when this task's corpus is a sandbox (lock-free cache read,
+                  // memoised by the ventilator on dispatch — F-6).
+                  let sandbox_id = server::get_sandbox_id(task.corpus_id, sandboxes_arc);
+                  let recv_path_opt =
+                    helpers::result_archive_path(&task.entry, &service.name, sandbox_id);
+
+                  // Hard size cap (disk protection): sum the data frames; an over-cap result is
+                  // rejected (Invalid) without being written. The whole multipart message is already
+                  // received (ZMQ delivers it atomically — true of libzmq too), so this is the same
+                  // disk-protection guarantee as the streamed check, just computed up front.
+                  let data_bytes: usize = msg.iter().skip(3).map(|f| f.len()).sum();
+                  let oversized = data_bytes > max_result_bytes;
+
+                  let widx = next_writer;
+                  next_writer = (next_writer + 1) % num_writers;
+                  match recv_path_opt {
+                    Some(recv_path) => {
+                      // `Begin` moves the task to the writer; a send error means that writer died →
+                      // fail-fast.
+                      if writer_txs[widx]
+                        .send(WriteCommand::Begin {
+                          task: Box::new(task),
+                          recv_path,
+                        })
+                        .is_err()
+                      {
+                        return Err(Box::<dyn Error>::from(io::Error::other(
+                          "sink writer thread died while beginning a result; aborting",
+                        )));
+                      }
+                      if oversized {
+                        if writer_txs[widx]
+                          .send(WriteCommand::Reject { max_result_bytes })
+                          .is_err()
+                        {
+                          return Err(Box::<dyn Error>::from(io::Error::other(
+                            "sink writer thread died while rejecting a result; aborting",
+                          )));
+                        }
+                      } else {
+                        for frame in msg.iter().skip(3) {
+                          if writer_txs[widx]
+                            .send(WriteCommand::Chunk(frame.to_vec()))
+                            .is_err()
+                          {
+                            return Err(Box::<dyn Error>::from(io::Error::other(
+                              "sink writer thread died while streaming a result; aborting",
+                            )));
+                          }
+                        }
+                        if writer_txs[widx].send(WriteCommand::Commit).is_err() {
+                          return Err(Box::<dyn Error>::from(io::Error::other(
+                            "sink writer thread died while finishing a result; aborting",
+                          )));
+                        }
+                      }
+                    },
+                    None => {
+                      warn!(
+                        "sink: could not derive a result path for task entry {:?}; leaving Queued",
+                        task.entry
+                      );
+                    },
+                  }
+                }
+                // Update worker metadata (non-blocking enqueue to the background writer).
+                self
+                  .metadata
+                  .received(header.identity.clone(), service.id, taskid);
+              } else if let Some(n) = discard_log.record() {
+                warn!(
+                  "sink: discarded {n} reply(ies) [latest: service-id mismatch — service {:?} (id {}), task is {}, task {taskid}] (rate-limited)",
+                  header.service, service.id, task.service_id
+                );
+              }
+            },
+          };
+        } else if let Some(n) = discard_log.record() {
+          // No such in-flight task — drop the message (already fully received; nothing to drain).
+          warn!(
+            "sink: discarded {n} reply(ies) for unknown task id(s) [latest: {taskid}] (rate-limited)"
+          );
+        }
+
+        let request_duration = (chrono::Utc::now() - request_time).num_milliseconds();
+        let total_incoming: usize = msg.iter().skip(3).map(|f| f.len()).sum();
+        trace!(
+          "sink {sink_job_count}: received {total_incoming} bytes, recv took {request_duration}ms."
+        );
+
+        // Bounded run: terminate once the ventilator has signalled dispatching is done AND every
+        // dispatched task has come back (the in-flight set is empty) — the shared completion
+        // condition that replaced the old per-thread `sink_job_count >= limit` (KNOWN_ISSUES D-5).
+        // Checked here right after a result lands (so the run ends promptly when the last one
+        // arrives) and on the recv-timeout poll above (so a sink already blocked when the signal
+        // flips still wakes to notice).
+        if bounded && dispatch_complete.load(Ordering::Acquire) && progress_queue_arc.is_empty() {
+          info!("sink: dispatching complete and in-flight drained; terminating sink");
           break;
         }
       }
+      Ok(())
+    });
+
+    // Shut the writer pool down cleanly: dropping the senders disconnects each writer's channel; it
+    // drains any buffered commands first (so the final `Commit` still reaches finalize —
+    // loss-free), then exits. Join them before returning so a `job_limit` run does not race
+    // teardown.
+    drop(writer_txs);
+    for handle in writer_handles {
+      let _ = handle.join();
     }
-    Ok(())
+    recv_result
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::parse_reply_envelope;
+  use bytes::Bytes;
+  use zeromq::ZmqMessage;
+
+  /// Build a `ZmqMessage` from frame byte-slices (the test analogue of a received reply).
+  fn message(frames: &[&[u8]]) -> ZmqMessage {
+    let mut iter = frames.iter();
+    let first = iter.next().expect("at least one frame");
+    let mut msg = ZmqMessage::from(first.to_vec());
+    for f in iter {
+      msg.push_back(Bytes::copy_from_slice(f));
+    }
+    msg
+  }
+
+  #[test]
+  fn parses_a_well_formed_reply() {
+    // [identity, service, taskid, data] — the minimal valid reply (one data frame).
+    let msg = message(&[b"worker-7", b"tex_to_html", b"4242", b"<zip bytes>"]);
+    let header = parse_reply_envelope(&msg).expect("valid envelope");
+    assert_eq!(header.identity, "worker-7");
+    assert_eq!(header.service, "tex_to_html");
+    assert_eq!(header.taskid, 4242);
+  }
+
+  #[test]
+  fn rejects_a_reply_with_no_data_frame() {
+    // Exactly 3 frames (no data) is the D-12 shape — must be discarded, not accepted. With atomic
+    // message delivery this can no longer swallow the next reply (it's just a short frame vector).
+    let msg = message(&[b"worker-7", b"tex_to_html", b"4242"]);
+    assert!(parse_reply_envelope(&msg).is_err());
+  }
+
+  #[test]
+  fn rejects_an_empty_or_identity_only_reply() {
+    assert!(parse_reply_envelope(&message(&[b""])).is_err());
+    assert!(parse_reply_envelope(&message(&[b"worker-7"])).is_err());
+    assert!(parse_reply_envelope(&message(&[b"worker-7", b"svc"])).is_err());
+  }
+
+  #[test]
+  fn defaults_a_non_numeric_taskid_to_minus_one() {
+    let msg = message(&[b"w", b"svc", b"not-a-number", b"data"]);
+    let header = parse_reply_envelope(&msg).expect("valid frame count");
+    assert_eq!(
+      header.taskid, -1,
+      "an unpar'seable taskid is -1 (unknown), not a panic"
+    );
+  }
+
+  #[test]
+  fn tolerates_non_utf8_header_frames() {
+    // A hostile/garbled identity must not panic the parse — it falls back to the default label.
+    let msg = message(&[&[0xff, 0xfe], b"svc", b"7", b"data"]);
+    let header = parse_reply_envelope(&msg).expect("valid frame count");
+    assert_eq!(header.identity, "_worker_");
+    assert_eq!(header.taskid, 7);
   }
 }

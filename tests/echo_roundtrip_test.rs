@@ -5,7 +5,7 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 use cortex::backend;
-use cortex::backend::TEST_DB_ADDRESS;
+use cortex::backend::test_db_address;
 use cortex::dispatcher::manager::TaskManager;
 use cortex::helpers::TaskStatus;
 use cortex::importer::Importer;
@@ -93,7 +93,8 @@ fn mock_round_trip() {
       result_port: 52696,
       queue_size: 100,
       message_size: 100,
-      backend_address: TEST_DB_ADDRESS.to_string(),
+      backend_address: test_db_address().to_string(),
+      ..TaskManager::default()
     };
     assert!(manager.start(job_limit).is_ok());
   });

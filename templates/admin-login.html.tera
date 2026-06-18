@@ -1,0 +1,30 @@
+{% extends "layout" %} {% block content %}
+<div class="col-md-4"></div>
+<div class="col-md-4">
+  <div class="center">
+    <h1>Admin sign-in</h1>
+    {% if bad %}
+    <p class="status-bad"><strong>That token was not recognized.</strong> Please try again.</p>
+    {% endif %}
+    <p>Enter a CorTeX admin token to reach the administration dashboard.</p>
+    <form method="post" action="/admin/login">
+      {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+      <p><input type="password" name="token" placeholder="admin token" aria-label="Admin token" required autofocus></p>
+      <button type="submit">Sign in</button>
+    </form>
+
+    {% if passkeys_enabled %}
+    <div class="divided-section">
+      <p>or sign in with a passkey:</p>
+      <p><input type="text" id="passkey-owner" placeholder="your name" aria-label="Your name (for passkey sign-in)" autocomplete="username webauthn"></p>
+      <button type="button" id="signin-passkey" {% if next %}data-next="{{ next }}"{% endif %}><i class="fa fa-key"></i>&nbsp; Sign in with a passkey</button>
+      <p id="passkey-error" class="status-bad gap-top-sm"></p>
+    </div>
+    {% endif %}
+
+    <p class="gap-top-lg"><a href="/">&larr; back to the public overview</a></p>
+  </div>
+</div>
+<div class="col-md-4"></div>
+{% if passkeys_enabled %}<script src="/public/js/webauthn.js"></script>{% endif %}
+{% endblock content %}

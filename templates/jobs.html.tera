@@ -1,0 +1,56 @@
+{% extends "layout" %}
+{% block head_extra %}{% if has_active %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock head_extra %}
+{% block content %}
+<div class="center">
+  <h1>Background jobs</h1>
+  {% if has_active %}<p><em>Auto-refreshing every 5s while jobs are in flight…</em></p>{% endif %}
+  <p>
+    {% if active %}<a href="/jobs">All</a> &nbsp;·&nbsp; <strong>Pending only</strong>
+    {% else %}<strong>All</strong> &nbsp;·&nbsp; <a href="/jobs?active=true">Pending only</a>{% endif %}
+    &nbsp;·&nbsp; <a href="/api/jobs{% if active %}?active=true{% endif %}">JSON</a>
+  </p>
+  <form method="post" action="/reports/refresh" class="refresh-reports-form">
+    <label>Force a report refresh (rebuilds the rollup behind every report; runs as a background job):</label>
+    <button type="submit">Refresh reports now</button>
+  </form>
+  <br>
+  {% if jobs | length == 0 %}
+  <p>No {% if active %}pending {% endif %}jobs.</p>
+  {% else %}
+  <div class="report-layout">
+    <table id="jobs-report" class="table table-striped">
+        <thead>
+          <tr>
+            <th scope="col" class="left">Kind</th>
+            <th scope="col" class="left">Actor</th>
+            <th scope="col" class="left">Health</th>
+            <th scope="col" class="right">Progress</th>
+            <th scope="col" class="right">Duration (s)</th>
+            <th scope="col" class="left">Started</th>
+            <th scope="col" class="left">Updated</th>
+            <th scope="col" class="right" title="Seconds since the last progress update; for a running job this is its heartbeat age — a large value flags a stalled job.">Idle (s)</th>
+            <th scope="col" class="left">Message</th>
+            <th scope="col" class="left">Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for job in jobs %}
+          <tr>
+            <td class="left">{{job.kind}}</td>
+            <td class="left">{{job.actor}}</td>
+            <td class="left">{% if job.health == "ok" %}<span class="status-ok">ok</span>{% elif job.health == "failed" or job.health == "interrupted" or job.health == "unknown" %}<span class="status-bad">{{job.health}}</span>{% else %}{{job.health}}{% endif %}</td>
+            <td class="right">{{ job.progress_current | group_thousands }}{% if job.progress_total %}/{{ job.progress_total | group_thousands }}{% endif %}</td>
+            <td class="right">{{job.duration_seconds}}</td>
+            <td class="left"><time datetime="{{job.created_at}}">{{job.created_at}}</time></td>
+            <td class="left"><time datetime="{{job.updated_at}}">{{job.updated_at}}</time></td>
+            <td class="right">{% if job.health == "running" or job.health == "pending" %}{% if job.seconds_since_update >= stale_timeout %}<span class="status-warn" title="Idle past the {{stale_timeout}}s stall threshold — likely stuck (the reaper will mark it interrupted).">{{job.seconds_since_update}}&nbsp;⚠</span>{% else %}{{job.seconds_since_update}}{% endif %}{% else %}—{% endif %}</td>
+            <td class="left">{{job.message}}</td>
+            <td class="left"><a href="/jobs/{{job.uuid}}">view</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock content %}

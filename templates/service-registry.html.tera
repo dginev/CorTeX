@@ -1,0 +1,63 @@
+{% extends "layout" %} {% block content %}
+<div class="center">
+  <h1>Registered services</h1>
+  <p>
+    <a href="/api/services">JSON</a>
+  </p>
+  <br>
+  {% if services | length == 0 %}
+  <p>No services registered yet.</p>
+  {% else %}
+  <div class="row">
+    <div class="col-md-1"></div>
+    <div class="col-md-10">
+      <table id="service-registry" class="table table-striped">
+        <thead>
+          <tr>
+            <th scope="col" class="left">Service</th>
+            <th scope="col" class="right">Version</th>
+            <th scope="col" class="left">Input &rarr; Output</th>
+            <th scope="col" class="left">Input converter</th>
+            <th scope="col" class="center">Complex</th>
+            <th scope="col" class="left">Description</th>
+            <th scope="col" class="left">Workers</th>
+            <th scope="col" class="left">Manage</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for service in services %}
+          <tr>
+            <td class="left">{{service.name}}</td>
+            <td class="right">{{service.version}}</td>
+            <td class="left">{{service.inputformat}} &rarr; {{service.outputformat}}</td>
+            <td class="left">{{service.inputconverter}}</td>
+            <td class="center">{{service.complex}}</td>
+            <td class="left">{{service.description}}</td>
+            <td class="left"><a href="/workers/{{service.name_uri}}">fleet</a></td>
+            <td class="left">
+              {% if service.name == "init" or service.name == "import" %}
+              <span class="muted" title="Infrastructure service — cannot be deleted">protected</span>
+              {% else %}
+              <a href="/services/{{service.name_uri}}/activate">register on corpus</a>
+              &nbsp;&middot;&nbsp;
+              <form method="post" action="/services/{{service.name_uri}}/delete" class="inline-form"
+                onsubmit="return confirm('Permanently delete service &quot;{{service.name}}&quot; and ALL of its tasks + log messages across every corpus? This cannot be undone.');">
+                <input type="hidden" name="confirm" value="{{service.name}}">
+                <button type="submit" class="danger">Delete</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="col-md-1"></div>
+  </div>
+  {% endif %}
+
+  <hr>
+  <p><a href="/services/new"><strong>+ Add a service</strong></a> &mdash; define a new service and register it on
+    corpora in one step</p>
+</div>
+{% endblock content %}

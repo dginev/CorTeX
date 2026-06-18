@@ -1,0 +1,70 @@
+{% extends "layout" %} {% block content %}
+<div class="col-md-3"></div>
+<div class="col-md-6">
+  <h1>Job progress</h1>
+  <p class="muted">Job <code id="uuid">{{ uuid }}</code></p>
+  <p>Status: <span id="status" class="status">…</span> &middot; <span id="kind" class="muted"></span></p>
+  <p id="duration" class="muted" hidden></p>
+  <progress id="bar" max="1" value="0"></progress>
+  <p id="message" class="muted"></p>
+  <pre id="result" hidden></pre>
+  <p id="next-step" class="status-ok"></p>
+  <p><a href="/jobs">&larr; all background jobs</a></p>
+
+  <script>
+    // Vanilla fetch polling — no JS framework (D11). Light and dependency-free.
+    const uuid = document.getElementById('uuid').textContent;
+    const terminal = ['succeeded', 'failed', 'interrupted'];
+    let timer = null;
+    function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+    // Human-friendly elapsed time from the DTO's duration_seconds (updated_at - created_at).
+    function formatDuration(s) {
+      s = Math.max(0, s | 0);
+      if (s < 60) return s + 's';
+      if (s < 3600) return Math.floor(s / 60) + 'm ' + (s % 60) + 's';
+      return Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm';
+    }
+    // What to do next once a job succeeds — turns "submit → wait" into a guided flow.
+    function nextStep(job) {
+      const p = job.params || {};
+      const link = (href, text) => 'Next → <a href="' + href + '">' + text + '</a>';
+      const corpus = (name) => '/corpus/' + encodeURIComponent(name);
+      switch (job.kind) {
+        case 'corpus_import': return p.name ? link(corpus(p.name), 'register a service on ' + esc(p.name)) : '';
+        case 'corpus_extend': return p.name ? link(corpus(p.name), 'view ' + esc(p.name)) : '';
+        case 'corpus_sandbox': return p.name ? link(corpus(p.name), 'view the sandbox ' + esc(p.name)) : '';
+        case 'service_activate': return (p.corpus && p.service)
+          ? link(corpus(p.corpus) + '/' + encodeURIComponent(p.service), 'watch the conversion report') : '';
+        case 'refresh_reports': case 'reindex': case 'analyze': return link('/health', 'back to system health');
+        default: return '';
+      }
+    }
+    async function poll() {
+      let resp;
+      try { resp = await fetch('/api/jobs/' + uuid); } catch (e) { return; }
+      if (!resp.ok) { document.getElementById('status').textContent = 'not found'; if (timer) clearInterval(timer); return; }
+      const job = await resp.json();
+      const status = document.getElementById('status');
+      status.textContent = job.status;
+      status.className = 'status' + (job.status === 'succeeded' ? ' ok' : (job.status === 'failed' || job.status === 'interrupted' ? ' fail' : ''));
+      document.getElementById('kind').textContent = job.kind;
+      document.getElementById('message').textContent = job.message || '';
+      const bar = document.getElementById('bar');
+      if (job.progress_total) { bar.max = job.progress_total; bar.value = job.progress_current; }
+      if (terminal.includes(job.status)) {
+        if (timer) clearInterval(timer);
+        if (typeof job.duration_seconds === 'number') {
+          const dur = document.getElementById('duration');
+          dur.textContent = 'Total time: ' + formatDuration(job.duration_seconds);
+          dur.hidden = false;
+        }
+        if (job.result) { const r = document.getElementById('result'); r.hidden = false; r.textContent = JSON.stringify(job.result, null, 2); }
+        if (job.status === 'succeeded') { document.getElementById('next-step').innerHTML = nextStep(job); }
+      }
+    }
+    timer = setInterval(poll, 1000);
+    poll();
+  </script>
+</div>
+<div class="col-md-3"></div>
+{% endblock content %}

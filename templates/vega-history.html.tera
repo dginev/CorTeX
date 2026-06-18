@@ -1,49 +1,83 @@
 <!-- Container for the visualization -->
-<div id="vis"></div>
+<div class="history-chart">
+  <div id="vis"></div>
+</div>
 
 <script>
-  // Assign the specification to a local variable vlSpec.
-  var vlSpec = {
+  // The run-quality bar chart, themed from the page's design tokens so it respects light/dark mode.
+  // Vega renders an SVG with explicit colors (it can't read CSS custom properties directly), so we
+  // read the tokens off <html> with getComputedStyle and feed them into the Vega config + the
+  // severity colour scale — then re-render when the theme toggles (the nav switches data-theme).
+  var historySpec = {
     "$schema": "https://vega.github.io/schema/vega-lite/v3.json",
-    "autosize": {
-      "type": "pad",
-    },
+    "autosize": { "type": "pad" },
     "data": {
       "values": {{ history_serialized | safe}}
     },
-  "title": {
-    "text": "Success rates from {{ global.history_length }} runs of {{global.service_name}} over {{global.corpus_name | safe}}",
+    "title": {
+      "text": "Success rates from {{ global.history_length }} runs of {{global.service_name}} over {{global.corpus_name}}",
       "anchor": "start"
-  },
-  "mark": "bar",
+    },
+    "mark": "bar",
     "encoding": {
-    "x": {
-      "field": "start_time", "type": "ordinal", "timeUnit": "yearmonthdatehoursminutes",
-        "axis": {
-        "labelAngle": -90,
-          "orient": "bottom"
-      }
-    },
-    "y": {
-      "aggregate": "sum", "field": "percent", "type": "quantitative",
-    },
-    "tooltip": [
-      { "field": "description", "type": "nominal" },
-      { "field": "severity", "type": "nominal" },
-      { "field": "percent", "type": "quantitative", "format": ".2f" },
-      { "field": "total", "type": "ordinal" },
-      { "field": "start_time", "type": "ordinal", "timeUnit": "yearmonthdate" },
-      { "field": "end_time", "type": "ordinal", "timeUnit": "yearmonthdate" },
-    ],
+      "x": {
+        "field": "start_time", "type": "ordinal", "timeUnit": "yearmonthdatehoursminutes",
+        "axis": { "labelAngle": -90, "orient": "bottom" }
+      },
+      "y": { "aggregate": "sum", "field": "percent", "type": "quantitative" },
+      "tooltip": [
+        { "field": "description", "type": "nominal" },
+        { "field": "severity", "type": "nominal" },
+        { "field": "percent", "type": "quantitative", "format": ".2f" },
+        { "field": "total", "type": "ordinal" },
+        { "field": "start_time", "type": "ordinal", "timeUnit": "yearmonthdate" },
+        { "field": "end_time", "type": "ordinal", "timeUnit": "yearmonthdate" }
+      ],
       "color": {
-      "field": "severity", "type": "nominal",
-        "scale": {
-        "domain": ["fatal", "error", "warning", "no_problem", "in_progress"],
-          "range": ["#dc3545", "#FFA500", "#FFFACD", "#28a745", "#eaf7ff"]
-      }
-    },
-    "order": { "field": "severity_numeric", "type": "quantitative", "sort": "ascending" }
-  }};
-  // Embed the visualization in the container with id `vis`
-  vegaEmbed('#vis', vlSpec);
+        "field": "severity", "type": "nominal",
+        "scale": { "domain": ["fatal", "error", "warning", "no_problem", "in_progress"] },
+        "legend": { "title": "Severity" }
+      },
+      "order": { "field": "severity_numeric", "type": "quantitative", "sort": "ascending" }
+    }
+  };
+
+  function cortexToken(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function renderHistoryChart() {
+    var ink = cortexToken('--ink');
+    var inkMuted = cortexToken('--ink-muted');
+    var bg = cortexToken('--bg-elev');
+    var rule = cortexToken('--rule');
+    var sans = cortexToken('--sans') || 'sans-serif';
+    var spec = JSON.parse(JSON.stringify(historySpec));
+    // Severity palette straight from the design tokens, so the chart matches the report bars in
+    // either theme (fatal→bad, error→deep-orange, warning→warn, no_problem→ok, in_progress→muted).
+    spec.encoding.color.scale.range = [
+      cortexToken('--bad'), cortexToken('--orange-deep'), cortexToken('--warn'),
+      cortexToken('--ok'), inkMuted
+    ];
+    spec.config = {
+      font: sans,
+      background: bg,
+      title: { color: ink, fontWeight: 600 },
+      axis: {
+        labelColor: inkMuted, titleColor: ink, tickColor: rule,
+        domainColor: rule, gridColor: rule
+      },
+      legend: { labelColor: ink, titleColor: inkMuted },
+      view: { stroke: 'transparent' }
+    };
+    vegaEmbed('#vis', spec, { actions: true, renderer: 'svg' });
+  }
+
+  renderHistoryChart();
+  // Re-theme the chart when the nav toggle flips data-theme on <html>.
+  new MutationObserver(function (mutations) {
+    for (var i = 0; i < mutations.length; i++) {
+      if (mutations[i].attributeName === 'data-theme') { renderHistoryChart(); break; }
+    }
+  }).observe(document.documentElement, { attributes: true });
 </script>

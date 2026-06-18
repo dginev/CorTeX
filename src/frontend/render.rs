@@ -1,0 +1,97 @@
+//! Report-rendering layer: the thin presentation proxy over [`crate::backend::task_report`] that
+//! the HTML report screens use.
+//!
+//! The category/`what` aggregate grains are served by the `report_summary` rollup (an indexed
+//! lookup, kept fresh on the run-completion path), so the former Redis **cache** that shielded the
+//! expensive live aggregation is gone — Redis is no longer a hard dependency of the frontend. This
+//! module (formerly `frontend::cached`, renamed once the cache was removed) now only translates
+//! request params into a [`TaskReportOptions`], delegates, and records the pagination/`report_time`
+//! globals the report templates expect.
+use crate::backend::{TaskReportOptions, task_report as backend_task_report};
+use crate::frontend::params::ReportParams;
+use crate::models::{Corpus, Service};
+use diesel::PgConnection;
+use std::collections::HashMap;
+
+/// Renders a task report, filling in the pagination + provenance globals the templates consume.
+/// Reads over the caller-supplied (pooled) `connection` — no per-request fresh
+/// `Backend::default()`.
+#[allow(clippy::too_many_arguments)]
+pub fn task_report(
+  connection: &mut PgConnection,
+  global: &mut HashMap<String, String>,
+  corpus: &Corpus,
+  service: &Service,
+  severity: Option<String>,
+  category: Option<String>,
+  what: Option<String>,
+  params: &Option<ReportParams>,
+) -> Vec<HashMap<String, String>> {
+  let all_messages = params.as_ref().and_then(|p| p.all).unwrap_or(false);
+  // Clamp the paginate params: an unbounded `page_size` would `LIMIT` a whole entry list into one
+  // render, and a deep `offset` is a multi-second scan-and-discard — both reachable from the public
+  // report screens via the query string. One source of truth in `params` (P-4; also bounds the
+  // agent report endpoints).
+  let offset = params
+    .as_ref()
+    .and_then(|p| p.offset)
+    .unwrap_or(0)
+    .clamp(0, crate::frontend::params::MAX_REPORT_OFFSET);
+  let page_size = params
+    .as_ref()
+    .and_then(|p| p.page_size)
+    .unwrap_or(100)
+    .clamp(1, crate::frontend::params::MAX_REPORT_PAGE_SIZE);
+
+  let fetched_report = backend_task_report(
+    connection,
+    TaskReportOptions {
+      corpus,
+      service,
+      severity_opt: severity,
+      category_opt: category,
+      what_opt: what,
+      all_messages,
+      offset,
+      page_size,
+    },
+  );
+
+  // Pagination + provenance globals for the templates.
+  let from_offset = offset;
+  let to_offset = offset + page_size;
+  global.insert("from_offset".to_string(), from_offset.to_string());
+  if from_offset >= page_size {
+    global.insert("offset_min_false".to_string(), "true".to_string());
+    global.insert(
+      "prev_offset".to_string(),
+      (from_offset - page_size).to_string(),
+    );
+  }
+  // A full page of *data* rows implies there may be another page. Aggregate reports append summary
+  // rows (`total`, `no_messages`) that are not part of the paged set, so exclude them from the
+  // count — otherwise the "next" control would over-signal.
+  let data_rows = fetched_report
+    .iter()
+    .filter(|row| {
+      let name = row.get("name").map(String::as_str).unwrap_or("");
+      name != "total" && name != "no_messages"
+    })
+    .count();
+  if data_rows >= page_size as usize {
+    global.insert("offset_max_false".to_string(), "true".to_string());
+  }
+  global.insert(
+    "next_offset".to_string(),
+    (from_offset + page_size).to_string(),
+  );
+  global.insert("offset".to_string(), offset.to_string());
+  global.insert("page_size".to_string(), page_size.to_string());
+  global.insert("to_offset".to_string(), to_offset.to_string());
+  global.insert(
+    "report_time".to_string(),
+    crate::frontend::helpers::report_timestamp(),
+  );
+
+  fetched_report
+}

@@ -17,19 +17,20 @@
 #[macro_use]
 extern crate diesel;
 #[macro_use]
-extern crate dotenv_codegen;
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
 extern crate rocket;
 
 pub mod backend;
+pub mod bootstrap;
 pub mod concerns;
+pub mod config;
 pub mod dispatcher;
 pub mod frontend;
 pub mod helpers;
 pub mod importer;
+pub mod jobs;
+pub mod migrations;
 pub mod models;
+pub mod observability;
 pub mod reports;
 /// Auto-generated diesel schema for the backend DB
 pub mod schema;

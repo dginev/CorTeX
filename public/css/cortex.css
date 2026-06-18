@@ -1,13 +1,731 @@
+/* === Design tokens: "paper" (light) + "midnight" (dark) =======================================
+   Adopted from ~/git/ar5iv-editor (frontend/src/styles.css). One token vocabulary the whole admin +
+   public UI styles against, so flipping `data-theme` on <html> re-themes everything. The no-FOUC
+   <head> script in `layout.html.tera` sets `data-theme` from localStorage or the OS
+   `prefers-color-scheme` before first paint; the nav toggle (`public/js/theme.js`) switches it. With
+   JS off, `<html data-theme="paper">` is the static default. */
+:root,
+:root[data-theme="paper"] {
+  --bg: #dcdbd2;
+  --bg-elev: #e6e5dc;
+  --bg-sunken: #cdccc3;
+  --ink: #1a1a1a;
+  --ink-soft: #4a4a4a;
+  /* Muted/secondary text. Darkened from #6e6e68 (3.69:1, failed WCAG AA) to reach 4.62:1 on --bg
+     (5.08 on --bg-elev) so timestamps/hints/descriptions clear AA for normal text. */
+  --ink-muted: #5f5f5a;
+  --rule: #b9b8af;
+  --rule-soft: #ceccc2;
+  /* Form-field border — strengthened from --rule (~1.5:1) to clear WCAG 1.4.11 (≥3:1): #767670 on
+     the light bg ≈ 3.4:1, so inputs read as distinct fields. */
+  --field-border: #767670;
+  --accent: #7a3e9d;
+  --accent-soft: #ece1f5;
+  /* Text on the accent fill. Paper's accent is dark, so white reads (#fff on #7a3e9d ≈ 7:1). */
+  --accent-ink: #ffffff;
+  --link: var(--accent);
+  --link-hover: #9a4ec0;
+  --code-bg: #cdccc3;
+  --shadow: 0 1px 2px rgba(40, 30, 20, 0.06);
+  --shadow-lg: 0 6px 24px rgba(40, 30, 20, 0.1);
+  /* Status colors double as readable text (.status-ok/.status-warn etc.). Darkened to clear WCAG AA
+     (4.5:1) on --bg in the light theme: --ok 3.66→4.59, --warn (amber) 2.38→4.57, --orange 3.59→4.58.
+     --bad already passed (4.73). The 16–24% color-mix tint backgrounds barely shift; midnight's
+     status colors already pass AA, so they're unchanged. */
+  --ok: #286c36;
+  --warn: #855511;
+  /* Brighter amber for the progress-bar fill only (a block fill needs no text-contrast darkening,
+     so it isn't tied to the WCAG-tuned --warn above). */
+  --bar-warn: #ca8119;
+  --orange-deep: #9b470c;
+  --bad: #b32424;
+  --serif: "Roboto Slab", "Iowan Old Style", Charter, Georgia, serif;
+  --sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  /* Spacing scale (design tokens) — prefer these over ad-hoc rem values so spacing stays consistent
+     and tunable from one place (variant-independent, so only defined here). */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+}
+:root[data-theme="midnight"] {
+  --bg: #161618;
+  --bg-elev: #1d1d22;
+  --bg-sunken: #101013;
+  --ink: #e8e4dc;
+  --ink-soft: #b8b3a8;
+  /* Muted/secondary text. Lightened from #807a70 (3.95:1 on --bg-elev, failed WCAG AA) to reach
+     4.59:1 on --bg-elev (4.94 on --bg) so muted text clears AA for normal text in the dark theme. */
+  --ink-muted: #8b857c;
+  --rule: #2a2a30;
+  --rule-soft: #1f1f24;
+  /* Form-field border — strengthened from --rule (~1.2:1, invisible) to clear WCAG 1.4.11 (≥3:1 for
+     UI-component boundaries) so inputs are perceptible: #6e6e78 on the dark bg ≈ 3.3:1. */
+  --field-border: #6e6e78;
+  --accent: #c79bff;
+  --accent-soft: #2a1f3a;
+  /* Text that sits ON the accent (e.g. a .btn-primary fill). Midnight's accent is *light*, so the
+     ink must be dark: #161618 on #c79bff ≈ 7.5:1 (white-on-accent was only ~2.2:1, failing AA). */
+  --accent-ink: #161618;
+  --link: var(--accent);
+  --link-hover: #d9b8ff;
+  --code-bg: #1f1f24;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 6px 24px rgba(0, 0, 0, 0.5);
+  --ok: #6dd28a;
+  --warn: #f5b042;
+  --bar-warn: #f5b042;
+  --orange-deep: #e8884a;
+  --bad: #f06363;
+}
+
+/* Accessibility — the "Skip to main content" link (first focusable element in <body>). Visually
+   hidden off the top of the page until it receives keyboard focus, then it slides into view, so
+   keyboard and screen-reader users can bypass the nav and jump straight to <main id="body">.
+   Theme-aware (uses the shared tokens, so it reads correctly in paper and midnight). */
+.skip-link {
+  position: absolute;
+  top: -4rem;
+  left: var(--space-sm);
+  z-index: 2000;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-elev);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  transition: top 0.15s ease;
+}
+.skip-link:focus {
+  top: var(--space-sm);
+  outline: 2px solid var(--accent);
+}
+
+/* Type scale + line-heights (theme-independent — one vocabulary for every font-size, so sizes are
+   consistent and tunable in one place instead of scattered ad-hoc rem/em values). */
+:root {
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.875rem;
+  --fs-base: 1rem;
+  --fs-md: 1.125rem;
+  --fs-lg: 1.375rem;
+  --fs-xl: 1.75rem;
+  --lh-tight: 1.2;
+  --lh-base: 1.55;
+}
+
+/* === Theme application: map the Bootstrap-3 surfaces onto the tokens ========================== */
+html,
+body {
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+}
+a,
+a:link,
+a:visited {
+  color: var(--link);
+  transition: color 0.12s ease;
+}
+a:hover,
+a:focus {
+  color: var(--link-hover);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* Chrome + card links carry their own affordance (menu hover / card lift) — no hover underline. */
+.navbar a:hover,
+.navbar a:focus,
+.corpus-card:hover,
+.corpus-card:focus,
+.brand-logo {
+  text-decoration: none;
+}
+
+/* Chrome: the header + fixed-bottom footer navbars. */
+.navbar-default {
+  background-color: var(--bg-sunken);
+  background-image: none;
+  border-color: var(--rule);
+  box-shadow: var(--shadow);
+}
+.navbar-default .navbar-nav > li > a,
+.navbar-default .navbar-brand,
+.navbar-default .navbar-brand a,
+.navbar-default .navbar-text {
+  color: var(--ink-soft);
+}
+.navbar-default .navbar-nav > li > a:hover,
+.navbar-default .navbar-nav > li > a:focus,
+.navbar-default .navbar-nav > .active > a {
+  color: var(--ink);
+  background-color: var(--bg-elev);
+}
+.navbar-default .navbar-toggle {
+  border-color: var(--rule);
+}
+.navbar-default .navbar-toggle .icon-bar {
+  background-color: var(--ink-soft);
+}
+
+/* Distinguish the right-side action group (Overview / Admin / Theme) from the left breadcrumb trail:
+   render them as compact bordered pill controls, so they don't read as part of the "where am I"
+   path even when the two sit close together. */
+.navbar-default .cortex-admin-nav > li > a {
+  margin: 9px 3px;
+  padding: 6px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  line-height: 1.1;
+  color: var(--ink-soft);
+}
+.navbar-default .cortex-admin-nav > li > a:hover,
+.navbar-default .cortex-admin-nav > li > a:focus {
+  background-color: var(--bg-elev);
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+/* Tables (reports, registries, job lists). */
+.table {
+  color: var(--ink);
+  /* Centre a content-width report table within its column rather than letting a `text-align: center`
+     wrapper leave it left-aligned (a block table ignores text-align). No-op for full-width tables;
+     gives every report tabular (jobs / sessions / audit / runs / …) the same centred layout. */
+  margin-left: auto;
+  margin-right: auto;
+}
+/* Localized timestamps (<time>, see public/js/localtime.js) stay on one line — a date like
+   "Jun 15, 2026, 5:46 AM EDT" should never reflow mid-value in a table cell. */
+time {
+  white-space: nowrap;
+}
+.table > thead > tr > th {
+  border-bottom-color: var(--rule);
+}
+.table > tbody > tr > td,
+.table > tbody > tr > th,
+.table > thead > tr > th {
+  border-top-color: var(--rule-soft);
+}
+.table-striped > tbody > tr:nth-of-type(odd) {
+  background-color: var(--bg-elev);
+}
+.table-hover > tbody > tr:hover {
+  background-color: var(--accent-soft);
+}
+
+/* Panels / wells / cards. */
+.panel,
+.well {
+  background-color: var(--bg-elev);
+  border-color: var(--rule);
+  color: var(--ink);
+}
+
+/* Forms. */
+.form-control,
+input[type="text"],
+input[type="number"],
+input[type="password"],
+input[type="search"],
+input[type="email"],
+select,
+textarea {
+  background-color: var(--bg-elev);
+  color: var(--ink);
+  border: 1px solid var(--field-border);
+  border-radius: 4px;
+}
+.form-control:focus,
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+::placeholder {
+  color: var(--ink-muted);
+}
+/* A bare <input> (no type attribute defaults to text) should look themed too. */
+input:not([type]) {
+  background-color: var(--bg-elev);
+  color: var(--ink);
+  border: 1px solid var(--field-border);
+  border-radius: 4px;
+}
+
+/* Fieldsets (the Settings config form) — carded, with a compact uppercase legend. */
+fieldset {
+  margin: 1.25rem 0;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 0.5rem 1.15rem 1.15rem;
+  background-color: var(--bg-elev);
+}
+legend {
+  width: auto;
+  border: 0;
+  margin-bottom: 0;
+  padding: 0 0.5rem;
+  font-family: var(--sans);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-muted);
+}
+.config-page label {
+  display: block;
+  margin: 0.6rem 0 0.15rem;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.config-page input {
+  width: 100%;
+  max-width: 26rem;
+}
+/* A checkbox is an inline control, not a full-width field — don't let the rule above stretch it. */
+.config-page input[type="checkbox"] {
+  width: auto;
+}
+/* Items in a checkbox list (e.g. the activate-on-corpora picker) are options, not field labels, so
+   they shouldn't inherit the bold block label styling. */
+.config-page .plain-list label {
+  display: inline;
+  font-weight: 400;
+}
+/* The export form's severity checkboxes are options too — keep them inline (a horizontal checklist),
+   not stretched/bold field rows. */
+.config-page .export-severities label {
+  display: inline-block;
+  font-weight: 400;
+  margin-right: 1rem;
+}
+/* A row of inline action buttons/forms (e.g. the dashboard's pause/resume-all controls). */
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+.button-row form {
+  margin: 0;
+}
+
+/* Job progress page: themed progress bar + status colours. */
+progress {
+  width: 100%;
+  height: 1.1rem;
+}
+.status.ok {
+  color: var(--ok);
+}
+.status.fail {
+  color: var(--bad);
+}
+
+/* Buttons: Bootstrap `.btn-*`, our `.danger`, and bare (class-less) submit buttons. */
+.btn-default,
+button:not([class]) {
+  background-color: var(--bg-elev);
+  background-image: none;
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 5px 12px;
+}
+.btn-default:hover,
+.btn-default:focus,
+button:not([class]):hover {
+  background-color: var(--bg-sunken);
+  color: var(--ink);
+}
+.btn-primary {
+  background-color: var(--accent);
+  background-image: none;
+  color: var(--accent-ink);
+  /* Same box as .btn-default (border / radius / padding) so primary and default buttons are the
+     same size — they only differ in colour. */
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 5px 12px;
+}
+.btn-primary:hover,
+.btn-primary:focus {
+  background-color: var(--link-hover);
+  border-color: var(--link-hover);
+  color: var(--accent-ink);
+}
+.btn-link {
+  color: var(--link);
+}
+button.danger,
+.btn.danger,
+a.danger {
+  background-color: transparent;
+  background-image: none;
+  color: var(--bad);
+  border: 1px solid var(--bad);
+  border-radius: 4px;
+  padding: 4px 10px;
+}
+button.danger:hover,
+.btn.danger:hover,
+a.danger:hover {
+  background-color: var(--bad);
+  color: #fff;
+}
+
+/* Severity-tinted report rows (e.g. the task-list / fatal pages use `tr.{success,warning,error,
+   danger,info}` from `severity_highlight`). Theme-aware + saturated: blend the severity hue into the
+   elevated surface so the band reads clearly in both paper and midnight, while the row text stays
+   `--ink`. Overrides Bootstrap's pale contextual colors (set on `> td`, so striping can't bleed). */
+.table > tbody > tr.success > td {
+  background-color: color-mix(in srgb, var(--ok) 16%, var(--bg-elev));
+}
+.table > tbody > tr.warning > td {
+  background-color: color-mix(in srgb, var(--warn) 20%, var(--bg-elev));
+}
+.table > tbody > tr.error > td {
+  background-color: color-mix(in srgb, var(--bad) 15%, var(--bg-elev));
+}
+.table > tbody > tr.danger > td {
+  background-color: color-mix(in srgb, var(--bad) 24%, var(--bg-elev));
+}
+.table > tbody > tr.info > td {
+  background-color: color-mix(in srgb, var(--accent) 14%, var(--bg-elev));
+}
+
+/* Code, rules, muted text, status helpers. */
+code,
+pre,
+kbd {
+  background-color: var(--code-bg);
+  color: var(--ink);
+  border-color: var(--rule);
+}
+hr {
+  border-top-color: var(--rule);
+}
+.muted,
+.text-muted {
+  color: var(--ink-muted);
+}
+.status-ok {
+  color: var(--ok);
+}
+.status-warn {
+  color: var(--warn);
+}
+.status-bad {
+  color: var(--bad);
+}
+
+/* Severity-coloured status labels — the run-diff "Task severity changes" table (and any status cell
+   keyed by a TaskStatus `to_key` string). The status key IS the class suffix, so no per-status
+   template branching is needed; an unrecognised key simply renders in the default ink. */
+.sev-no_problem {
+  color: var(--ok);
+}
+.sev-warning {
+  color: var(--warn);
+}
+.sev-error {
+  color: var(--bad);
+}
+.sev-fatal {
+  color: var(--bad);
+  font-weight: 600;
+}
+.sev-invalid {
+  color: var(--ink-muted);
+}
+.sev-todo {
+  color: var(--ink-muted);
+}
+
+/* Run-history run-over-run deltas: a small signed change vs the previous (older) run, coloured by
+   whether it improves (green) or regresses (red) conversion; `delta-zero` is muted (no change). */
+.delta {
+  font-size: 0.82em;
+  font-variant-numeric: tabular-nums;
+  margin-left: 0.35em;
+  color: var(--ink-muted);
+}
+.delta-good {
+  color: var(--ok);
+}
+.delta-bad {
+  color: var(--bad);
+}
+.delta-zero {
+  color: var(--ink-muted);
+}
+#runs-report caption {
+  caption-side: top;
+  text-align: left;
+  padding: 0 0 0.6em;
+  font-size: 0.85em;
+}
+
+/* Themed admin-dashboard stat cards (replacing per-element inline colors so midnight reads right). */
+.admin-card {
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+  background-color: var(--bg-elev);
+  box-shadow: var(--shadow);
+  /* Long run descriptions / filter tokens (e.g. `API(filters: severity=fatal)`) must wrap inside the
+     card on narrow displays rather than overflow its border. `overflow-wrap` is inherited, so this
+     covers the Last-run card's nested text too. */
+  overflow-wrap: break-word;
+  min-width: 0;
+}
+/* The global `time { white-space: nowrap }` keeps compact relative times ("5s ago") on one line, but
+   the Last-run card's full date ("Jun 13, 2026, 11:51 PM EDT") must wrap on a narrow display rather
+   than overflow the card. */
+.admin-card time {
+  white-space: normal;
+}
+
+/* Live ops console — the at-a-glance stat strip + its live-refresh indicator. */
+.admin-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.5rem 0 1rem;
+  /* Content-sized cards centre as a group (and a partial last row stays centred). */
+  justify-content: center;
+}
+.admin-status .admin-card {
+  /* `flex-basis: auto` sizes each card to its OWN content, so a card holding a large corpus count
+     (e.g. 2,925,766 pending tasks, paired with `.stat-number { white-space: nowrap }`) grows wide
+     enough to keep the number on one line, instead of every card sharing an equal width too narrow
+     for 7–8 digits. `min-width` is just a floor for the small ("0") cards. */
+  flex: 1 1 auto;
+  min-width: 9.5rem;
+  text-align: center;
+  /* Keep words/numbers intact (wrap only at spaces) rather than breaking mid-value like the base
+     `.admin-card` does for long run descriptions. */
+  overflow-wrap: normal;
+}
+.admin-card.wide {
+  margin: 0 0 1rem;
+}
+/* Admin dashboard chrome drained from per-element inline styles into tokenised classes. */
+.admin-signout {
+  display: inline;
+}
+.admin-signout button {
+  padding: 0;
+  vertical-align: baseline;
+}
+.admin-actions {
+  line-height: 1.9;
+}
+.run-meta {
+  font-size: 0.9em;
+}
+
+/* Small layout utilities, drained from per-element inline styles into named classes. `.inline-form`
+   is the inline action-form pattern (a delete/revoke button beside text); the `gap-*` helpers map to
+   the spacing design tokens (`--space-*`) so spacing stays consistent and tunable from one place. */
+.inline-form {
+  display: inline;
+}
+.gap-left {
+  margin-left: var(--space-sm);
+}
+.gap-top-sm {
+  margin-top: var(--space-sm);
+}
+.gap-top {
+  margin-top: var(--space-md);
+}
+.gap-top-lg {
+  margin-top: var(--space-lg);
+}
+.gap-bottom {
+  margin-bottom: var(--space-md);
+}
+/* The report/table content column — 85% wide and centred (owner's pick). One canonical scaffold for
+   every tabular page; `.col-md-10` is a transitional alias so existing templates get the layout
+   without markup surgery (migrate them to `.report-layout` over time), and the empty `.col-md-1`
+   grid spacers are hidden. A table still centres within the column via `.table { margin-inline: auto }`,
+   and a too-wide one scrolls within it rather than overflowing the page. */
+.report-layout,
+.col-md-10 {
+  max-width: 85%;
+  margin-left: auto;
+  margin-right: auto;
+  overflow-x: auto;
+}
+.col-md-1 {
+  display: none;
+}
+.narrow-form {
+  max-width: 30rem;
+}
+.plain-list {
+  list-style: none;
+  padding-left: 0;
+  line-height: 1.8;
+}
+.divided-section {
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--rule);
+  padding-top: 1rem;
+}
+.live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85em;
+}
+.live-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background-color: var(--ok);
+}
+.live-dot.stale {
+  background-color: var(--ink-muted);
+}
+.live-dot.beat {
+  animation: live-beat 0.6s ease;
+}
+@keyframes live-beat {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  45% {
+    transform: scale(1.9);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-dot.beat {
+    animation: none;
+  }
+}
+
+/* Per-article forensic screen — a wider centered column than `.report` (the message tables carry
+   long `details`), plus the severity summary line + the collapsed `info` noise. */
+.document-report-page {
+  /* Break out of the Bootstrap `.container` (~1170px cap) — a forensic log table wants the width.
+     `left:50%` + `translateX(-50%)` centres a 92vw (≤1700px) block on the viewport regardless of the
+     narrower centred container it lives in. */
+  width: 92vw;
+  max-width: 1700px;
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1rem 1.5rem;
+}
+.severity-summary {
+  margin: 0.25rem 0 1rem;
+}
+/* At-a-glance fleet-health line above the worker table (active/idle counts + throughput). */
+.fleet-summary {
+  margin: 0.25rem 0 0.75rem;
+  font-size: var(--fs-sm);
+  color: var(--ink-soft);
+}
+/* Shown when a document carries more messages than the per-severity display cap — the tables are a
+   bounded sample, so flag it (the counts stay exact). */
+.truncation-note {
+  margin: 0 0 1rem;
+  padding: 0.5rem 0.8rem;
+  font-size: var(--fs-sm);
+  color: var(--ink-soft);
+  background-color: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--warn, #b8860b);
+  border-radius: 6px;
+}
+details.info-messages {
+  margin-top: 1.5rem;
+}
+details.info-messages > summary {
+  cursor: pointer;
+  /* Clickable, not muted — it reads as an expandable control, with a large chevron that rotates
+     open. (The parenthetical "(loaded files, debug)" keeps its own `.muted` as a secondary hint.) */
+  color: var(--link);
+  font-weight: 600;
+  padding: 0.4rem 0;
+  list-style: none;
+}
+details.info-messages > summary:hover {
+  color: var(--link-hover);
+}
+details.info-messages > summary::-webkit-details-marker {
+  display: none;
+}
+details.info-messages > summary::before {
+  content: "\25B8"; /* ▸ */
+  display: inline-block;
+  margin-right: 0.45rem;
+  font-size: 1.2em;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+details.info-messages[open] > summary::before {
+  transform: rotate(90deg);
+}
+/* Forensic message tables: fixed layout with percentage column widths (from the `<colgroup>` in the
+   template) so they fill the wide column predictably — `details` gets ~two-thirds and wraps within
+   it, while the auto-sizing-to-max-content overflow (long log lines) is avoided. */
+.message-table {
+  table-layout: fixed;
+  width: 100%;
+}
+.message-table > thead > tr > th,
+.message-table > tbody > tr > td {
+  white-space: normal;
+  vertical-align: top;
+  overflow-wrap: break-word;
+}
+.message-table td:last-child code {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* Destructive link-style buttons (remove / revoke) — the `.btn-link` look in the bad color. */
+.btn-link-danger {
+  color: var(--bad);
+  padding: 0;
+}
+/* A narrow, centered content block — the System Health tables/panels. */
+.narrow-centered {
+  max-width: 34rem;
+  margin: 1rem auto;
+}
+
+/* The theme toggle is an `<a id="theme-toggle">` in the nav action group — it inherits the
+   `.cortex-admin-nav` pill styling like Overview / Admin (no ID-specific override that would strip
+   the pill border). */
+
 .quietlink:link {
-  color: #000000;
+  color: var(--ink);
   text-decoration: none;
 }
 .quietlink:visited {
-  color: #000000;
+  color: var(--ink);
   text-decoration: none;
 }
 .link-total {
-  color: #000000;
+  color: var(--ink);
   text-decoration: none;
   display: inline-block;
   pointer-events: none;
@@ -27,11 +745,6 @@ body {
 }
 footer {
   height: 15px;
-}
-
-tr.error,
-td.error {
-  background-color: #ffe9bf;
 }
 
 .welcome-title {
@@ -94,7 +807,8 @@ td.error {
 #corpus-report th {
   position: sticky;
   top: 0;
-  background: white;
+  background: var(--bg-elev);
+  color: var(--ink);
 }
 
 .table-nonfluid {
@@ -118,7 +832,7 @@ td.error {
 h1 {
   font-weight: bold;
   padding-bottom: 0.3em;
-  font-size: 2.25em;
+  font-size: var(--fs-xl);
   line-height: 1.2;
 }
 .bold {
@@ -184,10 +898,82 @@ h1 {
 .rerun-banner-segment:empty {
   visibility: hidden;
 }
-
-div#report-div {
-  visibility: hidden;
+/* Blast-radius warning on the rerun-all (top-level) modal: a warn-tinted callout so the admin sees
+   the full task count + that already-converted tasks are included before re-queuing the corpus. */
+.rerun-blast-radius {
+  margin: 0.75rem 20px 0;
+  padding: 0.6rem 0.75rem;
+  border-left: 3px solid var(--warn);
+  background-color: color-mix(in srgb, var(--warn) 12%, var(--bg-elev));
+  border-radius: 3px;
+  font-size: 0.95em;
 }
+.rerun-blast-radius .fa-exclamation-triangle {
+  color: var(--warn);
+}
+
+/* Success flash (e.g. "Configuration saved") — an ok-tinted callout confirming a write, the feedback
+   half of a post-redirect-get so a consequential save isn't a silent reload. */
+.flash-saved {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.85rem;
+  border-left: 3px solid var(--ok);
+  background-color: color-mix(in srgb, var(--ok) 12%, var(--bg-elev));
+  border-radius: 3px;
+  color: var(--ink);
+}
+.flash-saved .fa-check-circle {
+  color: var(--ok);
+}
+/* Error flash banner (e.g. a sandbox name collision) — the red counterpart of .flash-saved. */
+.flash-error {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.85rem;
+  border-left: 3px solid var(--bad);
+  background-color: color-mix(in srgb, var(--bad) 12%, var(--bg-elev));
+  border-radius: 3px;
+  color: var(--ink);
+}
+.flash-error .fa-exclamation-triangle {
+  color: var(--bad);
+}
+/* Export-dataset form: the severities are a tidy bordered group of spaced inline checkboxes. */
+.export-severities {
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: var(--space-sm) var(--space-md);
+  margin: var(--space-sm) 0;
+}
+.export-severities legend {
+  padding: 0 var(--space-xs);
+  color: var(--ink-muted);
+  font-size: var(--fs-sm);
+}
+.export-severities label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-right: var(--space-md);
+}
+/* Sandbox provenance banner on a carved corpus's page — a compact accent pill linking the parent
+   corpus + showing the carve filter (the page wrapper is .center, so inline-flex centres it). */
+.sandbox-provenance {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 var(--space-md);
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background-color: var(--accent-soft);
+  font-size: var(--fs-sm);
+}
+.sandbox-provenance .fa-cube {
+  color: var(--accent);
+}
+
+/* #report-div is visible by default (graceful degradation — the report shows even if the CDN jQuery
+   that drives the live rerun-progress overlay fails to load); progress_report.js only *adds* to it. */
 
 p.corpus-description,
 p.service-description {
@@ -200,11 +986,23 @@ div.bottom-content {
   left: 0;
   padding: 1rem;
   z-index: 1900;
-  background-color: #efefef;
+  background-color: var(--bg-elev);
+  color: var(--ink);
 }
 
 tr.fresh > td {
-  background-color: #5cb85c26;
+  background-color: color-mix(in srgb, var(--ok) 18%, transparent);
+}
+
+/* Per-worker outstanding (dispatched − returned). Neutral when the worker is fresh (normal in-flight
+   work); flagged red when the worker is STALE yet still holds unreturned tasks — it took work and
+   stopped returning results, the actionable "stuck / dead worker" case. */
+.worker-outstanding {
+  font-variant-numeric: tabular-nums;
+}
+tr.stale .has-outstanding {
+  color: var(--bad);
+  font-weight: 600;
 }
 
 .switch {
@@ -272,8 +1070,31 @@ table.history-report {
 }
 
 span.history-footnote {
-  font-size: 12px;
+  font-size: var(--fs-sm);
+  color: var(--ink-muted);
   text-align: left;
+}
+
+/* History page: the run-quality Vega chart sits in a themed card so it reads as part of the app in
+   both light/dark (the chart's own fill/text/axis colours are set from these same design tokens in
+   templates/vega-history.html.tera). */
+.history-chart {
+  background-color: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 1rem 1.15rem;
+  margin: 0 auto 1.5rem;
+}
+.history-chart #vis {
+  width: 100%;
+}
+/* Vega-Embed's action menu (Export / View source / Open in editor) — themed links, spaced. */
+.vega-actions a {
+  margin-right: 5px;
+  color: var(--link);
+}
+.vega-actions a:hover {
+  color: var(--link-hover);
 }
 
 div.arxmliv-kwarc-footer {
@@ -300,4 +1121,741 @@ table.diff-tasks-report {
     display: inline-block;
     font-size: 1rem;
   }
+}
+
+/* === Productized scholarly component theme ===================================================
+   A cohesive widget layer over the tokens: serif display headings, carded panels, a clean report
+   grid, status-tinted counts, and pill badges — so the admin + report dashboards read as a polished
+   scholarly product in both paper and midnight. */
+
+/* Display headings — serif masthead (Roboto Slab) for a scholarly register; body stays sans. */
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--serif);
+  color: var(--ink);
+}
+h1 {
+  letter-spacing: -0.01em;
+}
+h3 {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  margin-top: 1.4em;
+}
+.section-label {
+  font-family: var(--sans);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--ink-muted);
+}
+
+/* Cards / panels. */
+.card,
+.admin-card {
+  background-color: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+.card {
+  padding: 1rem 1.15rem;
+  margin: 1rem 0;
+}
+.admin-card {
+  transition:
+    box-shadow 0.15s ease,
+    border-color 0.15s ease;
+}
+.admin-card:hover {
+  box-shadow: var(--shadow-lg);
+}
+.stat-number {
+  font-family: var(--serif);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--ink);
+  /* A 7-8 digit corpus count must stay on one line (the card grows to fit it) rather than break
+     mid-number ("29257" / "66"). */
+  white-space: nowrap;
+}
+
+/* The corpus "Corpus actions" panel (services.html.tera) — one carded fieldset; each action is a
+   rigid label:control grid row so everything aligns under one fixed label column, independent of the
+   .center page wrapper. Collapses to stacked (label above control) on narrow screens. */
+.corpus-actions {
+  max-width: 46rem;
+  margin: var(--space-lg) auto 0;
+  text-align: left;
+}
+.corpus-actions form {
+  display: grid;
+  grid-template-columns: 12rem minmax(0, 1fr);
+  gap: var(--space-sm) var(--space-md);
+  align-items: center;
+  padding: var(--space-md) 0;
+}
+.corpus-actions form + form {
+  border-top: 1px solid var(--rule);
+}
+.corpus-actions label,
+.corpus-actions .action-label {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+/* Top-level action titles (Register / Re-scan / Carve a sandbox / Delete) read as peers — bold and
+   flush to the action's left edge. */
+.corpus-actions .action-title {
+  font-weight: 700;
+}
+/* A multi-field action's sub-fields (the sandbox filters) are indented under its title so the
+   hierarchy is unambiguous; the title and the submit button stay flush left. */
+.corpus-actions .action-section > label,
+.corpus-actions .action-section > .action-divider {
+  padding-left: var(--space-lg);
+}
+/* Sandbox fields are direct grid children — they fill the control column. */
+.corpus-actions form > input,
+.corpus-actions form > select {
+  width: 100%;
+  max-width: 24rem;
+}
+/* A control cell pairing a field + button (+ hint) on one line (Register / Extend / Delete). */
+.corpus-actions .action-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+}
+.corpus-actions .action-control input,
+.corpus-actions .action-control select {
+  flex: 1 1 12rem;
+  min-width: 10rem;
+  max-width: 22rem;
+}
+/* A stacked control cell: the description on its own line, the button beneath it (e.g. Extend). */
+.corpus-actions .action-stack {
+  flex-direction: column;
+  align-items: flex-start;
+}
+/* A standalone submit (no label in column 1) aligns under the controls. */
+.corpus-actions .action-submit {
+  grid-column: 2;
+  justify-self: start;
+}
+.corpus-actions .action-subhead {
+  grid-column: 1 / -1;
+  margin: 0 0 var(--space-xs);
+  font-weight: 700;
+  font-size: var(--fs-sm);
+}
+/* A labelled sub-divider inside a form section (e.g. "Filters" above the sandbox filter fields): a
+   horizontal rule with an uppercase caption, spanning both grid columns. */
+.corpus-actions .action-divider {
+  grid-column: 1 / -1;
+  margin: var(--space-sm) 0 0;
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--rule);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-muted);
+}
+/* Delete is set apart with a danger accent. */
+.corpus-actions .action-danger {
+  border-top-color: var(--bad);
+}
+.corpus-actions .action-danger > label {
+  color: var(--bad);
+}
+@media (max-width: 560px) {
+  .corpus-actions form {
+    grid-template-columns: 1fr;
+    gap: var(--space-xs);
+  }
+  .corpus-actions .action-submit {
+    grid-column: 1;
+  }
+}
+
+/* Report / registry / jobs grid — a clean scholarly table. */
+.table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.table > thead > tr > th {
+  font-family: var(--sans);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--ink-muted);
+  background-color: var(--bg-sunken);
+  border-bottom: 1px solid var(--rule);
+  padding: 0.55rem 0.8rem;
+  vertical-align: bottom;
+}
+.table > tbody > tr > td {
+  padding: 0.5rem 0.8rem;
+  border-top: 1px solid var(--rule-soft);
+  vertical-align: middle;
+}
+.table > tbody > tr:hover > td {
+  background-color: var(--accent-soft);
+}
+/* Numeric columns: tabular (lining) figures so counts line up and scan — in the body sans, not a
+   monospace (a missing JetBrains Mono falls back to Courier, which clashes with the chrome). */
+.table td.right,
+.table th.right {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Status-tinted report counts (a zero is de-emphasised, a fatal stands out). */
+.count-ok {
+  color: var(--ok);
+}
+.count-warn {
+  color: var(--warn);
+}
+.count-error {
+  color: var(--bad);
+}
+.count-fatal {
+  color: var(--bad);
+  font-weight: 700;
+}
+.count-todo {
+  color: var(--ink-muted);
+}
+.count-zero {
+  color: var(--ink-muted);
+  opacity: 0.5;
+}
+
+/* Pill badge / chip. */
+.chip {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  background-color: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Brand wordmark: one PNG holds two stacked variants (top = paper, bottom = midnight). Crop to the
+   active variant per theme via `background-size: 100% 200%` + position, and blend each variant's
+   solid background into the navbar (white melts on the light chrome via `multiply`, black melts on
+   the dark chrome via `screen`) so the wordmark sits seamlessly with no logo box. */
+/* Vertically center the brand logo within the 50px Bootstrap navbar. */
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  height: 50px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.brand-logo {
+  display: inline-block;
+  width: 120px;
+  height: 40px;
+  vertical-align: middle;
+  background-image: url("/public/img/logo.png");
+  background-repeat: no-repeat;
+  background-size: 100% 200%;
+  background-position: center top;
+  mix-blend-mode: multiply;
+}
+:root[data-theme="midnight"] .brand-logo {
+  background-position: center bottom;
+  mix-blend-mode: screen;
+}
+
+/* === Homepage / overview ====================================================================
+   A disciplined masthead (the wordmark cropped+blended per theme) over a calm corpus-card grid —
+   no oversized chevrons or shouting serif links. */
+.overview {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+.hero {
+  text-align: center;
+  padding: 2.5rem 1rem 2rem;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 2.25rem;
+}
+.hero-logo {
+  display: inline-block;
+  width: 320px;
+  max-width: 78%;
+  height: 107px;
+  background-image: url("/public/img/logo.png");
+  background-repeat: no-repeat;
+  background-size: 100% 200%;
+  background-position: center top;
+  mix-blend-mode: multiply;
+}
+:root[data-theme="midnight"] .hero-logo {
+  background-position: center bottom;
+  mix-blend-mode: screen;
+}
+.hero-tagline {
+  margin: 1.1rem auto 0;
+  max-width: 36rem;
+  font-family: var(--serif);
+  font-size: var(--fs-md);
+  font-style: italic;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+/* A quiet uppercase section heading (sans, not the serif display h2). */
+.section-heading {
+  font-family: var(--sans);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--ink-muted);
+  margin: 0 0 1rem;
+  padding-bottom: 0.4rem;
+}
+
+.corpora-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 1rem;
+}
+.corpus-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1rem 1.15rem;
+  background-color: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  text-decoration: none;
+  transition:
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+.corpus-card:hover,
+.corpus-card:focus {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-1px);
+  text-decoration: none;
+}
+.corpus-card-name {
+  font-family: var(--serif);
+  font-size: var(--fs-md);
+  font-weight: 700;
+  color: var(--link);
+}
+.corpus-card-desc {
+  font-size: var(--fs-sm);
+  color: var(--ink-muted);
+  line-height: 1.45;
+}
+.corpus-card-count {
+  font-size: var(--fs-sm);
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+/* Sandbox corpora (carved subsets) are badged on the overview so they're distinguishable from
+   ordinary corpora at a glance — the list-level twin of CorpusDto.parent / the corpus-page banner. */
+.corpus-badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.02rem 0.45rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  font-family: var(--sans);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  vertical-align: middle;
+}
+.corpus-card-sandbox {
+  font-size: var(--fs-sm);
+  color: var(--ink-muted);
+}
+.corpus-card-sandbox .fa-cube {
+  color: var(--accent);
+}
+.empty-state {
+  text-align: center;
+  color: var(--ink-muted);
+  padding: 2.5rem 1rem;
+}
+/* The getting-started step list shown on a fresh (no-corpora) overview — a left-aligned, monospace
+   command block, centered as a unit. */
+.empty-state-steps {
+  display: inline-block;
+  text-align: left;
+  margin: 0.75rem auto;
+  padding: 0.75rem 1rem;
+  background-color: var(--code-bg);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  color: var(--ink);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* === Report dashboard (scholarly) ===========================================================
+   A calm progress dashboard: a titled header with run provenance, a status/breakdown grid with
+   inline proportion bars (severity-tinted), monospace counts, and a quiet links row. */
+.report {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+.report-header {
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 0.85rem;
+  margin-bottom: 1.5rem;
+}
+.report-title {
+  font-family: var(--serif);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  margin: 0;
+}
+.report-sep {
+  color: var(--ink-muted);
+  font-weight: 400;
+}
+.report-sub {
+  margin: 0.35rem 0 0;
+  color: var(--ink-muted);
+  font-size: var(--fs-sm);
+}
+/* Report-ladder breadcrumb: ancestor levels link up, current level is plain emphasized text. Sits
+   above the report header on every drill screen so the macro→micro path is always navigable. */
+.report-breadcrumb {
+  margin-bottom: 0.6rem;
+}
+.report-breadcrumb a {
+  white-space: nowrap;
+}
+.crumb-current {
+  color: var(--ink);
+  font-weight: 600;
+}
+.report-table {
+  width: 100%;
+}
+/* Inline proportion bar. */
+.bar-cell {
+  width: 42%;
+}
+.bar-track {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background-color: var(--rule-soft);
+  overflow: hidden;
+}
+.bar {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background-color: var(--accent);
+  /* The fill fraction is the only data-driven value, passed as the `--bar-width` custom property
+     (e.g. style="--bar-width: 73%") instead of a full inline `width:` rule — the last inline-CSS
+     property drained out of the templates (U-4). Defaults to 0 if unset. */
+  width: var(--bar-width, 0);
+}
+.bar.ok {
+  background-color: var(--ok);
+}
+.bar.warn {
+  background-color: var(--bar-warn);
+}
+.bar.error,
+.bar.fatal {
+  background-color: var(--bad);
+}
+.bar.todo {
+  background-color: var(--ink-muted);
+}
+.report-table tr.report-total > td {
+  border-top: 2px solid var(--rule);
+  font-weight: 700;
+}
+.report-table tr.report-muted > td {
+  color: var(--ink-muted);
+}
+/* Color discipline: severity is carried by the bar + its matching count number only. Row labels
+   stay a neutral-ink quiet link (accent on hover, not purple-by-default), and no stray cell-
+   background tints leak in from Bootstrap's contextual classes or the legacy `td.error`/`td.warning`
+   rules (those were off-palette and applied to the wrong severities). */
+.report-table td.left a {
+  color: var(--ink);
+}
+.report-table td.left a:hover,
+.report-table td.left a:focus {
+  color: var(--link);
+}
+/* Neutralize Bootstrap's contextual cell tints (and the legacy ones) at REST — matched at the same
+   `.table > tbody > tr > td.x` specificity so no `!important` is needed (an `!important` here would
+   also suppress the row-hover highlight on these very cells, which it did). */
+.report-table > tbody > tr > td.no-problem,
+.report-table > tbody > tr > td.warning,
+.report-table > tbody > tr > td.error,
+.report-table > tbody > tr > td.fatal,
+.report-table > tbody > tr > td.todo,
+.report-table > tbody > tr > td.queued {
+  background-color: transparent;
+}
+/* Row hover must cover EVERY column, including the neutralized count cell — higher specificity than
+   both Bootstrap's contextual rule and the neutralizer above. */
+.report-table.table > tbody > tr:hover > td {
+  background-color: var(--accent-soft);
+}
+/* Related-report links as a labeled pill toolbar (clearly actionable, icon + text). */
+.report-links {
+  margin-top: 1.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.report-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.8rem;
+  font-size: var(--fs-sm);
+  color: var(--ink-soft);
+  background-color: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+.report-links a:hover,
+.report-links a:focus {
+  color: var(--link);
+  background-color: var(--bg);
+  border-color: var(--accent);
+  text-decoration: none;
+}
+.report-links a > i {
+  color: var(--ink-muted);
+}
+.report-links a:hover > i,
+.report-links a:focus > i {
+  color: var(--accent);
+}
+
+/* Direct "look up an article" shortcut under the report links — the human entry to per-article
+   forensics by id (the twin of the agent API + `cortex document`). */
+.document-lookup {
+  /* Extra separation from the report links / run-control row above (owner request). */
+  margin-top: var(--space-xl);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+.document-lookup label {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+.document-lookup input {
+  flex: 1 1 14rem;
+  max-width: 22rem;
+  padding: 0.35rem 0.7rem;
+  font-size: var(--fs-sm);
+  color: var(--ink);
+  background-color: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+.document-lookup input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Clickable report rows: a drill-in chevron after the label (only real <a> links get it), so a row
+   reads as navigable even though the label is neutral ink. The whole row highlights on hover. */
+.report-table td.left a::after {
+  content: "\203A"; /* › */
+  display: inline-block;
+  margin-left: 0.4rem;
+  color: var(--ink-muted);
+  font-weight: 700;
+  transition:
+    color 0.12s ease,
+    transform 0.12s ease;
+}
+.report-table > tbody > tr:hover td.left a,
+.report-table td.left a:hover {
+  color: var(--link);
+  text-decoration: none;
+}
+.report-table > tbody > tr:hover td.left a::after,
+.report-table td.left a:hover::after {
+  color: var(--accent);
+  transform: translateX(3px);
+}
+
+/* Report footer bar: report provenance + clearly-labeled Rerun / Save / Auto-refresh actions. */
+.footer-meta {
+  text-align: right;
+  /* Match the left content's 4em inset (p.corpus-description/.service-description padding-left). */
+  padding-right: 4em;
+}
+.footer-meta .report-duration {
+  color: var(--ink-soft);
+  font-style: italic;
+  font-size: var(--fs-sm);
+}
+.footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.3rem;
+}
+.footer-action {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.7rem;
+  font-size: var(--fs-sm);
+  color: var(--ink-soft);
+  background-color: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+.footer-action:hover,
+.footer-action:focus {
+  color: var(--link);
+  border-color: var(--accent);
+  text-decoration: none;
+}
+/* Disabled footer pill (e.g. Save snapshot while a run is in progress): muted + non-interactive,
+   no hover-accent. It's a <span>, not an <a>, so it isn't focusable. */
+.footer-action-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+/* Run-control row under the report table (report.html.tera): the same footer pills, but left-aligned
+   in the report column instead of pinned bottom-right. Reset the in-row <form> wrappers so the pills
+   sit flush together. */
+.report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin: var(--space-md) 0;
+}
+.report-actions .inline-form {
+  display: inline-flex;
+  margin: 0;
+}
+/* The run-control pills read as the active accent (purple) at rest, and reset <button> chrome so the
+   <button> actions (Pause/Resume) render identically to the <a> actions (Rerun/Save). */
+.report-actions .footer-action {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  cursor: pointer;
+  color: var(--accent);
+  border-color: var(--accent);
+  background-color: var(--bg-elev);
+}
+.report-actions .footer-action:hover,
+.report-actions .footer-action:focus {
+  /* accent-soft fill + accent text reads correctly in both themes (unlike a solid fill, whose text
+     contrast flips between the light/dark accent). */
+  color: var(--accent);
+  background-color: var(--accent-soft);
+  border-color: var(--accent);
+}
+/* A disabled pill in the row drops the accent for a muted, clearly-inert look. */
+.report-actions .footer-action-disabled {
+  color: var(--ink-muted);
+  border-color: var(--rule);
+}
+/* Auto-refresh toggle hosted in the same pill card as the footer actions (consistent control group;
+   not a link, so no hover-accent — the switch inside is the control). */
+.footer-autorefresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.2rem 0.7rem;
+  font-size: var(--fs-sm);
+  color: var(--ink-soft);
+  background-color: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+
+/* Report freshness: a coloured dot + "generated N ago", staleness-tinted (≤30 min ok · ≤2 h warn ·
+   ≤1 day deep-orange · older bad). The colour wins over `.footer-meta .report-duration` by coming
+   later at equal specificity. */
+.report-duration .freshness-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 0.45rem;
+  background-color: currentColor;
+  vertical-align: middle;
+}
+.report-duration.fresh-green {
+  color: var(--ok);
+}
+.report-duration.fresh-aging {
+  color: var(--warn);
+}
+.report-duration.fresh-stale {
+  color: var(--orange-deep);
+}
+.report-duration.fresh-expired {
+  color: var(--bad);
+}
+.report-toggle {
+  margin: 0 0 1rem;
+  font-size: var(--fs-sm);
+  color: var(--ink-muted);
+}
+.report-pagination {
+  margin: 1.5rem 0;
+  text-align: center;
+  font-size: var(--fs-md);
+}
+.report-pagination a {
+  padding: 0 0.6rem;
+}
+
+/* A delicate, unobtrusive admin sign-in hint under public content. */
+.admin-hint {
+  margin-top: 2rem;
+  font-size: var(--fs-sm);
+  color: var(--ink-muted);
+}
+.admin-hint a {
+  color: var(--ink-muted);
+  border-bottom: 1px dotted var(--rule);
+}
+.admin-hint a:hover {
+  color: var(--link);
+  border-bottom-color: var(--link);
 }

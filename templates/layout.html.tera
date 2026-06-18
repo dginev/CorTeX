@@ -1,24 +1,32 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="paper">
 
 <head>
+    <script>
+      // No-FOUC theme bootstrap: set data-theme before first paint — the saved choice, else the OS
+      // `prefers-color-scheme`. The nav toggle (public/js/theme.js) flips it; with JS off, the static
+      // `data-theme="paper"` on <html> is the default.
+      (function () {
+        try {
+          var q = new URLSearchParams(window.location.search).get('theme');
+          var saved = localStorage.getItem('cortex-theme');
+          var theme = (q === 'paper' || q === 'midnight') ? q
+            : (saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'midnight' : 'paper'));
+          document.documentElement.setAttribute('data-theme', theme);
+        } catch (e) {}
+      })();
+    </script>
     <meta http-equiv="Content-Type" content="text/html" />
     <meta charset="utf-8" />
     <title> {% if global.title %} {{global.title}} | CorTeX Framework {% endif %}</title>
 
-    <!-- Sprinkle some jQuery : -->
-    <script src='//code.jquery.com/jquery-2.1.4.min.js'></script>
-    <!-- Bootstrap, the modern mother of all design: -->
-    <!-- Latest compiled and minified CSS -->
-    <link rel='stylesheet' type='text/css' href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.1/css/bootstrap.min.css">
-    <!-- Optional theme -->
-    <link rel='stylesheet' type='text/css' href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.1/css/bootstrap-theme.min.css">
-    <!-- Latest compiled and minified JavaScript -->
-    <script src="//maxcdn.bootstrapcdn.com/bootstrap/3.3.1/js/bootstrap.min.js"></script>
-    <!-- And some Awesome Font sauce: -->
-    <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.4.0/css/font-awesome.min.css">
-    <!-- Robot slab font: -->
-    <link rel='stylesheet' type='text/css' href='//fonts.googleapis.com/css?family=Roboto+Slab:400,700'>
+    <!-- Vendored locally (no external CDNs — self-contained, resilient, private; KNOWN_ISSUES X-6). -->
+    <script src='/public/vendor/js/jquery-2.1.4.min.js'></script>
+    <link rel='stylesheet' type='text/css' href="/public/vendor/css/bootstrap-3.3.1.min.css">
+    <script src="/public/vendor/js/bootstrap-3.3.1.min.js"></script>
+    <link rel="stylesheet" href="/public/vendor/css/font-awesome-4.4.0.min.css">
+    <!-- Roboto Slab (self-hosted woff2 + @font-face; falls back to the --serif system stack). -->
+    <link rel='stylesheet' type='text/css' href='/public/vendor/css/fonts.css'>
 
     <link rel="stylesheet" type='text/css' href='/public/css/cortex.css'>
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -30,6 +38,7 @@
 </head>
 
 <body>
+    <a href="#body" class="skip-link">Skip to main content</a>
     <header class="navbar navbar-default bs-docs-nav" role="banner">
         <div class="container">
             <div class="navbar-header">
@@ -39,20 +48,14 @@
                     <span class="icon-bar"></span>
                     <span class="icon-bar"></span>
                 </button>
+                {% if not global.is_landing %}
                 <span class="navbar-brand">
-                    <span class="hidden-xs">
-                        <a href="/" class="quietlink">
-                            <img src="/public/img/logo.jpg" width="80"> Framework</a>
-                    </span>
-                    <span class="hidden-sm hidden-md hidden-lg">
-                        <a href="/" class="quietlink">
-                            <img src="/public/img/logo.jpg" width="80">
-                        </a>
-                    </span>
+                    <a href="/" class="quietlink" aria-label="CorTeX home"><span class="brand-logo" role="img" aria-label="CorTeX"></span></a>
                 </span>
+                {% endif %}
             </div>
-            {% if global.corpus_name %}
             <nav class="collapse navbar-collapse bs-navbar-collapse" role="navigation">
+                {% if global.corpus_name %}
                 <ul class="nav navbar-nav">
                     <li class="nav-link" data-nav-name="{{global.corpus_name}}">
                         <a href="/corpus/{{global.corpus_name_uri}}">
@@ -83,45 +86,70 @@
                     </li>
                     {% endif %} {% endif %} {% endif %} {% endif %}
                 </ul>
+                {% endif %}
+                <!-- Persistent admin navigation: every management surface reachable from any page. -->
+                <ul class="nav navbar-nav navbar-right cortex-admin-nav">
+                    <li><a href="/" title="Corpora overview"><i class="fa fa-home"></i>&nbsp;Overview</a></li>
+                    <li><a href="/admin" title="Admin dashboard (sign-in required): services, jobs, health, settings, API docs"><i class="fa fa-lock"></i>&nbsp;Admin</a></li>
+                    <li><a href="#" id="theme-toggle" role="button" title="Switch theme (paper / midnight)" aria-label="Switch theme"><i class="fa fa-adjust"></i>&nbsp;Theme</a></li>
+                </ul>
             </nav>
-            {% endif %}
         </div>
     </header>
 
-    <div id="body" class="container">
+    <main id="body" class="container" role="main" tabindex="-1">
         <div class="message">{% if message %} {{message}} {% endif %}</div>
 
         {% block content %} {% endblock content %}
-    </div>
+    </main>
 
-    {% if global.report_duration %}
+    {% if global.report_duration and is_admin %}
       {% include "rerun" %}
       {% include "save-historical-tasks" %}
     {% endif %}
     <footer>
         <nav class="navbar navbar-default navbar-fixed-bottom" role="navigation">
             {% if global.report_duration %}
-            <div class="pull-right">
-                <span class="report-duration" data-report-duration="{{global.report_duration}}">Report generated in
-                    {{global.report_duration}}ms,
-                    on {{global.report_time}}
-                    <a href="#modal-rerun" data-toggle="modal" data-target="#modal-rerun"
-                        title="Mark reported tasks for rerun">
-                        <i class="fa fa-refresh"></i>
-                    </a>
-                    <a href="#modal-savetasks" data-toggle="modal" data-target="#modal-savetasks"
-                        title="Save reported tasks for the historical record">
-                        <i class="fa fa-save"></i>
-                    </a><br>
-                </span>
-                {% if not global.severity %}
-                <span class="auto-refresh">auto refresh:
-                    <label class="switch">
-                        <input type="checkbox" name="refresh" value="false">
-                        <span class="slider round"></span>
-                    </label>
-                </span>
-                <br> {% endif %}
+            <div class="pull-right footer-meta">
+                {# Freshness pill only on rollup-backed report pages (which set report_time_epoch);
+                   other pages that time their render — e.g. the document preview — set report_duration
+                   but have no rollup timestamp, so omit it rather than 500 on a missing variable. #}
+                {% if global.report_time_epoch %}
+                <div class="report-duration fresh-green" data-report-duration="{{global.report_duration}}" data-report-epoch="{{global.report_time_epoch}}" title="Report rendered in {{global.report_duration}} ms · rollup data refreshed {{global.report_time}}"><span class="freshness-dot"></span><span class="freshness-text">data refreshed <span class="freshness-rel"></span><span class="freshness-abs">{{global.report_time}}</span></span></div>
+                {% endif %}
+                <div class="footer-actions">
+                    {% if is_admin %}
+                    {# Rerun: the report page overrides this block to empty (it shows Rerun in its own
+                       run-control row instead); severity/category sub-pages render it here. #}
+                    {% block footer_rerun %}
+                    <a class="footer-action" href="#modal-rerun" data-toggle="modal" data-target="#modal-rerun"
+                        title="Re-queue the reported tasks for conversion"><i class="fa fa-refresh"></i>&nbsp;Rerun</a>
+                    {% endblock footer_rerun %}
+                    {# Save snapshot: the report page overrides this block to empty (it shows Save in its
+                       own run-control row instead); severity/category sub-pages render it here. A
+                       snapshot mid-run is a moving target, so disable it while any task is still in
+                       progress (status >= 0 → todo or queued). serve_savetasks enforces the same. #}
+                    {% block footer_save %}
+                    {% if (global.todo and global.todo != "0") or (global.queued and global.queued != "0") %}
+                    <span class="footer-action footer-action-disabled"
+                        title="Saving a snapshot is disabled while tasks are still in progress — pause or finish the run first."><i class="fa fa-save"></i>&nbsp;Save&nbsp;snapshot</span>
+                    {% else %}
+                    <a class="footer-action" href="#modal-savetasks" data-toggle="modal" data-target="#modal-savetasks"
+                        title="Save the current task statuses as a historical snapshot"><i class="fa fa-save"></i>&nbsp;Save&nbsp;snapshot</a>
+                    {% endif %}
+                    {% endblock footer_save %}
+                    {% if global.corpus_name and global.service_name %}
+                    <a class="footer-action" href="#" id="footer-force-refresh"
+                        title="Recompute this report's cached data now, then reload"><i class="fa fa-database"></i>&nbsp;Refresh&nbsp;this&nbsp;report</a>
+                    {% endif %}
+                    {% else %}
+                    <a class="footer-action" href="/admin/login"
+                        title="Sign in to rerun tasks or save a snapshot"><i class="fa fa-lock"></i>&nbsp;Admin&nbsp;login</a>
+                    {% endif %}
+                    {% if not global.severity %}
+                    <span class="footer-autorefresh"><label class="switch"><input type="checkbox" name="refresh" value="false"><span class="slider round"></span></label>Auto reload</span>
+                    {% endif %}
+                </div>
             </div>
             {% elif not history %}
             <div class="center arxmliv-kwarc-footer">
@@ -133,7 +161,77 @@
             {% endif %} {%block footer_extra %}{% endblock footer_extra %}
         </nav>
     </footer>
-    <script async src='//privacy.kwarc.info/policy.js'></script>
+    <script>
+      // Report freshness: render a live "generated N ago" from the server epoch, colour-coded by
+      // staleness (≤30 min green · ≤2 h light orange · ≤1 day dark orange · older red). Updates in
+      // place so an open report visibly ages when auto-refresh is off.
+      (function () {
+        var el = document.querySelector('.report-duration[data-report-epoch]');
+        if (!el) return;
+        var epoch = parseInt(el.getAttribute('data-report-epoch'), 10);
+        var relEl = el.querySelector('.freshness-rel');
+        if (!epoch || !relEl) return;
+        // Localize the absolute "refreshed at" time to the viewer's zone, with its code (the server
+        // renders it in UTC). Component options + timeZoneName (NOT dateStyle/timeStyle, which throws).
+        var absEl = el.querySelector('.freshness-abs');
+        if (absEl) {
+          try {
+            absEl.textContent = new Intl.DateTimeFormat(undefined, {
+              year: 'numeric', month: 'short', day: 'numeric',
+              hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
+            }).format(new Date(epoch));
+          } catch (e) { /* keep the server's UTC fallback */ }
+        }
+        function rel(ms) {
+          var s = Math.max(0, Math.floor(ms / 1000));
+          if (s < 45) return 'just now';
+          var m = Math.floor(s / 60);
+          if (m < 60) return m + ' minute' + (m === 1 ? '' : 's') + ' ago';
+          var h = Math.floor(m / 60), rm = m % 60;
+          if (h < 24) return h + ' hour' + (h === 1 ? '' : 's') + (rm ? ' ' + rm + ' min' : '') + ' ago';
+          var d = Math.floor(h / 24);
+          return d + ' day' + (d === 1 ? '' : 's') + ' ago';
+        }
+        function update() {
+          var age = Date.now() - epoch;
+          var cls = age <= 1800000 ? 'fresh-green'
+            : age <= 7200000 ? 'fresh-aging'
+            : age <= 86400000 ? 'fresh-stale'
+            : 'fresh-expired';
+          el.className = 'report-duration ' + cls;
+          relEl.textContent = rel(age) + ' · ';
+        }
+        update();
+        setInterval(update, 30000);
+      })();
+    </script>
+    <script>
+      // Footer "Refresh this report": bust THIS (corpus, service)'s cached report grains so the
+      // next view recomputes from current data. The bust is an instant scoped DELETE — just POST
+      // and reload, no background job to poll. Scope comes from the report-page path
+      // (/corpus/<corpus>/<service>/...); the button only renders on report pages anyway.
+      (function () {
+        var btn = document.getElementById('footer-force-refresh');
+        if (!btn) return;
+        var original = btn.innerHTML;
+        function fail(msg) {
+          btn.innerHTML = '<i class="fa fa-exclamation-triangle"></i>&nbsp;' + msg;
+          setTimeout(function () { btn.innerHTML = original; btn.style.pointerEvents = ''; }, 3000);
+        }
+        btn.addEventListener('click', function (e) {
+          e.preventDefault();
+          var parts = location.pathname.split('/'); // ['', 'corpus', '<corpus>', '<service>', ...]
+          if (parts[1] !== 'corpus' || !parts[2] || !parts[3]) return; // not a report page
+          btn.style.pointerEvents = 'none';
+          btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i>&nbsp;Refreshing…';
+          fetch('/corpus/' + parts[2] + '/' + parts[3] + '/refresh', { method: 'POST' })
+            .then(function (r) { if (!r.ok) throw new Error('http'); location.reload(); })
+            .catch(function () { fail('Refresh failed'); });
+        });
+      })();
+    </script>
+    <script src='/public/js/theme.js'></script>
+    <script src='/public/js/localtime.js?v=2'></script>
 </body>
 
 </html>

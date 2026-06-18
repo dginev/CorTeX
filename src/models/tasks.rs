@@ -4,12 +4,17 @@ use diesel::*;
 
 use super::{Corpus, Service};
 use crate::concerns::{CortexDeletable, CortexInsertable};
+use crate::helpers::TaskStatus;
 use crate::schema::tasks;
 
 // Tasks
 
-#[derive(Identifiable, Queryable, AsChangeset, Clone, Debug, PartialEq, Eq, QueryableByName)]
+#[derive(
+  Identifiable, Queryable, Associations, AsChangeset, Clone, Debug, PartialEq, Eq, QueryableByName,
+)]
 #[diesel(table_name = tasks)]
+#[diesel(belongs_to(Corpus, foreign_key = corpus_id))]
+#[diesel(belongs_to(Service, foreign_key = service_id))]
 /// A `CorTeX` task, for a given corpus-service pair
 pub struct Task {
   /// task primary key, auto-incremented by postgresql
@@ -78,6 +83,19 @@ impl Task {
   /// Find task by id, error if none
   pub fn find(taskid: i64, connection: &mut PgConnection) -> Result<Task, Error> {
     tasks::table.find(taskid).first(connection)
+  }
+
+  /// Count of TODO tasks across the whole store — the **pending-conversion backlog** (work waiting
+  /// to be dispatched to the fleet). The single operational "is the fleet keeping up?" number,
+  /// shared by `/metrics` (`cortex_tasks_todo`), the admin dashboard, and `cortex status`. One
+  /// count over `tasks`; bounded, and fast via the partial `todo_index` once a running dispatcher
+  /// drains the backlog. `0` on a query error (best-effort, matching the report paths).
+  pub fn count_todo(connection: &mut PgConnection) -> i64 {
+    tasks::table
+      .filter(tasks::status.eq(TaskStatus::TODO.raw()))
+      .count()
+      .get_result(connection)
+      .unwrap_or(0)
   }
 
   /// Find task by entry, error if none

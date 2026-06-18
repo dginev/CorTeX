@@ -18,6 +18,19 @@ tests/data/cond-mat9912403/tex_to_html.zip
 # Config files
 examples/config.json
 config.json
+cortex.toml
+
+# Local environment / secrets — never commit real credentials (template: .env.example)
+.env
+
+# Owner's private hand-off brief (lives locally, not committed upstream)
+docs/CorTeX-productizing-HANDOFF.md
 
 # Temp files
 *.rdb
+
+# Local UI screenshots (visual verification, not committed)
+.shots/
+
+# Python venv for the Playwright screenshot tool (local, not committed)
+.venv/

@@ -6,28 +6,51 @@
 // except according to those terms.
 use cortex::backend;
 use cortex::backend::RerunOptions;
-use cortex::helpers::{rand_in_range, random_mark, NewTaskMessage, TaskReport, TaskStatus};
-use cortex::models::{Corpus, NewLogInfo, NewTask, Service, Task};
+use cortex::concerns::CortexInsertable;
+use cortex::helpers::{NewTaskMessage, TaskReport, TaskStatus, rand_in_range, random_mark};
+use cortex::models::{Corpus, NewCorpus, NewLogInfo, NewService, NewTask, Service, Task};
 use cortex::schema::log_infos::dsl::task_id;
 use cortex::schema::tasks::dsl::{service_id, status};
 use cortex::schema::{log_infos, tasks};
 use diesel::prelude::*;
 
+/// Seeds a real corpus + service so the Arm 3 `tasks -> corpora/services` foreign keys resolve, and
+/// returns the persisted rows. Names are randomized so parallel/repeated runs don't collide. (Tests
+/// used to fabricate `random_mark()` corpus/service ids without inserting the rows — fine before
+/// the FKs, a constraint violation after.)
+fn seed_corpus_service(connection: &mut PgConnection) -> (Corpus, Service) {
+  let tag = random_mark();
+  let corpus_name = format!("backend_test_corpus_{tag}");
+  let service_name = format!("backend_test_svc_{tag}");
+  NewCorpus {
+    name: corpus_name.clone(),
+    path: String::new(),
+    complex: false,
+    description: String::from("backend_test fixture"),
+  }
+  .create(connection)
+  .expect("seed corpus");
+  NewService {
+    name: service_name.clone(),
+    version: 0.1,
+    inputformat: String::from("tex"),
+    outputformat: String::from("tex"),
+    inputconverter: None,
+    complex: false,
+    description: String::from("backend_test fixture"),
+  }
+  .create(connection)
+  .expect("seed service");
+  let corpus = Corpus::find_by_name(&corpus_name, connection).expect("find seeded corpus");
+  let service = Service::find_by_name(&service_name, connection).expect("find seeded service");
+  (corpus, service)
+}
+
 #[test]
 fn task_table_crud() {
   let mut backend = backend::testdb();
-  let mock_service_id = random_mark();
-  let mock_corpus_id = random_mark();
-  let mock_service = Service {
-    id: mock_service_id,
-    name: String::from("mock_service"),
-    complex: false,
-    inputconverter: None,
-    inputformat: String::from("tex"),
-    outputformat: String::from("tex"),
-    description: String::from("mock"),
-    version: 0.1,
-  };
+  let (mock_corpus, mock_service) = seed_corpus_service(&mut backend.connection);
+  let mock_corpus_id = mock_corpus.id;
   let mock_task = NewTask {
     entry: String::from("mock_task"),
     service_id: mock_service.id,
@@ -60,18 +83,8 @@ fn task_table_crud() {
 fn task_lifecycle_test() {
   let mut backend = backend::testdb();
   // Add 100 tasks, out of which we will mark 17
-  let mock_service_id = random_mark();
-  let mock_corpus_id = random_mark();
-  let mock_service = Service {
-    id: mock_service_id,
-    name: String::from("mark_tasks"),
-    complex: false,
-    inputconverter: None,
-    description: String::from("mock"),
-    inputformat: String::from("tex"),
-    outputformat: String::from("tex"),
-    version: 0.1,
-  };
+  let (mock_corpus, mock_service) = seed_corpus_service(&mut backend.connection);
+  let mock_corpus_id = mock_corpus.id;
   let mock_task = NewTask {
     entry: String::from("mark_task"),
     service_id: mock_service.id,
@@ -123,25 +136,8 @@ fn task_lifecycle_test() {
 #[test]
 fn batch_ops_test() {
   let mut backend = backend::testdb();
-  let mock_service = Service {
-    id: random_mark(),
-    name: String::from("batch_ops_test"),
-    complex: false,
-    inputconverter: None,
-    description: String::from("mock"),
-    inputformat: String::from("tex"),
-    outputformat: String::from("tex"),
-    version: 0.1,
-  };
-
-  let mock_corpus_id = random_mark();
-  let mock_corpus = Corpus {
-    id: mock_corpus_id,
-    name: String::from("batch_ops_test_corpus"),
-    path: String::new(),
-    complex: false,
-    description: String::new(),
-  };
+  let (mock_corpus, mock_service) = seed_corpus_service(&mut backend.connection);
+  let mock_corpus_id = mock_corpus.id;
 
   let mock_task_count = rand_in_range(10, 100) as usize;
   let mock_new_task = NewTask {
@@ -204,6 +200,33 @@ fn batch_ops_test() {
     .count()
     .get_result(&mut backend.connection);
   assert_eq!(done_logs_result, Ok(mock_task_count as i64));
+
+  // Re-finalize the SAME tasks with NO messages: mark_done must batch-delete the prior logs (not
+  // leave them stale), even when the new report carries no messages (covers the D-8 batched
+  // delete).
+  let refinalize_targets: Vec<Task> = tasks::table
+    .filter(tasks::id.eq_any(&done_task_ids))
+    .get_results(&mut backend.connection)
+    .expect("refetch the done tasks");
+  let empty_reports: Vec<TaskReport> = refinalize_targets
+    .into_iter()
+    .map(|task| TaskReport {
+      status: TaskStatus::NoProblem,
+      messages: vec![],
+      task,
+    })
+    .collect();
+  assert!(backend.mark_done(&empty_reports).is_ok());
+  let logs_after_refinalize: Result<i64, _> = log_infos::table
+    .filter(task_id.eq_any(&done_task_ids))
+    .count()
+    .get_result(&mut backend.connection);
+  assert_eq!(
+    logs_after_refinalize,
+    Ok(0),
+    "re-finalizing with no messages deletes the prior logs (batched delete)"
+  );
+
   // There should be no TODO tasks left for this service
   let pre_rerun_todo_count = tasks::table
     .filter(service_id.eq(mock_service.id))
@@ -250,4 +273,179 @@ fn batch_ops_test() {
   let post_cleanup = backend.delete_by(&mock_new_task, "service_id");
 
   assert_eq!(post_cleanup, Ok(mock_task_count));
+}
+
+#[test]
+fn mark_done_routes_messages_to_severity_tables() {
+  // The batched per-table inserts must route each message to its own `log_*` table by severity.
+  use cortex::models::{NewLogError, NewLogFatal, NewLogWarning};
+  use cortex::schema::{log_errors, log_fatals, log_warnings};
+  let mut backend = backend::testdb();
+  let (mock_corpus, mock_service) = seed_corpus_service(&mut backend.connection);
+  let mock_service_id = mock_service.id;
+  let mock_corpus_id = mock_corpus.id;
+  let mock_task = NewTask {
+    entry: String::from("sev_route_task"),
+    service_id: mock_service_id,
+    corpus_id: mock_corpus_id,
+    status: TaskStatus::TODO.raw(),
+  };
+  let _ = backend.delete_by(&mock_task, "service_id");
+  for index in 1..=2 {
+    let indexed = NewTask {
+      entry: format!("sev_route_task{index}"),
+      ..mock_task.clone()
+    };
+    backend.add(&indexed).expect("add task");
+  }
+  let tasks: Vec<Task> = tasks::table
+    .filter(service_id.eq(mock_service_id))
+    .get_results(&mut backend.connection)
+    .expect("fetch tasks");
+  assert_eq!(tasks.len(), 2);
+  let (id_a, id_b) = (tasks[0].id, tasks[1].id);
+  let reports = vec![
+    TaskReport {
+      status: TaskStatus::Error,
+      messages: vec![
+        NewTaskMessage::Warning(NewLogWarning {
+          task_id: id_a,
+          category: String::from("cat"),
+          what: String::from("what"),
+          details: String::new(),
+        }),
+        NewTaskMessage::Error(NewLogError {
+          task_id: id_a,
+          category: String::from("cat"),
+          what: String::from("what"),
+          details: String::new(),
+        }),
+      ],
+      task: tasks[0].clone(),
+    },
+    TaskReport {
+      status: TaskStatus::Fatal,
+      messages: vec![NewTaskMessage::Fatal(NewLogFatal {
+        task_id: id_b,
+        category: String::from("cat"),
+        what: String::from("what"),
+        details: String::new(),
+      })],
+      task: tasks[1].clone(),
+    },
+  ];
+  backend.mark_done(&reports).expect("mark_done");
+
+  // The status UPDATEs are batched by distinct status; with two different statuses in one batch,
+  // each task must still receive its own (the grouping routes the disjoint id sets correctly).
+  let status_a: i32 = tasks::table
+    .find(id_a)
+    .select(tasks::status)
+    .first(&mut backend.connection)
+    .unwrap();
+  let status_b: i32 = tasks::table
+    .find(id_b)
+    .select(tasks::status)
+    .first(&mut backend.connection)
+    .unwrap();
+  assert_eq!(
+    status_a,
+    TaskStatus::Error.raw(),
+    "task_a finalized as Error"
+  );
+  assert_eq!(
+    status_b,
+    TaskStatus::Fatal.raw(),
+    "task_b finalized as Fatal"
+  );
+
+  let ids = vec![id_a, id_b];
+  let warns: i64 = log_warnings::table
+    .filter(log_warnings::task_id.eq_any(&ids))
+    .count()
+    .get_result(&mut backend.connection)
+    .unwrap();
+  let errs: i64 = log_errors::table
+    .filter(log_errors::task_id.eq_any(&ids))
+    .count()
+    .get_result(&mut backend.connection)
+    .unwrap();
+  let fatals: i64 = log_fatals::table
+    .filter(log_fatals::task_id.eq_any(&ids))
+    .count()
+    .get_result(&mut backend.connection)
+    .unwrap();
+  assert_eq!(warns, 1, "the warning routed to log_warnings");
+  assert_eq!(errs, 1, "the error routed to log_errors");
+  assert_eq!(fatals, 1, "the fatal routed to log_fatals");
+
+  // Cleanup: deleting the tasks now cascades their log_* rows (the Arm 3 FK), but remove the logs
+  // explicitly too so cleanup is unambiguous regardless of delete order.
+  let _ = diesel::delete(log_warnings::table.filter(log_warnings::task_id.eq_any(&ids)))
+    .execute(&mut backend.connection);
+  let _ = diesel::delete(log_errors::table.filter(log_errors::task_id.eq_any(&ids)))
+    .execute(&mut backend.connection);
+  let _ = diesel::delete(log_fatals::table.filter(log_fatals::task_id.eq_any(&ids)))
+    .execute(&mut backend.connection);
+  let _ = backend.delete_by(&mock_task, "service_id");
+}
+
+#[test]
+fn clear_limbo_except_preserves_in_flight_tasks() {
+  // A ventilator restart re-runs limbo-clearing while the sink is still processing in-flight tasks;
+  // those (held in `progress_queue`) must NOT be reset to TODO, or they get re-leased while their
+  // original result is still pending (a double-dispatch). The excluded ids are preserved.
+  let mut backend = backend::testdb();
+  let (mock_corpus, mock_service) = seed_corpus_service(&mut backend.connection);
+  let mock_service_id = mock_service.id;
+  let mock_corpus_id = mock_corpus.id;
+  let mock_task = NewTask {
+    entry: String::from("limbo_except_task"),
+    service_id: mock_service_id,
+    corpus_id: mock_corpus_id,
+    status: TaskStatus::TODO.raw(),
+  };
+  let _ = backend.delete_by(&mock_task, "service_id");
+  // Three tasks all marked Queued (a positive lease mark, > TODO).
+  let queued_mark: i32 = 4321;
+  for index in 1..=3 {
+    let indexed = NewTask {
+      entry: format!("limbo_except_task{index}"),
+      status: queued_mark,
+      ..mock_task.clone()
+    };
+    backend.add(&indexed).expect("add queued task");
+  }
+  let queued: Vec<Task> = tasks::table
+    .filter(service_id.eq(mock_service_id))
+    .get_results(&mut backend.connection)
+    .expect("fetch queued tasks");
+  assert_eq!(queued.len(), 3);
+  let in_flight = vec![queued[0].id]; // pretend the first is in-flight (in progress_queue)
+  backend
+    .clear_limbo_tasks_except(&in_flight)
+    .expect("clear limbo except in-flight");
+
+  // The in-flight task is preserved (still Queued); the other two reset to TODO.
+  let first_status: i32 = tasks::table
+    .find(queued[0].id)
+    .select(status)
+    .first(&mut backend.connection)
+    .unwrap();
+  assert_eq!(
+    first_status, queued_mark,
+    "the in-flight task is NOT reset (no double-dispatch)"
+  );
+  let todo_count: i64 = tasks::table
+    .filter(service_id.eq(mock_service_id))
+    .filter(status.eq(TaskStatus::TODO.raw()))
+    .count()
+    .get_result(&mut backend.connection)
+    .unwrap();
+  assert_eq!(
+    todo_count, 2,
+    "the other two Queued tasks were recovered to TODO"
+  );
+
+  let _ = backend.delete_by(&mock_task, "service_id");
 }

@@ -1,5 +1,6 @@
 {% extends "layout" %} {% block content %}
 <div class="center">
+  {% include "breadcrumb" %}
   <h1>Entries {{global.from_offset}} to {{global.to_offset}}</h1>
   <br>
   <div>
@@ -7,17 +8,17 @@
     <table id="corpus-report" class="table">
       <thead>
         <tr>
-          <th class="left">Entry</th>
-          <th class="left">Source</th>
-          <th class="left">Result</th>
-          <th class="left">Preview</th>
-          <th class="left">Details</th>
+          <th scope="col" class="left">Entry</th>
+          <th scope="col" class="left">Source</th>
+          <th scope="col" class="left">Result</th>
+          <th scope="col" class="left">Preview</th>
+          <th scope="col" class="left">Details</th>
         </tr>
       </thead>
       <tbody>
         {% for this in entries %}
         <tr class="{{global.highlight}} corpus-report-task-list">
-          <td class="left">{{this.entry_name}}</td>
+          <td class="left"><a href="/document/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{this.entry_name}}">{{this.entry_name}}</a></td>
           <td class="left task-source">
             <a class="entry-submit" data-action="download" href="/entry/{{global.inputconverter_uri}}/{{this.entry_taskid}}">{{global.inputformat}}</a>
           </td>

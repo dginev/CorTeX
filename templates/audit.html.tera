@@ -1,0 +1,52 @@
+{% extends "layout" %} {% block content %}
+<div class="col-md-1"></div>
+<div class="col-md-10">
+  <div class="center">
+    <h1>Audit log</h1>
+    <p>Signed in as <strong>{{ owner }}</strong> &nbsp;·&nbsp; <a href="/admin">back to dashboard</a> &nbsp;·&nbsp; <a href="/api/audit">view as JSON</a></p>
+    <p>Recent admin actions and who took them. An empty actor is an unauthenticated attempt.</p>
+  </div>
+
+  <form method="get" action="/admin/audit" class="center gap-bottom">
+    <label>Filter by actor
+      <input type="text" name="actor" value="{{ actor_filter | default(value='') }}" placeholder="(all actors)">
+    </label>
+    <button type="submit">Filter</button>
+    {% if actor_filter %}<a href="/admin/audit" class="gap-left">clear</a>{% endif %}
+  </form>
+
+  <table id="audit-log" class="table">
+    <thead>
+      <tr>
+        <th scope="col" class="left">When</th>
+        <th scope="col" class="left">Actor</th>
+        <th scope="col" class="left">Action</th>
+        <th scope="col" class="left">Target</th>
+        <th scope="col" class="right">Outcome</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td class="left"><span title="#{{ row.id }}"><time datetime="{{ row.at }}">{{ row.at }}</time></span></td>
+        <td class="left">{% if row.actor %}<a href="/admin/audit?actor={{ row.actor }}">{{ row.actor }}</a>{% else %}<em>—</em>{% endif %}</td>
+        <td class="left">{{ row.action }}</td>
+        <td class="left"><code>{{ row.target }}</code></td>
+        <td class="right">{% if row.outcome is starting_with("2") %}{{ row.outcome }}{% else %}<strong>{{ row.outcome }}</strong>{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="center"><em>No admin actions recorded yet.</em></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if has_prev or has_next %}
+  <nav class="center" aria-label="Audit log pages">
+    {% if has_prev %}<a href="/admin/audit?page={{ prev_page }}{% if actor_filter %}&amp;actor={{ actor_filter }}{% endif %}">&larr; newer</a>{% else %}<span class="muted">&larr; newer</span>{% endif %}
+    &nbsp;&middot;&nbsp;<span class="muted">page {{ page + 1 }}</span>&nbsp;&middot;&nbsp;
+    {% if has_next %}<a href="/admin/audit?page={{ next_page }}{% if actor_filter %}&amp;actor={{ actor_filter }}{% endif %}">older &rarr;</a>{% else %}<span class="muted">older &rarr;</span>{% endif %}
+  </nav>
+  {% endif %}
+</div>
+<div class="col-md-1"></div>
+{% endblock content %}

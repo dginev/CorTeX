@@ -1,0 +1,49 @@
+{% extends "layout" %} {% block content %}
+<div class="col-md-1"></div>
+<div class="col-md-10">
+  <div class="center">
+    <h1>Your passkeys</h1>
+    <p>Signed in as <strong>{{ owner }}</strong> &nbsp;·&nbsp; <a href="/admin">back to dashboard</a></p>
+    <p>Passkeys let you sign in with your device (Touch ID / Windows Hello / a security key) instead of
+      pasting an admin token. They are local to this CorTeX — nothing leaves the server but a public key.</p>
+  </div>
+
+  {% if enabled %}
+  <p><button type="button" id="enroll-passkey" class="btn btn-primary"><i class="fa fa-plus"></i>&nbsp; Enroll a passkey</button></p>
+  {% else %}
+  <p class="muted"><i class="fa fa-exclamation-triangle"></i>&nbsp; Passkey sign-in is not enabled on this
+    deployment (set <code>[webauthn]</code> in <code>cortex.toml</code> — see docs/archive/WEBAUTHN_DESIGN.md). The
+    admin token still signs you in.</p>
+  {% endif %}
+
+  <table id="passkeys" class="table">
+    <thead>
+      <tr>
+        <th scope="col" class="left">Authenticator</th>
+        <th scope="col" class="left">Enrolled</th>
+        <th scope="col" class="left">Last used</th>
+        <th scope="col" class="right"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for key in passkeys %}
+      <tr>
+        <td class="left">{{ key.label }}</td>
+        <td class="left"><time datetime="{{ key.created_at }}">{{ key.created_at }}</time></td>
+        <td class="left"><time datetime="{{ key.last_used }}">{{ key.last_used }}</time></td>
+        <td class="right">
+          <form method="post" action="/admin/passkeys/{{ key.id }}/delete" class="inline-form"
+            onsubmit="return confirm('Remove the passkey &quot;{{ key.label }}&quot;? You will not be able to sign in with it again.');">
+            <button type="submit" class="btn btn-link btn-link-danger">remove</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="center"><em>No passkeys enrolled yet{% if enabled %} — enroll one above{% endif %}.</em></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="col-md-1"></div>
+<script src="/public/js/webauthn.js"></script>
+{% endblock content %}

@@ -76,6 +76,154 @@ fn can_import_simple() {
 }
 
 #[test]
+fn import_skips_unreadable_paths_instead_of_aborting() {
+  // Hostile-data resilience: a single unreadable path (here a broken symlink, whose `metadata()`
+  // errors) must not sink the whole import — the valid entries are still imported. Before the walk
+  // was hardened, the `fs::metadata(..)?` on the broken symlink aborted the entire walk.
+  use std::os::unix::fs::symlink;
+  let root = std::env::temp_dir().join("cortex_import_faulttolerance");
+  let _ = fs::remove_dir_all(&root);
+  let entry_dir = root.join("validentry");
+  fs::create_dir_all(&entry_dir).expect("create the valid entry dir");
+  fs::write(
+    entry_dir.join("validentry.tex"),
+    b"\\documentclass{article}",
+  )
+  .expect("write entry");
+  // A broken symlink sibling: `fs::metadata` follows it and errors.
+  let _ = symlink("/nonexistent/cortex/import/target", root.join("brokenlink"));
+
+  let mut test_backend = backend::testdb();
+  let name = "fault tolerance import test";
+  let _ = delete(corpora::table)
+    .filter(corpora::name.eq(name))
+    .execute(&mut test_backend.connection);
+  let new_corpus = NewCorpus {
+    name: name.to_string(),
+    path: format!("{}/", root.to_str().expect("temp path is UTF-8")),
+    complex: false,
+    description: String::new(),
+  };
+  test_backend.add(&new_corpus).expect("add corpus");
+  let corpus = Corpus::find_by_name(name, &mut test_backend.connection).expect("corpus");
+  let corpus_id = corpus.id;
+  let mut importer = Importer {
+    corpus,
+    backend: backend::testdb(),
+    ..Importer::default()
+  };
+
+  let imported = importer
+    .walk_import()
+    .expect("the broken symlink must not abort the import");
+  assert_eq!(
+    imported, 1,
+    "the one valid entry is imported despite the broken symlink sibling"
+  );
+
+  // cleanup
+  let _ = delete(tasks::table)
+    .filter(tasks::corpus_id.eq(corpus_id))
+    .execute(&mut test_backend.connection);
+  let _ = delete(corpora::table)
+    .filter(corpora::name.eq(name))
+    .execute(&mut test_backend.connection);
+  let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn import_walk_terminates_on_a_symlink_loop() {
+  // Hostile-data resilience: a symlink loop in the corpus (`loop -> root`) must not make the walk
+  // recurse forever (unbounded paths → unbounded tasks + a job that keeps "progressing", so the
+  // heartbeat-keyed stale-reap never fires). The depth bound caps it, so the import TERMINATES with
+  // a bounded count rather than hanging. (Without the bound this test would hang, not just fail.)
+  use std::os::unix::fs::symlink;
+  let root = std::env::temp_dir().join("cortex_import_symlink_loop");
+  let _ = fs::remove_dir_all(&root);
+  let entry_dir = root.join("validentry");
+  fs::create_dir_all(&entry_dir).expect("create the valid entry dir");
+  fs::write(
+    entry_dir.join("validentry.tex"),
+    b"\\documentclass{article}",
+  )
+  .expect("write entry");
+  // The self-loop: `root/loop` points back at `root`, so a naive walk would recurse forever.
+  symlink(&root, root.join("loop")).expect("create the loop symlink");
+
+  let mut test_backend = backend::testdb();
+  let name = "symlink loop import test";
+  let _ = delete(corpora::table)
+    .filter(corpora::name.eq(name))
+    .execute(&mut test_backend.connection);
+  let new_corpus = NewCorpus {
+    name: name.to_string(),
+    path: format!("{}/", root.to_str().expect("temp path is UTF-8")),
+    complex: false,
+    description: String::new(),
+  };
+  test_backend.add(&new_corpus).expect("add corpus");
+  let corpus = Corpus::find_by_name(name, &mut test_backend.connection).expect("corpus");
+  let corpus_id = corpus.id;
+  let mut importer = Importer {
+    corpus,
+    backend: backend::testdb(),
+    ..Importer::default()
+  };
+
+  // The key property: this RETURNS (does not hang) — the depth bound terminates the loop.
+  let imported = importer
+    .walk_import()
+    .expect("the symlink loop must not hang the import");
+  assert!(
+    (1..1000).contains(&imported),
+    "the loop is depth-bounded, not infinite (got {imported} imported entries)"
+  );
+
+  let _ = delete(tasks::table)
+    .filter(tasks::corpus_id.eq(corpus_id))
+    .execute(&mut test_backend.connection);
+  let _ = delete(corpora::table)
+    .filter(corpora::name.eq(name))
+    .execute(&mut test_backend.connection);
+  let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn import_does_not_panic_on_glob_metacharacter_path() {
+  // A corpus path containing glob metacharacters (here an unterminated `[` character class) makes
+  // the complex-import `glob(path/*.tar)` pattern fail to compile. It must fail *gracefully* (an
+  // Err out of `process`), not `.unwrap()`-panic the import (the I-1 unpack-path hardening).
+  let mut test_backend = backend::testdb();
+  let name = "glob metachar import test";
+  let _ = delete(corpora::table)
+    .filter(corpora::name.eq(name))
+    .execute(&mut test_backend.connection);
+  let new_corpus = NewCorpus {
+    name: name.to_string(),
+    path: "/tmp/cortex_glob_[unclosed/".to_string(),
+    complex: true,
+    description: String::new(),
+  };
+  test_backend.add(&new_corpus).expect("add corpus");
+  let corpus = Corpus::find_by_name(name, &mut test_backend.connection).expect("corpus");
+  let mut importer = Importer {
+    corpus,
+    backend: backend::testdb(),
+    ..Importer::default()
+  };
+
+  let result = importer.process();
+  assert!(
+    result.is_err(),
+    "a glob-metacharacter corpus path fails gracefully (Err), not via panic"
+  );
+
+  let _ = delete(corpora::table)
+    .filter(corpora::name.eq(name))
+    .execute(&mut test_backend.connection);
+}
+
+#[test]
 fn can_import_complex() {
   let mut test_backend = backend::testdb();
   let name = "complex import test";
@@ -132,4 +280,33 @@ fn can_import_complex() {
     .filter(tasks::corpus_id.eq(corpus_id))
     .execute(&mut test_backend.connection);
   assert!(clean_slate_post.is_ok());
+}
+
+#[test]
+fn find_by_name_is_case_insensitive_and_preserves_stored_case() {
+  // A mixed-case display name (e.g. `arXiv`) must resolve at any URL case, and the stored case is
+  // preserved so the report title reads `arXiv`, not `arxiv`.
+  let mut test_backend = backend::testdb();
+  let name = "ArXiv-CaseTest";
+  let _ = delete(corpora::table)
+    .filter(corpora::name.eq(name))
+    .execute(&mut test_backend.connection);
+  test_backend
+    .add(&NewCorpus {
+      name: name.to_string(),
+      path: "tests/data/".to_string(),
+      complex: false,
+      description: String::new(),
+    })
+    .expect("add mixed-case corpus");
+
+  for query in ["arxiv-casetest", "ARXIV-CASETEST", "ArXiv-CaseTest"] {
+    let found = Corpus::find_by_name(query, &mut test_backend.connection)
+      .unwrap_or_else(|_| panic!("corpus must resolve for query {query:?}"));
+    assert_eq!(found.name, name, "the stored case is preserved");
+  }
+
+  let _ = delete(corpora::table)
+    .filter(corpora::name.eq(name))
+    .execute(&mut test_backend.connection);
 }

@@ -23,12 +23,12 @@ pub struct LogInfo {
   pub id: i64,
   /// owner task's id
   pub task_id: i64,
-  /// mid-level description (open set)
-  pub category: String,
-  /// low-level description (open set)
-  pub what: String,
-  /// technical details of the message (e.g. localization info)
-  pub details: String,
+  /// mid-level description (open set; the column is nullable, hence `Option`)
+  pub category: Option<String>,
+  /// low-level description (open set; the column is nullable, hence `Option`)
+  pub what: Option<String>,
+  /// technical details of the message, e.g. localization info (nullable column)
+  pub details: Option<String>,
 }
 #[derive(Insertable, Clone, Debug)]
 #[diesel(table_name = log_infos)]
@@ -52,12 +52,12 @@ pub struct LogWarning {
   pub id: i64,
   /// owner task's id
   pub task_id: i64,
-  /// mid-level description (open set)
-  pub category: String,
-  /// low-level description (open set)
-  pub what: String,
-  /// technical details of the message (e.g. localization info)
-  pub details: String,
+  /// mid-level description (open set; the column is nullable, hence `Option`)
+  pub category: Option<String>,
+  /// low-level description (open set; the column is nullable, hence `Option`)
+  pub what: Option<String>,
+  /// technical details of the message, e.g. localization info (nullable column)
+  pub details: Option<String>,
 }
 #[derive(Insertable, Clone, Debug)]
 #[diesel(table_name = log_warnings)]
@@ -81,12 +81,12 @@ pub struct LogError {
   pub id: i64,
   /// owner task's id
   pub task_id: i64,
-  /// mid-level description (open set)
-  pub category: String,
-  /// low-level description (open set)
-  pub what: String,
-  /// technical details of the message (e.g. localization info)
-  pub details: String,
+  /// mid-level description (open set; the column is nullable, hence `Option`)
+  pub category: Option<String>,
+  /// low-level description (open set; the column is nullable, hence `Option`)
+  pub what: Option<String>,
+  /// technical details of the message, e.g. localization info (nullable column)
+  pub details: Option<String>,
 }
 #[derive(Insertable, Clone, Debug)]
 #[diesel(table_name = log_errors)]
@@ -110,12 +110,12 @@ pub struct LogFatal {
   pub id: i64,
   /// owner task's id
   pub task_id: i64,
-  /// mid-level description (open set)
-  pub category: String,
-  /// low-level description (open set)
-  pub what: String,
-  /// technical details of the message (e.g. localization info)
-  pub details: String,
+  /// mid-level description (open set; the column is nullable, hence `Option`)
+  pub category: Option<String>,
+  /// low-level description (open set; the column is nullable, hence `Option`)
+  pub what: Option<String>,
+  /// technical details of the message, e.g. localization info (nullable column)
+  pub details: Option<String>,
 }
 #[derive(Insertable, Clone, Debug)]
 #[diesel(table_name = log_fatals)]
@@ -139,12 +139,12 @@ pub struct LogInvalid {
   pub id: i64,
   /// owner task's id
   pub task_id: i64,
-  /// mid-level description (open set)
-  pub category: String,
-  /// low-level description (open set)
-  pub what: String,
-  /// technical details of the message (e.g. localization info)
-  pub details: String,
+  /// mid-level description (open set; the column is nullable, hence `Option`)
+  pub category: Option<String>,
+  /// low-level description (open set; the column is nullable, hence `Option`)
+  pub what: Option<String>,
+  /// technical details of the message, e.g. localization info (nullable column)
+  pub details: Option<String>,
 }
 #[derive(Insertable, Clone, Debug)]
 #[diesel(table_name = log_invalids)]
@@ -195,10 +195,10 @@ impl fmt::Display for dyn LogRecord {
 
 impl LogRecord for LogInfo {
   fn task_id(&self) -> i64 { self.task_id }
-  fn category(&self) -> &str { &self.category }
-  fn what(&self) -> &str { &self.what }
-  fn details(&self) -> &str { &self.details }
-  fn set_details(&mut self, new_details: String) { self.details = new_details; }
+  fn category(&self) -> &str { self.category.as_deref().unwrap_or_default() }
+  fn what(&self) -> &str { self.what.as_deref().unwrap_or_default() }
+  fn details(&self) -> &str { self.details.as_deref().unwrap_or_default() }
+  fn set_details(&mut self, new_details: String) { self.details = Some(new_details); }
   fn severity(&self) -> &str { "info" }
 }
 impl LogRecord for NewLogInfo {
@@ -218,10 +218,10 @@ impl CortexInsertable for NewLogInfo {
 }
 impl LogRecord for LogWarning {
   fn task_id(&self) -> i64 { self.task_id }
-  fn category(&self) -> &str { &self.category }
-  fn what(&self) -> &str { &self.what }
-  fn details(&self) -> &str { &self.details }
-  fn set_details(&mut self, new_details: String) { self.details = new_details; }
+  fn category(&self) -> &str { self.category.as_deref().unwrap_or_default() }
+  fn what(&self) -> &str { self.what.as_deref().unwrap_or_default() }
+  fn details(&self) -> &str { self.details.as_deref().unwrap_or_default() }
+  fn set_details(&mut self, new_details: String) { self.details = Some(new_details); }
   fn severity(&self) -> &str { "warning" }
 }
 impl LogRecord for NewLogWarning {
@@ -241,10 +241,10 @@ impl CortexInsertable for NewLogWarning {
 }
 impl LogRecord for LogError {
   fn task_id(&self) -> i64 { self.task_id }
-  fn category(&self) -> &str { &self.category }
-  fn what(&self) -> &str { &self.what }
-  fn details(&self) -> &str { &self.details }
-  fn set_details(&mut self, new_details: String) { self.details = new_details; }
+  fn category(&self) -> &str { self.category.as_deref().unwrap_or_default() }
+  fn what(&self) -> &str { self.what.as_deref().unwrap_or_default() }
+  fn details(&self) -> &str { self.details.as_deref().unwrap_or_default() }
+  fn set_details(&mut self, new_details: String) { self.details = Some(new_details); }
   fn severity(&self) -> &str { "error" }
 }
 impl LogRecord for NewLogError {
@@ -264,10 +264,10 @@ impl CortexInsertable for NewLogError {
 }
 impl LogRecord for LogFatal {
   fn task_id(&self) -> i64 { self.task_id }
-  fn category(&self) -> &str { &self.category }
-  fn what(&self) -> &str { &self.what }
-  fn details(&self) -> &str { &self.details }
-  fn set_details(&mut self, new_details: String) { self.details = new_details; }
+  fn category(&self) -> &str { self.category.as_deref().unwrap_or_default() }
+  fn what(&self) -> &str { self.what.as_deref().unwrap_or_default() }
+  fn details(&self) -> &str { self.details.as_deref().unwrap_or_default() }
+  fn set_details(&mut self, new_details: String) { self.details = Some(new_details); }
   fn severity(&self) -> &str { "fatal" }
 }
 impl LogRecord for NewLogFatal {
@@ -287,10 +287,10 @@ impl CortexInsertable for NewLogFatal {
 }
 impl LogRecord for LogInvalid {
   fn task_id(&self) -> i64 { self.task_id }
-  fn category(&self) -> &str { &self.category }
-  fn what(&self) -> &str { &self.what }
-  fn details(&self) -> &str { &self.details }
-  fn set_details(&mut self, new_details: String) { self.details = new_details; }
+  fn category(&self) -> &str { self.category.as_deref().unwrap_or_default() }
+  fn what(&self) -> &str { self.what.as_deref().unwrap_or_default() }
+  fn details(&self) -> &str { self.details.as_deref().unwrap_or_default() }
+  fn set_details(&mut self, new_details: String) { self.details = Some(new_details); }
   fn severity(&self) -> &str { "invalid" }
 }
 impl LogRecord for NewLogInvalid {

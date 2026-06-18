@@ -1,16 +1,30 @@
 {% extends "layout" %} {% block content %}
 <div class="center">
   <h1>Services for {{global.corpus_name}}</h1>
+  {% if global.sandbox_parent %}
+  <p class="sandbox-provenance"><i class="fa fa-cube"></i>&nbsp;Sandbox carved from
+    <a href="/corpus/{{global.sandbox_parent_uri}}">{{global.sandbox_parent}}</a>{% if global.sandbox_filter %}
+    <span class="report-sep">·</span> <span class="muted">{{global.sandbox_filter}}</span>{% endif %}</p>
+  {% endif %}
+  {% if global.deactivated %}
+  <p class="flash-saved"><i class="fa fa-check-circle"></i>&nbsp;Service <strong>{{ global.deactivated }}</strong> was deactivated from this corpus (its tasks and log messages here were deleted).</p>
+  {% endif %}
+  {% if global.sandbox_error %}
+  <p class="flash-error"><i class="fa fa-exclamation-triangle"></i>&nbsp;{{ global.sandbox_error }}</p>
+  {% endif %}
   <br>
   <div>
     <table id="service-report" class="table">
       <thead>
         <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>From</th>
-          <th>To</th>
-          <th>Description</th>
+          <th scope="col" class="left">Service</th>
+          <th scope="col" class="right">Total</th>
+          <th scope="col" class="right">No&nbsp;problem</th>
+          <th scope="col" class="right">Warning</th>
+          <th scope="col" class="right">Error</th>
+          <th scope="col" class="right">Fatal</th>
+          <th scope="col" class="right">TODO</th>
+          <th scope="col" class="left">Run history</th>
         </tr>
       </thead>
       <tbody>
@@ -19,14 +33,113 @@
           <td class="left">
             <a href="/corpus/{{global.corpus_name_uri}}/{{service.name_uri}}">{{service.name}}</a>
           </td>
-          <td class="left">converter</td>
-          <td class="left">{{service.inputformat}}</td>
-          <td class="left">{{service.outputformat}}</td>
-          <td class="left">{{service.description}}</td>
+          <td class="right">{{ service.total | group_thousands }}</td>
+          <td class="right {% if service.no_problem == '0' %}count-zero{% else %}count-ok{% endif %}">{{ service.no_problem | group_thousands }}</td>
+          <td class="right {% if service.warning == '0' %}count-zero{% else %}count-warn{% endif %}">{{ service.warning | group_thousands }}</td>
+          <td class="right {% if service.error == '0' %}count-zero{% else %}count-error{% endif %}">{{ service.error | group_thousands }}</td>
+          <td class="right {% if service.fatal == '0' %}count-zero{% else %}count-fatal{% endif %}">{{ service.fatal | group_thousands }}</td>
+          <td class="right {% if service.todo == '0' %}count-zero{% else %}count-todo{% endif %}">{{ service.todo | group_thousands }}</td>
+          <td class="left">
+            <a href="/runs/{{global.corpus_name_uri}}/{{service.name_uri}}">runs</a> &middot;
+            <a href="/runs/{{global.corpus_name_uri}}/{{service.name_uri}}/diff">diff</a> &middot;
+            <a href="/history/{{global.corpus_name_uri}}/{{service.name_uri}}">chart</a>
+            {# init (1) / import (2) are magic infrastructure services — never deactivatable.
+               Admin-only: a non-signed-in visitor never sees the deactivate control. #}
+            {% if is_admin and service.id != "1" and service.id != "2" %}
+            <form method="post"
+              action="/corpus/{{global.corpus_name_uri}}/services/{{service.name_uri}}/deactivate"
+              class="inline-form gap-left"
+              onsubmit="return confirm('Deactivate {{service.name}} from {{global.corpus_name}}? This deletes its tasks and log messages for this corpus.');">
+              <input type="hidden" name="confirm" value="{{service.name}}">
+              <button type="submit" title="Retire this service from this corpus (delete its tasks + logs)">deactivate</button>
+            </form>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+
+  {% if is_admin %}
+  <fieldset class="corpus-actions">
+    <legend>Corpus actions</legend>
+
+    {% if all_services and all_services | length > 0 %}
+    <form method="post" action="/corpus/{{global.corpus_name_uri}}/activate">
+      <label for="ca-register" class="action-title">Register a service</label>
+      <div class="action-control">
+        <select id="ca-register" name="service" aria-label="Service to register on this corpus" required>
+          {% for service in all_services %}
+          <option value="{{ service.name }}">{{ service.name }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn-default">Register</button>
+      </div>
+    </form>
+    {% endif %}
+
+    <form method="post" action="/corpus/{{global.corpus_name_uri}}/extend">
+      <span class="action-label action-title">Re-scan corpus path</span>
+      <div class="action-control action-stack">
+        <span class="muted">Pick up newly-arrived entries from <code>{{global.corpus_path}}</code>.</span>
+        <button type="submit" class="btn-primary">Extend</button>
+      </div>
+    </form>
+
+    {% if services and services | length > 0 %}
+    <form method="post" action="/corpus/{{global.corpus_name_uri}}/sandbox" class="action-section">
+      <p class="action-subhead action-title">Prepare a sandbox <span class="muted">— a working subset, by task status &amp;/or message filter (intersected)</span></p>
+      <label for="sbx-name">Sandbox name</label>
+      <input id="sbx-name" type="text" name="name" placeholder="new sandbox name" aria-label="New sandbox corpus name" required>
+      <p class="action-divider">Filters</p>
+      <label for="sbx-service">Service for filter</label>
+      <select id="sbx-service" name="service_id" aria-label="Service whose results to filter" required>
+        {% for service in services %}
+        <option value="{{ service.id }}">{{ service.name }}</option>
+        {% endfor %}
+      </select>
+      <label for="sbx-status">Task status <span class="muted">(the task's outcome)</span></label>
+      <select id="sbx-status" name="status" aria-label="Task-status filter (optional)">
+        <option value="">(any status)</option>
+        <option value="no_problem">no_problem</option>
+        <option value="warning" selected>warning</option>
+        <option value="error">error</option>
+        <option value="fatal">fatal</option>
+        <option value="invalid">invalid</option>
+      </select>
+      <label for="sbx-msev">Message severity <span class="muted">(emitted a message of…)</span></label>
+      <select id="sbx-msev" name="message_severity" aria-label="Message-severity filter (optional)">
+        <option value="" selected>(none)</option>
+        <option value="info">info</option>
+        <option value="warning">warning</option>
+        <option value="error">error</option>
+        <option value="fatal">fatal</option>
+        <option value="invalid">invalid</option>
+      </select>
+      <label for="sbx-category">Category <span class="muted">(optional — needs a message severity)</span></label>
+      <input id="sbx-category" type="text" name="category" placeholder="e.g. missing_file" aria-label="Message category (optional)">
+      <label for="sbx-what">What <span class="muted">(optional)</span></label>
+      <input id="sbx-what" type="text" name="what" placeholder="e.g. foo.cls" aria-label="Message what filter (optional)">
+      <label for="sbx-entry">Entry filter <span class="muted">(optional)</span></label>
+      <input id="sbx-entry" type="text" name="entry" placeholder="path contains, e.g. 2506. for one arXiv month" aria-label="Entry path substring filter (optional)">
+      <label for="sbx-max">Max entries <span class="muted">(optional)</span></label>
+      <input id="sbx-max" type="number" name="max_entries" min="1" placeholder="no limit" aria-label="Maximum entries to capture (optional)">
+      <button type="submit" class="btn-primary action-submit">Prepare sandbox</button>
+    </form>
+    {% endif %}
+
+    <form method="post" action="/corpus/{{global.corpus_name_uri}}/delete" class="action-danger">
+      <label for="ca-delete" class="action-title">Delete this corpus</label>
+      <div class="action-control">
+        <input id="ca-delete" type="text" name="confirm" placeholder="type «{{global.corpus_name}}» to confirm" aria-label="Type the corpus name to confirm deletion" required>
+        <button type="submit" class="danger">Delete corpus</button>
+        <span class="muted"><strong>Irreversible</strong> — removes all tasks &amp; logs.</span>
+      </div>
+    </form>
+  </fieldset>
+  {% else %}
+  <p class="admin-hint"><a href="/admin/login?next=/corpus/{{global.corpus_name_uri}}">Log in here for admin actions</a></p>
+  {% endif %}
 </div>
 {% endblock content %}

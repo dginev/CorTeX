@@ -21,23 +21,30 @@ fn main() {
     .next()
     .expect("Please provide corpus path as the second argument");
 
-  if let Some(c) = corpus_path.pop() {
-    if c != '/' {
-      corpus_path.push(c);
-    }
+  if let Some(c) = corpus_path.pop()
+    && c != '/'
+  {
+    corpus_path.push(c);
   }
   corpus_path.push('/');
 
   println!(
     "-- Registering service {:?} on corpus at {:?} ...",
-    &service_name, &corpus_path
+    service_name, corpus_path
   );
   let mut backend = Backend::default();
   let service_registered_result = Service::find_by_name(&service_name, &mut backend.connection);
   assert!(service_registered_result.is_ok());
   let service_registered = service_registered_result.unwrap();
 
-  assert!(backend
-    .register_service(&service_registered, &corpus_path)
-    .is_ok());
+  assert!(
+    backend
+      .register_service(
+        &service_registered,
+        &corpus_path,
+        "cli-admin".to_string(),
+        "Newly registered service, initial run.".to_string(),
+      )
+      .is_ok()
+  );
 }

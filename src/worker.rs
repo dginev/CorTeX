@@ -17,10 +17,25 @@ use std::time::Duration;
 use zmq::{Context, Message, SNDMORE};
 
 use crate::backend;
-use crate::backend::DEFAULT_DB_ADDRESS;
+use crate::backend::default_db_address;
 use crate::importer::Importer;
 use crate::models::{Corpus, NewCorpus, Task};
 use pericortex::worker::Worker;
+
+/// Resolves the ZMQ socket identity for a worker: the **operator-configured** `identity` when set
+/// (a stable, operator-controlled metadata key — its `worker_metadata` row then accumulates across
+/// restarts instead of fragmenting under a fresh random name each start, KNOWN_ISSUES W-3),
+/// otherwise a random ephemeral handle so an unconfigured worker still gets a unique name. The
+/// operator is responsible for keeping configured identities unique per worker (two DEALER sockets
+/// sharing an identity would break the dispatcher's ROUTER addressing).
+fn resolve_worker_identity(configured: &str, rng: &mut impl rand::Rng) -> String {
+  if !configured.is_empty() {
+    return configured.to_string();
+  }
+  let letters: Vec<char> = "abcdefghijklmonpqrstuvwxyz".chars().collect();
+  // 19 random letters — preserves the historical ephemeral-identity length/charset.
+  (1..20).map(|_| *letters.choose(rng).unwrap()).collect()
+}
 
 /// `Worker` for initializing/importing a new corpus into `CorTeX`
 #[derive(Debug, Clone)]
@@ -50,7 +65,7 @@ impl Default for InitWorker {
       message_size: 100_000,
       source: "tcp://localhost:51695".to_string(),
       sink: "tcp://localhost:51696".to_string(),
-      backend_address: DEFAULT_DB_ADDRESS.to_string(),
+      backend_address: default_db_address().to_string(),
       identity: String::new(),
     }
   }
@@ -100,11 +115,7 @@ impl Worker for InitWorker {
     // Connect to a task ventilator
     let context_source = Context::new();
     let source = context_source.socket(zmq::DEALER).unwrap();
-    let letters: Vec<_> = "abcdefghijklmonpqrstuvwxyz".chars().collect();
-    let mut identity = String::new();
-    for _step in 1..20 {
-      identity.push(*letters.choose(&mut rng).unwrap());
-    }
+    let identity = resolve_worker_identity(&self.identity, &mut rng);
     source.set_identity(identity.as_bytes()).unwrap();
 
     source.connect(&self.get_source_address()).unwrap();
@@ -142,14 +153,40 @@ impl Worker for InitWorker {
       sink.send(Vec::new(), 0).unwrap();
 
       work_counter += 1;
-      if let Some(upper_bound) = limit {
-        if work_counter >= upper_bound {
-          // Give enough time to complete the Final job.
-          thread::sleep(Duration::from_millis(500));
-          break;
-        }
+      if let Some(upper_bound) = limit
+        && work_counter >= upper_bound
+      {
+        // Give enough time to complete the Final job.
+        thread::sleep(Duration::from_millis(500));
+        break;
       };
     }
     Ok(())
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::resolve_worker_identity;
+
+  #[test]
+  fn configured_identity_is_honored_verbatim() {
+    // An operator-set identity is used as-is, giving a stable worker_metadata key (W-3).
+    let mut rng = rand::thread_rng();
+    assert_eq!(
+      resolve_worker_identity("arxiv-host3:init:1", &mut rng),
+      "arxiv-host3:init:1"
+    );
+  }
+
+  #[test]
+  fn empty_identity_falls_back_to_a_random_handle() {
+    let mut rng = rand::thread_rng();
+    let id = resolve_worker_identity("", &mut rng);
+    assert_eq!(id.len(), 19, "preserves the historical 19-char length");
+    assert!(
+      id.chars().all(|c| c.is_ascii_lowercase()),
+      "random handle is lowercase letters only"
+    );
   }
 }

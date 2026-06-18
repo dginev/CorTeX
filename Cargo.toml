@@ -1,7 +1,7 @@
 [package]
 name = "cortex"
-version = "0.4.3"
-edition = "2021"
+version = "0.5.0"
+edition = "2024"
 authors = ["Deyan Ginev <deyan.ginev@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/dginev/cortex"
@@ -21,8 +21,9 @@ path = "bin/frontend.rs"
 name = "dispatcher"
 path = "bin/dispatcher.rs"
 
-[dependencies.libarchive-sys]
-git = "https://github.com/dginev/libarchive-sys.git"
+[[bin]]
+name = "cortex"
+path = "bin/cortex.rs"
 
 [dependencies.pericortex]
 git = "https://github.com/dginev/cortex-peripherals.git"
@@ -35,15 +36,216 @@ serde_json = "1.0"
 glob = "0.3.3"
 rand = "0.8.0"
 tempfile = "3"
-time = "0.1.4"
-redis = "1.2.2"
 rocket = { version = "0.5.1", features = ["json"] }
 rocket_dyn_templates = { version = "0.2.0", features = ["tera"] }
 hyper = "1.10"
 percent-encoding = "2.3.2"
 zmq = "0.10.0"
-dotenv = "0.15.0"
-dotenv_codegen = "0.15"
+# Sharded, lock-free concurrent maps for the dispatcher's shared state (in-flight set + service
+# cache) — phase 4 of the dispatcher rationalization (docs/DISPATCHER_RATIONALIZATION.md), replacing
+# the contended `Arc<Mutex<HashMap>>` so leasing/return/reaping no longer serialise on one lock.
+dashmap = "6.1"
+# Structured, leveled logging (Arm 8 observability). Replaces the dispatcher's raw per-event
+# eprintln!/println! — hot-path narration drops to trace/debug, filtered out at the default `info`
+# level, so a high task rate no longer pays a synchronous locked-stderr write per dispatched task
+# (KNOWN_ISSUES D-11). Verbosity is runtime-controlled via RUST_LOG; see `cortex::observability`.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Async runtime for the async `zeromq` sink (dispatcher rationalization phase 5a).
+tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "fs", "time", "sync"] }
+# Pure-Rust async ZMQ transport for the **sink** (phase 5a): its atomic whole-message recv
+# structurally retired the libzmq frame-by-frame desync class (KNOWN_ISSUES D-4/D-12) at ≥-pipeline
+# throughput. The **ventilator stays on libzmq** (`zmq`): its ROUTER request/reply is send-latency-
+# bound, where `zeromq`/zmq.rs hit a ~3000/s send-architecture ceiling (issue #240) vs libzmq's
+# ~8500/s — see docs/DISPATCHER_5B_ROOT_CAUSE.md.
+zeromq = "0.6.0"
+dotenvy = "0.15.7"
+figment = { version = "0.10", features = ["toml", "env"] }
+toml = "0.8"
 chrono = "0.4.45"
-diesel = {version="2.2.10", features = ["postgres", "chrono"]}
-lazy_static = "1.0.0"
+# strftime `%Z` for the report-time zone abbreviation (chrono's %Z only yields the numeric offset
+# for Local); also `_exit(2)` in the integration-test harnesses (skip C atexit handlers, L-1).
+libc = "0.2"
+diesel = {version="2.2.10", features = ["postgres", "chrono", "r2d2", "uuid", "serde_json"]}
+diesel_migrations = "2.2"
+clap = { version = "4", features = ["derive"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+# API-docs auto-generation (Arm 9). rocket_okapi was chosen over utoipa (docs/archive/api-spike/COMPARISON.md
+# + OPEN_QUESTIONS #7): its `#[openapi]` reads the real Rocket route, so the OpenAPI spec is generated
+# from the single source of truth and can't drift — the symmetry contract extended to the docs.
+# `schemars` provides the `JsonSchema` derive for the DTOs. (0.9 is the rocket_okapi release that
+# supports Rocket 0.5.1.)
+rocket_okapi = { version = "0.9", features = ["rapidoc"] }
+schemars = "0.8"
+webauthn-rs = "0.5"
+# Pure-Rust archive handling (archive rationalization Path A, docs/archive/ARCHIVE_RATIONALIZATION.md),
+# replacing the self-maintained libarchive-sys C-FFI fork. `zip` reads the per-task result archive via
+# random-access `by_name("cortex.log")` (the dispatcher hot path) + is the importer's `.zip` output;
+# `flate2` (gzip) + `tar` decompress the importer's source archives; `infer` does content-based format
+# detection (filenames lie). All pure-Rust + streaming.
+zip = "2"
+flate2 = "1"
+tar = "0.4"
+infer = "0.16"
+
+# Integration tests that hold a libpq pool (a Rocket Client over it, or a bare pool) run under a
+# custom harness (their own `main` ending in `libc::_exit(0)`) to ELIMINATE the L-1 diesel/libpq/Tokio
+# teardown SIGSEGV that fires after assertions pass — the racy C atexit cleanup is simply never run.
+[[test]]
+name = "management_api_test"
+path = "tests/management_api_test.rs"
+harness = false
+
+[[test]]
+name = "jobs_api_test"
+path = "tests/jobs_api_test.rs"
+harness = false
+
+[[test]]
+name = "corpora_test"
+path = "tests/corpora_test.rs"
+harness = false
+
+[[test]]
+name = "settings_test"
+path = "tests/settings_test.rs"
+harness = false
+
+[[test]]
+name = "runs_test"
+path = "tests/runs_test.rs"
+harness = false
+
+[[test]]
+name = "admin_test"
+path = "tests/admin_test.rs"
+harness = false
+
+[[test]]
+name = "audit_test"
+path = "tests/audit_test.rs"
+harness = false
+
+[[test]]
+name = "webauthn_test"
+path = "tests/webauthn_test.rs"
+harness = false
+
+[[test]]
+name = "sessions_test"
+path = "tests/sessions_test.rs"
+harness = false
+
+[[test]]
+name = "metrics_test"
+path = "tests/metrics_test.rs"
+harness = false
+
+[[test]]
+name = "retention_test"
+path = "tests/retention_test.rs"
+harness = false
+
+[[test]]
+name = "dispatcher_torture_test"
+path = "tests/dispatcher_torture_test.rs"
+harness = false
+
+[[test]]
+name = "concurrent_dispatch_test"
+path = "tests/concurrent_dispatch_test.rs"
+harness = false
+
+[[test]]
+name = "dispatcher_job_limit_test"
+path = "tests/dispatcher_job_limit_test.rs"
+harness = false
+
+[[test]]
+name = "reports_api_test"
+path = "tests/reports_api_test.rs"
+harness = false
+
+[[test]]
+name = "services_test"
+path = "tests/services_test.rs"
+harness = false
+
+# Bare-pool tests (no Client/Tokio, but they hold an r2d2 pool whose reaper thread races the C atexit
+# cleanup at process exit — KNOWN_ISSUES L-1). Same custom-harness + `_exit(0)` fix as above.
+[[test]]
+name = "pool_test"
+path = "tests/pool_test.rs"
+harness = false
+
+[[test]]
+name = "jobs_test"
+path = "tests/jobs_test.rs"
+harness = false
+
+# The rocket_okapi spike (the chosen framework) — reproduces docs/archive/api-spike/okapi-openapi.json and is
+# referenced by docs/archive/api-spike/COMPARISON.md. (The utoipa runner-up was pruned once okapi was chosen.)
+[[example]]
+name = "api_doc_spike_okapi"
+path = "examples/api_doc_spike_okapi.rs"
+
+# Dispatcher-rationalization phase-0 spikes (throwaway; docs/DISPATCHER_RATIONALIZATION.md). An A/B of
+# the current libzmq `zmq` crate vs. the pure-Rust async `zeromq` crate on large-multipart integrity +
+# throughput under concurrent senders. Parameterized by env (MSG_COUNT/SENDERS/FRAMES/FRAME_BYTES/
+# LARGE_EVERY). Auto-discovered, but listed for documentation parity with the okapi spike.
+[[example]]
+name = "zmq_payload_zeromq"
+path = "examples/zmq_payload_zeromq.rs"
+
+[[example]]
+name = "zmq_payload_libzmq"
+path = "examples/zmq_payload_libzmq.rs"
+
+# Full-topology validation: ROUTER ventilator ↔ DEALER workers + PUSH→PULL sink under a mixed,
+# arXiv-like heavy-tailed payload — exercises every socket type CorTeX uses, with interleaving/
+# reordering/misrouting detection. `zmq_interop` runs OUR side on pure-Rust `zeromq` and the workers
+# on libzmq `zmq` to prove ZMTP wire-compatibility of a migrated (dispatcher-only) deployment.
+[[example]]
+name = "zmq_arxiv_workload"
+path = "examples/zmq_arxiv_workload.rs"
+
+[[example]]
+name = "zmq_interop"
+path = "examples/zmq_interop.rs"
+
+# Caveat-#3 resilience gate: a zeromq ROUTER ventilator + application-level lease-timeout reaper vs.
+# worker churn (crashes, request-then-die, reconnects) — proves every task is recovered (no loss)
+# without relying on ZMTP heartbeats. `zmq_torture` is the realistic escalation: a calibrated
+# log-normal payload model (500 KB–200 MB, median 800 KB, mean 1.5 MB), flaky network (random
+# disconnects), timeout-flaky sleepers (miss the max reply time), and hundreds of cross-talking
+# consumers — the definitive pre-cutover stress test.
+[[example]]
+name = "zmq_resilience"
+path = "examples/zmq_resilience.rs"
+
+[[example]]
+name = "zmq_torture"
+path = "examples/zmq_torture.rs"
+
+# Supervised-shutdown / catastrophic-death harness: inject DB-connection death, disk-full I/O, and a
+# one-directional transport block into the async core; prove each either recovers (bounded retry) or
+# halts EVERY arm with one reason and a consistent durable state (no task acked-but-unpersisted) —
+# never a zombie arm leasing into a dead pipeline.
+[[example]]
+name = "zmq_faults"
+path = "examples/zmq_faults.rs"
+
+# Memory-discipline audit: the dispatcher is co-resident with workers and must stay light (≤32 GB) at
+# 300 concurrent jobs with 200 MB tails. Isolates the whole-archive-vs-chunked-streaming decision by
+# materializing each design's resident set for 300 jobs and reporting process VmRSS.
+[[example]]
+name = "dispatcher_memory"
+path = "examples/dispatcher_memory.rs"
+
+# (The throwaway `archive_bench` A/B spike was retired once Path A was chosen + libarchive-sys removed;
+# its findings live in docs/archive/ARCHIVE_RATIONALIZATION.md.)
+
+[dev-dependencies]
+# `bytes` is named directly by the phase-0 transport spikes (`examples/zmq_*`); `tokio`/`zeromq` are
+# real `[dependencies]` (the async sink uses them in lib code).
+bytes = "1.11.1"

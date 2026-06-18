@@ -1,0 +1,102 @@
+{% extends "layout" %} {% block content %}
+<div class="document-report-page">
+  <h1>{{ report.name }}</h1>
+  <p class="muted">
+    <a href="/corpus/{{ report.corpus }}/{{ report.service }}">{{ report.corpus }}</a>
+    &nbsp;·&nbsp; {{ report.service }}
+    &nbsp;·&nbsp; task #{{ report.task_id }}
+    &nbsp;·&nbsp; <code>{{ report.entry }}</code>
+  </p>
+  <p>
+    Status:
+    {% if report.status == "no_problem" %}<strong class="status-ok">no problem</strong>
+    {% elif report.status == "warning" %}<strong class="status-warn">warning</strong>
+    {% elif report.status == "error" or report.status == "fatal" or report.status == "invalid" %}<strong class="status-bad">{{ report.status }}</strong>
+    {% else %}<strong class="muted">{{ report.status }}</strong>{% endif %}
+    &nbsp;·&nbsp; <a href="{{ report.preview_url }}" target="_blank">preview rendered document</a>
+    &nbsp;·&nbsp; <a href="{{ report.result_url }}">download result</a>
+  </p>
+
+  {# Counts at a glance, then lead with the actionable messages; the info noise (loaded files,
+     debug) is collapsed into a native <details> so it never buries the warnings/errors. The counts
+     are the *true* per-severity totals (report.message_counts); the message tables below render a
+     bounded sample (report.messages, capped per severity in the backend so a pathological document
+     with millions of messages can't hang the page). #}
+  {% set total = report.message_counts.total %}
+  {% set fatal = report.message_counts.fatal %}
+  {% set error = report.message_counts.error %}
+  {% set invalid = report.message_counts.invalid %}
+  {% set warning = report.message_counts.warning %}
+  {% set info = report.message_counts.info %}
+  {% set actionable = total - info %}
+
+  <h3>Messages <span class="muted">({{ total | group_thousands }})</span></h3>
+  <p class="severity-summary">
+    {% if fatal > 0 %}<span class="status-bad">{{ fatal | group_thousands }} fatal</span>&nbsp;·&nbsp;{% endif %}
+    {% if error > 0 %}<span class="status-bad">{{ error | group_thousands }} error</span>&nbsp;·&nbsp;{% endif %}
+    {% if invalid > 0 %}<span class="status-bad">{{ invalid | group_thousands }} invalid</span>&nbsp;·&nbsp;{% endif %}
+    {% if warning > 0 %}<span class="status-warn">{{ warning | group_thousands }} warning</span>&nbsp;·&nbsp;{% endif %}
+    <span class="muted">{{ info | group_thousands }} info</span>
+  </p>
+  {% if report.messages_truncated %}
+  <p class="truncation-note"><i class="fa fa-exclamation-triangle"></i>&nbsp;This document has an
+    unusually large number of messages — the tables below show a bounded sample per severity. The
+    counts above are exact.</p>
+  {% endif %}
+
+  {% if actionable > 0 %}
+  <table class="table report-table message-table" id="document-messages">
+    <colgroup>
+      <col style="width:8%"><col style="width:11%"><col style="width:17%"><col style="width:64%">
+    </colgroup>
+    <thead>
+      <tr>
+        <th scope="col" class="left">Severity</th>
+        <th scope="col" class="left">Category</th>
+        <th scope="col" class="left">What</th>
+        <th scope="col" class="left">Details</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in report.messages %}{% if m.severity != "info" %}
+      <tr>
+        <td class="left">{% if m.severity == "warning" %}<span class="status-warn">{{ m.severity }}</span>{% else %}<span class="status-bad">{{ m.severity }}</span>{% endif %}</td>
+        <td class="left">{{ m.category }}</td>
+        <td class="left">{{ m.what }}</td>
+        <td class="left"><code>{{ m.details }}</code></td>
+      </tr>
+      {% endif %}{% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No warnings, errors, or fatals — a clean conversion.</p>
+  {% endif %}
+
+  {% if info > 0 %}
+  <details class="info-messages">
+    <summary>{{ info }} info message{{ info | pluralize }} <span class="muted">(loaded files, debug)</span></summary>
+    <table class="table report-table message-table">
+      <colgroup>
+        <col style="width:13%"><col style="width:22%"><col style="width:65%">
+      </colgroup>
+      <thead>
+        <tr>
+          <th scope="col" class="left">Category</th>
+          <th scope="col" class="left">What</th>
+          <th scope="col" class="left">Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in report.messages %}{% if m.severity == "info" %}
+        <tr>
+          <td class="left">{{ m.category }}</td>
+          <td class="left">{{ m.what }}</td>
+          <td class="left"><code>{{ m.details }}</code></td>
+        </tr>
+        {% endif %}{% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
+</div>
+{% endblock content %}

@@ -1,39 +1,7 @@
-<div id="modal-get-entry" class="modal fade" tabindex="-1" role="dialog">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <form id="form-get-entry" class="form-get-entry" name="form-get-entry"
-        method="post" accept-charset="UTF-8" action="">
-        <div class="modal-header">
-          <a class="close" data-dismiss="modal">×</a>
-          <h3>Are you human?</h3>
-        </div>
-        <div class="modal-body">
-          <div style="text-align: left; margin-bottom: 10px;">
-            <p>By proceeding to a download you:</p>
-            <ol>
-              <li>Agree to a
-                <strong>temporary preview</strong> of the implied data sample,</li>
-              <li>Agree that this download is intended and authorized only for
-                <strong>research use</strong>,</li>
-              <li>Agree to
-                <strong>purging all local copies</strong> of the data at the
-                immediate end of the research experiment,</li>
-              <li>Agree to protecting the
-                <strong>original copyright</strong> of all implied data,</li>
-              <li>Agree to
-                <strong>provide attribution</strong> as appropriate.</li>
-            </ol>
-            <br>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <input class="btn btn-success" type="submit" value=""
-            id="btn-get-entry">
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
+<!-- Human-check removed: bot protection is handled upstream by Anubis. A hidden form carries the
+     per-entry action set by the `.entry-submit` links below; the AJAX handler previews/downloads. -->
+<form id="form-get-entry" class="form-get-entry" name="form-get-entry" method="post"
+  accept-charset="UTF-8" action="" data-action="" style="display:none;"></form>
 
 <script src='/public/js/jszip.min.js'></script>
 <script>
@@ -57,7 +25,7 @@
       console.log("action: ", form_action);
       if (this.readyState == 4) { // Only process when done.
         if (this.status != 200) {
-          $("#modal-get-entry").modal("show");
+          console.error("entry fetch failed (status " + this.status + ")");
           return;
         }
         if (form_action == "download") {// Download file
@@ -81,8 +49,7 @@
           var blob = new Blob([this.response], { type: type });
           if (type == "text/html") {
             // HTML means an error, reset!
-            console.info(this.response);
-            $("#modal-get-entry").modal("show");
+            console.error("entry download returned an HTML error page");
             return;
           }
           if (typeof window.navigator.msSaveBlob !== 'undefined') {
@@ -108,7 +75,6 @@
             }
             setTimeout(function () { URL.revokeObjectURL(downloadUrl); }, 100); // cleanup
           }
-          $("#modal-get-entry").modal("hide");
         }
         else if (form_action == "preview") {  // All is good, preview the result
           JSZip.loadAsync(xhr.response).then(function (zip) {

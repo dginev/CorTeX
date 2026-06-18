@@ -1,26 +1,36 @@
 {% extends "layout" %} {% block content %}
-<div class="col-md-2"></div>
-<div class="col-md-8">
-  <div class="center">
-    <h1 class="welcome-title">
-      <img src="/public/img/logo.jpg"> Framework</h1>
-    <div class="row"></div>
-    <h2 class="welcome-subtitle">A general-purpose processing framework for corpora of scientific documents</h2>
+<div class="overview">
+  <header class="hero">
+    <span class="hero-logo" role="img" aria-label="CorTeX"></span>
+    <p class="hero-tagline">A general-purpose processing framework for corpora of scientific documents</p>
+  </header>
 
-    <br>
+  {% if global.deleted %}
+  <p class="flash-saved"><i class="fa fa-check-circle"></i>&nbsp;Corpus <strong>{{ global.deleted }}</strong> was deleted, along with all of its tasks and log messages.</p>
+  {% endif %}
+
+  {% if corpora and corpora | length > 0 %}
+  <h2 class="section-heading">Corpora</h2>
+  <section class="corpora-grid">
+    {% for corpus in corpora %}
+    <a class="corpus-card{% if corpus.sandbox_parent %} is-sandbox{% endif %}" href="/corpus/{{ corpus.name_uri }}">
+      <span class="corpus-card-name">{{ corpus.name }}{% if corpus.sandbox_parent %} <span class="corpus-badge">sandbox</span>{% endif %}</span>
+      {% if corpus.sandbox_parent %}<span class="corpus-card-sandbox"><i class="fa fa-cube"></i>&nbsp;carved from {{ corpus.sandbox_parent }}</span>{% endif %}
+      {% if corpus.description %}<span class="corpus-card-desc">{{ corpus.description }}</span>{% endif %}
+      {% if corpus.document_count %}<span class="corpus-card-count">{{ corpus.document_count }} documents</span>{% endif %}
+    </a>
+    {% endfor %}
+  </section>
+  {% else %}
+  <div class="empty-state">
+    <p><strong>No corpora registered yet.</strong></p>
+    <p class="muted">To get started, define a conversion service and import a corpus — from the
+      <a href="/admin">admin dashboard</a> (sign in first), or scriptably with the <code>cortex</code> CLI:</p>
+    <pre class="empty-state-steps">cortex create-service tex_to_html --inputformat tex --outputformat html
+cortex import   my-corpus /data/my-corpus
+cortex activate my-corpus tex_to_html</pre>
+    <p class="muted">Then run the dispatcher + a worker to convert. See <code>MANUAL.md</code> / <code>INSTALL.md</code>.</p>
   </div>
-
-  {% for corpus in corpora %}
-  <h2>
-    <i class="fa fa-chevron-right fa-lg"></i>&nbsp;&nbsp;
-    <a href="/corpus/{{ corpus.name_uri }}">{{ corpus.name }}</a>
-  </h2>
-  {% if corpus.description %}
-  <p class="corpus-description">{{ corpus.description }}</p>
-  {% endif %} {% endfor %}
-
-</div>
-<div class="col-md-2"></div>
-
+  {% endif %}
 </div>
 {% endblock content %}

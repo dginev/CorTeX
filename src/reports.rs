@@ -10,9 +10,11 @@ table! {
   }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, QueryableByName)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, QueryableByName)]
 #[diesel(table_name = aggregate_reports)]
-/// The return struct of aggregate reports targeting task and log message counts
+/// The return struct of aggregate reports targeting task and log message counts. `Default` is the
+/// zero report (no name, zero tasks/messages) — the graceful degradation a report grain falls back
+/// to when its aggregate query errors, instead of panicking the request (see `backend::reports`).
 pub struct AggregateReport {
   /// the category, per `LaTeXML` convention
   pub report_name: Option<String>,

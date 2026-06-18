@@ -1,6 +1,22 @@
-//! CorTeX Frontend capabilities - reports, cache, captchas and more
-pub mod cached;
+//! CorTeX Frontend capabilities - reports, rendering, auth and more
+pub mod actor;
+pub mod admin;
+pub mod apidoc;
+pub mod audit;
+pub mod catchers;
 pub mod concerns;
+pub mod corpora;
 pub mod cors;
 pub mod helpers;
+pub mod jobs;
+pub mod management;
+pub mod metrics;
 pub mod params;
+pub mod render;
+pub mod reports;
+pub mod retention;
+pub mod runs;
+pub mod server;
+pub mod services;
+pub mod sessions;
+pub mod webauthn;

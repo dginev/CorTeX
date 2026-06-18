@@ -1,47 +1,123 @@
+name: CI
+
 on: [push, pull_request]
 
-name: CI
+# Mirrors the local quality gates (`.githooks/`: pre-commit `cargo fmt --check`, pre-push
+# `cargo fmt` + `cargo clippy -D warnings`) plus the integration test suite, against the same
+# install requirements as INSTALL.md / CLAUDE.md.
+#
+# Notable current-state facts encoded here:
+#   * Redis is NO LONGER a dependency — frontend reports are served from the `report_summary`
+#     materialized-view rollup (Arm 14 #6), so no redis-server step.
+#   * Toolchain is floating nightly (`rust-toolchain.toml`); installed via the maintained
+#     `dtolnay/rust-toolchain` action (the old `actions-rs/*` actions are archived/unmaintained).
+#   * Migrations are embedded in the binaries, but we still apply them with diesel_cli 2.x here so
+#     the schema (incl. the hand-SQL matview migrations) is present before the tests connect.
+#   * latexmlc is not installed, so `tex_to_html_test` skips itself (by design).
+#
+# The former L-1 teardown SIGSEGV (Rocket-Client-over-pool binaries crashing at process exit, after
+# all assertions passed) is eliminated, not tolerated: those binaries run under a custom harness that
+# ends with `libc::_exit(0)` while the Client is still live, skipping the racy C atexit cleanup. So
+# the Tests step runs `cargo test` directly — any non-zero exit is now a real failure.
 
 jobs:
   test:
-    name: Cortex
+    name: build + test
     runs-on: ubuntu-latest
     env:
-      DB_HOST: localhost
-      DB_USERNAME: postgres
-      PGPASSWORD: postgres
-      DATABASE_URL: "postgres://cortex_tester:cortex_tester@localhost/cortex_tester"
+      DATABASE_URL: postgres://cortex:cortex@localhost/cortex
+      TEST_DATABASE_URL: postgres://cortex_tester:cortex_tester@localhost/cortex_tester
+      # Each integration binary builds a Rocket Client whose pool is sized from
+      # `config().database.pool_size` (default 32); parallel tests multiply that and exhaust
+      # PostgreSQL's default `max_connections=100` ("too many clients already"). Cap the test pool
+      # small (the blocking Client uses one connection at a time) and give Postgres headroom below.
+      CORTEX_DATABASE__POOL_SIZE: "8"
     steps:
-      - name: Install CorTeX Dependencies
-        uses: ryankurte/action-apt@v0.2.0
-        with:
-          packages: "postgresql postgresql-contrib postgresql-client libpq-dev libarchive-dev libsodium-dev libzmq3-dev"
-      - name: Start PostgreSQL on Ubuntu
+      - uses: actions/checkout@v5
+
+      - name: Install system dependencies (PostgreSQL 18 for uuidv7())
         run: |
-          sudo systemctl start postgresql.service
-      - name: Setup Postgresql DB
+          # Migrations use PostgreSQL 18's built-in uuidv7() (the deployment floor; INSTALL.md), but
+          # the runner preinstalls PG16. Purge any existing PostgreSQL so only PG18 owns :5432, then
+          # install it from the PGDG apt repository.
+          sudo systemctl stop postgresql || true
+          sudo apt-get remove --purge -y 'postgresql.*' || true
+          sudo rm -rf /var/lib/postgresql /etc/postgresql
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            postgresql-18 libpq-dev \
+            libarchive-dev libsodium-dev libzmq3-dev pkg-config
+
+      - name: Start PostgreSQL
+        run: sudo systemctl start postgresql.service
+
+      - name: Raise max_connections (headroom for the connection-hungry test suite)
         run: |
-          sudo -u postgres psql -c 'create database cortex;'
-          sudo -u postgres psql -c 'create database cortex_tester;'
-          sudo -u postgres psql -c "create user cortex with password 'cortex';"
-          sudo -u postgres psql -c "create user cortex_tester with password 'cortex_tester';"
-          sudo -u postgres psql -c 'GRANT ALL PRIVILEGES ON SCHEMA public TO postgres;'
-          sudo -u postgres psql -c 'GRANT ALL PRIVILEGES ON SCHEMA public TO cortex;'
-          sudo -u postgres psql -c 'GRANT ALL PRIVILEGES ON SCHEMA public TO cortex_tester;'
-          sudo -u postgres psql -c 'ALTER DATABASE cortex OWNER TO cortex;'
-          sudo -u postgres psql -c 'ALTER DATABASE cortex_tester OWNER TO cortex_tester;'
-          sudo -u postgres psql -c 'GRANT ALL PRIVILEGES ON DATABASE cortex TO cortex;'
-          sudo -u postgres psql -c 'GRANT ALL PRIVILEGES ON DATABASE cortex_tester TO cortex_tester;'
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+          sudo -u postgres psql -c "ALTER SYSTEM SET max_connections = 300;"
+          sudo systemctl restart postgresql.service
+
+      - name: Provision databases and roles
+        run: |
+          sudo -u postgres psql -c "CREATE USER cortex WITH PASSWORD 'cortex';"
+          sudo -u postgres psql -c "CREATE USER cortex_tester WITH PASSWORD 'cortex_tester';"
+          sudo -u postgres psql -c "CREATE DATABASE cortex OWNER cortex;"
+          sudo -u postgres psql -c "CREATE DATABASE cortex_tester OWNER cortex_tester;"
+          # PG15+ no longer grants CREATE on `public` to PUBLIC; grant it to the db owners explicitly.
+          sudo -u postgres psql -d cortex        -c "GRANT ALL ON SCHEMA public TO cortex;"
+          sudo -u postgres psql -d cortex_tester -c "GRANT ALL ON SCHEMA public TO cortex_tester;"
+
+      - name: Install Rust (nightly + rustfmt + clippy)
+        uses: dtolnay/rust-toolchain@nightly
         with:
-          profile: minimal
-          toolchain: nightly
-          override: true
-      - run: |
-          cargo install diesel_cli --vers 1.1.2  --no-default-features --features postgres
-          diesel setup
-          diesel migration run
-      - uses: actions-rs/cargo@v1
+          components: rustfmt, clippy
+
+      - name: Cache cargo + target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install diesel_cli (postgres only)
+        run: cargo install diesel_cli --no-default-features --features postgres --locked
+
+      - name: Apply migrations to both databases
+        run: |
+          diesel migration run --database-url "$DATABASE_URL"
+          diesel migration run --database-url "$TEST_DATABASE_URL"
+          # `diesel.toml` has `print_schema`, so `migration run` rewrites src/schema.rs. The committed
+          # one is the source of truth (kept honest by scripts/verify_migrations.sh); discard any
+          # CI-side regeneration so a differing diesel_cli version can't trip `cargo fmt --check`.
+          git checkout -- src/schema.rs
+
+      - name: Format check
+        run: cargo fmt --all --check
+
+      - name: Clippy (warnings are errors)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Provide test auth fixtures
+        # The integration tests sign in / authenticate as `token1` (resolved through
+        # config().auth.rerun_tokens). Those tokens live in config.json, which is gitignored (it is a
+        # real deployment's secrets file), so CI materializes it from the shipped template — which
+        # carries exactly the test fixtures token1/token2 used by the suite.
+        run: cp config.default.json config.json
+
+      - name: Tests
+        # --no-fail-fast so one failing binary doesn't mask the rest. The L-1 teardown SIGSEGV is
+        # eliminated at the source (custom harness + libc::_exit(0)), so any non-zero exit is real.
+        run: cargo test --no-fail-fast --color=never
+
+  # Supply-chain gate (Arm 12): RUSTSEC advisories + license discipline over the dependency graph.
+  # Reads only Cargo.lock + deny.toml, so it needs no system C libs or database — fast and independent
+  # of the build+test job. Policy lives in `deny.toml`; cargo-deny's advisories check subsumes
+  # cargo-audit (same RustSec DB).
+  supply-chain:
+    name: cargo-deny (advisories + licenses)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          command: test
+          command: check advisories licenses sources

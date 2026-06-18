@@ -9,7 +9,7 @@
 //! Example run: `$ cargo run --release --example tex_to_html_import /data/arxmliv/ arXMLiv`
 use std::env;
 
-use cortex::backend::{Backend, DEFAULT_DB_ADDRESS};
+use cortex::backend::{Backend, default_db_address};
 use cortex::dispatcher::manager::TaskManager;
 use cortex::helpers::TaskStatus;
 use cortex::models::{Corpus, NewService, NewTask, Service};
@@ -25,10 +25,10 @@ fn main() {
     Some(path) => path,
     None => "/arXMLiv/modern".to_string(),
   };
-  if let Some(c) = corpus_path.pop() {
-    if c != '/' {
-      corpus_path.push(c);
-    }
+  if let Some(c) = corpus_path.pop()
+    && c != '/'
+  {
+    corpus_path.push(c);
   }
   corpus_path.push('/');
   println!("-- Importing corpus at {corpus_path:?} ...");
@@ -55,7 +55,8 @@ fn main() {
       result_port: 5758,
       queue_size: 100_000,
       message_size: 100,
-      backend_address: DEFAULT_DB_ADDRESS.to_string(),
+      backend_address: default_db_address().to_string(),
+      ..TaskManager::default()
     };
     assert!(manager.start(Some(1)).is_ok());
   });
@@ -67,7 +68,7 @@ fn main() {
     message_size: 100_000,
     source: "tcp://localhost:5757".to_string(),
     sink: "tcp://localhost:5758".to_string(),
-    backend_address: DEFAULT_DB_ADDRESS.to_string(),
+    backend_address: default_db_address().to_string(),
     identity: "unknown:init:1".to_string(),
   };
   // Perform a single echo task
@@ -98,7 +99,14 @@ fn main() {
     },
   };
 
-  assert!(backend
-    .register_service(&service_registered, &corpus_path)
-    .is_ok());
+  assert!(
+    backend
+      .register_service(
+        &service_registered,
+        &corpus_path,
+        "cli-admin".to_string(),
+        "Newly registered service, initial run.".to_string(),
+      )
+      .is_ok()
+  );
 }

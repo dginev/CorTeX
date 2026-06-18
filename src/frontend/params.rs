@@ -1,7 +1,19 @@
 //! Various parameter data structures for the Rocket frontend routes
-use crate::models::{DiffStatusRow, RunMetadata, TaskRunMetadata};
+use crate::models::RunMetadata;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+/// Largest report **page size** any report path (human screen or agent endpoint) will honour. The
+/// deepest report rung is a per-task entry list, so an unbounded `page_size` would `LIMIT` the
+/// whole list into one response/render (the unbounded-load class, principle #6); clamp it
+/// everywhere.
+pub const MAX_REPORT_PAGE_SIZE: i64 = 1000;
+
+/// Largest report **offset** any report path will honour. `OFFSET` is scan-and-discard, so a deep
+/// offset is a multi-second query that pins a connection (KNOWN_ISSUES P-4); cap the paginate
+/// depth. The reports are an inspection surface (look at affected papers) — bulk action uses rerun,
+/// which filters server-side without enumerating.
+pub const MAX_REPORT_OFFSET: i64 = 100_000;
 
 #[derive(FromForm)]
 /// Configuration parameters for a frontend reports page
@@ -14,39 +26,12 @@ pub struct ReportParams {
   pub page_size: Option<i64>,
 }
 
-/// Configuration in URL query parameter for rerun requests
+/// The JSON body of a human rerun request. Auth is the signed-in [`crate::frontend::actor::
+/// AdminSession`] cookie now — no token in the body — so only the free-text purpose remains.
 #[derive(Serialize, Deserialize)]
 pub struct RerunRequestParams {
-  /// a password-like rerun token
-  pub token: String,
   /// a plain text description for the purpose of the rerun
   pub description: String,
-}
-
-/// Configuration in URL query parameter for rerun requests
-#[derive(FromForm, Serialize, Deserialize)]
-pub struct DiffRequestParams {
-  /// the previous status to query, required
-  pub previous_status: Option<String>,
-  /// the current status to query, required
-  pub current_status: Option<String>,
-  /// the previous date to query, optional
-  pub previous_date: Option<String>,
-  /// the current date to query, optional
-  pub current_date: Option<String>,
-  /// starting offset for this query
-  pub offset: Option<usize>,
-  /// page size for paging in SQL
-  pub page_size: Option<usize>,
-}
-
-/// Global configuration for the frontend executable, read in at boot
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct FrontendConfig {
-  /// a captcha secret registered with google
-  pub captcha_secret: String,
-  /// a list of known password-like tokens that allow users to trigger reruns
-  pub rerun_tokens: HashMap<String, String>,
 }
 
 /// A backend-retrieved report used for filling in Tera-templated pages
@@ -58,6 +43,8 @@ pub struct TemplateContext {
   pub corpora: Option<Vec<HashMap<String, String>>>,
   /// tabular data for reporting on services
   pub services: Option<Vec<HashMap<String, String>>>,
+  /// all registered services (the corpus screen's "activate a service" picker)
+  pub all_services: Option<Vec<HashMap<String, String>>>,
   /// tabular data for reporting on entries
   pub entries: Option<Vec<HashMap<String, String>>>,
   /// tabular data for reporting on message `categories`
@@ -68,12 +55,10 @@ pub struct TemplateContext {
   pub workers: Option<Vec<HashMap<String, String>>>,
   /// tabular data for reporting on rerun history
   pub history: Option<Vec<RunMetadata>>,
-  /// tabular data for reporting on historical task diffs
-  pub diff_report: Option<Vec<TaskRunMetadata>>,
-  /// tabular data for reporting a summary of severity transitions between two runs
-  pub diff_summary: Option<Vec<DiffStatusRow>>,
-  /// date labels for selecting a historical report from/to range
-  pub diff_dates: Option<Vec<String>>,
   /// serialized data for easy plotting of rerun history
   pub history_serialized: Option<String>,
+  /// Whether the current viewer is a signed-in admin. Gates admin-only affordances in the shared
+  /// templates (e.g. the corpus screen's "Corpus actions"); defaults to `false` (anonymous), so a
+  /// page that doesn't set it shows nothing privileged.
+  pub is_admin: bool,
 }

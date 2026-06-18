@@ -1,0 +1,69 @@
+{% extends "layout" %} {% block content %}
+<div class="center">
+  <h1>System health</h1>
+  <p class="lead">Overall status: <strong>{{ health.status }}</strong></p>
+  <table class="table narrow-centered">
+    <tbody>
+      <tr>
+        <td class="left">Database reachable</td>
+        <td class="right">{% if health.database.reachable %}yes{% else %}<strong>no</strong>{% endif %}</td>
+      </tr>
+      <tr>
+        <td class="left">Schema migrations current</td>
+        <td class="right">{% if health.migrations.current %}yes{% else %}<strong>pending</strong>{% endif %}</td>
+      </tr>
+      <tr>
+        <td class="left">Connection pool — in use / max</td>
+        <td class="right">{{ health.pool.in_use }} / {{ health.pool.max }}</td>
+      </tr>
+      <tr>
+        <td class="left">Connection pool — idle / established</td>
+        <td class="right">{{ health.pool.idle }} / {{ health.pool.connections }}</td>
+      </tr>
+      <tr>
+        <td class="left">Dispatcher reachable (ports {{ health.dispatcher.source_port }}/{{ health.dispatcher.result_port }})</td>
+        <td class="right">{% if health.dispatcher.reachable %}yes{% else %}<strong>no</strong>{% endif %}</td>
+      </tr>
+      <tr>
+        <td class="left">Corpus storage readable ({{ health.storage.corpora_checked }} checked)</td>
+        <td class="right">{% if health.storage.unreadable | length == 0 %}yes{% else %}<strong>{{ health.storage.unreadable | length }} unreadable</strong>{% endif %}</td>
+      </tr>
+    </tbody>
+  </table>
+  {% if health.storage.unreadable | length > 0 %}
+  <div class="row narrow-centered">
+    <p><strong>Unreadable corpus source directories</strong> (missing / unmounted / wrong permissions —
+      conversions and re-imports for these corpora will fail until restored):</p>
+    <ul class="left">
+      {% for corpus in health.storage.unreadable %}
+      <li><strong>{{ corpus.name }}</strong> — <code>{{ corpus.path }}</code></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  {% if health.remediations | length > 0 %}
+  <div class="row narrow-centered">
+    <p><strong>Recommended actions</strong> — how to clear each red/amber signal above:</p>
+    <ul class="left">
+      {% for hint in health.remediations %}
+      <li>{{ hint }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  <p>&nbsp;·&nbsp; <a href="/api/health">view as JSON</a> &nbsp;·&nbsp; <a href="/healthz">liveness</a> &nbsp;·&nbsp; <a href="/settings">Settings</a></p>
+
+  <hr>
+  <h3>Maintenance</h3>
+  <form method="post" action="/maintenance/reindex">
+    <label>Rebuild the high-churn tables' indexes online (REINDEX CONCURRENTLY; runs as a background
+      job):</label>
+    <p><button type="submit">Reindex database now</button></p>
+  </form>
+  <form method="post" action="/maintenance/analyze">
+    <label>Refresh the query planner's statistics (ANALYZE; run after a bulk import or rerun so the
+      planner keeps choosing the right indexes — runs as a background job):</label>
+    <p><button type="submit">Refresh planner statistics now</button></p>
+  </form>
+</div>
+{% endblock content %}

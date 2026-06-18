@@ -1,0 +1,27 @@
+{% extends "layout" %} {% block content %}
+<div class="report-layout">
+  <h1>Register service <em>{{ global.service_name }}</em> on a corpus</h1>
+  <p><a href="/services">&larr; back to the service registry</a></p>
+  {% if global.already_activated %}
+  <p class="muted">Already activated on: {{ global.already_activated }}</p>
+  {% endif %}
+  {% if corpora and corpora | length > 0 %}
+  <form method="post" action="/services/{{ global.service_name }}/activate">
+    <p>
+      <label>Corpus
+        <select name="corpus" required>
+          {% for corpus in corpora %}
+          <option value="{{corpus.name}}">{{corpus.name}}{% if corpus.description %} — {{corpus.description}}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </p>
+    <p class="muted">This creates a TODO task per document on the chosen corpus and runs as a background job (it
+      can take a while on a large corpus — track it on <a href="/jobs">Background jobs</a>).</p>
+    <p><button type="submit">Register on corpus</button></p>
+  </form>
+  {% else %}
+  <p>This service is already activated on every registered corpus (or none are registered yet).</p>
+  {% endif %}
+</div>
+{% endblock content %}

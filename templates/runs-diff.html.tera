@@ -1,0 +1,70 @@
+{% extends "layout" %} {% block content %}
+<div class="center">
+  <h1>Run differences</h1>
+  <h5>{{service}} over {{corpus}}</h5>
+  <p>
+    <a href="/runs/{{corpus}}/{{service}}">&larr; Run history</a>
+    &nbsp;·&nbsp;
+    <a href="/runs/{{corpus}}/{{service}}/tasks">All task changes</a>
+    &nbsp;·&nbsp;
+    <a href="/api/runs/{{corpus}}/{{service}}/diff?previous={{previous_date}}&current={{current_date}}">JSON</a>
+  </p>
+
+  {% if available_dates | length == 0 %}
+  <p>No saved snapshots yet — nothing to compare. Snapshots accrue as runs complete and are saved.</p>
+  {% else %}
+  <form class="pick-dates" method="get" action="/runs/{{corpus}}/{{service}}/diff">
+    <label for="select-previous-date">Previous snapshot</label>
+    <select name="previous" id="select-previous-date">
+      <option value="">(most recent pair)</option>
+      {% for date in available_dates | reverse %}
+      <option value="{{date}}" {% if date == previous_date %}selected{% endif %}>{{date}}</option>
+      {% endfor %}
+    </select>
+    <span>&rarr;</span>
+    <label for="select-current-date">Current snapshot</label>
+    <select name="current" id="select-current-date">
+      <option value="">(most recent pair)</option>
+      {% for date in available_dates %}
+      <option value="{{date}}" {% if date == current_date %}selected{% endif %}>{{date}}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Compare</button>
+  </form>
+  <br>
+
+  {% if transitions | length == 0 %}
+  <p>No task severity changes between these snapshots.</p>
+  {% else %}
+  <div class="row">
+    <div class="col-md-2"></div>
+    <div class="col-md-8">
+      <table id="run-diff-matrix" class="table table-striped">
+        <thead>
+          <tr>
+            <th scope="col" class="left">Previous status</th>
+            <th scope="col" class="left">Current status</th>
+            <th scope="col" class="right">Tasks</th>
+            <th scope="col" class="center">Drill down</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in transitions %}
+          <tr>
+            <td class="left">{{t.previous_status}}</td>
+            <td class="left">{{t.current_status}}</td>
+            <td class="right">{{ t.task_count | group_thousands }}</td>
+            <td class="center">
+              <a href="/runs/{{corpus}}/{{service}}/tasks?previous_status={{t.previous_status}}&current_status={{t.current_status}}&previous={{previous_date}}&current={{current_date}}">Task list</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="col-md-2"></div>
+  </div>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock content %}
