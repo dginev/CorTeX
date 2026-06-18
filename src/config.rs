@@ -127,11 +127,14 @@ pub struct DispatcherConfig {
   /// timing out waits progressively longer rather than re-leasing ever-faster
   /// ([`crate::helpers::TaskProgress::expected_at`]). This is the correctness net for a *silently
   /// dead / half-open* worker (no ZMTP heartbeat needed): its task is recovered once the lease
-  /// lapses. Default **3600** (1 h) — deliberately generous, because a single hostile arXiv paper
-  /// can take many minutes under `latexml`, and re-leasing a still-running task wastes compute.
-  /// Shorten it only when worker runtimes are known-bounded (a fast `echo`/import service, or a
-  /// chaos test driving fast reaper-recovery). Paired with `reap_interval_seconds` (how often the
-  /// sweep runs).
+  /// lapses. Default **180** — just above the worker's hard per-document timeout (the CorTeX
+  /// `latexml` fleet caps each conversion at 120 s and *hard-kills* the process on overrun), which
+  /// bounds any single conversion's runtime. With that cap, a lease expiry reliably means the
+  /// worker **died** (timeout / OOM kill) on an unprocessable paper, so prompt re-lease — and,
+  /// after `MAX_DISPATCH_RETRIES`, dead-letter to `Fatal` — recovers the task *within the run*
+  /// instead of stranding it for an hour (orphaned-lease tail observed at scale). Raise it only
+  /// for a service whose workers have **unbounded** runtime (no per-task timeout). Paired with
+  /// `reap_interval_seconds` (how often the sweep runs).
   pub lease_timeout_seconds: i64,
   /// **Reaper sweep interval (seconds).** How often the ventilator scans the in-flight set for
   /// tasks past their `lease_timeout_seconds` deadline and re-leases / dead-letters them.
@@ -167,7 +170,7 @@ impl Default for DispatcherConfig {
       sink_writers: 4,
       finalize_batch_size: 1024,
       finalize_flush_ms: 300,
-      lease_timeout_seconds: 3600,
+      lease_timeout_seconds: 180,
       reap_interval_seconds: 60,
       tcp_keepalive_idle_seconds: 120,
     }
