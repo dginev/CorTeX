@@ -2,7 +2,8 @@
 
 > **Status:** v1 draft (2026-06-13), produced after a full Phase-0 read of the codebase, the
 > `migrations/`, the `scripts/`, the `examples/`, and every prior-work branch on `origin`.
-> Work branch: **`productize-2026`** (off `master`).
+> Work branch: **`master`** (the `productize-2026` sprint branch was squash-merged via PR #369 on
+> 2026-06-18 and deleted; `master` is now the shipped v0.5.0 state).
 > **North star:** *every administrative action a human can do through a screen, an agent can do
 > through a documented API — and both see the same live + historical run state.*
 

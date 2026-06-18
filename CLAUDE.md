@@ -1,9 +1,10 @@
 # CLAUDE.md — CorTeX conventions for agents
 
-CorTeX is a distributed corpus-conversion framework for scholarly documents. We are mid-sprint
-**productizing** it (admin-only prototype → self-installing, agent-first + human-first app). The
-plan and current-state map live in **[`docs/PRODUCTIZING_PLAN.md`](docs/PRODUCTIZING_PLAN.md)** —
-read it before non-trivial work. Active work branch: **`productize-2026`**.
+CorTeX is a distributed corpus-conversion framework for scholarly documents. We **productized** it
+(admin-only prototype → self-installing, agent-first + human-first app) — the sprint shipped as
+**v0.5.0** (PR #369, squash-merged to `master` 2026-06-18). The plan and current-state map live in
+**[`docs/PRODUCTIZING_PLAN.md`](docs/PRODUCTIZING_PLAN.md)** — read it before non-trivial work.
+Active branch: **`master`** (the `productize-2026` sprint branch was merged and deleted).
 
 ## What this system is (the 60-second model)
 

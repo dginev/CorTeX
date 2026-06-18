@@ -4,7 +4,7 @@ A complete, step-by-step installation for the **entire** CorTeX system, verified
 **Ubuntu 26.04 with PostgreSQL 18** (the `cortex` production node). Every command below was run
 end-to-end on a clean box; copy-paste them in order.
 
-> **Fast path (productize-2026):** once the binaries are built (Step 6), a single **`cortex init`**
+> **Fast path:** once the binaries are built (Step 6), a single **`cortex init`**
 > applies the embedded migrations and scaffolds `cortex.toml` — **no `diesel_cli` needed** — and
 > `cortex doctor` verifies the install (see [`docs/PRODUCTIZING_PLAN.md`](docs/PRODUCTIZING_PLAN.md),
 > Arm 2). The manual steps below remain the explicit, transparent reference for what `cortex init`
