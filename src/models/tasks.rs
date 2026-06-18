@@ -85,14 +85,20 @@ impl Task {
     tasks::table.find(taskid).first(connection)
   }
 
-  /// Count of TODO tasks across the whole store — the **pending-conversion backlog** (work waiting
-  /// to be dispatched to the fleet). The single operational "is the fleet keeping up?" number,
-  /// shared by `/metrics` (`cortex_tasks_todo`), the admin dashboard, and `cortex status`. One
-  /// count over `tasks`; bounded, and fast via the partial `todo_index` once a running dispatcher
-  /// drains the backlog. `0` on a query error (best-effort, matching the report paths).
+  /// Count of TODO tasks for **real conversion services** — the **pending-conversion backlog**
+  /// (work waiting to be dispatched to the fleet). The single operational "is the fleet keeping
+  /// up?" number, shared by `/metrics` (`cortex_tasks_todo`), the admin dashboard, and `cortex
+  /// status`. One count over `tasks`; bounded, and fast via the partial `todo_index` once a running
+  /// dispatcher drains the backlog. `0` on a query error (best-effort, matching the report paths).
+  ///
+  /// Excludes the magic infrastructure services (1=init, 2=import; real services are id > 2): their
+  /// rows are status-0 (TODO) **placeholders** that exist for other services to activate over and
+  /// never receive real conversion work, so counting them inflated the backlog with tasks that are
+  /// never truly pending.
   pub fn count_todo(connection: &mut PgConnection) -> i64 {
     tasks::table
       .filter(tasks::status.eq(TaskStatus::TODO.raw()))
+      .filter(tasks::service_id.gt(2))
       .count()
       .get_result(connection)
       .unwrap_or(0)

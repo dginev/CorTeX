@@ -448,9 +448,19 @@ impl From<HistoricalRun> for RunMetadata {
       error,
       no_problem,
       in_progress,
-      start_time: start_time.format("%Y-%m-%d").to_string(),
+      // Full RFC-3339 UTC timestamp, NOT date-only. The `/history` Vega chart keys each run by
+      // `start_time` at minute granularity (`timeUnit: yearmonthdatehoursminutes`) and
+      // `RunMetadataStack::transform` dedups by this exact string. With date-only granularity every
+      // same-day run shared the key "YYYY-MM-DD", so the dedup collapsed them to a single bar
+      // (e.g. 28 runs on one day → 1 point) and the table's time columns were indistinguishable.
+      // Seconds-precision RFC-3339 matches RunDto's `iso_utc` rendering (zone-unambiguous).
+      start_time: start_time
+        .and_utc()
+        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
       end_time: match end_time {
-        Some(etime) => etime.format("%Y-%m-%d").to_string(),
+        Some(etime) => etime
+          .and_utc()
+          .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         None => String::new(),
       },
       owner,

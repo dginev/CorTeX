@@ -155,7 +155,12 @@ pub fn serve_report(
         Some(ref ic_service_name) => {
           global.insert("inputconverter".to_string(), ic_service_name.clone())
         },
-        None => global.insert("inputconverter".to_string(), "missing?".to_string()),
+        // No declared input converter ⇒ this service's input is the raw imported
+        // source, which `serve_entry` serves under the `import` pseudo-service
+        // (`/entry/import/<taskid>` → `task.entry`). Defaulting to "import" keeps the
+        // report's source link live; the old "missing?" placeholder produced a
+        // guaranteed 404 (`/entry/missing%3F/<id>` — no such result archive).
+        None => global.insert("inputconverter".to_string(), "import".to_string()),
       };
 
       let report;
@@ -804,7 +809,10 @@ pub fn serve_entry_preview(
         Some(ref ic_service_name) => {
           global.insert("inputconverter".to_string(), ic_service_name.clone())
         },
-        None => global.insert("inputconverter".to_string(), "missing?".to_string()),
+        // See the matching arm above: a missing input converter means the input is
+        // the raw imported source, served under the `import` pseudo-service. Default
+        // to "import" so the source link resolves instead of 404'ing as "missing?".
+        None => global.insert("inputconverter".to_string(), "import".to_string()),
       };
       global.insert(
         "report_time".to_string(),
