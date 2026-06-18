@@ -14,7 +14,8 @@
 // Measures (perf):   wall-clock drain time, tasks/s, tasks/s/worker, sink-write throughput (MB/s).
 // Asserts (robust):  every task reaches a terminal status (no loss); none left TODO/Queued; the
 //                    status distribution matches the controlled payload (the parse path is
-// correct);                    worker_metadata recorded every dispatch + return.
+// correct);                    worker_metadata recorded every dispatch + return; and the open
+//                    historical run is CLOSED on drain (run-completion-on-drain sets end_time).
 //
 // Env knobs: BENCH_TASKS (default 20000), BENCH_WORKERS (default 4), BENCH_PAYLOAD_KB (default 8,
 // the source/result archive size), BENCH_DEADLINE_S (default 180), BENCH_JSON=1 (emit a one-line
@@ -34,10 +35,10 @@ use cortex::backend;
 use cortex::backend::test_db_address;
 use cortex::dispatcher::manager::TaskManager;
 use cortex::helpers::TaskStatus;
-use cortex::models::{Corpus, NewCorpus, NewService, NewTask, Service};
+use cortex::models::{Corpus, NewCorpus, NewHistoricalRun, NewService, NewTask, Service};
 use pericortex::worker::{EchoWorker, Worker};
 
-use cortex::schema::{corpora, services, tasks, worker_metadata};
+use cortex::schema::{corpora, historical_runs, services, tasks, worker_metadata};
 use diesel::dsl::sql;
 use diesel::prelude::*;
 use diesel::sql_types::BigInt;
@@ -86,6 +87,20 @@ fn completed_count(conn: &mut diesel::PgConnection, corpus_id: i32, service_id: 
     .count()
     .get_result(conn)
     .unwrap_or(0)
+}
+
+/// Whether this pair's historical run has been **closed** (its `end_time` is set). The bench opens
+/// exactly one run for the freshly-minted `(corpus, service)` pair, so a non-null `end_time` means
+/// run-completion-on-drain fired: the finalize thread observed the queue drain and closed the run.
+fn run_closed(conn: &mut diesel::PgConnection, corpus_id: i32, service_id: i32) -> bool {
+  historical_runs::table
+    .filter(historical_runs::corpus_id.eq(corpus_id))
+    .filter(historical_runs::service_id.eq(service_id))
+    .filter(historical_runs::end_time.is_not_null())
+    .count()
+    .get_result::<i64>(conn)
+    .unwrap_or(0)
+    > 0
 }
 
 /// A **saboteur**: a raw ZMQ `DEALER` that leases `strand` tasks from the ventilator and then dies
@@ -227,6 +242,18 @@ fn main() {
       .expect("bulk insert tasks");
   }
 
+  // Open a historical run for this pair, exactly as a rerun would — so the drain below can assert
+  // run-completion-on-drain closes it (sets `end_time`) once the queue empties. The fresh corpus +
+  // service ids isolate it from any prior bench run, so it is the only run for this pair.
+  backend
+    .add(&NewHistoricalRun {
+      corpus_id: corpus.id,
+      service_id: service.id,
+      description: String::from("dispatcher_bench run"),
+      owner: String::from("dispatcher_bench"),
+    })
+    .expect("open historical run");
+
   println!(
     "[{label}] staged {n_tasks} TODO tasks ({payload_kb}KB each), {n_workers} worker(s); draining..."
   );
@@ -284,6 +311,23 @@ fn main() {
   let elapsed = start.elapsed();
   let drained = completed as usize >= n_tasks;
 
+  // --- Run-completion-on-drain gate ------------------------------------------------------------
+  // Once the queue drains, the finalize thread's idle tick must CLOSE the open historical run
+  // (freeze tallies + set `end_time`) rather than leave it "ongoing" until the next rerun. The
+  // close fires on the ~1s idle Timeout after the last result lands, so poll briefly past the
+  // task-drain rather than reading once.
+  let mut run_closed_on_drain = false;
+  if drained {
+    let close_deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < close_deadline {
+      if run_closed(&mut backend.connection, corpus.id, service.id) {
+        run_closed_on_drain = true;
+        break;
+      }
+      thread::sleep(Duration::from_millis(200));
+    }
+  }
+
   // --- Robustness audit ------------------------------------------------------------------------
   let no_problem = status_count(
     &mut backend.connection,
@@ -339,6 +383,14 @@ fn main() {
   println!("transfer                : {mbps:.0} MB/s (source+result)");
   println!("status: NoProblem {no_problem} · TODO {still_todo} · Queued {still_queued}");
   println!("metadata: dispatched {dispatched} · returned {returned}");
+  println!(
+    "run-completion          : {}",
+    if run_closed_on_drain {
+      "closed on drain ✓"
+    } else {
+      "STILL OPEN"
+    }
+  );
 
   // Correctness gates — a perf change that loses/mis-statuses work must FAIL here.
   let mut failures: Vec<String> = Vec::new();
@@ -358,12 +410,18 @@ fn main() {
       "status distribution wrong: expected {n_tasks} NoProblem, got {no_problem} (parse-path regression?)"
     ));
   }
+  if drained && !run_closed_on_drain {
+    failures.push(
+      "run-completion-on-drain: historical run still open (end_time NULL) after the queue drained"
+        .to_string(),
+    );
+  }
   // NB: worker_metadata is intentionally best-effort (the D-1 writer drops under saturation), so
   // its totals are reported but never asserted — they would flake.
 
   if json {
     println!(
-      "JSON {{\"label\":\"{label}\",\"workers\":{n_workers},\"payload_kb\":{payload_kb},\"tasks\":{n_tasks},\"drained\":{drained},\"secs\":{secs:.3},\"tasks_per_s\":{rate:.1},\"mb_per_s\":{mbps:.1},\"no_problem\":{no_problem},\"ok\":{}}}",
+      "JSON {{\"label\":\"{label}\",\"workers\":{n_workers},\"payload_kb\":{payload_kb},\"tasks\":{n_tasks},\"drained\":{drained},\"secs\":{secs:.3},\"tasks_per_s\":{rate:.1},\"mb_per_s\":{mbps:.1},\"no_problem\":{no_problem},\"run_closed_on_drain\":{run_closed_on_drain},\"ok\":{}}}",
       failures.is_empty()
     );
   }

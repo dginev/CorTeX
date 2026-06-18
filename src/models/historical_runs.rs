@@ -255,26 +255,92 @@ impl HistoricalRun {
       .optional()
   }
 
-  /// Mark this historical run as completed, by setting `end_time` to the current time.
-  pub fn mark_completed(&self, connection: &mut PgConnection) -> Result<(), Error> {
+  /// Mark this historical run as completed: freeze its live tallies and set `end_time`, as an
+  /// **atomic compare-and-set** (`WHERE id = ? AND end_time IS NULL`). Exactly one caller can ever
+  /// close a given run — even under duplicate finalize passes (a re-tried last task that lands
+  /// twice) or, hypothetically, concurrent writers — because the open-row predicate lives in the
+  /// UPDATE itself, not in a separate read. Returns `true` iff **this** call performed the close
+  /// (the UPDATE matched the still-open row); `false` if the run was already closed (a no-op). That
+  /// `true` is the safe edge to hang any run-completion side effect on: it can never double-fire.
+  pub fn mark_completed(&self, connection: &mut PgConnection) -> Result<bool, Error> {
     use diesel::dsl::now;
-    if self.end_time.is_none() {
-      // Freeze the current statistics for this run, then close it.
-      let t = live_tally_fields(connection, self.corpus_id, self.service_id);
-      update(self)
-        .set((
-          historical_runs::end_time.eq(now),
-          historical_runs::total.eq(t.total),
-          historical_runs::in_progress.eq(t.in_progress),
-          historical_runs::invalid.eq(t.invalid),
-          historical_runs::no_problem.eq(t.no_problem),
-          historical_runs::warning.eq(t.warning),
-          historical_runs::error.eq(t.error),
-          historical_runs::fatal.eq(t.fatal),
-        ))
-        .execute(connection)?;
+    // Fast path: a run we already know is closed needs no tally recompute. The atomic UPDATE below
+    // is the real guard — this only skips wasted work in the already-closed case.
+    if self.end_time.is_some() {
+      return Ok(false);
     }
-    Ok(())
+    // Freeze the current statistics, then close — but the `end_time IS NULL` filter means a racing
+    // (or duplicate) close matches zero rows and is a clean no-op, never a re-mark.
+    let t = live_tally_fields(connection, self.corpus_id, self.service_id);
+    let rows = update(
+      historical_runs::table
+        .filter(historical_runs::id.eq(self.id))
+        .filter(historical_runs::end_time.is_null()),
+    )
+    .set((
+      historical_runs::end_time.eq(now),
+      historical_runs::total.eq(t.total),
+      historical_runs::in_progress.eq(t.in_progress),
+      historical_runs::invalid.eq(t.invalid),
+      historical_runs::no_problem.eq(t.no_problem),
+      historical_runs::warning.eq(t.warning),
+      historical_runs::error.eq(t.error),
+      historical_runs::fatal.eq(t.fatal),
+    ))
+    .execute(connection)?;
+    Ok(rows == 1)
+  }
+
+  /// **Run-completion-on-drain.** Close the open historical run for a `(corpus, service)` pair the
+  /// moment its work is exhausted — every task has reached a terminal severity, with nothing left
+  /// `TODO`, in-flight (`Queued`), or `Blocked` on a prerequisite. Freezes the run's tallies and
+  /// sets `end_time` (via [`Self::mark_completed`]), so a finished run stops reading as "ongoing"
+  /// *immediately*, instead of only when the next rerun supersedes it (the lazy
+  /// [`mark_new_run`](crate::backend::mark_new_run) path that left a run "ongoing" until the very
+  /// minute the next run started). Returns `true` iff a run was actually closed.
+  ///
+  /// Idempotent and safe to call repeatedly from the dispatcher's finalize loop: a no-op when work
+  /// still remains, when there is no open run (already closed, or never started), or for the
+  /// bookkeeping services `init` (1) / `import` (2) — those are not user-facing conversion runs and
+  /// are skipped.
+  pub fn complete_if_drained(
+    corpus: i32,
+    service: i32,
+    connection: &mut PgConnection,
+  ) -> Result<bool, Error> {
+    use crate::schema::historical_runs::dsl::{corpus_id, end_time, service_id};
+    use crate::schema::tasks;
+    // `init` (1) / `import` (2) are bookkeeping services, not conversion runs — no run to close.
+    if service <= 2 {
+      return Ok(false);
+    }
+    // Unfinished = anything OUTSIDE the terminal severity band [-5, -1]: `TODO` (0) and `Queued`
+    // (> 0) still to run, plus `Blocked` (< -5) gated on a prerequisite service. While any of these
+    // remain the run can still produce a result, so it is NOT drained. (Mirror of the raw status
+    // mapping in `TaskStatus::from_raw`.)
+    let unfinished: i64 = tasks::table
+      .filter(tasks::corpus_id.eq(corpus))
+      .filter(tasks::service_id.eq(service))
+      .filter(tasks::status.ge(0).or(tasks::status.lt(-5)))
+      .count()
+      .get_result(connection)?;
+    if unfinished > 0 {
+      return Ok(false);
+    }
+    // Drained: freeze + close the pair's open run, if one is still open.
+    let open: Option<HistoricalRun> = historical_runs::table
+      .filter(corpus_id.eq(corpus))
+      .filter(service_id.eq(service))
+      .filter(end_time.is_null())
+      .first(connection)
+      .optional()?;
+    // `mark_completed` is the atomic compare-and-set: it returns `true` only if THIS call closed
+    // the run, so a duplicate drain pass (or a racing writer) that finds the row already closed
+    // propagates as `false` here — never a second completion.
+    match open {
+      Some(run) => run.mark_completed(connection),
+      None => Ok(false),
+    }
   }
 
   /// Returns this run with its per-severity tallies reflecting **live** task state *when the run is
