@@ -23,8 +23,7 @@
   {% else %}
   {% include "vega-history" %}
   <div class="row">
-    <div class="col-md-1"></div>
-    <div class="col-md-10">
+    <div class="col-md-12">
       <table id="runs-report" class="table">
         <caption class="muted">Coloured numbers are each run's change vs the previous (older) run — <span class="delta delta-good">green = improvement</span>, <span class="delta delta-bad">red = regression</span>.</caption>
         <thead>
@@ -57,7 +56,6 @@
         </tbody>
       </table>
     </div>
-    <div class="col-md-1"></div>
   </div>
   {% endif %}
 </div>
