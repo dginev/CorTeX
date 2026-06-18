@@ -362,7 +362,10 @@ impl NewTaskMessage {
     details: String,
   ) -> NewTaskMessage {
     match severity.to_lowercase().as_str() {
-      "warning" => NewTaskMessage::Warning(NewLogWarning {
+      // Canonical Perl-LaTeXML token is "Warning"; tolerate the abbreviated "Warn" too so a
+      // producer that emits `Warn:` doesn't silently land in the `_ => Info` default (which once
+      // misfiled every latexml-oxide warning as Info).
+      "warning" | "warn" => NewTaskMessage::Warning(NewLogWarning {
         task_id,
         category,
         what,
@@ -692,6 +695,23 @@ mod log_decode_tests {
       parse_log(1, &decoded).len() >= 2,
       "real messages are preserved, not collapsed into one fatal"
     );
+  }
+
+  #[test]
+  fn warn_abbreviation_is_recognized_as_warning() {
+    // latexml-oxide historically emitted the abbreviated `Warn:` token; cortex must file it as a
+    // Warning, not silently default it to Info (the `_ => Info` arm), which once left every warning
+    // task showing "no_messages" in the report. The canonical Perl token `Warning:` behaves the
+    // same.
+    use super::NewTaskMessage;
+    let abbrev = parse_log(42, "Warn:missing_file:rotfloat.sty stubbed\n");
+    assert_eq!(abbrev.len(), 1);
+    assert!(
+      matches!(abbrev[0], NewTaskMessage::Warning(_)),
+      "abbreviated `Warn:` is filed as a Warning, not defaulted to Info"
+    );
+    let canonical = parse_log(42, "Warning:missing_file:x y\n");
+    assert!(matches!(canonical[0], NewTaskMessage::Warning(_)));
   }
 
   #[test]
