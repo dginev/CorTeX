@@ -6,7 +6,7 @@
 // except according to those terms.
 
 //! Helper structures and methods for Task
-use rand::{Rng, thread_rng};
+use rand::RngExt;
 use regex::Regex;
 use std::fs::File;
 use std::io;
@@ -640,15 +640,15 @@ pub fn utf_truncate(input: &mut String, maxsize: usize) {
 
 /// Generate a random integer useful for temporary DB marks
 pub fn random_mark() -> i32 {
-  let mut rng = thread_rng();
-  let mark_rng: u16 = rng.r#gen();
+  let mut rng = rand::rng();
+  let mark_rng: u16 = rng.random();
   i32::from(mark_rng)
 }
 
 /// Helper for generating a random i32 in a range, to avoid loading the rng crate + boilerplate
 pub fn rand_in_range(from: u16, to: u16) -> u16 {
-  let mut rng = thread_rng();
-  let mark_rng: u16 = rng.gen_range(from..=to);
+  let mut rng = rand::rng();
+  let mark_rng: u16 = rng.random_range(from..=to);
   mark_rng
 }
 

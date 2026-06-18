@@ -6,8 +6,7 @@
 // except according to those terms.
 
 //! Worker for performing corpus imports, when served as "init" tasks by the `CorTeX` dispatcher
-use rand::seq::SliceRandom;
-use rand::thread_rng;
+use rand::seq::IndexedRandom;
 use std::borrow::Cow;
 use std::error::Error;
 use std::fs::File;
@@ -111,7 +110,7 @@ impl Worker for InitWorker {
 
   fn start(&mut self, limit: Option<usize>) -> Result<(), Box<dyn Error>> {
     let mut work_counter = 0;
-    let mut rng = thread_rng();
+    let mut rng = rand::rng();
     // Connect to a task ventilator
     let context_source = Context::new();
     let source = context_source.socket(zmq::DEALER).unwrap();
@@ -172,7 +171,7 @@ mod tests {
   #[test]
   fn configured_identity_is_honored_verbatim() {
     // An operator-set identity is used as-is, giving a stable worker_metadata key (W-3).
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     assert_eq!(
       resolve_worker_identity("arxiv-host3:init:1", &mut rng),
       "arxiv-host3:init:1"
@@ -181,7 +180,7 @@ mod tests {
 
   #[test]
   fn empty_identity_falls_back_to_a_random_handle() {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let id = resolve_worker_identity("", &mut rng);
     assert_eq!(id.len(), 19, "preserves the historical 19-char length");
     assert!(
