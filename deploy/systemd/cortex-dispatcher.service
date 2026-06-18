@@ -6,6 +6,8 @@ Documentation=file:/home/deyan/git/cortex/deploy/README.md
 # wildcard bind (tcp://*) also accepts an interface that appears later, so this is best-effort.
 After=network-online.target postgresql.service tailscaled.service
 Wants=network-online.target
+# Part of the cortex.target deployment group (`systemctl restart cortex.target` cycles both).
+PartOf=cortex.target
 StartLimitIntervalSec=60
 StartLimitBurst=10
 

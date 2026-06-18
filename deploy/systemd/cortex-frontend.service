@@ -3,6 +3,8 @@ Description=CorTeX frontend (Rocket web UI)
 Documentation=file:/home/deyan/git/cortex/deploy/README.md
 After=network-online.target postgresql.service
 Wants=network-online.target
+# Part of the cortex.target deployment group (`systemctl restart cortex.target` cycles both).
+PartOf=cortex.target
 StartLimitIntervalSec=60
 StartLimitBurst=10
 

@@ -1,0 +1,19 @@
+[Unit]
+Description=CorTeX deployment (frontend + dispatcher)
+# A grouping handle so the whole deployment can be managed in one command:
+#   sudo systemctl start|stop|restart cortex.target
+#   systemctl list-dependencies cortex.target
+# The members are ALSO independently enabled (each is WantedBy=multi-user.target), so they still boot
+# on their own — this target only adds one-command lifecycle + the dependency view. There is NO
+# ordering between the members: the frontend and dispatcher are independent over the shared DB. Each
+# member declares `PartOf=cortex.target`, so a target stop/restart propagates to it; `Wants=` below
+# makes a target start pull both up.
+#
+# NOTE: prefer `scripts/deploy.sh` for an UPGRADE (it rebuilds both binaries, migrates online, then
+# restarts both with verification). `systemctl restart cortex.target` only cycles the running
+# processes — it does not rebuild.
+Wants=cortex-frontend.service cortex-dispatcher.service
+After=cortex-frontend.service cortex-dispatcher.service
+
+[Install]
+WantedBy=multi-user.target
