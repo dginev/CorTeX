@@ -153,11 +153,12 @@ fn history_chart_escapes_script_breakout_in_a_description(client: &Client) {
     )
     .expect("closing run");
 
+  // The chart is now merged into the /runs page (the standalone /history redirects there).
   let body = client
-    .get(format!("/history/{corpus_name}/{service_name}"))
+    .get(format!("/runs/{corpus_name}/{service_name}"))
     .dispatch()
     .into_string()
-    .expect("history html");
+    .expect("runs html");
   // The chart series is present (a completed run with tallies) and carries the payload description.
   assert!(
     body.contains("XSSPROBE"),
@@ -594,17 +595,16 @@ fn api_lists_runs_and_reports_current(client: &Client) {
     "malformed date -> 400 on the matrix screen, not a panic"
   );
 
-  // --- HTML twin: the run-history Vega chart screen (relocated from the legacy binary route)
-  // ------
+  // --- HTML twin: the run-history Vega chart, now merged inline into the /runs screen ------
   let response = client
-    .get(format!("/history/{CORPUS_NAME}/{SERVICE_NAME}"))
+    .get(format!("/runs/{CORPUS_NAME}/{SERVICE_NAME}"))
     .dispatch();
   assert_eq!(response.status(), Status::Ok);
   assert_eq!(response.content_type(), Some(ContentType::HTML));
   let body = response.into_string().expect("html body");
   assert!(
-    body.contains("Historical runs"),
-    "renders the run-history chart screen"
+    body.contains("Success rates from"),
+    "renders the run-history chart inline on the merged /runs screen"
   );
   assert!(
     body.contains("first run"),
@@ -806,8 +806,10 @@ fn api_runs_is_404_for_unknown_corpus(client: &Client) {
     .get("/runs/no-such-corpus-xyz/no_such_service/diff")
     .dispatch();
   assert_eq!(response.status(), Status::NotFound);
+  // /history is now a permanent alias redirecting to /runs; it redirects unconditionally, so an
+  // unknown corpus/service yields the redirect (the /runs target then 404s on its own).
   let response = client
     .get("/history/no-such-corpus-xyz/no_such_service")
     .dispatch();
-  assert_eq!(response.status(), Status::NotFound);
+  assert_eq!(response.status(), Status::SeeOther);
 }
