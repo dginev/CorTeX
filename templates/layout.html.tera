@@ -138,8 +138,10 @@
                         title="Save the current task statuses as a historical snapshot"><i class="fa fa-save"></i>&nbsp;Save&nbsp;snapshot</a>
                     {% endif %}
                     {% endblock footer_save %}
+                    {% if global.corpus_name and global.service_name %}
                     <a class="footer-action" href="#" id="footer-force-refresh"
-                        title="Rebuild the report data (materialized rollup) now, then reload this page"><i class="fa fa-database"></i>&nbsp;Force&nbsp;refresh</a>
+                        title="Recompute this report's cached data now, then reload"><i class="fa fa-database"></i>&nbsp;Refresh&nbsp;this&nbsp;report</a>
+                    {% endif %}
                     {% else %}
                     <a class="footer-action" href="/admin/login"
                         title="Sign in to rerun tasks or save a snapshot"><i class="fa fa-lock"></i>&nbsp;Admin&nbsp;login</a>
@@ -204,9 +206,10 @@
       })();
     </script>
     <script>
-      // Footer "Force refresh": rebuild the report rollup now, then reload with fresh numbers. The
-      // rebuild is a background job (multi-minute at scale), so POST it, poll the open job endpoint
-      // until it finishes, and only then reload — no JS framework (cf. the job-progress page, D11).
+      // Footer "Refresh this report": bust THIS (corpus, service)'s cached report grains so the
+      // next view recomputes from current data. The bust is an instant scoped DELETE — just POST
+      // and reload, no background job to poll. Scope comes from the report-page path
+      // (/corpus/<corpus>/<service>/...); the button only renders on report pages anyway.
       (function () {
         var btn = document.getElementById('footer-force-refresh');
         if (!btn) return;
@@ -217,26 +220,12 @@
         }
         btn.addEventListener('click', function (e) {
           e.preventDefault();
+          var parts = location.pathname.split('/'); // ['', 'corpus', '<corpus>', '<service>', ...]
+          if (parts[1] !== 'corpus' || !parts[2] || !parts[3]) return; // not a report page
           btn.style.pointerEvents = 'none';
           btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i>&nbsp;Refreshing…';
-          fetch('/reports/refresh/now', { method: 'POST' })
-            .then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); })
-            .then(function (data) {
-              var job = data.job, tries = 0;
-              var timer = setInterval(function () {
-                tries++;
-                fetch('/api/jobs/' + job)
-                  .then(function (r) { return r.json(); })
-                  .then(function (j) {
-                    if (j.status === 'succeeded' || j.status === 'failed'
-                      || j.status === 'interrupted' || tries > 120) {
-                      clearInterval(timer);
-                      location.reload();
-                    }
-                  })
-                  .catch(function () { /* transient; keep polling */ });
-              }, 1500);
-            })
+          fetch('/corpus/' + parts[2] + '/' + parts[3] + '/refresh', { method: 'POST' })
+            .then(function (r) { if (!r.ok) throw new Error('http'); location.reload(); })
             .catch(function () { fail('Refresh failed'); });
         });
       })();

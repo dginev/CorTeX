@@ -863,6 +863,31 @@ pub fn force_refresh_reports(
   }))
 }
 
+/// Report-footer **"Refresh this report"**: drop the cached report grains for *this*
+/// `(corpus, service)` scope so the next view recomputes them from current data. Scoped (not the
+/// global all-corpora bust [`force_refresh_reports`] does) and **synchronous** — busting
+/// `report_grain_cache` is an instant keyed `DELETE`, so there is no background job to poll; the
+/// caller just reloads. **Gated by the signed-in [`AdminSession`] cookie** (the footer shows the
+/// button only to admins; a missing session is a clean `401` for the XHR rather than an HTML
+/// redirect). `404` on an unknown corpus/service, `204` on success.
+#[post("/corpus/<corpus_name>/<service_name>/refresh")]
+pub fn refresh_report_scope(
+  corpus_name: String,
+  service_name: String,
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+) -> Result<Status, Status> {
+  session.ok_or(Status::Unauthorized)?;
+  let mut connection = pooled(pool)?;
+  let corpus = Corpus::find_by_name(&corpus_name.to_lowercase(), &mut connection)
+    .map_err(|_| Status::NotFound)?;
+  let service = Service::find_by_name(&service_name.to_lowercase(), &mut connection)
+    .map_err(|_| Status::NotFound)?;
+  crate::backend::invalidate_scope(&mut connection, corpus.id, service.id)
+    .map_err(|_| Status::InternalServerError)?;
+  Ok(Status::NoContent)
+}
+
 // --- The human report screens (HTML twins of the typed report API above) -----------------------
 //
 // These render the corpus/service report hierarchy (top → severity → category → `what` → task
@@ -1063,6 +1088,7 @@ pub fn routes() -> Vec<Route> {
   routes![
     refresh_reports_human,
     force_refresh_reports,
+    refresh_report_scope,
     top_service_report,
     severity_service_report,
     severity_service_report_all,
