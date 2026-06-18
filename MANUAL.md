@@ -190,8 +190,14 @@ corpus at **`/corpus/<name>`**; delete it (cascade-clean, orphan-free) from its 
 
 ## 7. Running conversions
 
-1. Start the **dispatcher** (`cargo run --bin dispatcher`) — it leases `TODO` tasks, streams sources
-   to workers (ventilator), and ingests result archives (sink), persisting each result's status.
+1. Start the **dispatcher** — it leases `TODO` tasks, streams sources to workers (ventilator), and
+   ingests result archives (sink), persisting each result's status. In production it runs as the
+   supervised systemd service **`cortex-dispatcher`** (`sudo systemctl start cortex-dispatcher`;
+   one-time setup: point its DB at production in `/etc/cortex/dispatcher.env` and `enable` it — see
+   deploy/README.md "Dispatcher cutover"). For an ad-hoc/foreground run use **`scripts/run_dispatcher.sh`**
+   (builds the release binary once, runs it with an explicit `DATABASE_URL`, prints the redacted
+   target) rather than a bare `cargo run --release --bin dispatcher`, which recompiles every launch
+   and crash-loops if `DATABASE_URL` is unset.
 2. Start **workers** (the external `pericortex` processes) pointed at this host's ventilator/sink
    ports. They request work, convert, and return result archives. For the production TeX→HTML
    fleet, see [The latexml-oxide worker fleet](#the-latexml-oxide-worker-fleet) below.
@@ -204,6 +210,15 @@ Task status is a signed int (`TODO=0`, `NoProblem=-1`, `Warning=-2`, `Error=-3`,
 `Invalid=-5`, `Blocked<-5`, `Queued>0` while leased). A leased task is marked `Queued` durably; a
 crash recovers it (`Queued`→`TODO` on dispatcher restart), and a lease unreturned past its
 visibility timeout is re-queued (with a bounded retry budget before it dead-letters).
+
+**Frontend + dispatcher are one deployment.** They're independent over the shared DB (no start
+ordering between them), but a frontend with **active tasks** (an open run / a `TODO` backlog) needs a
+live dispatcher to drain them — keep both up whenever work is queued. To **upgrade**, rebuild both and
+replace the running pair in one step with **`scripts/deploy.sh`** (build both → online migrate →
+restart `cortex-frontend` + `cortex-dispatcher` → verify both). `systemctl restart` stops the old
+dispatcher before the new binds, so the ZMQ ports hand over cleanly and any in-flight conversions are
+re-leased by the reaper (no loss). Use `--frontend-only` for a UI-only change and `--no-migrate` for a
+code/template/CSS-only deploy.
 
 ### The latexml-oxide worker fleet
 
@@ -510,5 +525,16 @@ operation, `/admin/retention`).
   `interrupted` after the timeout, and all in-flight jobs are interrupted on a frontend restart.
 - **Tasks not draining** — confirm the dispatcher is up, workers are connected (`/workers/<service>`),
   and the service is activated on the corpus.
+- **Dispatcher crash-loops on `Address already in use`** — another dispatcher already holds
+  `:51695`/`:51696`. With the systemd unit this can't happen on `restart` (systemd stops the old
+  first); the usual cause is a *manually-launched* dispatcher (e.g. a stray `scripts/run_dispatcher.sh`)
+  left running. Find + stop the holder — `sudo ss -ltnp | grep -E ':5169[56]'` then `kill <pid>` (use
+  `kill -9` if it hangs in graceful shutdown) — then `sudo systemctl start cortex-dispatcher`. Never
+  run two dispatchers against the same ports.
+- **`systemctl restart cortex-dispatcher` pauses up to ~120s** — its graceful shutdown waits for the
+  ventilator to return, which can hang the full `TimeoutStopSec` (120s) when the fleet is **idle** (no
+  worker traffic to unblock the lease loop) before systemd SIGKILLs it. In-flight work is re-leased on
+  the next start (no loss); the wait is only the finalize-flush window. Restart during/after a fleet
+  run for a prompt handover, or expect the pause when idle.
 - Known limitations and in-flight hardening are tracked in
   [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md).
