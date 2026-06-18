@@ -16,6 +16,7 @@
 
 use chrono::NaiveDateTime;
 use rocket::http::Status;
+use rocket::response::Redirect;
 use rocket::serde::json::Json;
 use rocket::{Route, State};
 use rocket_dyn_templates::{Template, context};
@@ -25,8 +26,8 @@ use std::collections::HashMap;
 
 use crate::backend::{DbPool, list_task_diffs, summary_task_diffs};
 use crate::frontend::actor::{AdminReject, AdminSession, ReturnTo, require_admin_to};
-use crate::frontend::helpers::decorate_uri_encodings;
-use crate::frontend::params::{MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE, TemplateContext};
+use crate::frontend::helpers::uri_escape;
+use crate::frontend::params::{MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE};
 use crate::helpers::TaskStatus;
 use crate::models::{
   Corpus, DiffStatusFilter, HistoricalRun, RunMetadata, RunMetadataStack, Service, TaskRunMetadata,
@@ -717,12 +718,18 @@ pub fn runs_diff_page(
 pub fn runs_page(corpus: &str, service: &str, pool: &State<DbPool>) -> Result<Template, Status> {
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let (corpus_record, service_record) = resolve(corpus, service, &mut connection)?;
-  let runs: Vec<RunDto> = HistoricalRun::find_by(&corpus_record, &service_record, &mut connection)
-    .unwrap_or_default()
-    .into_iter()
-    // Overlay live progress on any still-open run so the table doesn't show it as all-zeros.
-    .map(|run| RunDto::from(run.with_live_tallies(&mut connection)))
-    .collect();
+  // Fetch the historical runs once (overlaying live progress on any still-open run so it isn't
+  // shown as all-zeros) and derive BOTH the table DTOs and the chart's `RunMetadata` from the
+  // same overlaid records — so the inline success-rate chart and the delta table can never
+  // disagree.
+  let historical: Vec<HistoricalRun> =
+    HistoricalRun::find_by(&corpus_record, &service_record, &mut connection)
+      .unwrap_or_default()
+      .into_iter()
+      .map(|run| run.with_live_tallies(&mut connection))
+      .collect();
+  let runs_meta: Vec<RunMetadata> = historical.iter().cloned().map(RunMetadata::from).collect();
+  let runs: Vec<RunDto> = historical.into_iter().map(RunDto::from).collect();
   // Run-over-run deltas (newest-first, so row `i` compares against the next-older row `i+1`) so the
   // human table answers "how did this run move the conversion tallies" without the reader
   // subtracting consecutive rows. The agent `/api/runs` feed stays raw (agents diff themselves).
@@ -738,71 +745,49 @@ pub fn runs_page(corpus: &str, service: &str, pool: &State<DbPool>) -> Result<Te
     .zip(deltas)
     .map(|(run, delta)| RunRow { run, delta })
     .collect();
-  // `global` carries the title/description the shared `layout` template expects.
+  // The inline success-rate chart (merged in from the former standalone `/history` page): the same
+  // Vega stack the `vega-history` partial renders. Escape `<`/`>`/`&` to their JSON `\uXXXX` forms
+  // before embedding in the `<script>` block — a run `description` containing `</script>` would
+  // otherwise break out of the tag (stored XSS, and `/runs` is public). `JSON.parse` decodes them
+  // back, so the chart data is byte-identical while the markup can no longer be escaped.
+  let history_serialized = serde_json::to_string(&RunMetadataStack::transform(&runs_meta))
+    .unwrap_or_default()
+    .replace('<', "\\u003c")
+    .replace('>', "\\u003e")
+    .replace('&', "\\u0026");
+  let history_length = runs_meta
+    .iter()
+    .filter(|run| !run.end_time.is_empty())
+    .count()
+    .to_string();
+  // `global` carries the title/description the shared `layout` template expects, plus the
+  // corpus/service names + run count the chart partial reads.
   let global = serde_json::json!({
     "title": format!("Run history · {service} / {corpus}"),
     "description": format!("Historical runs of service {service} over corpus {corpus}"),
+    "service_name": service,
+    "corpus_name": corpus,
+    // The shared layout breadcrumb (corpus › service) links via the percent-encoded `_uri` forms;
+    // supply them as the report pages' `decorate_uri_encodings` does, else the breadcrumb (now
+    // active because corpus_name/service_name are set) references undefined vars and 500s.
+    "corpus_name_uri": uri_escape(Some(corpus.to_string())).unwrap_or_default(),
+    "service_name_uri": uri_escape(Some(service.to_string())).unwrap_or_default(),
+    "history_length": history_length,
   });
   Ok(Template::render(
     "runs",
-    context! { global, corpus, service, runs },
+    context! { global, corpus, service, runs, history_serialized },
   ))
 }
 
-/// The human run-history **visualization**: the Vega bar-chart of per-run success rates over time
-/// plus the tabular breakdown — the chart view that complements the [`runs_page`] table and the
-/// structured [`api_runs`] feed. Relocated from the legacy binary route onto the library surface
-/// (pooled connection; the legacy serialization `.unwrap()` — a request-path panic — softened to a
-/// graceful empty series). `404` if the corpus/service is unknown.
+/// The former standalone history **chart** page. The success-rate Vega chart is now merged into
+/// [`runs_page`], rendering inline above the run-history table at `/runs/<corpus>/<service>`, so
+/// this route redirects there — keeping old links, bookmarks, and nav entries working.
 #[get("/history/<corpus>/<service>")]
-pub fn history_page(corpus: &str, service: &str, pool: &State<DbPool>) -> Result<Template, Status> {
-  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
-  let (corpus_record, service_record) = resolve(corpus, service, &mut connection)?;
-  let mut context = TemplateContext::default();
-  let mut global = HashMap::new();
-  if let Ok(runs) = HistoricalRun::find_by(&corpus_record, &service_record, &mut connection) {
-    // Overlay live progress on any open run so the latest chart point reflects real progress.
-    let runs_meta: Vec<RunMetadata> = runs
-      .into_iter()
-      .map(|run| RunMetadata::from(run.with_live_tallies(&mut connection)))
-      .collect();
-    let runs_meta_stack = RunMetadataStack::transform(&runs_meta);
-    // Soften the legacy `.unwrap()` (a request-path panic on a serialization error) to an empty
-    // series: the chart renders nothing rather than crashing the request.
-    // The result is embedded **inside a `<script>` block** (`{{ history_serialized | safe }}`), and
-    // serde_json escapes `"`/control chars but NOT `<` — so a user-set run `description` containing
-    // `</script>` would break out of the script tag (stored XSS, and `/history` is public). Escape
-    // `<`/`>`/`&` to their JSON `\uXXXX` forms — `JSON.parse` decodes them back, so the chart data
-    // is byte-identical while the markup can no longer be escaped.
-    let history_json = serde_json::to_string(&runs_meta_stack)
-      .unwrap_or_default()
-      .replace('<', "\\u003c")
-      .replace('>', "\\u003e")
-      .replace('&', "\\u0026");
-    context.history_serialized = Some(history_json);
-    global.insert(
-      "history_length".to_string(),
-      runs_meta
-        .iter()
-        .filter(|run| !run.end_time.is_empty())
-        .count()
-        .to_string(),
-    );
-    context.history = Some(runs_meta);
-  }
-  global.insert(
-    "title".to_string(),
-    format!("Run history · {service} / {corpus}"),
-  );
-  global.insert(
-    "description".to_string(),
-    format!("Historical runs of service {service} over corpus {corpus}"),
-  );
-  global.insert("service_name".to_string(), service.to_string());
-  global.insert("corpus_name".to_string(), corpus.to_string());
-  context.global = global;
-  decorate_uri_encodings(&mut context);
-  Ok(Template::render("history", context))
+pub fn history_page(corpus: &str, service: &str) -> Redirect {
+  // corpus/service are cortex slugs (no spaces or path separators — `serve_entry` even rejects the
+  // latter), so a plain path interpolation is a safe, well-formed redirect target.
+  Redirect::to(format!("/runs/{corpus}/{service}"))
 }
 
 /// The route set for the historical-runs capability.

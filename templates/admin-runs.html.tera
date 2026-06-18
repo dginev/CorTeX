@@ -64,8 +64,7 @@
         <td class="left">
           {% set c = run.corpus | urlencode %}{% set s = run.service | urlencode %}
           <a href="/runs/{{ c }}/{{ s }}">runs</a> &middot;
-          <a href="/runs/{{ c }}/{{ s }}/diff">diff</a> &middot;
-          <a href="/history/{{ c }}/{{ s }}">chart</a>
+          <a href="/runs/{{ c }}/{{ s }}/diff">diff</a>
         </td>
       </tr>
       {% else %}

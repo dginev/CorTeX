@@ -41,8 +41,7 @@
           <td class="right {% if service.todo == '0' %}count-zero{% else %}count-todo{% endif %}">{{ service.todo | group_thousands }}</td>
           <td class="left">
             <a href="/runs/{{global.corpus_name_uri}}/{{service.name_uri}}">runs</a> &middot;
-            <a href="/runs/{{global.corpus_name_uri}}/{{service.name_uri}}/diff">diff</a> &middot;
-            <a href="/history/{{global.corpus_name_uri}}/{{service.name_uri}}">chart</a>
+            <a href="/runs/{{global.corpus_name_uri}}/{{service.name_uri}}/diff">diff</a>
             {# init (1) / import (2) are magic infrastructure services — never deactivatable.
                Admin-only: a non-signed-in visitor never sees the deactivate control. #}
             {% if is_admin and service.id != "1" and service.id != "2" %}

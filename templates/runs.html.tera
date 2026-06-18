@@ -1,11 +1,15 @@
-{% extends "layout" %} {% block content %}
+{% extends "layout" %}
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/vega@5.4.0/build/vega.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-lite@3.3.0/build/vega-lite.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-embed@4.2.0/build/vega-embed.js"></script>
+{% endblock head_extra %}
+{% block content %}
 <div class="center">
   <h1>Run history</h1>
   <h5>{{service}} over {{corpus}}</h5>
   <p>
     <a href="/corpus/{{corpus}}/{{service}}">&larr; Report</a>
-    &nbsp;·&nbsp;
-    <a href="/history/{{corpus}}/{{service}}">History chart</a>
     &nbsp;·&nbsp;
     <a href="/runs/{{corpus}}/{{service}}/diff">Run differences</a>
     &nbsp;·&nbsp;
@@ -17,6 +21,7 @@
   {% if runs | length == 0 %}
   <p>No runs recorded yet for this corpus/service.</p>
   {% else %}
+  {% include "vega-history" %}
   <div class="row">
     <div class="col-md-1"></div>
     <div class="col-md-10">
