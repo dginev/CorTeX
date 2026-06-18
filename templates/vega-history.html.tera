@@ -53,11 +53,12 @@
     var rule = cortexToken('--rule');
     var sans = cortexToken('--sans') || 'sans-serif';
     var spec = JSON.parse(JSON.stringify(historySpec));
-    // Severity palette straight from the design tokens, so the chart matches the report bars in
-    // either theme (fatal→bad, error→deep-orange, warning→warn, no_problem→ok, in_progress→muted).
+    // Vibrant outcome palette from the design tokens, tuned per light/dark theme — domain order is
+    // fatal, error, warning, no_problem, in_progress (see public/css/cortex.css `--chart-*`). These
+    // are chart-fill colors, decoupled from the WCAG-text-tuned status tokens (like --bar-warn).
     spec.encoding.color.scale.range = [
-      cortexToken('--bad'), cortexToken('--orange-deep'), cortexToken('--warn'),
-      cortexToken('--ok'), inkMuted
+      cortexToken('--chart-fatal'), cortexToken('--chart-error'), cortexToken('--chart-warning'),
+      cortexToken('--chart-no-problem'), cortexToken('--chart-in-progress')
     ];
     spec.config = {
       font: sans,

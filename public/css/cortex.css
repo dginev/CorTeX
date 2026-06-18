@@ -39,6 +39,15 @@
   --bar-warn: #ca8119;
   --orange-deep: #9b470c;
   --bad: #b32424;
+  /* Vibrant chart-fill palette. Chart bars are graphical objects (~3:1 suffices), so these are
+     deliberately NOT the WCAG-text-tuned status colors above — same fill-vs-text decoupling as
+     --bar-warn. A luminous outcome spectrum, good->bad: emerald -> marigold -> coral -> rose, with
+     periwinkle for neutral in-progress. Deepened for the light bg so the saturated fills still read. */
+  --chart-no-problem: #0a9e6e;
+  --chart-warning: #e3990a;
+  --chart-error: #ef6a35;
+  --chart-fatal: #df2f6b;
+  --chart-in-progress: #6354e0;
   --serif: "Roboto Slab", "Iowan Old Style", Charter, Georgia, serif;
   --sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
@@ -79,6 +88,12 @@
   --bar-warn: #f5b042;
   --orange-deep: #e8884a;
   --bad: #f06363;
+  /* Vibrant chart-fill palette (see the paper theme) — luminous variants for the near-black bg. */
+  --chart-no-problem: #2fe3ad;
+  --chart-warning: #ffc63f;
+  --chart-error: #ff8a5c;
+  --chart-fatal: #ff5d8f;
+  --chart-in-progress: #9d8cff;
 }
 
 /* Accessibility — the "Skip to main content" link (first focusable element in <body>). Visually
