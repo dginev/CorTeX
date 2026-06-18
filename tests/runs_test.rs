@@ -353,6 +353,29 @@ fn run_completion_on_drain_closes_only_a_fully_drained_run() {
     "the import bookkeeping run stays open (guarded)"
   );
 
+  // (F) Atomic compare-and-set: closing the SAME loaded (stale) run object twice — the
+  // duplicate-last-task / racing-writer shape — must close EXACTLY once. Re-open a conversion run
+  // (its tasks are all terminal from (C), so it is drained), load it, then close it twice on the
+  // same stale handle: the first wins (`rows == 1`), the second's `end_time IS NULL` predicate
+  // matches zero rows and is a clean no-op, never a re-mark.
+  backend
+    .mark_new_run(&corpus, &service, "tester".into(), "cas run".into())
+    .expect("reopen conversion run");
+  let stale = HistoricalRun::find_current(&corpus, &service, &mut backend.connection)
+    .expect("find reopened")
+    .expect("an open run to close");
+  let first = stale
+    .mark_completed(&mut backend.connection)
+    .expect("first close");
+  let second = stale
+    .mark_completed(&mut backend.connection)
+    .expect("second close");
+  assert!(first, "the first close of an open run wins (rows == 1)");
+  assert!(
+    !second,
+    "closing the same stale run object again is a no-op (compare-and-set, never a double-mark)"
+  );
+
   // Clean up so a re-run starts fresh.
   diesel::delete(historical_runs::table.filter(historical_runs::corpus_id.eq(corpus.id)))
     .execute(&mut backend.connection)

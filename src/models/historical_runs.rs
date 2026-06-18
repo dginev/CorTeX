@@ -255,26 +255,40 @@ impl HistoricalRun {
       .optional()
   }
 
-  /// Mark this historical run as completed, by setting `end_time` to the current time.
-  pub fn mark_completed(&self, connection: &mut PgConnection) -> Result<(), Error> {
+  /// Mark this historical run as completed: freeze its live tallies and set `end_time`, as an
+  /// **atomic compare-and-set** (`WHERE id = ? AND end_time IS NULL`). Exactly one caller can ever
+  /// close a given run — even under duplicate finalize passes (a re-tried last task that lands
+  /// twice) or, hypothetically, concurrent writers — because the open-row predicate lives in the
+  /// UPDATE itself, not in a separate read. Returns `true` iff **this** call performed the close
+  /// (the UPDATE matched the still-open row); `false` if the run was already closed (a no-op). That
+  /// `true` is the safe edge to hang any run-completion side effect on: it can never double-fire.
+  pub fn mark_completed(&self, connection: &mut PgConnection) -> Result<bool, Error> {
     use diesel::dsl::now;
-    if self.end_time.is_none() {
-      // Freeze the current statistics for this run, then close it.
-      let t = live_tally_fields(connection, self.corpus_id, self.service_id);
-      update(self)
-        .set((
-          historical_runs::end_time.eq(now),
-          historical_runs::total.eq(t.total),
-          historical_runs::in_progress.eq(t.in_progress),
-          historical_runs::invalid.eq(t.invalid),
-          historical_runs::no_problem.eq(t.no_problem),
-          historical_runs::warning.eq(t.warning),
-          historical_runs::error.eq(t.error),
-          historical_runs::fatal.eq(t.fatal),
-        ))
-        .execute(connection)?;
+    // Fast path: a run we already know is closed needs no tally recompute. The atomic UPDATE below
+    // is the real guard — this only skips wasted work in the already-closed case.
+    if self.end_time.is_some() {
+      return Ok(false);
     }
-    Ok(())
+    // Freeze the current statistics, then close — but the `end_time IS NULL` filter means a racing
+    // (or duplicate) close matches zero rows and is a clean no-op, never a re-mark.
+    let t = live_tally_fields(connection, self.corpus_id, self.service_id);
+    let rows = update(
+      historical_runs::table
+        .filter(historical_runs::id.eq(self.id))
+        .filter(historical_runs::end_time.is_null()),
+    )
+    .set((
+      historical_runs::end_time.eq(now),
+      historical_runs::total.eq(t.total),
+      historical_runs::in_progress.eq(t.in_progress),
+      historical_runs::invalid.eq(t.invalid),
+      historical_runs::no_problem.eq(t.no_problem),
+      historical_runs::warning.eq(t.warning),
+      historical_runs::error.eq(t.error),
+      historical_runs::fatal.eq(t.fatal),
+    ))
+    .execute(connection)?;
+    Ok(rows == 1)
   }
 
   /// **Run-completion-on-drain.** Close the open historical run for a `(corpus, service)` pair the
@@ -320,11 +334,11 @@ impl HistoricalRun {
       .filter(end_time.is_null())
       .first(connection)
       .optional()?;
+    // `mark_completed` is the atomic compare-and-set: it returns `true` only if THIS call closed
+    // the run, so a duplicate drain pass (or a racing writer) that finds the row already closed
+    // propagates as `false` here — never a second completion.
     match open {
-      Some(run) => {
-        run.mark_completed(connection)?;
-        Ok(true)
-      },
+      Some(run) => run.mark_completed(connection),
       None => Ok(false),
     }
   }
