@@ -12,7 +12,7 @@ use chrono::{NaiveDate, NaiveDateTime};
 use cortex::backend::{self, test_db_address};
 use cortex::frontend::server::mount_api_with;
 use cortex::helpers::TaskStatus;
-use cortex::models::{Corpus, NewCorpus, NewService, NewTask, Service};
+use cortex::models::{Corpus, HistoricalRun, NewCorpus, NewService, NewTask, Service};
 use cortex::schema::{corpora, historical_runs, historical_tasks, services, tasks};
 use diesel::prelude::*;
 use rocket::http::{ContentType, Status};
@@ -182,6 +182,192 @@ fn history_chart_escapes_script_breakout_in_a_description(client: &Client) {
     .ok();
 }
 
+/// Run-completion-on-drain at the model boundary (`HistoricalRun::complete_if_drained`, what the
+/// dispatcher's finalize loop calls on idle). It must close the open run for a `(corpus, service)`
+/// pair EXACTLY when its work is exhausted: never while a `TODO`/`Queued`/`Blocked` task could
+/// still produce a result, never for the bookkeeping services (`init`/`import`), and idempotently —
+/// freezing the run's final tallies as it closes.
+fn run_completion_on_drain_closes_only_a_fully_drained_run() {
+  let mut backend = backend::testdb();
+  let corpus_name = "drain_complete_corpus";
+  let service_name = "drain_complete_svc";
+  if let Ok(existing) = Corpus::find_by_name(corpus_name, &mut backend.connection) {
+    diesel::delete(historical_runs::table.filter(historical_runs::corpus_id.eq(existing.id)))
+      .execute(&mut backend.connection)
+      .ok();
+    diesel::delete(tasks::table.filter(tasks::corpus_id.eq(existing.id)))
+      .execute(&mut backend.connection)
+      .ok();
+    diesel::delete(corpora::table.filter(corpora::id.eq(existing.id)))
+      .execute(&mut backend.connection)
+      .ok();
+  }
+  diesel::delete(services::table.filter(services::name.eq(service_name)))
+    .execute(&mut backend.connection)
+    .ok();
+  backend
+    .add(&NewCorpus {
+      name: corpus_name.to_string(),
+      path: "/tmp/drain-complete".to_string(),
+      complex: true,
+      description: String::new(),
+    })
+    .expect("corpus");
+  let corpus = Corpus::find_by_name(corpus_name, &mut backend.connection).expect("corpus");
+  backend
+    .add(&NewService {
+      name: service_name.to_string(),
+      version: 0.1,
+      inputformat: "tex".to_string(),
+      outputformat: "html".to_string(),
+      inputconverter: Some("import".to_string()),
+      complex: true,
+      description: String::from("drain-completion service"),
+    })
+    .expect("service");
+  let service = Service::find_by_name(service_name, &mut backend.connection).expect("service");
+
+  // Open a run, as a rerun would.
+  backend
+    .mark_new_run(&corpus, &service, "tester".into(), "drain run".into())
+    .expect("open run");
+
+  // Seed a mixed distribution: 2 NoProblem + 1 Error are terminal; 1 TODO + 1 Blocked are NOT —
+  // either alone must keep the run open.
+  for i in 0..2 {
+    add_task(
+      &mut backend.connection,
+      &format!("/tmp/drain-complete/ok{i}.zip"),
+      service.id,
+      corpus.id,
+      TaskStatus::NoProblem.raw(),
+    );
+  }
+  add_task(
+    &mut backend.connection,
+    "/tmp/drain-complete/err.zip",
+    service.id,
+    corpus.id,
+    TaskStatus::Error.raw(),
+  );
+  let todo_id = add_task(
+    &mut backend.connection,
+    "/tmp/drain-complete/todo.zip",
+    service.id,
+    corpus.id,
+    TaskStatus::TODO.raw(),
+  );
+  // Blocked = a status below the terminal band (< -5), gated on a prerequisite service.
+  let blocked_id = add_task(
+    &mut backend.connection,
+    "/tmp/drain-complete/blocked.zip",
+    service.id,
+    corpus.id,
+    TaskStatus::Blocked(-6).raw(),
+  );
+
+  // (A) TODO + Blocked present → NOT drained.
+  let closed = HistoricalRun::complete_if_drained(corpus.id, service.id, &mut backend.connection)
+    .expect("drain check A");
+  assert!(!closed, "a run with a TODO + a Blocked task is not drained");
+  assert!(
+    HistoricalRun::find_current(&corpus, &service, &mut backend.connection)
+      .expect("current A")
+      .is_some(),
+    "the run is still open"
+  );
+
+  // (B) Clear the TODO; the lone Blocked task must still hold the run open (the `status < -5`
+  // branch — a run gated on a prerequisite is not finished).
+  diesel::update(tasks::table.filter(tasks::id.eq(todo_id)))
+    .set(tasks::status.eq(TaskStatus::NoProblem.raw()))
+    .execute(&mut backend.connection)
+    .expect("clear todo");
+  let closed = HistoricalRun::complete_if_drained(corpus.id, service.id, &mut backend.connection)
+    .expect("drain check B");
+  assert!(!closed, "a lone Blocked task still keeps the run open");
+  assert!(
+    HistoricalRun::find_current(&corpus, &service, &mut backend.connection)
+      .expect("current B")
+      .is_some(),
+    "the run is still open while a task is blocked"
+  );
+
+  // (C) Resolve the Blocked task to a terminal Error → fully drained → the run closes, freezing its
+  // final tallies (3 NoProblem: the 2 seeded + the cleared TODO; 2 Error: the seed + the resolved
+  // block).
+  diesel::update(tasks::table.filter(tasks::id.eq(blocked_id)))
+    .set(tasks::status.eq(TaskStatus::Error.raw()))
+    .execute(&mut backend.connection)
+    .expect("resolve block");
+  let closed = HistoricalRun::complete_if_drained(corpus.id, service.id, &mut backend.connection)
+    .expect("drain check C");
+  assert!(closed, "a fully-terminal pair drains → the run is closed");
+  assert!(
+    HistoricalRun::find_current(&corpus, &service, &mut backend.connection)
+      .expect("current C")
+      .is_none(),
+    "no open run remains after the close"
+  );
+  let run = HistoricalRun::find_by(&corpus, &service, &mut backend.connection)
+    .expect("runs")
+    .into_iter()
+    .next()
+    .expect("the closed run");
+  assert!(run.end_time.is_some(), "the closed run has an end_time");
+  assert_eq!(run.no_problem, 3, "frozen tallies: 3 no_problem");
+  assert_eq!(run.error, 2, "frozen tallies: 2 error");
+  assert_eq!(run.total, 5, "frozen total excludes invalids (3 + 2)");
+
+  // (D) Idempotent: re-checking a drained pair closes nothing (no open run left).
+  let closed = HistoricalRun::complete_if_drained(corpus.id, service.id, &mut backend.connection)
+    .expect("drain check D");
+  assert!(
+    !closed,
+    "re-checking a drained pair closes nothing (idempotent)"
+  );
+
+  // (E) Bookkeeping skip: open a run for the `import` service (id 2) with NO tasks — drained by the
+  // task count — and assert the `service <= 2` guard refuses to close it (init/import are not
+  // user-facing conversion runs, so without the guard a zero-task pair would close immediately).
+  let import = Service::find_by_name("import", &mut backend.connection).expect("import service");
+  assert!(import.id <= 2, "import is a bookkeeping service id");
+  backend
+    .mark_new_run(
+      &corpus,
+      &import,
+      "tester".into(),
+      "import bookkeeping".into(),
+    )
+    .expect("open import run");
+  let closed = HistoricalRun::complete_if_drained(corpus.id, import.id, &mut backend.connection)
+    .expect("drain check E");
+  assert!(
+    !closed,
+    "the bookkeeping import service is skipped even when drained"
+  );
+  assert!(
+    HistoricalRun::find_current(&corpus, &import, &mut backend.connection)
+      .expect("current E")
+      .is_some(),
+    "the import bookkeeping run stays open (guarded)"
+  );
+
+  // Clean up so a re-run starts fresh.
+  diesel::delete(historical_runs::table.filter(historical_runs::corpus_id.eq(corpus.id)))
+    .execute(&mut backend.connection)
+    .ok();
+  diesel::delete(tasks::table.filter(tasks::corpus_id.eq(corpus.id)))
+    .execute(&mut backend.connection)
+    .ok();
+  diesel::delete(corpora::table.filter(corpora::id.eq(corpus.id)))
+    .execute(&mut backend.connection)
+    .ok();
+  diesel::delete(services::table.filter(services::name.eq(service_name)))
+    .execute(&mut backend.connection)
+    .ok();
+}
+
 fn main() {
   // Own the Client in `main` and `process::exit(0)` while it is still alive — never dropping it, so
   // the racy libpq/Tokio/r2d2 teardown never runs (the bench's `process::exit` trick).
@@ -193,6 +379,7 @@ fn main() {
   overview_overlays_live_tallies_via_batch(&client);
   overview_lists_runs_system_wide(&client);
   history_chart_escapes_script_breakout_in_a_description(&client);
+  run_completion_on_drain_closes_only_a_fully_drained_run();
   eprintln!("runs_test: all cases passed");
   // `_exit` (not `process::exit`): skip C atexit handlers — libpq/OpenSSL global cleanup races with
   // the still-live Tokio/r2d2 threads and SIGSEGVs (L-1). The OS reclaims everything cleanly.

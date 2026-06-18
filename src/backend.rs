@@ -308,6 +308,18 @@ impl Backend {
   pub fn invalidate_report_cache(&mut self, corpus_id: i32, service_id: i32) -> Result<(), Error> {
     rollup::invalidate_scope(&mut self.connection, corpus_id, service_id)
   }
+  /// Run-completion-on-drain: close the `(corpus, service)` pair's open historical run iff its work
+  /// is exhausted (every task terminal). Delegates to
+  /// [`HistoricalRun::complete_if_drained`](crate::models::HistoricalRun::complete_if_drained);
+  /// returns `true` iff a run was closed. Called per touched scope from the dispatcher's finalize
+  /// loop when the queue idles, so a finished run is closed at once rather than at the next rerun.
+  pub fn complete_run_if_drained(
+    &mut self,
+    corpus_id: i32,
+    service_id: i32,
+  ) -> Result<bool, Error> {
+    crate::models::HistoricalRun::complete_if_drained(corpus_id, service_id, &mut self.connection)
+  }
   /// Category-grain report for `(corpus, service, severity)`, read from the `report_summary`
   /// rollup, windowed to `[offset, offset + limit)` (ordered by descending task count).
   pub fn category_rollup(

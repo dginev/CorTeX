@@ -116,23 +116,23 @@ impl Finalize {
           );
           // Long runs may never idle, so bound report staleness with a periodic refresh.
           if last_report_refresh.elapsed() >= report_refresh_interval() {
-            invalidate_touched(&mut backend, &mut touched);
+            settle_touched(&mut backend, &mut touched);
             reports_dirty = false;
             last_report_refresh = Instant::now();
           }
           if disconnected {
             // Producers vanished mid-batch: we persisted what we had; make it visible and stop.
             if reports_dirty {
-              invalidate_touched(&mut backend, &mut touched);
+              settle_touched(&mut backend, &mut touched);
             }
             break;
           }
         },
         Err(RecvTimeoutError::Timeout) => {
-          // The queue just drained: recompute the rollup so finished work shows up in reports
-          // immediately, then keep waiting.
+          // The queue just idled: close any historical run whose work has drained, recompute the
+          // rollup so finished work shows up in reports immediately, then keep waiting.
           if reports_dirty {
-            invalidate_touched(&mut backend, &mut touched);
+            settle_touched(&mut backend, &mut touched);
             reports_dirty = false;
             last_report_refresh = Instant::now();
           }
@@ -140,13 +140,41 @@ impl Finalize {
         Err(RecvTimeoutError::Disconnected) => {
           // Every producer (sink + ventilator) has gone — clean shutdown. Flush and stop.
           if reports_dirty {
-            invalidate_touched(&mut backend, &mut touched);
+            settle_touched(&mut backend, &mut touched);
           }
           break;
         },
       }
     }
     Ok(())
+  }
+}
+
+/// On drain/idle, settle the `(corpus, service)` scopes touched since the last tick: first close
+/// any historical runs whose work has drained (run-completion-on-drain), then drop those scopes'
+/// cached report grains so the next report view repopulates. Order matters — closing the run
+/// freezes its tallies, and we invalidate the report cache *after* so the next view reads the
+/// frozen, completed run rather than the stale open one. Drains `touched`.
+fn settle_touched(backend: &mut backend::Backend, touched: &mut HashSet<(i32, i32)>) {
+  complete_drained_runs(backend, touched);
+  invalidate_touched(backend, touched);
+}
+
+/// Run-completion-on-drain: for each scope we've persisted results for since the last tick, close
+/// its open historical run if the pair's work is now exhausted (no task left `TODO`, `Queued`, or
+/// `Blocked`). This fires the "run ended" event the instant the queue drains, instead of lazily
+/// when the next rerun starts — so a finished run stops showing as "ongoing" right away. Read-only
+/// over `touched` (the following [`invalidate_touched`] drains it). A per-scope failure is logged
+/// and skipped so the finalize thread keeps running; the next idle/periodic tick retries.
+fn complete_drained_runs(backend: &mut backend::Backend, touched: &HashSet<(i32, i32)>) {
+  for &(corpus_id, service_id) in touched {
+    match backend.complete_run_if_drained(corpus_id, service_id) {
+      Ok(true) => debug!(corpus_id, service_id, "finalize: closed drained run"),
+      Ok(false) => {},
+      Err(e) => warn!(
+        "finalize: run-completion check ({corpus_id}, {service_id}) failed (non-fatal): {e:?}"
+      ),
+    }
   }
 }
 

@@ -277,6 +277,58 @@ impl HistoricalRun {
     Ok(())
   }
 
+  /// **Run-completion-on-drain.** Close the open historical run for a `(corpus, service)` pair the
+  /// moment its work is exhausted — every task has reached a terminal severity, with nothing left
+  /// `TODO`, in-flight (`Queued`), or `Blocked` on a prerequisite. Freezes the run's tallies and
+  /// sets `end_time` (via [`Self::mark_completed`]), so a finished run stops reading as "ongoing"
+  /// *immediately*, instead of only when the next rerun supersedes it (the lazy
+  /// [`mark_new_run`](crate::backend::mark_new_run) path that left a run "ongoing" until the very
+  /// minute the next run started). Returns `true` iff a run was actually closed.
+  ///
+  /// Idempotent and safe to call repeatedly from the dispatcher's finalize loop: a no-op when work
+  /// still remains, when there is no open run (already closed, or never started), or for the
+  /// bookkeeping services `init` (1) / `import` (2) — those are not user-facing conversion runs and
+  /// are skipped.
+  pub fn complete_if_drained(
+    corpus: i32,
+    service: i32,
+    connection: &mut PgConnection,
+  ) -> Result<bool, Error> {
+    use crate::schema::historical_runs::dsl::{corpus_id, end_time, service_id};
+    use crate::schema::tasks;
+    // `init` (1) / `import` (2) are bookkeeping services, not conversion runs — no run to close.
+    if service <= 2 {
+      return Ok(false);
+    }
+    // Unfinished = anything OUTSIDE the terminal severity band [-5, -1]: `TODO` (0) and `Queued`
+    // (> 0) still to run, plus `Blocked` (< -5) gated on a prerequisite service. While any of these
+    // remain the run can still produce a result, so it is NOT drained. (Mirror of the raw status
+    // mapping in `TaskStatus::from_raw`.)
+    let unfinished: i64 = tasks::table
+      .filter(tasks::corpus_id.eq(corpus))
+      .filter(tasks::service_id.eq(service))
+      .filter(tasks::status.ge(0).or(tasks::status.lt(-5)))
+      .count()
+      .get_result(connection)?;
+    if unfinished > 0 {
+      return Ok(false);
+    }
+    // Drained: freeze + close the pair's open run, if one is still open.
+    let open: Option<HistoricalRun> = historical_runs::table
+      .filter(corpus_id.eq(corpus))
+      .filter(service_id.eq(service))
+      .filter(end_time.is_null())
+      .first(connection)
+      .optional()?;
+    match open {
+      Some(run) => {
+        run.mark_completed(connection)?;
+        Ok(true)
+      },
+      None => Ok(false),
+    }
+  }
+
   /// Returns this run with its per-severity tallies reflecting **live** task state *when the run is
   /// still open* (`end_time` is `None`). A run only freezes its tallies at [`Self::mark_completed`]
   /// (i.e. when the next run supersedes it), so an open run's stored tallies are all zero;
