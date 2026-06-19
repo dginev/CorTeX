@@ -127,9 +127,10 @@ pub struct DispatcherConfig {
   /// timing out waits progressively longer rather than re-leasing ever-faster
   /// ([`crate::helpers::TaskProgress::expected_at`]). This is the correctness net for a *silently
   /// dead / half-open* worker (no ZMTP heartbeat needed): its task is recovered once the lease
-  /// lapses. Default **180** — just above the worker's hard per-document timeout (the CorTeX
-  /// `latexml` fleet caps each conversion at 120 s and *hard-kills* the process on overrun), which
-  /// bounds any single conversion's runtime. With that cap, a lease expiry reliably means the
+  /// lapses. Default **240** — just above the worker's hard per-document timeout (the CorTeX
+  /// `latexml` fleet caps each conversion at 180 s and *hard-kills* the process on overrun), with
+  /// a 60 s margin, which bounds any single conversion's runtime. With that cap, a lease expiry
+  /// reliably means the
   /// worker **died** (timeout / OOM kill) on an unprocessable paper, so prompt re-lease — and,
   /// after `MAX_DISPATCH_RETRIES`, dead-letter to `Fatal` — recovers the task *within the run*
   /// instead of stranding it for an hour (orphaned-lease tail observed at scale). Raise it only
@@ -170,7 +171,7 @@ impl Default for DispatcherConfig {
       sink_writers: 4,
       finalize_batch_size: 1024,
       finalize_flush_ms: 300,
-      lease_timeout_seconds: 180,
+      lease_timeout_seconds: 240,
       reap_interval_seconds: 60,
       tcp_keepalive_idle_seconds: 120,
     }
