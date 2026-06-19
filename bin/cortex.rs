@@ -57,6 +57,14 @@ fn iso(time: chrono::NaiveDateTime) -> String {
                 dry-run by default — pass `--yes` to execute."
 )]
 struct Cli {
+  /// Increase diagnostic verbosity (repeatable): `-v` = info, `-vv` = debug, `-vvv` = trace.
+  /// Diagnostics go to stderr, so a subcommand's `--json` output on stdout stays clean. An
+  /// explicit `RUST_LOG` overrides this.
+  #[arg(short, long, action = clap::ArgAction::Count, global = true)]
+  verbose: u8,
+  /// Silence diagnostics below `error` level (overridden by `RUST_LOG`).
+  #[arg(short, long, global = true, conflicts_with = "verbose")]
+  quiet: bool,
   #[command(subcommand)]
   command: Command,
 }
@@ -534,7 +542,12 @@ enum Command {
 }
 
 fn main() {
-  match Cli::parse().command {
+  let cli = Cli::parse();
+  // Install the CLI tracing subscriber (stderr; `-v`/`-q` drive the level, `RUST_LOG` overrides).
+  // Without this, library code the subcommands exercise (importer, backend, helpers) emits
+  // `tracing` events into the void and `RUST_LOG` is dead in the CLI.
+  cortex::observability::init_cli_tracing(cli.verbose, cli.quiet);
+  match cli.command {
     Command::Init => run_init(),
     Command::Doctor { json } => run_doctor(json),
     Command::Status { json } => run_status(json),

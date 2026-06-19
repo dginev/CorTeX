@@ -253,8 +253,9 @@ impl Ventilator {
         // gracefully under overload rather than crash.
         if server::in_flight_saturated(progress_queue_arc.len(), self.max_in_flight) {
           debug!(
-            "BACKPRESSURE: in-flight set at capacity ({}); mock-replying to worker {identity_str:?}",
-            self.max_in_flight
+            in_flight_cap = self.max_in_flight,
+            worker = %identity_str,
+            "BACKPRESSURE: in-flight set at capacity; mock-replying to worker"
           );
           ventilator.send(identity, SNDMORE)?;
           ventilator.send("0", SNDMORE)?;
@@ -306,7 +307,12 @@ impl Ventilator {
           // Memoise this task's corpus → sandbox id now, before the payload is sent (so before the
           // result can return), so the sink scopes the result archive without its own DB hit (F-6).
           server::get_sync_sandbox_id(current_task.corpus_id, sandboxes_arc, &mut backend);
-          trace!("vent {source_job_count}: worker {identity_str:?} received task {taskid:?}");
+          trace!(
+            job = source_job_count,
+            worker = %identity_str,
+            task_id = taskid,
+            "ventilator: worker received task"
+          );
           ventilator.send(&taskid.to_string(), SNDMORE)?;
           if serviceid == 1 {
             // No payload needed for init
@@ -337,24 +343,39 @@ impl Ventilator {
               let responded_time = chrono::Utc::now();
               let request_duration = (responded_time - request_time).num_milliseconds();
               trace!(
-                "vent {source_job_count}: message size: {total_outgoing}, took {request_duration}ms."
+                job = source_job_count,
+                task_id = taskid,
+                bytes = total_outgoing,
+                took_ms = request_duration,
+                "ventilator: streamed task payload to worker"
               );
             } else {
-              warn!("Failed to prepare input stream for taskid {taskid:?}");
-              debug!("task details: {current_task:?}");
+              warn!(
+                task_id = taskid,
+                "ventilator: failed to prepare input stream for task"
+              );
+              debug!(task_id = taskid, "task details: {current_task:?}");
               taskid = -1;
               ventilator.send(Vec::new(), 0)?;
             }
           }
         } else {
-          trace!("vent {source_job_count:?}: worker {identity_str:?} received mock reply.");
+          trace!(
+            job = source_job_count,
+            worker = %identity_str,
+            "ventilator: worker received mock reply"
+          );
           ventilator.send("0", SNDMORE)?;
           ventilator.send(Vec::new(), 0)?;
         }
         // Update this worker's metadata (non-blocking enqueue to the background writer)
         self.metadata.dispatched(identity_str, service.id, taskid);
       } else {
-        warn!("No such service {service_name:?} in ventilator request from {identity_str:?}");
+        warn!(
+          service = %service_name,
+          worker = %identity_str,
+          "ventilator: request for unknown service"
+        );
       }
       if let Some(limit_number) = job_limit {
         // Bounded run terminates on N *real* dispatches (not N requests). Publish the shared
