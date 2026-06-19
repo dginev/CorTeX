@@ -83,7 +83,7 @@ webauthn-rs = "0.5"
 # random-access `by_name("cortex.log")` (the dispatcher hot path) + is the importer's `.zip` output;
 # `flate2` (gzip) + `tar` decompress the importer's source archives; `infer` does content-based format
 # detection (filenames lie). All pure-Rust + streaming.
-zip = "2"
+zip = "8"
 flate2 = "1"
 tar = "0.4"
 infer = "0.16"
