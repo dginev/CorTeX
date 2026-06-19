@@ -39,6 +39,7 @@ allow = [
   "CC0-1.0",
   "Unlicense",      # public-domain dedication; only `win_uds` (Windows-only dep of zeromq) uses it
   "MPL-2.0",        # weak (per-file) copyleft — safe to depend on
+  "bzip2-1.0.6",    # permissive BSD-style bzip2/libbzip2 license; pulled by `zip` 8.x's bzip2 feature
 ]
 
 [bans]

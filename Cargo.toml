@@ -61,7 +61,7 @@ tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "fs", "ti
 zeromq = "0.6.0"
 dotenvy = "0.15.7"
 figment = { version = "0.10", features = ["toml", "env"] }
-toml = "0.8"
+toml = "0.9"
 chrono = "0.4.45"
 # strftime `%Z` for the report-time zone abbreviation (chrono's %Z only yields the numeric offset
 # for Local); also `_exit(2)` in the integration-test harnesses (skip C atexit handlers, L-1).
@@ -83,10 +83,10 @@ webauthn-rs = "0.5"
 # random-access `by_name("cortex.log")` (the dispatcher hot path) + is the importer's `.zip` output;
 # `flate2` (gzip) + `tar` decompress the importer's source archives; `infer` does content-based format
 # detection (filenames lie). All pure-Rust + streaming.
-zip = "2"
+zip = "8"
 flate2 = "1"
 tar = "0.4"
-infer = "0.16"
+infer = "0.19"
 
 # Integration tests that hold a libpq pool (a Rocket Client over it, or a bare pool) run under a
 # custom harness (their own `main` ending in `libc::_exit(0)`) to ELIMINATE the L-1 diesel/libpq/Tokio
