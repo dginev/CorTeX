@@ -10,7 +10,7 @@
 //! previously sprinkled the public homepage. Access uses the lightweight token scheme — an
 //! [`AdminSession`] cookie (`frontend::actor`), set on the sign-in page below.
 
-use diesel::sql_types::{BigInt, Nullable, Text};
+use diesel::sql_types::{BigInt, Integer, Nullable, Text};
 use diesel::{PgConnection, QueryableByName, RunQueryDsl, sql_query};
 use rocket::form::Form;
 use rocket::http::{Cookie, CookieJar, SameSite, Status};
@@ -278,11 +278,17 @@ impl MessageRow {
   }
 }
 
-/// The latest `limit` messages from a fixed `log_*` table, joined to entry/corpus/service. `table`
-/// is an internal literal (`"log_fatals"`/`"log_errors"`), never user input — safe to interpolate.
-/// `id` is the BIGSERIAL PK, so `ORDER BY id DESC LIMIT n` is index-cheap even on the ~100M-row
-/// production log tables. Best-effort: a query error degrades to an empty list.
-fn recent_messages(connection: &mut PgConnection, table: &str, limit: i64) -> Vec<MessageRow> {
+/// The latest `limit` messages from a fixed `log_*` table for one **service**, joined to
+/// entry/corpus/service. `table` is an internal literal (`"log_fatals"`/`"log_errors"`), never user
+/// input — safe to interpolate. `id` is the BIGSERIAL PK, so `ORDER BY id DESC LIMIT n` walks
+/// newest-first and is index-cheap even on the ~100M-row production log tables. Best-effort: a
+/// query error degrades to an empty list.
+fn recent_messages(
+  connection: &mut PgConnection,
+  table: &str,
+  service_id: i32,
+  limit: i64,
+) -> Vec<MessageRow> {
   let query = format!(
     "SELECT t.entry AS entry, c.name AS corpus, s.name AS service, \
             l.category AS category, l.what AS what, l.details AS details \
@@ -290,9 +296,11 @@ fn recent_messages(connection: &mut PgConnection, table: &str, limit: i64) -> Ve
      JOIN tasks t ON t.id = l.task_id \
      JOIN corpora c ON c.id = t.corpus_id \
      JOIN services s ON s.id = t.service_id \
-     ORDER BY l.id DESC LIMIT $1"
+     WHERE t.service_id = $1 \
+     ORDER BY l.id DESC LIMIT $2"
   );
   sql_query(query)
+    .bind::<Integer, _>(service_id)
     .bind::<BigInt, _>(limit)
     .get_results::<MessageRow>(connection)
     .unwrap_or_default()
@@ -301,6 +309,11 @@ fn recent_messages(connection: &mut PgConnection, table: &str, limit: i64) -> Ve
 /// Gathers the [`LiveActivityDto`] over one pooled connection. Like [`admin_status`], every read is
 /// best-effort (degrades to an empty list) and **read-only** — the dispatcher is never involved, so
 /// the live feed cannot perturb the conversion hot path.
+///
+/// The feed is **conditioned on the active run's service** — the one actually generating messages
+/// now (the latest [`HistoricalRun`]). A co-resident legacy service (e.g. a Perl `tex-to-html`
+/// sharing the DB with the Rust `oxidized-tex-to-html` run) therefore never pollutes the live view;
+/// the feed follows whatever is converting. With no runs yet, the feed is simply empty.
 pub fn live_activity(pool: &DbPool, limit: i64) -> LiveActivityDto {
   let mut activity = LiveActivityDto {
     fleet: Vec::new(),
@@ -308,9 +321,18 @@ pub fn live_activity(pool: &DbPool, limit: i64) -> LiveActivityDto {
     recent_errors: Vec::new(),
   };
   if let Ok(mut connection) = pool.get() {
-    if let Ok(workers) = WorkerMetadata::recent(&mut connection, 80) {
+    let active_service = HistoricalRun::recent_all(&mut connection, 1)
+      .ok()
+      .and_then(|runs| runs.into_iter().next())
+      .map(|run| run.service_id);
+    let Some(service_id) = active_service else {
+      return activity;
+    };
+    if let Ok(workers) = WorkerMetadata::recent(&mut connection, 200) {
       activity.fleet = workers
         .into_iter()
+        .filter(|w| w.service_id == service_id)
+        .take(80)
         .map(|w| FleetWorkerDto {
           name: w.name,
           service_id: w.service_id,
@@ -321,11 +343,11 @@ pub fn live_activity(pool: &DbPool, limit: i64) -> LiveActivityDto {
         })
         .collect();
     }
-    activity.recent_fatals = recent_messages(&mut connection, "log_fatals", limit)
+    activity.recent_fatals = recent_messages(&mut connection, "log_fatals", service_id, limit)
       .into_iter()
       .map(|m| m.into_dto("fatal"))
       .collect();
-    activity.recent_errors = recent_messages(&mut connection, "log_errors", limit)
+    activity.recent_errors = recent_messages(&mut connection, "log_errors", service_id, limit)
       .into_iter()
       .map(|m| m.into_dto("error"))
       .collect();
