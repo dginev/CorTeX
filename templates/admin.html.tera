@@ -73,7 +73,7 @@
        for the symmetric dashboard column); a bounded, scrolling live log tail. */
     #live-activity-card .activity-list { width: 85vw; margin-left: calc(50% - 42.5vw);
       box-sizing: border-box; margin-top: .5rem; padding: .5rem .75rem; border: 1px solid #d7dee6;
-      border-radius: 8px; background: rgba(0, 0, 0, .015); max-height: 60vh; overflow-y: auto; }
+      border-radius: 8px; background: rgba(0, 0, 0, .015); }
     /* Hanging indent (~past the "HH:MM:SS severity" prefix): a wrapped long message's continuation
        lines align under the message text. Monospace + 0.85em signals machine-generated log output. */
     .activity-row { padding-left: 5.2em; text-indent: -5.2em; line-height: 1.4; margin: .1rem 0;
