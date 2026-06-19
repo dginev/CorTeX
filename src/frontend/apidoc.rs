@@ -120,17 +120,30 @@ hierarchy (paginated).\n\
 Conversion history (`/api/runs…`) is **append-only over the API** — never deletable or mutable via \
 `/api` (pruning is a human-admin action). See `MANUAL.md` for the full operator and agent guide.";
 
-/// A tiny script injected into the RapiDoc page's default slot so the docs follow the viewer's
-/// OS/browser light/dark preference — RapiDoc's `theme` attribute is otherwise a fixed Light/Dark.
-/// It sets `theme` on the `#rapidoc` element on load and whenever `prefers-color-scheme` flips. The
-/// script renders invisibly (no output), and the static gh-pages page
+/// A small script injected into the RapiDoc page's default slot. RapiDoc's `theme` is a fixed
+/// Light/Dark with no auto mode and no toggle, so this: (1) follows the viewer's OS/browser
+/// light/dark preference, (2) adds a persistent top-right toggle button that overrides it
+/// (`localStorage`), and (3) sets a readable `primary-color` per mode — the default dark blue is
+/// too dark on a dark background, washing out links. The static gh-pages page
 /// (`scripts/build-docs-site.sh`) carries the same logic, so both surfaces behave identically.
 const RAPIDOC_THEME_SCRIPT: &str = "<script>\
 (function(){\
+var rd=document.getElementById('rapidoc');if(!rd)return;\
 var mq=window.matchMedia('(prefers-color-scheme: dark)');\
-function apply(){var rd=document.getElementById('rapidoc');\
-if(rd)rd.setAttribute('theme',mq.matches?'dark':'light');}\
-apply();mq.addEventListener('change',apply);window.addEventListener('DOMContentLoaded',apply);\
+var KEY='cortex-docs-theme';var stored=null;try{stored=localStorage.getItem(KEY);}catch(e){}\
+function theme(){return stored||(mq.matches?'dark':'light');}\
+var btn=document.createElement('button');btn.id='theme-toggle';btn.type='button';\
+btn.setAttribute('aria-label','Toggle light/dark theme');\
+btn.style.cssText='position:fixed;top:.55rem;right:.7rem;z-index:20;font:13px sans-serif;\
+padding:.3rem .6rem;border-radius:6px;border:1px solid rgba(128,128,128,.5);\
+background:rgba(128,128,128,.15);color:inherit;cursor:pointer';\
+function apply(){var t=theme();rd.setAttribute('theme',t);\
+rd.setAttribute('primary-color',t==='dark'?'#6ab0f3':'#2a5d84');\
+btn.textContent=t==='dark'?'☀ Light':'☾ Dark';}\
+btn.addEventListener('click',function(){stored=theme()==='dark'?'light':'dark';\
+try{localStorage.setItem(KEY,stored);}catch(e){}apply();});\
+document.body.appendChild(btn);apply();\
+mq.addEventListener('change',function(){if(!stored)apply();});\
 })();\
 </script>";
 

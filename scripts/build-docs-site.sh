@@ -67,6 +67,17 @@ cat > "$OUT/api/index.html" <<HTML
   <title>CorTeX agent API</title>
   <link rel="icon" href="data:,">
   <script type="module" src="${RAPIDOC_SRC}"></script>
+  <style>
+    /* Overview back-links: theme-aware + readable (RapiDoc's primary-color doesn't reach this
+       light-DOM slot, so without this they fall back to the browser's blue/purple link defaults). */
+    rapi-doc [slot="overview"] a { color: #2a5d84; text-decoration: none; }
+    rapi-doc [slot="overview"] a:hover { text-decoration: underline; }
+    html[data-theme="dark"] rapi-doc [slot="overview"] a { color: #6ab0f3; }
+    /* Light/dark toggle button (created by the script below). */
+    #theme-toggle { position: fixed; top: .55rem; right: .7rem; z-index: 20; font: 13px sans-serif;
+      padding: .3rem .6rem; border-radius: 6px; border: 1px solid rgba(128,128,128,.5);
+      background: rgba(128,128,128,.15); color: inherit; cursor: pointer; }
+  </style>
 </head>
 <body>
   <rapi-doc
@@ -88,16 +99,36 @@ cat > "$OUT/api/index.html" <<HTML
     </div>
   </rapi-doc>
   <script>
-    // Follow the viewer's OS/browser light/dark preference (mirrors the live /api/docs theme script).
+    // Theme: follow the OS light/dark preference, with a persistent manual toggle (top-right) that
+    // overrides it. Sets RapiDoc's theme + a readable primary-color per mode (the dark default is
+    // too dark on a dark background), and a data-theme on <html> for the back-link CSS above.
+    // (Mirrors the live /api/docs theme script.)
     (function () {
+      var rd = document.getElementById('rapidoc');
+      if (!rd) return;
       var mq = window.matchMedia('(prefers-color-scheme: dark)');
+      var KEY = 'cortex-docs-theme';
+      var stored = null; try { stored = localStorage.getItem(KEY); } catch (e) {}
+      function theme() { return stored || (mq.matches ? 'dark' : 'light'); }
+      var btn = document.createElement('button');
+      btn.id = 'theme-toggle';
+      btn.type = 'button';
+      btn.setAttribute('aria-label', 'Toggle light/dark theme');
       function apply() {
-        var rd = document.getElementById('rapidoc');
-        if (rd) rd.setAttribute('theme', mq.matches ? 'dark' : 'light');
+        var t = theme();
+        rd.setAttribute('theme', t);
+        rd.setAttribute('primary-color', t === 'dark' ? '#6ab0f3' : '#2a5d84');
+        document.documentElement.setAttribute('data-theme', t);
+        btn.textContent = t === 'dark' ? '☀ Light' : '☾ Dark';
       }
+      btn.addEventListener('click', function () {
+        stored = theme() === 'dark' ? 'light' : 'dark';
+        try { localStorage.setItem(KEY, stored); } catch (e) {}
+        apply();
+      });
+      document.body.appendChild(btn);
       apply();
-      mq.addEventListener('change', apply);
-      window.addEventListener('DOMContentLoaded', apply);
+      mq.addEventListener('change', function () { if (!stored) apply(); });
     })();
   </script>
 </body>
