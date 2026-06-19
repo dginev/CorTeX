@@ -194,6 +194,17 @@ pub fn serve_report(
         global.insert("rerun_warning_percent".to_string(), pct(warn));
         global.insert("rerun_error_percent".to_string(), pct(err));
         global.insert("rerun_fatal_percent".to_string(), pct(fat));
+        // Unified report's progress bar: share of the non-invalid corpus processed so far
+        // (`total` is the non-invalid size — progress_report discounts invalids).
+        let total = count("total");
+        global.insert(
+          "processed_percent".to_string(),
+          if total > 0.0 {
+            format!("{:.2}", 100.0 * completed / total)
+          } else {
+            "0.00".to_string()
+          },
+        );
         // Record the report into the globals
         for (key, val) in report {
           global.insert(key.clone(), val.to_string());
