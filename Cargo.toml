@@ -35,10 +35,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 glob = "0.3.3"
 rand = "0.10.1"
-tempfile = "3"
 rocket = { version = "0.5.1", features = ["json"] }
 rocket_dyn_templates = { version = "0.2.0", features = ["tera"] }
-hyper = "1.10"
 percent-encoding = "2.3.2"
 zmq = "0.10.0"
 # Sharded, lock-free concurrent maps for the dispatcher's shared state (in-flight set + service
