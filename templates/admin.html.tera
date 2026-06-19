@@ -79,7 +79,7 @@
     .activity-row { padding-left: 5.2em; text-indent: -5.2em; line-height: 1.4; margin: .1rem 0;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .77em; }
   </style>
-  <details id="live-activity-card" open>
+  <details id="live-activity-card">
     <summary class="admin-card wide" id="activity-header">
       <span class="muted"><i class="fa fa-caret-right acc-caret"></i> Latest dispatcher activity</span>
       <span class="live-dot" id="activity-dot"></span> <span class="muted" id="activity-label">— polling…</span>
