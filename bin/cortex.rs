@@ -136,6 +136,14 @@ enum Command {
   },
   /// Print PostgreSQL server-tuning guidance for this host (pgtune inputs; see docs/DB_TUNING.md).
   TuneDb,
+  /// Print the generated OpenAPI 3 spec for the agent API to stdout.
+  ///
+  /// The static twin of the live `GET /api/openapi.json`: built straight from the `#[openapi]`
+  /// route definitions, so it needs **no running server or database** and can never drift from the
+  /// served API. Use it to publish the API docs (the gh-pages docs site bundles it via
+  /// `scripts/build-docs-site.sh`) or to feed an OpenAPI client generator —
+  /// `cortex openapi > openapi.json`.
+  Openapi,
   /// Set or generate an admin/API token in cortex.toml's [auth] section (no hand-editing).
   SetAdminToken {
     /// The token value to set. Omit and pass --generate to create a random one.
@@ -692,6 +700,7 @@ fn main() {
     Command::DeleteCorpus { name, yes } => run_delete_corpus(name, yes),
     Command::DeleteService { name, yes } => run_delete_service(name, yes),
     Command::TuneDb => println!("{}", bootstrap::db_tuning_guidance()),
+    Command::Openapi => println!("{}", cortex::frontend::apidoc::spec_json()),
     Command::SetAdminToken {
       token,
       generate,

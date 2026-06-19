@@ -118,14 +118,11 @@ hierarchy (paginated).\n\
 Conversion history (`/api/runs…`) is **append-only over the API** — never deletable or mutable via \
 `/api` (pruning is a human-admin action). See `MANUAL.md` for the full operator and agent guide.";
 
-/// Mounts the generated agent-API documentation onto `rocket`:
-/// - the `#[openapi]`-annotated agent routes (so they exist *and* are documented from one source),
-/// - the OpenAPI 3 spec at `GET /api/openapi.json`,
-/// - a RapiDoc browser page at `GET /api/docs`.
-///
-/// The annotated routes are mounted here (not in their modules' plain route groups) so
-/// `rocket_okapi` can attach their operation metadata.
-pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
+/// Builds the agent-API routes **and** the OpenAPI 3 spec from the single `#[openapi]` handler
+/// list, then applies the nav summaries + `info` metadata. The one source of truth shared by
+/// [`mount`] (which serves both live) and [`spec_json`] (which serializes the spec for static
+/// publishing) — so the published docs can never drift from the served API.
+fn routes_and_spec() -> (Vec<rocket::Route>, rocket_okapi::okapi::openapi3::OpenApi) {
   let settings = OpenApiSettings::default();
   // Every `#[openapi]` agent handler is listed here; the macro returns the routes + the spec built
   // from them. (Expand this list as more endpoints are annotated.)
@@ -184,6 +181,27 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
   // description (authentication + entry points), which `rocket_okapi` otherwise leaves bare.
   spec.info.title = "CorTeX agent API".to_string();
   spec.info.description = Some(AGENT_API_OVERVIEW.to_string());
+  (routes, spec)
+}
+
+/// The generated OpenAPI 3 document as pretty-printed JSON — the same bytes served live at
+/// `GET /api/openapi.json`, but obtainable **without a running server or database** (the spec is
+/// built purely from the route definitions). This is what `cortex openapi` prints and what the
+/// published docs site (`scripts/build-docs-site.sh`) bundles, so the static docs stay in lock-step
+/// with the served API.
+pub fn spec_json() -> String {
+  serde_json::to_string_pretty(&routes_and_spec().1).unwrap_or_default()
+}
+
+/// Mounts the generated agent-API documentation onto `rocket`:
+/// - the `#[openapi]`-annotated agent routes (so they exist *and* are documented from one source),
+/// - the OpenAPI 3 spec at `GET /api/openapi.json`,
+/// - a RapiDoc browser page at `GET /api/docs`.
+///
+/// The annotated routes are mounted here (not in their modules' plain route groups) so
+/// `rocket_okapi` can attach their operation metadata.
+pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
+  let (routes, spec) = routes_and_spec();
   let spec_json = serde_json::to_string_pretty(&spec).unwrap_or_default();
   rocket
     .manage(SpecJson(spec_json))
