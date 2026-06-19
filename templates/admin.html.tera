@@ -67,17 +67,21 @@
     /* Disclosure caret: points right when collapsed, rotates down (90°) when the section is open. */
     #live-activity-card .acc-caret { display: inline-block; width: 1em; transition: transform .15s ease; }
     #live-activity-card details[open] > summary .acc-caret { transform: rotate(90deg); }
-    /* Only the expandable CONTENT widens (85vw, broken out of the centered content column) since
-       conversion messages are long; the card and the group headings stay at normal dashboard width
-       for continuity. */
-    #live-activity-card .activity-list { width: 85vw; position: relative; left: 50%;
-      transform: translateX(-50%); box-sizing: border-box; margin-top: .25rem; }
+    /* The expanded content is its own wider panel (~85vw), centered on the viewport via the
+       margin-based full-bleed — correct for the symmetric dashboard column (the earlier
+       transform/left version double-counted the column offset and flung the content off to the
+       side). The card + group headings stay at normal dashboard width for continuity; the bordered
+       box makes each expanded severity read as a distinct panel. */
+    #live-activity-card .activity-list { width: 85vw; margin-left: calc(50% - 42.5vw);
+      box-sizing: border-box; margin-top: .35rem; padding: .5rem .75rem; border: 1px solid #d7dee6;
+      border-radius: 6px; background: rgba(0, 0, 0, .015); }
     /* Hanging indent: when a long message wraps, the continuation lines align under the message text,
-       not back at the severity tag. */
-    .activity-row { padding-left: 2.4em; text-indent: -2.4em; line-height: 1.35; margin: .1rem 0; }
+       not back at the severity tag. Monospace + 0.85em signals machine-generated log output. */
+    .activity-row { padding-left: 2.4em; text-indent: -2.4em; line-height: 1.4; margin: .1rem 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85em; }
   </style>
   <div class="admin-card wide" id="live-activity-card">
-    <div class="muted">Latest dispatcher activity <span class="muted" id="activity-label">— polling…</span></div>
+    <div class="muted">Latest dispatcher activity <span class="live-dot" id="activity-dot"></span> <span class="muted" id="activity-label">— polling…</span></div>
     <div id="activity-fleet" class="muted run-meta" style="margin:.35rem 0">fleet idle</div>
     <details id="acc-fatal" open>
       <summary><i class="fa fa-caret-right acc-caret"></i> Fatals <span class="muted" id="count-fatal">0</span></summary>
@@ -181,6 +185,9 @@
 (function () {
   var FEED = '/admin/logs.json', PERIOD = 4000;
   var label = document.getElementById('activity-label');
+  var dot = document.getElementById('activity-dot');
+  // Re-trigger the heartbeat-dot CSS animation on each successful poll — the "live pulse" cue.
+  function beat() { if (!dot) return; dot.classList.remove('beat'); void dot.offsetWidth; dot.classList.add('beat'); }
   function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
   function group(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
   // The source archive path is long; show the trailing component (the document id) for readability.
@@ -224,8 +231,10 @@
     if (!resp.ok) { if (label) label.textContent = resp.status === 401 ? '— signed out' : '— paused'; return; }
     var a = await resp.json();
     if (label) label.textContent = '';
+    if (dot) dot.classList.remove('stale');
     renderFleet(a.fleet);
     renderProblems(a.recent_fatals, a.recent_errors, a.recent_warnings);
+    beat();
   }
   pollActivity();
   setInterval(pollActivity, PERIOD);
