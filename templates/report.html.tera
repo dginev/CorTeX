@@ -109,7 +109,7 @@
         </tr>
         {% if global.invalid and global.invalid != "0" %}
         <tr class="report-muted">
-          <td class="left">Invalid <span class="report-sep">·</span> excluded from totals</td>
+          <td class="left"><a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/invalid">Invalid</a> <span class="report-sep">·</span> excluded from totals</td>
           <td></td>
           <td class="right"></td>
           <td class="right">{{ global.invalid | group_thousands }}</td>
