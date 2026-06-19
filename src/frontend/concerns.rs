@@ -214,6 +214,10 @@ pub fn serve_report(
           global.insert("livediff_improved".to_string(), ld.improved.to_string());
           global.insert("livediff_regressed".to_string(), ld.regressed.to_string());
           global.insert("livediff_unchanged".to_string(), ld.unchanged.to_string());
+          global.insert(
+            "livediff_reclassified".to_string(),
+            ld.reclassified.to_string(),
+          );
         }
         // Record the report into the globals
         for (key, val) in report {

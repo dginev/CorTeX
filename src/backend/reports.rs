@@ -27,14 +27,21 @@ static TASK_REPORT_NAME_REGEX: LazyLock<Regex> =
 pub struct LiveRunDiff {
   /// completed tasks whose current outcome is *better* than the baseline (status int higher)
   pub improved: i64,
-  /// completed tasks whose current outcome is *worse* than the baseline (status int lower)
+  /// completed tasks whose current outcome is *worse* than the baseline (status int lower) —
+  /// excludes `Invalid` transitions (those are `reclassified`, not a quality regression)
   pub regressed: i64,
   /// completed tasks at the same outcome as the baseline
   pub unchanged: i64,
+  /// completed tasks where one side is `Invalid` (unprocessable input) and the other is not — a
+  /// reclassification (e.g. a source that became / stopped being convertible), NOT a quality
+  /// improvement or regression, so it gets its own bucket rather than masquerading as one.
+  pub reclassified: i64,
 }
 impl LiveRunDiff {
   /// Total completed tasks that had a baseline to compare against.
-  pub fn compared(&self) -> i64 { self.improved + self.regressed + self.unchanged }
+  pub fn compared(&self) -> i64 {
+    self.improved + self.regressed + self.unchanged + self.reclassified
+  }
 }
 
 #[derive(QueryableByName)]
@@ -45,6 +52,8 @@ struct DiffRow {
   regressed: i64,
   #[diesel(sql_type = diesel::sql_types::BigInt)]
   unchanged: i64,
+  #[diesel(sql_type = diesel::sql_types::BigInt)]
+  reclassified: i64,
 }
 
 /// Process-local read-through cache for [`live_run_diff`]. The diff is a join (`tasks` ⋈ the
@@ -90,11 +99,15 @@ fn compute_live_run_diff(
   corpus_id: i32,
   service_id: i32,
 ) -> LiveRunDiff {
+  // Invalid (-5) is "unprocessable input", not a quality grade — so an Invalid transition is
+  // counted as `reclassified`, never improved/regressed (it would otherwise read as the worst
+  // regression by raw int order). improved/regressed compare only NON-invalid outcomes.
   let row: Option<DiffRow> = sql_query(
     "SELECT \
-       count(*) FILTER (WHERE t.status > b.status)::bigint AS improved, \
-       count(*) FILTER (WHERE t.status < b.status)::bigint AS regressed, \
-       count(*) FILTER (WHERE t.status = b.status)::bigint AS unchanged \
+       count(*) FILTER (WHERE t.status <> b.status AND t.status <> -5 AND b.status <> -5 AND t.status > b.status)::bigint AS improved, \
+       count(*) FILTER (WHERE t.status <> b.status AND t.status <> -5 AND b.status <> -5 AND t.status < b.status)::bigint AS regressed, \
+       count(*) FILTER (WHERE t.status = b.status)::bigint AS unchanged, \
+       count(*) FILTER (WHERE t.status <> b.status AND (t.status = -5 OR b.status = -5))::bigint AS reclassified \
      FROM tasks t \
      JOIN ( \
        SELECT DISTINCT ON (h.task_id) h.task_id, h.status \
@@ -115,6 +128,7 @@ fn compute_live_run_diff(
       improved: r.improved,
       regressed: r.regressed,
       unchanged: r.unchanged,
+      reclassified: r.reclassified,
     },
     None => LiveRunDiff::default(),
   }

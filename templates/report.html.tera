@@ -33,6 +33,7 @@
         <span class="report-sep">·</span> <span class="count-fatal">&minus;{{ global.livediff_regressed | group_thousands }} regressed</span>
         <span class="report-sep">·</span> <span class="count-ok">+{{ global.livediff_improved | group_thousands }} improved</span>
         <span class="report-sep">·</span> {{ global.livediff_unchanged | group_thousands }} unchanged
+        {% if global.livediff_reclassified and global.livediff_reclassified != "0" %}<span class="report-sep">·</span> <span class="report-muted">{{ global.livediff_reclassified | group_thousands }} reclassified</span>{% endif %}
       </p>
       {% endif %}
     </div>
