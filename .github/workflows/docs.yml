@@ -1,0 +1,65 @@
+name: Docs
+
+# Publish the documentation site to GitHub Pages on every push to master.
+#
+# This is the modern replacement for the dead Travis-CI `scripts/doc-upload.sh` (Travis is no longer
+# wired up; the gh-pages branch had been frozen at its last Travis deploy). The site bundles BOTH
+# halves of the docs (see `scripts/build-docs-site.sh`):
+#   • the Rust library reference (`cargo doc --no-deps`)  -> /cortex/…
+#   • the agent API docs: the generated OpenAPI 3 spec + a RapiDoc page (`cortex openapi`) -> /api/
+# The OpenAPI spec is generated from the live `#[openapi]` routes, so the published API docs can
+# never drift from the served API.
+#
+# Only master deploys (the docs reflect shipped state); pull requests just build the site as a smoke
+# test (no deploy). System deps + toolchain mirror CI.yml so the doc build matches the test build;
+# no database is needed (the `openapi` subcommand neither reads config nor connects to Postgres).
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege: only the deploy job writes (to the gh-pages branch).
+permissions:
+  contents: read
+
+jobs:
+  build-and-deploy:
+    name: build docs site + deploy to gh-pages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install system dependencies (link deps for the cortex build)
+        # Same C libraries the build links against in CI.yml (libpq for diesel, libzmq for the
+        # dispatcher transport, libsodium); no PostgreSQL server — the docs build never connects.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libpq-dev libzmq3-dev libsodium-dev libarchive-dev pkg-config
+
+      - name: Install Rust (nightly)
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache cargo + target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build the documentation site
+        run: scripts/build-docs-site.sh
+
+      - name: Deploy to GitHub Pages
+        # Only the master branch publishes; PR runs stop after the build above (smoke test).
+        if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./target/gh-pages-site
+          publish_branch: gh-pages
+          # Keep gh-pages a single clean commit (no accumulating doc history bloat) — the same
+          # single-commit model the old Travis force-push used.
+          force_orphan: true
+          enable_jekyll: false
+          commit_message: "docs: deploy ${{ github.sha }}"

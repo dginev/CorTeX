@@ -19,7 +19,9 @@
 use rocket::http::ContentType;
 use rocket::{Build, Rocket, State};
 use rocket_okapi::openapi_get_routes_spec;
-use rocket_okapi::rapidoc::{GeneralConfig, RapiDocConfig, make_rapidoc};
+use rocket_okapi::rapidoc::{
+  GeneralConfig, NavConfig, NavItemSpacing, RapiDocConfig, SlotsConfig, make_rapidoc,
+};
 use rocket_okapi::settings::{OpenApiSettings, UrlObject};
 
 // Each documented handler is imported alongside its `#[openapi]`-generated
@@ -118,14 +120,38 @@ hierarchy (paginated).\n\
 Conversion history (`/api/runs…`) is **append-only over the API** — never deletable or mutable via \
 `/api` (pruning is a human-admin action). See `MANUAL.md` for the full operator and agent guide.";
 
-/// Mounts the generated agent-API documentation onto `rocket`:
-/// - the `#[openapi]`-annotated agent routes (so they exist *and* are documented from one source),
-/// - the OpenAPI 3 spec at `GET /api/openapi.json`,
-/// - a RapiDoc browser page at `GET /api/docs`.
-///
-/// The annotated routes are mounted here (not in their modules' plain route groups) so
-/// `rocket_okapi` can attach their operation metadata.
-pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
+/// A small script injected into the RapiDoc page's default slot. RapiDoc's `theme` is a fixed
+/// Light/Dark with no auto mode and no toggle, so this: (1) follows the viewer's OS/browser
+/// light/dark preference, (2) adds a persistent top-right toggle button that overrides it
+/// (`localStorage`), and (3) sets a readable `primary-color` per mode — the default dark blue is
+/// too dark on a dark background, washing out links. The static gh-pages page
+/// (`scripts/build-docs-site.sh`) carries the same logic, so both surfaces behave identically.
+const RAPIDOC_THEME_SCRIPT: &str = "<script>\
+(function(){\
+var rd=document.getElementById('rapidoc');if(!rd)return;\
+var mq=window.matchMedia('(prefers-color-scheme: dark)');\
+var KEY='cortex-docs-theme';var stored=null;try{stored=localStorage.getItem(KEY);}catch(e){}\
+function theme(){return stored||(mq.matches?'dark':'light');}\
+var btn=document.createElement('button');btn.id='theme-toggle';btn.type='button';\
+btn.setAttribute('aria-label','Toggle light/dark theme');\
+btn.style.cssText='position:fixed;top:.55rem;right:.7rem;z-index:20;font:13px sans-serif;\
+padding:.3rem .6rem;border-radius:6px;border:1px solid rgba(128,128,128,.5);\
+background:rgba(128,128,128,.15);color:inherit;cursor:pointer';\
+function apply(){var t=theme();rd.setAttribute('theme',t);\
+rd.setAttribute('primary-color',t==='dark'?'#6ab0f3':'#2a5d84');\
+btn.textContent=t==='dark'?'☀ Light':'☾ Dark';}\
+btn.addEventListener('click',function(){stored=theme()==='dark'?'light':'dark';\
+try{localStorage.setItem(KEY,stored);}catch(e){}apply();});\
+document.body.appendChild(btn);apply();\
+mq.addEventListener('change',function(){if(!stored)apply();});\
+})();\
+</script>";
+
+/// Builds the agent-API routes **and** the OpenAPI 3 spec from the single `#[openapi]` handler
+/// list, then applies the nav summaries + `info` metadata. The one source of truth shared by
+/// [`mount`] (which serves both live) and [`spec_json`] (which serializes the spec for static
+/// publishing) — so the published docs can never drift from the served API.
+fn routes_and_spec() -> (Vec<rocket::Route>, rocket_okapi::okapi::openapi3::OpenApi) {
   let settings = OpenApiSettings::default();
   // Every `#[openapi]` agent handler is listed here; the macro returns the routes + the spec built
   // from them. (Expand this list as more endpoints are annotated.)
@@ -184,6 +210,27 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
   // description (authentication + entry points), which `rocket_okapi` otherwise leaves bare.
   spec.info.title = "CorTeX agent API".to_string();
   spec.info.description = Some(AGENT_API_OVERVIEW.to_string());
+  (routes, spec)
+}
+
+/// The generated OpenAPI 3 document as pretty-printed JSON — the same bytes served live at
+/// `GET /api/openapi.json`, but obtainable **without a running server or database** (the spec is
+/// built purely from the route definitions). This is what `cortex openapi` prints and what the
+/// published docs site (`scripts/build-docs-site.sh`) bundles, so the static docs stay in lock-step
+/// with the served API.
+pub fn spec_json() -> String {
+  serde_json::to_string_pretty(&routes_and_spec().1).unwrap_or_default()
+}
+
+/// Mounts the generated agent-API documentation onto `rocket`:
+/// - the `#[openapi]`-annotated agent routes (so they exist *and* are documented from one source),
+/// - the OpenAPI 3 spec at `GET /api/openapi.json`,
+/// - a RapiDoc browser page at `GET /api/docs`.
+///
+/// The annotated routes are mounted here (not in their modules' plain route groups) so
+/// `rocket_okapi` can attach their operation metadata.
+pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
+  let (routes, spec) = routes_and_spec();
   let spec_json = serde_json::to_string_pretty(&spec).unwrap_or_default();
   rocket
     .manage(SpecJson(spec_json))
@@ -197,14 +244,32 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
           spec_urls: vec![UrlObject::new("CorTeX API", "/api/openapi.json")],
           ..Default::default()
         },
+        // The left nav is a route dictionary (`METHOD /path`), not prose: predictable to scan,
+        // one line per endpoint. The descriptive summary + full description stay in the detail
+        // panel. Compact spacing keeps the (40-route) list dense.
+        nav: NavConfig {
+          use_path_in_nav_bar: true,
+          nav_item_spacing: NavItemSpacing::Compact,
+          ..Default::default()
+        },
+        // Follow the viewer's OS/browser light/dark preference (the bundled template's `theme` is
+        // otherwise fixed). The script lives in the default slot, which RapiDoc renders invisibly.
+        slots: SlotsConfig {
+          default: vec![RAPIDOC_THEME_SCRIPT.to_string()],
+          ..Default::default()
+        },
         ..Default::default()
       }),
     )
 }
 
-/// Give every operation in `spec` a short one-line `summary` (for the RapiDoc left-nav) derived
-/// from its long `description`, leaving the description intact for the detail panel. Idempotent —
-/// only fills an empty summary.
+/// Give every operation in `spec` a one-line `summary` derived from its long `description`,
+/// leaving the description intact for the detail panel. Idempotent — only fills an empty summary.
+///
+/// The summary is the operation's heading in the RapiDoc detail panel and the `summary` field in
+/// the spec (useful to OpenAPI tooling); the left **nav** is path-based (`use_path_in_nav_bar`), so
+/// it no longer depends on this text being short — hence the generous length guard in
+/// [`short_summary`] rather than the old hard nav-width cap.
 fn add_nav_summaries(spec: &mut rocket_okapi::okapi::openapi3::OpenApi) {
   for path_item in spec.paths.values_mut() {
     for op in [
@@ -226,9 +291,11 @@ fn add_nav_summaries(spec: &mut rocket_okapi::okapi::openapi3::OpenApi) {
   }
 }
 
-/// A terse nav label from a long description: drops a leading `` `METHOD /path` `` code-span (the
-/// nav already shows the method + path) and markdown emphasis, keeps the first sentence, and caps
-/// the length so the RapiDoc left-nav stays readable.
+/// A one-line summary from a long description: drops a leading `` `METHOD /path` `` code-span (the
+/// path is already shown in the nav and the detail-panel header) and markdown emphasis, then keeps
+/// the lead clause up to the first clause boundary (`. ; : —`). That yields a terse, complete
+/// heading rather than a run-on; a generous length guard only ellipsizes a pathologically long lead
+/// clause that has no early boundary.
 fn short_summary(description: &str) -> String {
   let mut text = description.trim();
   // Strip a leading backtick code span (e.g. "`GET /api/status`") + a following em-dash/colon/dash.
@@ -246,9 +313,11 @@ fn short_summary(description: &str) -> String {
       text = rest;
     }
   }
-  // First sentence / line, minus trailing punctuation and markdown emphasis.
+  // Lead clause: stop at the first sentence/clause boundary so a packed first sentence becomes a
+  // terse heading (the full text stays in the description below). Trailing punctuation + markdown
+  // emphasis are stripped.
   let first = text
-    .split(['.', '\n'])
+    .split(['.', ';', ':', '—', '\n'])
     .next()
     .unwrap_or(text)
     .trim()
@@ -258,7 +327,9 @@ fn short_summary(description: &str) -> String {
     .filter(|c| !matches!(c, '`' | '*' | '_'))
     .collect();
   let cleaned = cleaned.trim();
-  const CAP: usize = 64;
+  // Generous guard only: the path-based nav means this no longer has to fit a narrow nav column, so
+  // a normal first sentence passes through whole; only a runaway one is ellipsized.
+  const CAP: usize = 100;
   if cleaned.chars().count() > CAP {
     let truncated: String = cleaned.chars().take(CAP - 1).collect();
     format!("{}…", truncated.trim_end())
@@ -272,8 +343,9 @@ mod summary_tests {
   use super::short_summary;
 
   #[test]
-  fn derives_terse_nav_labels() {
-    // A leading "`GET /path` — …" code span is dropped (the nav already shows the path).
+  fn derives_terse_summaries() {
+    // A leading "`GET /path` — …" code span is dropped (the nav + panel header already show the
+    // path).
     assert_eq!(
       short_summary("`GET /api/status` — the agent twin of the dashboard feed. More detail here."),
       "the agent twin of the dashboard feed"
@@ -283,11 +355,25 @@ mod summary_tests {
       short_summary("Lists all registered corpora."),
       "Lists all registered corpora"
     );
-    // A long first sentence is capped with an ellipsis.
-    let long = "Lists every single registered corpus across the whole deployment with all of its many associated services";
+    // The summary stops at the first clause boundary (`. ; : —`), so a packed first sentence
+    // becomes a terse lead clause instead of a run-on heading (the full text stays in the
+    // description).
+    assert_eq!(
+      short_summary("Registers a corpus and starts an in-process import job; returns 202 Accepted"),
+      "Registers a corpus and starts an in-process import job"
+    );
+    assert_eq!(
+      short_summary(
+        "Inspects a single corpus: its activated services and per-service status counts"
+      ),
+      "Inspects a single corpus"
+    );
+    // A pathologically long lead clause with no early boundary (>100 chars) is ellipsized as a
+    // guard.
+    let long = "Lists every single registered corpus across the whole deployment together with all of its many associated services and their workers";
     let summary = short_summary(long);
     assert!(
-      summary.chars().count() <= 64 && summary.ends_with('…'),
+      summary.chars().count() <= 100 && summary.ends_with('…'),
       "got {summary:?}"
     );
   }
