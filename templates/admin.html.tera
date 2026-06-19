@@ -60,24 +60,33 @@
   </div>
 
   <style>
-    /* The WHOLE card breaks out to ~85vw (margin-based full-bleed, centered on the symmetric
-       dashboard column) so the title, fleet line and stream are one cohesive wide panel — rather than
-       a narrow header with a detached wide text block under it. */
-    #live-activity-card { width: 85vw; margin-left: calc(50% - 42.5vw); box-sizing: border-box; }
-    /* The stream is a bounded, scrolling region inside the card — a contained live log tail, set off
-       from the header by a hairline rule. */
-    #live-activity-card .activity-list { margin-top: .5rem; padding-top: .5rem; max-height: 60vh;
-      overflow-y: auto; border-top: 1px solid #d7dee6; }
+    /* TWO separate panels: a dashboard-width HEADER (the accordion toggle — title + fleet line) and a
+       wider 85vw CONTENT panel it expands. The <details> wrapper is transparent; each child is its
+       own card. */
+    #live-activity-card { margin: 1rem 0; }
+    /* Header card = the clickable <summary>, at normal dashboard width (no breakout). */
+    #activity-header { display: block; cursor: pointer; user-select: none; list-style: none; }
+    #activity-header::-webkit-details-marker { display: none; }
+    #activity-header .acc-caret { display: inline-block; width: 1em; transition: transform .15s ease; }
+    #live-activity-card[open] #activity-header .acc-caret { transform: rotate(90deg); }
+    /* Content card = its own wider (~85vw) panel, centered via the margin-based full-bleed (correct
+       for the symmetric dashboard column); a bounded, scrolling live log tail. */
+    #live-activity-card .activity-list { width: 85vw; margin-left: calc(50% - 42.5vw);
+      box-sizing: border-box; margin-top: .5rem; padding: .5rem .75rem; border: 1px solid #d7dee6;
+      border-radius: 8px; background: rgba(0, 0, 0, .015); max-height: 60vh; overflow-y: auto; }
     /* Hanging indent (~past the "HH:MM:SS severity" prefix): a wrapped long message's continuation
        lines align under the message text. Monospace + 0.85em signals machine-generated log output. */
     .activity-row { padding-left: 5.2em; text-indent: -5.2em; line-height: 1.4; margin: .1rem 0;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85em; }
   </style>
-  <div class="admin-card wide" id="live-activity-card">
-    <div class="muted">Latest dispatcher activity <span class="live-dot" id="activity-dot"></span> <span class="muted" id="activity-label">— polling…</span></div>
-    <div id="activity-fleet" class="muted run-meta" style="margin:.35rem 0">fleet idle</div>
+  <details id="live-activity-card" open>
+    <summary class="admin-card wide" id="activity-header">
+      <span class="muted"><i class="fa fa-caret-right acc-caret"></i> Latest dispatcher activity</span>
+      <span class="live-dot" id="activity-dot"></span> <span class="muted" id="activity-label">— polling…</span>
+      <div id="activity-fleet" class="muted run-meta" style="margin:.35rem 0 0">fleet idle</div>
+    </summary>
     <div id="activity-stream" class="activity-list"><div class="muted">no recent messages</div></div>
-  </div>
+  </details>
 
   <hr>
   <h3>Run control</h3>
