@@ -1,5 +1,10 @@
 # Filtered Sandbox Corpora — design note + creation landed
 
+> **Successor:** this covers the **carve primitive** only. The **stratification** layer that closes
+> [#46](https://github.com/dginev/CorTeX/issues/46) — balanced per-class sampling, per-class bounds,
+> the report-page form, the download lifecycle — is planned in
+> [`../STRATIFIED_SANDBOXES.md`](../STRATIFIED_SANDBOXES.md).
+
 > Status: **LANDED 2026-06-15** — creation (`src/backend/sandbox.rs` + `POST /api/corpora/<parent>/sandbox`
 > + the `corpus_sandbox` background job) **and** rerun-output isolation (Decisions §1, formerly
 > KNOWN_ISSUES F-6, now resolved). The owner's 4 design questions are **decided** (see below). A
