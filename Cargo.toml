@@ -86,7 +86,7 @@ webauthn-rs = "0.5"
 zip = "2"
 flate2 = "1"
 tar = "0.4"
-infer = "0.16"
+infer = "0.19"
 
 # Integration tests that hold a libpq pool (a Rocket Client over it, or a bare pool) run under a
 # custom harness (their own `main` ending in `libc::_exit(0)`) to ELIMINATE the L-1 diesel/libpq/Tokio
