@@ -76,7 +76,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # `schemars` provides the `JsonSchema` derive for the DTOs. (0.9 is the rocket_okapi release that
 # supports Rocket 0.5.1.)
 rocket_okapi = { version = "0.9", features = ["rapidoc"] }
-schemars = "0.8"
+schemars = "1.2"
 webauthn-rs = "0.5"
 # Pure-Rust archive handling (archive rationalization Path A, docs/archive/ARCHIVE_RATIONALIZATION.md),
 # replacing the self-maintained libarchive-sys C-FFI fork. `zip` reads the per-task result archive via
