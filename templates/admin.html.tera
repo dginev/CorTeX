@@ -77,7 +77,7 @@
     /* Hanging indent (~past the "HH:MM:SS severity" prefix): a wrapped long message's continuation
        lines align under the message text. Monospace + 0.85em signals machine-generated log output. */
     .activity-row { padding-left: 5.2em; text-indent: -5.2em; line-height: 1.4; margin: .1rem 0;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85em; }
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .77em; }
   </style>
   <details id="live-activity-card" open>
     <summary class="admin-card wide" id="activity-header">
