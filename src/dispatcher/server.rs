@@ -304,7 +304,7 @@ pub fn send_done(done_tx: &SyncSender<TaskReport>, report: TaskReport) {
 /// A task re-dispatched this many times that still never returns a result is treated as a hard
 /// failure (`Fatal`) rather than retried forever.
 ///
-/// **1** with the short `lease_timeout_seconds` (~180 s, just above the worker's hard per-document
+/// **1** with the short `lease_timeout_seconds` (~240 s, just above the worker's 180 s per-document
 /// timeout): a task whose worker keeps dying is almost always an unprocessable paper (a fresh
 /// recycle-clean worker dies on it too), so 2 retries (3 attempts total) catch the rare
 /// transient/worker-induced death and then converge to `Fatal` within a single run — the
