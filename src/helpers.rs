@@ -377,6 +377,18 @@ impl NewTaskMessage {
         what,
         details,
       }),
+      // Perl-LaTeXML emits `Fatal('invalid', …)` for an *unprocessable input* (no TeX source,
+      // PDF-only, binary, …): a fatal whose CATEGORY is `invalid`. CorTeX treats that as its
+      // distinct **Invalid** outcome — its own report row, discounted from the total — not a plain
+      // conversion Fatal. This is the bridge that realizes the long-noted intent in
+      // `generate_report` ("they're fatal messages in latexml, but we want them separated out in
+      // cortex"); the literal `invalid:` severity below resolves to the same record.
+      "fatal" if category == "invalid" => NewTaskMessage::Invalid(NewLogInvalid {
+        task_id,
+        category,
+        what,
+        details,
+      }),
       "fatal" => NewTaskMessage::Fatal(NewLogFatal {
         category,
         task_id,
@@ -712,6 +724,30 @@ mod log_decode_tests {
     );
     let canonical = parse_log(42, "Warning:missing_file:x y\n");
     assert!(matches!(canonical[0], NewTaskMessage::Warning(_)));
+  }
+
+  #[test]
+  fn fatal_invalid_category_is_separated_into_invalid() {
+    // Perl-LaTeXML emits `Fatal('invalid', …)` for an unprocessable input (no TeX source,
+    // PDF-only, binary). cortex must separate that out as its distinct **Invalid** outcome (own
+    // report row, discounted from the total) — NOT a plain conversion Fatal — even though the
+    // severity token is `Fatal`. The bridge keys on the `invalid` category.
+    use super::NewTaskMessage;
+    let m = parse_log(
+      7,
+      "Fatal:invalid:no_tex_source no .tex files found in archive\n",
+    );
+    assert_eq!(m.len(), 1);
+    assert!(
+      matches!(m[0], NewTaskMessage::Invalid(_)),
+      "a Fatal message in the `invalid` category is filed as Invalid, not Fatal"
+    );
+    // A fatal in any OTHER category is still a plain Fatal.
+    let f = parse_log(7, "Fatal:conversion:caught boom\n");
+    assert!(matches!(f[0], NewTaskMessage::Fatal(_)));
+    // And the literal `Invalid:` severity (e.g. the sink's oversize-reject) still maps to Invalid.
+    let i = parse_log(7, "Invalid:size:too_big result exceeds cap\n");
+    assert!(matches!(i[0], NewTaskMessage::Invalid(_)));
   }
 
   #[test]
