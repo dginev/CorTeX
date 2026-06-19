@@ -55,7 +55,10 @@ pub fn init_tracing() {
 /// stdout / `--json`; `tracing` events are opt-in diagnostics. Events always go to **stderr** so
 /// they never corrupt a `--json` subcommand's machine output on stdout. An explicit `RUST_LOG`
 /// always wins over the flags (so `RUST_LOG=cortex=trace cortex status` works regardless of `-v`).
-pub fn init_cli_tracing(verbose: u8, quiet: bool) {
+///
+/// `json` selects newline-delimited JSON events (`--log-format json`) for machine ingestion (the
+/// agent-facing log shape); the default is the human text formatter.
+pub fn init_cli_tracing(verbose: u8, quiet: bool, json: bool) {
   use tracing_subscriber::{EnvFilter, fmt};
   let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
     let level = if quiet {
@@ -72,9 +75,18 @@ pub fn init_cli_tracing(verbose: u8, quiet: bool) {
     // Rocket), but harmless and consistent if a shared filter is ever logged.
     EnvFilter::new(format!("{level},rocket=warn"))
   });
-  let _ = fmt()
-    .with_env_filter(filter)
-    .with_target(false)
-    .with_writer(std::io::stderr)
-    .try_init();
+  // Both formats write to stderr (stdout stays clean for `--json` subcommand output).
+  if json {
+    let _ = fmt()
+      .with_env_filter(filter)
+      .with_writer(std::io::stderr)
+      .json()
+      .try_init();
+  } else {
+    let _ = fmt()
+      .with_env_filter(filter)
+      .with_target(false)
+      .with_writer(std::io::stderr)
+      .try_init();
+  }
 }

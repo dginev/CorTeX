@@ -59,6 +59,12 @@
     </div>
   </div>
 
+  <div class="admin-card wide" id="live-activity-card">
+    <div class="muted">Live activity <span class="muted" id="activity-label">— polling…</span></div>
+    <div id="activity-fleet" class="muted run-meta" style="margin:.35rem 0">fleet idle</div>
+    <div id="activity-problems"><div class="muted">no recent problems</div></div>
+  </div>
+
   <hr>
   <h3>Run control</h3>
   <p class="muted">Pause halts <em>new</em> dispatching across every corpus &amp; service (in-flight
@@ -138,6 +144,53 @@
   }
   poll();
   setInterval(poll, PERIOD);
+})();
+
+// Live activity feed — a read-only poll of /admin/logs.json (the actively-converting fleet + the
+// latest fatal/error conversion messages). Read straight from what the dispatcher already persists
+// to Postgres; the dispatcher is never in this request path, so the panel can never perturb the
+// conversion hot path. Same vanilla-fetch pattern as the status poll above.
+(function () {
+  var FEED = '/admin/logs.json', PERIOD = 4000;
+  var label = document.getElementById('activity-label');
+  function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+  function group(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  // The source archive path is long; show the trailing component (the document id) for readability.
+  function shortEntry(e) { if (!e) return ''; var p = String(e).split('/').filter(Boolean); return p.length ? p[p.length - 1] : e; }
+  function renderFleet(fleet) {
+    var box = document.getElementById('activity-fleet');
+    if (!box) return;
+    if (!fleet || !fleet.length) { box.textContent = 'fleet idle'; return; }
+    var returned = fleet.reduce(function (a, w) { return a + (w.total_returned || 0); }, 0);
+    box.innerHTML = esc(String(fleet.length)) + ' active worker' + (fleet.length === 1 ? '' : 's') +
+      ' · ' + group(returned) + ' returned · newest: ' + esc(fleet[0].name);
+  }
+  function renderProblems(fatals, errors) {
+    var box = document.getElementById('activity-problems');
+    if (!box) return;
+    var rows = (fatals || []).concat(errors || []);
+    if (!rows.length) { box.innerHTML = '<div class="muted">no recent problems</div>'; return; }
+    box.innerHTML = rows.slice(0, 25).map(function (m) {
+      var cls = m.severity === 'fatal' ? 'status-warn' : 'muted';
+      var tag = '<strong class="' + cls + '">' + esc(m.severity) + '</strong>';
+      var kind = [m.category, m.what].filter(Boolean).map(esc).join(':');
+      return '<div class="run-meta">' + tag + ' ' + esc(shortEntry(m.entry)) +
+        (kind ? ' <span class="muted">' + kind + '</span>' : '') +
+        (m.details ? ' <span class="muted">— ' + esc(m.details) + '</span>' : '') + '</div>';
+    }).join('');
+  }
+  async function pollActivity() {
+    var resp;
+    try { resp = await fetch(FEED, { headers: { 'Accept': 'application/json' } }); }
+    catch (e) { if (label) label.textContent = '— offline'; return; }
+    if (!resp.ok) { if (label) label.textContent = resp.status === 401 ? '— signed out' : '— paused'; return; }
+    var a = await resp.json();
+    if (label) label.textContent = '';
+    renderFleet(a.fleet);
+    renderProblems(a.recent_fatals, a.recent_errors);
+  }
+  pollActivity();
+  setInterval(pollActivity, PERIOD);
 })();
 </script>
 {% endblock content %}

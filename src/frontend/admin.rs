@@ -10,6 +10,8 @@
 //! previously sprinkled the public homepage. Access uses the lightweight token scheme — an
 //! [`AdminSession`] cookie (`frontend::actor`), set on the sign-in page below.
 
+use diesel::sql_types::{BigInt, Nullable, Text};
+use diesel::{PgConnection, QueryableByName, RunQueryDsl, sql_query};
 use rocket::form::Form;
 use rocket::http::{Cookie, CookieJar, SameSite, Status};
 use rocket::response::Redirect;
@@ -182,6 +184,176 @@ pub fn api_status(_actor: Actor, pool: &State<DbPool>) -> Json<AdminStatusDto> {
   Json(admin_status(pool))
 }
 
+/// One worker's live activity row for the [`LiveActivityDto`] fleet feed — the "what the fleet is
+/// doing now" signal, read straight from the `worker_metadata` rows the dispatcher already keeps.
+#[derive(Serialize, JsonSchema)]
+pub struct FleetWorkerDto {
+  /// Worker identity (usually `hostname:pid`).
+  pub name: String,
+  /// The service this worker serves.
+  pub service_id: i32,
+  /// Lifetime results this worker has returned.
+  pub total_returned: i32,
+  /// The most recent task id this worker returned a result for (`None` if it never has).
+  pub last_returned_task_id: Option<i64>,
+  /// When this worker was last dispatched a task (RFC 3339 UTC).
+  pub time_last_dispatch: String,
+  /// When this worker last returned a result (RFC 3339 UTC), if ever.
+  pub time_last_return: Option<String>,
+}
+
+/// One recent conversion problem (a fatal or error message) for the [`LiveActivityDto`] feed — read
+/// from the `log_*` rows the dispatcher's finalize thread already persists, joined to the task's
+/// entry/corpus/service. The live signal of a run's health.
+#[derive(Serialize, JsonSchema)]
+pub struct ActivityMessageDto {
+  /// `"fatal"` or `"error"`.
+  pub severity: String,
+  /// The corpus the converting task belongs to.
+  pub corpus: String,
+  /// The service that produced the message.
+  pub service: String,
+  /// The document entry (source path) that errored.
+  pub entry: String,
+  /// The message category (e.g. `undefined`), if any.
+  pub category: Option<String>,
+  /// The message subject (`what`), if any.
+  pub what: Option<String>,
+  /// The message detail, truncated for the feed.
+  pub details: Option<String>,
+}
+
+/// The admin **live activity** feed: the actively-converting fleet plus the most recent conversion
+/// problems. Every field is read-only over data the dispatcher already writes to Postgres as its
+/// normal work — the frontend polls it and the **dispatcher is never in the request loop**, so a
+/// slow or absent UI can never back-pressure or endanger the conversion hot path.
+#[derive(Serialize, JsonSchema)]
+pub struct LiveActivityDto {
+  /// Recently-active workers, newest dispatch first.
+  pub fleet: Vec<FleetWorkerDto>,
+  /// The latest fatal messages (most recent first).
+  pub recent_fatals: Vec<ActivityMessageDto>,
+  /// The latest error messages (most recent first).
+  pub recent_errors: Vec<ActivityMessageDto>,
+}
+
+/// A raw recent-message row joined across `log_* → tasks → corpora/services`. Severity is tagged in
+/// Rust (one query per fixed table), so this projection carries no severity column.
+#[derive(QueryableByName)]
+struct MessageRow {
+  #[diesel(sql_type = Text)]
+  entry: String,
+  #[diesel(sql_type = Text)]
+  corpus: String,
+  #[diesel(sql_type = Text)]
+  service: String,
+  #[diesel(sql_type = Nullable<Text>)]
+  category: Option<String>,
+  #[diesel(sql_type = Nullable<Text>)]
+  what: Option<String>,
+  #[diesel(sql_type = Nullable<Text>)]
+  details: Option<String>,
+}
+
+impl MessageRow {
+  fn into_dto(self, severity: &str) -> ActivityMessageDto {
+    // Cap detail length so the live-poll payload stays small (details can be up to 2000 chars).
+    let details = self.details.map(|d| {
+      const MAX: usize = 300;
+      if d.chars().count() <= MAX {
+        d
+      } else {
+        d.chars().take(MAX).collect::<String>() + "…"
+      }
+    });
+    ActivityMessageDto {
+      severity: severity.to_string(),
+      corpus: self.corpus,
+      service: self.service,
+      entry: self.entry,
+      category: self.category,
+      what: self.what,
+      details,
+    }
+  }
+}
+
+/// The latest `limit` messages from a fixed `log_*` table, joined to entry/corpus/service. `table`
+/// is an internal literal (`"log_fatals"`/`"log_errors"`), never user input — safe to interpolate.
+/// `id` is the BIGSERIAL PK, so `ORDER BY id DESC LIMIT n` is index-cheap even on the ~100M-row
+/// production log tables. Best-effort: a query error degrades to an empty list.
+fn recent_messages(connection: &mut PgConnection, table: &str, limit: i64) -> Vec<MessageRow> {
+  let query = format!(
+    "SELECT t.entry AS entry, c.name AS corpus, s.name AS service, \
+            l.category AS category, l.what AS what, l.details AS details \
+     FROM {table} l \
+     JOIN tasks t ON t.id = l.task_id \
+     JOIN corpora c ON c.id = t.corpus_id \
+     JOIN services s ON s.id = t.service_id \
+     ORDER BY l.id DESC LIMIT $1"
+  );
+  sql_query(query)
+    .bind::<BigInt, _>(limit)
+    .get_results::<MessageRow>(connection)
+    .unwrap_or_default()
+}
+
+/// Gathers the [`LiveActivityDto`] over one pooled connection. Like [`admin_status`], every read is
+/// best-effort (degrades to an empty list) and **read-only** — the dispatcher is never involved, so
+/// the live feed cannot perturb the conversion hot path.
+pub fn live_activity(pool: &DbPool, limit: i64) -> LiveActivityDto {
+  let mut activity = LiveActivityDto {
+    fleet: Vec::new(),
+    recent_fatals: Vec::new(),
+    recent_errors: Vec::new(),
+  };
+  if let Ok(mut connection) = pool.get() {
+    if let Ok(workers) = WorkerMetadata::recent(&mut connection, 80) {
+      activity.fleet = workers
+        .into_iter()
+        .map(|w| FleetWorkerDto {
+          name: w.name,
+          service_id: w.service_id,
+          total_returned: w.total_returned,
+          last_returned_task_id: w.last_returned_task_id,
+          time_last_dispatch: crate::models::iso_utc_system(w.time_last_dispatch),
+          time_last_return: w.time_last_return.map(crate::models::iso_utc_system),
+        })
+        .collect();
+    }
+    activity.recent_fatals = recent_messages(&mut connection, "log_fatals", limit)
+      .into_iter()
+      .map(|m| m.into_dto("fatal"))
+      .collect();
+    activity.recent_errors = recent_messages(&mut connection, "log_errors", limit)
+      .into_iter()
+      .map(|m| m.into_dto("error"))
+      .collect();
+  }
+  activity
+}
+
+/// `GET /admin/logs.json` — the live-activity panel's poll feed: the [`LiveActivityDto`] as JSON.
+/// **Cookie-gated** (a signed-in [`AdminSession`]); an expired session returns `401` so the page
+/// keeps its last-good values. The agent twin is [`api_logs`] (`GET /api/logs`).
+#[get("/admin/logs.json")]
+pub fn admin_logs_feed(
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+) -> Result<Json<LiveActivityDto>, Status> {
+  let _session = session.ok_or(Status::Unauthorized)?;
+  Ok(Json(live_activity(pool, 25)))
+}
+
+/// `GET /api/logs` — the **agent twin** of the dashboard's `/admin/logs.json` feed: the live fleet
+/// activity plus the most recent fatal/error conversion messages as one structured JSON call a
+/// monitoring agent can poll. **Token-gated** via the [`Actor`] guard.
+#[rocket_okapi::openapi(tag = "Management")]
+#[get("/api/logs")]
+pub fn api_logs(_actor: Actor, pool: &State<DbPool>) -> Json<LiveActivityDto> {
+  Json(live_activity(pool, 25))
+}
+
 /// The sign-in page (`GET /admin/login?<bad>&<next>`): a form to enter an admin token, plus a "sign
 /// in with a passkey" affordance when passkeys are enabled. `?bad=true` flags a failed previous
 /// attempt; `?next=` is the destination to return to after signing in (carried through the form).
@@ -264,6 +436,7 @@ pub fn routes() -> Vec<Route> {
   routes![
     admin_page,
     admin_status_feed,
+    admin_logs_feed,
     admin_login_page,
     admin_login,
     admin_logout

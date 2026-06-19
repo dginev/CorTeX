@@ -28,7 +28,9 @@ use rocket_okapi::settings::{OpenApiSettings, UrlObject};
 // `okapi_add_operation_for_*` companion (emitted in the handler's own module) — both must be in
 // scope for the `openapi_get_routes_spec!` call below. (Explicit rather than glob, so each module's
 // same-named `routes` fn doesn't collide.)
-use crate::frontend::admin::{api_status, okapi_add_operation_for_api_status_};
+use crate::frontend::admin::{
+  api_logs, api_status, okapi_add_operation_for_api_logs_, okapi_add_operation_for_api_status_,
+};
 use crate::frontend::audit::{api_audit, okapi_add_operation_for_api_audit_};
 use crate::frontend::corpora::{
   activate_service, api_corpora, api_corpus, create_sandbox_corpus, deactivate_service,
@@ -197,6 +199,7 @@ fn routes_and_spec() -> (Vec<rocket::Route>, rocket_okapi::okapi::openapi3::Open
     analyze,
     put_config,
     api_status,
+    api_logs,
     api_audit,
     api_sessions,
     api_revoke_sessions,

@@ -65,8 +65,21 @@ struct Cli {
   /// Silence diagnostics below `error` level (overridden by `RUST_LOG`).
   #[arg(short, long, global = true, conflicts_with = "verbose")]
   quiet: bool,
+  /// Diagnostic log format on stderr: `text` (human) or `json` (newline-delimited, for machine
+  /// ingestion). Independent of a subcommand's own `--json` *result* output on stdout.
+  #[arg(long, value_enum, default_value_t = LogFormat::Text, global = true)]
+  log_format: LogFormat,
   #[command(subcommand)]
   command: Command,
+}
+
+/// Diagnostic (stderr) log format for the CLI — see [`Cli::log_format`].
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum LogFormat {
+  /// Human-readable text (the default).
+  Text,
+  /// Newline-delimited JSON events, for machine ingestion.
+  Json,
 }
 
 #[derive(Subcommand)]
@@ -546,7 +559,11 @@ fn main() {
   // Install the CLI tracing subscriber (stderr; `-v`/`-q` drive the level, `RUST_LOG` overrides).
   // Without this, library code the subcommands exercise (importer, backend, helpers) emits
   // `tracing` events into the void and `RUST_LOG` is dead in the CLI.
-  cortex::observability::init_cli_tracing(cli.verbose, cli.quiet);
+  cortex::observability::init_cli_tracing(
+    cli.verbose,
+    cli.quiet,
+    cli.log_format == LogFormat::Json,
+  );
   match cli.command {
     Command::Init => run_init(),
     Command::Doctor { json } => run_doctor(json),

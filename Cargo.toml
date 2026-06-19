@@ -48,7 +48,7 @@ dashmap = "6.1"
 # level, so a high task rate no longer pays a synchronous locked-stderr write per dispatched task
 # (KNOWN_ISSUES D-11). Verbosity is runtime-controlled via RUST_LOG; see `cortex::observability`.
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # Async runtime for the async `zeromq` sink (dispatcher rationalization phase 5a).
 tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "fs", "time", "sync"] }
 # Pure-Rust async ZMQ transport for the **sink** (phase 5a): its atomic whole-message recv

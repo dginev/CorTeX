@@ -1,10 +1,10 @@
 # Logging rationalization — plan-of-record (issue #30)
 
-> Status: **IN PROGRESS 2026-06-19.** Phase 0 (the original ask) is **done**; Phase 1 (CLI parity)
-> **lands with this doc**; Phases 2–3 (structured correlation fields, per-consumer projections) are
-> scoped here and rolled out incrementally. This is the live home for [#30](https://github.com/dginev/CorTeX/issues/30)
-> and the detail behind **Arm 8a** (tracing/metrics rails) in
-> [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md); the **Arm 8b** Observatory screens consume what this lays down.
+> Status: **COMPLETE 2026-06-19 — #30 closed.** All four phases landed: Phase 0 (`tracing` adoption +
+> D-11), Phase 1 (CLI tracing parity + stderr fix), Phase 2 (codebase-wide structured correlation
+> fields), Phase 3 (CLI `--log-format=json` + C1 + the read-only live-activity UI feed). This is the
+> detail behind **Arm 8a** (tracing/metrics rails) in [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md);
+> the **Arm 8b** Observatory screens build further on the live feed laid down here.
 
 ## What #30 originally asked, and why it's mostly already solved
 
@@ -113,15 +113,29 @@ into the message string; the message is a short static `component: description`.
 - Done one file at a time, verified centrally (build + `clippy --all-targets` + `fmt --check`); the
   dispatcher's race-prone code (D-4/D-5/D-6 history) gets no sweeping single-pass rewrite.
 
-### Phase 3 — per-consumer projections — DEFERRED (with Arm 8b)
-- **CLI:** `--log-format=auto|text|json` (needs the `tracing-subscriber/json` feature — not yet
-  enabled).
-- **Agent API surface — decided C1 (cheapest):** agents correlate via the Phase-2 structured ids +
-  the existing `/api/status`, `/api/jobs`, `/api/runs` DTOs + `/metrics`. **No** raw-log endpoint in
-  the API contract for now.
-- **Live UI feed (C2):** a bounded in-memory ring-buffer `tracing` Layer exposed over SSE, feeding the
-  Observatory live console — belongs to **Arm 8b**, not here.
-- (C3, a `tracing-appender` JSON log file served by the API, is rejected for now — adds a dep + a file
+### Phase 3 — per-consumer projections — ✅ DONE
+- **CLI `--log-format=text|json`** — ✅ landed. Enabled `tracing-subscriber/json`; a global
+  `--log-format` flag (default `text`) threads into `init_cli_tracing`, emitting newline-delimited
+  JSON events on **stderr** (stdout stays clean for a subcommand's `--json` *result* output).
+- **Agent API surface — C1** — ✅ satisfied (no new endpoint needed): agents correlate via the
+  Phase-2 structured ids + the existing `/api/status` · `/api/jobs` · `/api/runs` DTOs + `/metrics`.
+- **Live UI feed (C2)** — ✅ landed, **rationalized to never touch the dispatcher hot path.** Owner
+  constraint (2026-06-19): *"do not endanger the hot path of the service; any message-passing hiccup
+  must never endanger the dispatcher."* So the feed is **read-only over data the dispatcher already
+  persists to Postgres as its normal work** — there is **no new push channel, no tracing→DB layer in
+  the dispatcher, no background flush thread, no message passing** that could back-pressure or fail
+  into the conversion hot path. The dispatcher stays oblivious to whether anyone is watching.
+  - `LiveActivityDto` = the actively-converting **fleet** (`worker_metadata`, newest dispatch first)
+    + the latest **fatal/error** conversion messages (`log_fatals`/`log_errors`, top-N by the
+    BIGSERIAL `id` PK — index-cheap even on the ~100M-row prod tables — joined to entry/corpus/service).
+  - `GET /admin/logs.json` (cookie-gated) + `GET /api/logs` (token-gated agent twin, in the OpenAPI
+    spec) + a "Live activity" panel on the admin dashboard that polls every 4 s (the same vanilla-fetch
+    polling model as `/admin/status.json`).
+  - This **supersedes** the earlier sketch of an in-process ring-buffer `tracing` Layer over SSE: that
+    would have needed cross-process plumbing from the dispatcher (a hot-path risk the owner ruled out).
+    The richer per-task narration (dispatch/commit) stays a `trace`/`debug` `RUST_LOG` knob on the
+    dispatcher's own stderr; the UI shows the conversion-health signal that already lives in the DB.
+- (C3, a `tracing-appender` JSON log file served by the API, remains rejected — adds a dep + a file
   lifecycle for little gain over C1.)
 
 ## Tests / verification

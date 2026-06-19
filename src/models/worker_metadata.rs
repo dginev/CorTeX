@@ -140,7 +140,7 @@ impl From<WorkerMetadata> for HashMap<String, String> {
 /// Formats a `SystemTime` as an RFC 3339 UTC timestamp (seconds precision) — the zone-unambiguous
 /// form the UI localizes to the viewer's zone (public/js/localtime.js); empty timestamps render as
 /// an empty cell.
-fn iso_utc_system(then: SystemTime) -> String {
+pub fn iso_utc_system(then: SystemTime) -> String {
   chrono::DateTime::<chrono::Utc>::from(then).to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
@@ -209,6 +209,17 @@ impl WorkerMetadata {
       ))
       .first(connection)?;
     Ok((count, in_flight.unwrap_or(0)))
+  }
+
+  /// The most-recently-active workers, newest `time_last_dispatch` first — the admin live-activity
+  /// feed's "what the fleet is doing now" list. A cheap ordered read over the small
+  /// `worker_metadata` table (read-only; the dispatcher is never in the loop).
+  pub fn recent(connection: &mut PgConnection, limit: i64) -> Result<Vec<WorkerMetadata>, Error> {
+    use crate::schema::worker_metadata::dsl;
+    worker_metadata::table
+      .order(dsl::time_last_dispatch.desc())
+      .limit(limit)
+      .load(connection)
   }
 }
 
