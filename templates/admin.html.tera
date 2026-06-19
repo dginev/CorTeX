@@ -60,13 +60,18 @@
   </div>
 
   <style>
-    /* Live activity uses more of the screen (85vw, broken out of the centered content column) since
-       conversion messages are long. */
-    #live-activity-card { width: 85vw; position: relative; left: 50%; transform: translateX(-50%);
-      box-sizing: border-box; }
     #live-activity-card details { margin: .25rem 0; }
-    #live-activity-card summary { cursor: pointer; font-weight: 600; user-select: none; }
+    #live-activity-card summary { cursor: pointer; font-weight: 600; user-select: none; list-style: none; }
+    #live-activity-card summary::-webkit-details-marker { display: none; }
     #live-activity-card summary .muted { font-weight: 400; }
+    /* Disclosure caret: points right when collapsed, rotates down (90°) when the section is open. */
+    #live-activity-card .acc-caret { display: inline-block; width: 1em; transition: transform .15s ease; }
+    #live-activity-card details[open] > summary .acc-caret { transform: rotate(90deg); }
+    /* Only the expandable CONTENT widens (85vw, broken out of the centered content column) since
+       conversion messages are long; the card and the group headings stay at normal dashboard width
+       for continuity. */
+    #live-activity-card .activity-list { width: 85vw; position: relative; left: 50%;
+      transform: translateX(-50%); box-sizing: border-box; margin-top: .25rem; }
     /* Hanging indent: when a long message wraps, the continuation lines align under the message text,
        not back at the severity tag. */
     .activity-row { padding-left: 2.4em; text-indent: -2.4em; line-height: 1.35; margin: .1rem 0; }
@@ -75,15 +80,15 @@
     <div class="muted">Latest dispatcher activity <span class="muted" id="activity-label">— polling…</span></div>
     <div id="activity-fleet" class="muted run-meta" style="margin:.35rem 0">fleet idle</div>
     <details id="acc-fatal" open>
-      <summary>Fatals <span class="muted" id="count-fatal">0</span></summary>
+      <summary><i class="fa fa-caret-right acc-caret"></i> Fatals <span class="muted" id="count-fatal">0</span></summary>
       <div id="list-fatal" class="activity-list"></div>
     </details>
     <details id="acc-error">
-      <summary>Errors <span class="muted" id="count-error">0</span></summary>
+      <summary><i class="fa fa-caret-right acc-caret"></i> Errors <span class="muted" id="count-error">0</span></summary>
       <div id="list-error" class="activity-list"></div>
     </details>
     <details id="acc-warning">
-      <summary>Warnings <span class="muted" id="count-warning">0</span></summary>
+      <summary><i class="fa fa-caret-right acc-caret"></i> Warnings <span class="muted" id="count-warning">0</span></summary>
       <div id="list-warning" class="activity-list"></div>
     </details>
   </div>
