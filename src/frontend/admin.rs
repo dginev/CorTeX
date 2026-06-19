@@ -371,7 +371,7 @@ pub fn admin_logs_feed(
   pool: &State<DbPool>,
 ) -> Result<Json<LiveActivityDto>, Status> {
   let _session = session.ok_or(Status::Unauthorized)?;
-  Ok(Json(live_activity(pool, 25)))
+  Ok(Json(live_activity(pool, 33)))
 }
 
 /// `GET /api/logs` — the **agent twin** of the dashboard's `/admin/logs.json` feed: the live fleet
@@ -380,7 +380,7 @@ pub fn admin_logs_feed(
 #[rocket_okapi::openapi(tag = "Management")]
 #[get("/api/logs")]
 pub fn api_logs(_actor: Actor, pool: &State<DbPool>) -> Json<LiveActivityDto> {
-  Json(live_activity(pool, 25))
+  Json(live_activity(pool, 33))
 }
 
 /// The sign-in page (`GET /admin/login?<bad>&<next>`): a form to enter an admin token, plus a "sign

@@ -59,10 +59,33 @@
     </div>
   </div>
 
+  <style>
+    /* Live activity uses more of the screen (85vw, broken out of the centered content column) since
+       conversion messages are long. */
+    #live-activity-card { width: 85vw; position: relative; left: 50%; transform: translateX(-50%);
+      box-sizing: border-box; }
+    #live-activity-card details { margin: .25rem 0; }
+    #live-activity-card summary { cursor: pointer; font-weight: 600; user-select: none; }
+    #live-activity-card summary .muted { font-weight: 400; }
+    /* Hanging indent: when a long message wraps, the continuation lines align under the message text,
+       not back at the severity tag. */
+    .activity-row { padding-left: 2.4em; text-indent: -2.4em; line-height: 1.35; margin: .1rem 0; }
+  </style>
   <div class="admin-card wide" id="live-activity-card">
-    <div class="muted">Live activity <span class="muted" id="activity-label">— polling…</span></div>
+    <div class="muted">Latest dispatcher activity <span class="muted" id="activity-label">— polling…</span></div>
     <div id="activity-fleet" class="muted run-meta" style="margin:.35rem 0">fleet idle</div>
-    <div id="activity-problems"><div class="muted">no recent problems</div></div>
+    <details id="acc-fatal" open>
+      <summary>Fatals <span class="muted" id="count-fatal">0</span></summary>
+      <div id="list-fatal" class="activity-list"></div>
+    </details>
+    <details id="acc-error">
+      <summary>Errors <span class="muted" id="count-error">0</span></summary>
+      <div id="list-error" class="activity-list"></div>
+    </details>
+    <details id="acc-warning">
+      <summary>Warnings <span class="muted" id="count-warning">0</span></summary>
+      <div id="list-warning" class="activity-list"></div>
+    </details>
   </div>
 
   <hr>
@@ -170,21 +193,24 @@
     var cls = m.severity === 'warning' ? 'muted' : 'status-warn';
     var tag = '<strong class="' + cls + '">' + esc(m.severity) + '</strong>';
     var kind = [m.category, m.what].filter(Boolean).map(esc).join(':');
-    return '<div class="run-meta">' + tag + ' ' + esc(shortEntry(m.entry)) +
+    return '<div class="activity-row">' + tag + ' ' + esc(shortEntry(m.entry)) +
       (kind ? ' <span class="muted">' + kind + '</span>' : '') +
       (m.details ? ' <span class="muted">— ' + esc(m.details) + '</span>' : '') + '</div>';
   }
+  // Fill one accordion section's list + count. Updates the inner content only (not the <details>
+  // element), so the user's expand/collapse state survives each 4s poll. Each severity is capped at
+  // 33 rows (~100 total across the three), newest first (the backend orders by the BIGSERIAL id).
+  function fillSection(listId, countId, rows) {
+    var list = document.getElementById(listId), cnt = document.getElementById(countId);
+    if (!list) return;
+    var shown = (rows || []).slice(0, 33);
+    list.innerHTML = shown.length ? shown.map(renderRow).join('') : '<div class="muted">none</div>';
+    if (cnt) cnt.textContent = (rows || []).length;
+  }
   function renderProblems(fatals, errors, warnings) {
-    var box = document.getElementById('activity-problems');
-    if (!box) return;
-    // Render each severity as its OWN capped group — fatals first, then errors, then warnings — so a
-    // wall of fatals can't starve the other severities (the earlier concat+slice bug). Newest first
-    // within each group (the backend orders by the BIGSERIAL id).
-    var CAP = 10;
-    var html = (fatals || []).slice(0, CAP).map(renderRow).join('')
-             + (errors || []).slice(0, CAP).map(renderRow).join('')
-             + (warnings || []).slice(0, CAP).map(renderRow).join('');
-    box.innerHTML = html || '<div class="muted">no recent messages</div>';
+    fillSection('list-fatal', 'count-fatal', fatals);
+    fillSection('list-error', 'count-error', errors);
+    fillSection('list-warning', 'count-warning', warnings);
   }
   async function pollActivity() {
     var resp;
