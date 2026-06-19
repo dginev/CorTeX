@@ -3,7 +3,8 @@ use diesel::dsl::sql;
 use diesel::*;
 use regex::Regex;
 use std::collections::HashMap;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Mutex};
+use std::time::{Duration, Instant};
 
 use super::rollup;
 use crate::frontend::helpers::severity_highlight;
@@ -17,6 +18,121 @@ use crate::schema::tasks;
 
 static TASK_REPORT_NAME_REGEX: LazyLock<Regex> =
   LazyLock::new(|| Regex::new(r"^.+/(.+)\..+$").unwrap());
+
+/// Live run-diff aggregate: of the tasks **completed so far** in the current run, how many
+/// improved / regressed / stayed the same vs their outcome in the previous run's baseline snapshot
+/// (`historical_tasks`, captured at the prior run's completion-on-drain). A coarse early-divergence
+/// signal — "is this run tracking the last one, or diverging?" — readable before the run finishes.
+#[derive(Clone, Debug, Default)]
+pub struct LiveRunDiff {
+  /// completed tasks whose current outcome is *better* than the baseline (status int higher)
+  pub improved: i64,
+  /// completed tasks whose current outcome is *worse* than the baseline (status int lower) —
+  /// excludes `Invalid` transitions (those are `reclassified`, not a quality regression)
+  pub regressed: i64,
+  /// completed tasks at the same outcome as the baseline
+  pub unchanged: i64,
+  /// completed tasks where one side is `Invalid` (unprocessable input) and the other is not — a
+  /// reclassification (e.g. a source that became / stopped being convertible), NOT a quality
+  /// improvement or regression, so it gets its own bucket rather than masquerading as one.
+  pub reclassified: i64,
+}
+impl LiveRunDiff {
+  /// Total completed tasks that had a baseline to compare against.
+  pub fn compared(&self) -> i64 {
+    self.improved + self.regressed + self.unchanged + self.reclassified
+  }
+}
+
+#[derive(QueryableByName)]
+struct DiffRow {
+  #[diesel(sql_type = diesel::sql_types::BigInt)]
+  improved: i64,
+  #[diesel(sql_type = diesel::sql_types::BigInt)]
+  regressed: i64,
+  #[diesel(sql_type = diesel::sql_types::BigInt)]
+  unchanged: i64,
+  #[diesel(sql_type = diesel::sql_types::BigInt)]
+  reclassified: i64,
+}
+
+/// Process-local read-through cache for [`live_run_diff`]. The diff is a join (`tasks` ⋈ the
+/// baseline snapshot) — the only *expensive* part of the report — so compute it at most once per
+/// `LIVE_DIFF_TTL` per scope and serve every page load from the memo. This decouples the heavy
+/// compute from the frequent reads (the report is loaded tens of times/min by collaborators), so
+/// read volume can't load the DB. The headline severity counts stay LIVE (a cheap grouped count);
+/// only this join earns a cache. Bounded staleness (≤ TTL) is acceptable — a live-diff is an early
+/// *trend*, not an exact figure.
+/// `(corpus_id, service_id)` → (computed-at, diff). Process-local memo behind [`LIVE_DIFF_CACHE`].
+type LiveDiffCache = Mutex<HashMap<(i32, i32), (Instant, LiveRunDiff)>>;
+static LIVE_DIFF_CACHE: LazyLock<LiveDiffCache> = LazyLock::new(|| Mutex::new(HashMap::new()));
+const LIVE_DIFF_TTL: Duration = Duration::from_secs(5);
+
+/// Read-through-cached [`compute_live_run_diff`] (see [`LIVE_DIFF_CACHE`]).
+pub fn live_run_diff(
+  connection: &mut PgConnection,
+  corpus_id: i32,
+  service_id: i32,
+) -> LiveRunDiff {
+  let key = (corpus_id, service_id);
+  {
+    // Recover a poisoned lock rather than panic — a stale diff is harmless.
+    let cache = LIVE_DIFF_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    match cache.get(&key) {
+      Some((at, diff)) if at.elapsed() < LIVE_DIFF_TTL => return diff.clone(),
+      _ => {},
+    }
+    // Lock dropped here, BEFORE the DB query — never hold it across the join.
+  }
+  let diff = compute_live_run_diff(connection, corpus_id, service_id);
+  let mut cache = LIVE_DIFF_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+  cache.insert(key, (Instant::now(), diff.clone()));
+  diff
+}
+
+/// Of the tasks completed so far (`status < 0`), compare each to its status in the LATEST baseline
+/// snapshot. Severity ints are ordered best→worst (`no_problem` -1 … `invalid` -5), so a *higher*
+/// current status than the baseline is an improvement, lower a regression. `DISTINCT ON` picks each
+/// task's most-recent snapshot (the prior run's completion). This join is the cached cost.
+fn compute_live_run_diff(
+  connection: &mut PgConnection,
+  corpus_id: i32,
+  service_id: i32,
+) -> LiveRunDiff {
+  // Invalid (-5) is "unprocessable input", not a quality grade — so an Invalid transition is
+  // counted as `reclassified`, never improved/regressed (it would otherwise read as the worst
+  // regression by raw int order). improved/regressed compare only NON-invalid outcomes.
+  let row: Option<DiffRow> = sql_query(
+    "SELECT \
+       count(*) FILTER (WHERE t.status <> b.status AND t.status <> -5 AND b.status <> -5 AND t.status > b.status)::bigint AS improved, \
+       count(*) FILTER (WHERE t.status <> b.status AND t.status <> -5 AND b.status <> -5 AND t.status < b.status)::bigint AS regressed, \
+       count(*) FILTER (WHERE t.status = b.status)::bigint AS unchanged, \
+       count(*) FILTER (WHERE t.status <> b.status AND (t.status = -5 OR b.status = -5))::bigint AS reclassified \
+     FROM tasks t \
+     JOIN ( \
+       SELECT DISTINCT ON (h.task_id) h.task_id, h.status \
+       FROM historical_tasks h JOIN tasks tt ON tt.id = h.task_id \
+       WHERE tt.corpus_id = $1 AND tt.service_id = $2 \
+       ORDER BY h.task_id, h.saved_at DESC \
+     ) b ON b.task_id = t.id \
+     WHERE t.corpus_id = $1 AND t.service_id = $2 AND t.status < 0",
+  )
+  .bind::<diesel::sql_types::Integer, _>(corpus_id)
+  .bind::<diesel::sql_types::Integer, _>(service_id)
+  .get_result(connection)
+  .optional()
+  .ok()
+  .flatten();
+  match row {
+    Some(r) => LiveRunDiff {
+      improved: r.improved,
+      regressed: r.regressed,
+      unchanged: r.unchanged,
+      reclassified: r.reclassified,
+    },
+    None => LiveRunDiff::default(),
+  }
+}
 
 /// Maximum messages loaded **per severity** for a single document's forensic view. A hostile or
 /// pathological document can carry millions of messages of one severity (observed in production: a

@@ -397,14 +397,26 @@ pub fn save_historical_tasks(
   corpus: &Corpus,
   service: &Service,
 ) -> Result<usize, Error> {
-  //  create batch copy query
-  let insert_query = insert_into(historical_tasks::table)
+  snapshot_tasks(connection, corpus.id, service.id)
+}
+
+/// Freeze the current per-task statuses of a `(corpus, service)` into `historical_tasks` — the
+/// id-keyed core of [`save_historical_tasks`]. Called both by the human "save snapshot" and, on
+/// **run-completion-on-drain**, to capture the just-finished run's outcomes as the **baseline** for
+/// the next run's live run-diff (see `backend::Backend::complete_run_if_drained`). One
+/// `INSERT … SELECT` of scope-size rows; retention/pruning of stale snapshots is a follow-up.
+pub fn snapshot_tasks(
+  connection: &mut PgConnection,
+  corpus_id: i32,
+  service_id: i32,
+) -> Result<usize, Error> {
+  insert_into(historical_tasks::table)
     .values(
       tasks::table
         .select((tasks::id, tasks::status))
-        .filter(tasks::corpus_id.eq(corpus.id))
-        .filter(tasks::service_id.eq(service.id)),
+        .filter(tasks::corpus_id.eq(corpus_id))
+        .filter(tasks::service_id.eq(service_id)),
     )
-    .into_columns((historical_tasks::task_id, historical_tasks::status));
-  insert_query.execute(connection)
+    .into_columns((historical_tasks::task_id, historical_tasks::status))
+    .execute(connection)
 }

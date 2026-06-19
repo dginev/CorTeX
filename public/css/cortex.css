@@ -1607,6 +1607,19 @@ h3 {
 .bar.todo {
   background-color: var(--ink-muted);
 }
+/* Progress (how-far-through) bar — deliberately NEUTRAL + striped so it reads as "progress",
+   not as a severity. Reusing a severity colour (e.g. the green .bar.ok) would clash with the
+   outcome rows below it. Diagonal translucent stripes over the muted ink work in light + dark. */
+.bar.progress {
+  background-color: var(--ink-muted);
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.22) 0,
+    rgba(255, 255, 255, 0.22) 6px,
+    transparent 6px,
+    transparent 12px
+  );
+}
 .report-table tr.report-total > td {
   border-top: 2px solid var(--rule);
   font-weight: 700;

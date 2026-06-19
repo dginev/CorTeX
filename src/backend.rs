@@ -25,6 +25,7 @@ pub(crate) use mark::{
 // per-task changed-tasks drill a third (CLI) surface alongside the agent `/api/runs/<c>/<s>/tasks`
 // and the web screen.
 pub use reports::list_task_diffs;
+pub(crate) use reports::live_run_diff;
 pub(crate) use reports::progress_report;
 pub(crate) use reports::report_uses_rollup;
 // `pub` (not `pub(crate)`): the `cortex` CLI's `diff` subcommand calls it directly, so the run-diff
@@ -318,7 +319,23 @@ impl Backend {
     corpus_id: i32,
     service_id: i32,
   ) -> Result<bool, Error> {
-    crate::models::HistoricalRun::complete_if_drained(corpus_id, service_id, &mut self.connection)
+    let closed = crate::models::HistoricalRun::complete_if_drained(
+      corpus_id,
+      service_id,
+      &mut self.connection,
+    )?;
+    if closed {
+      // The run just closed on drain — its per-task outcomes are settled. Snapshot them into
+      // `historical_tasks` as the BASELINE for the NEXT run's live run-diff: captured once, here,
+      // at the natural completion point (in the finalize thread, off the request path). Best-effort
+      // — a snapshot failure must never undo the (critical) run close, so log and carry on.
+      if let Err(e) = mark::snapshot_tasks(&mut self.connection, corpus_id, service_id) {
+        tracing::warn!(
+          "run-completion-on-drain: baseline snapshot for ({corpus_id}, {service_id}) failed (non-fatal): {e:?}"
+        );
+      }
+    }
+    Ok(closed)
   }
   /// Category-grain report for `(corpus, service, severity)`, read from the `report_summary`
   /// rollup, windowed to `[offset, offset + limit)` (ordered by descending task count).
