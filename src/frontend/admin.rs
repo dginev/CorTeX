@@ -235,6 +235,8 @@ pub struct LiveActivityDto {
   pub recent_fatals: Vec<ActivityMessageDto>,
   /// The latest error messages (most recent first).
   pub recent_errors: Vec<ActivityMessageDto>,
+  /// The latest warning messages (most recent first).
+  pub recent_warnings: Vec<ActivityMessageDto>,
 }
 
 /// A raw recent-message row joined across `log_* → tasks → corpora/services`. Severity is tagged in
@@ -319,6 +321,7 @@ pub fn live_activity(pool: &DbPool, limit: i64) -> LiveActivityDto {
     fleet: Vec::new(),
     recent_fatals: Vec::new(),
     recent_errors: Vec::new(),
+    recent_warnings: Vec::new(),
   };
   if let Ok(mut connection) = pool.get() {
     let active_service = HistoricalRun::recent_all(&mut connection, 1)
@@ -350,6 +353,10 @@ pub fn live_activity(pool: &DbPool, limit: i64) -> LiveActivityDto {
     activity.recent_errors = recent_messages(&mut connection, "log_errors", service_id, limit)
       .into_iter()
       .map(|m| m.into_dto("error"))
+      .collect();
+    activity.recent_warnings = recent_messages(&mut connection, "log_warnings", service_id, limit)
+      .into_iter()
+      .map(|m| m.into_dto("warning"))
       .collect();
   }
   activity

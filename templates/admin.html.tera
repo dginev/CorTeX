@@ -165,19 +165,26 @@
     box.innerHTML = esc(String(fleet.length)) + ' active worker' + (fleet.length === 1 ? '' : 's') +
       ' · ' + group(returned) + ' returned · newest: ' + esc(fleet[0].name);
   }
-  function renderProblems(fatals, errors) {
+  function renderRow(m) {
+    // fatal + error are both problems (status-warn); warning is muted. The severity word disambiguates.
+    var cls = m.severity === 'warning' ? 'muted' : 'status-warn';
+    var tag = '<strong class="' + cls + '">' + esc(m.severity) + '</strong>';
+    var kind = [m.category, m.what].filter(Boolean).map(esc).join(':');
+    return '<div class="run-meta">' + tag + ' ' + esc(shortEntry(m.entry)) +
+      (kind ? ' <span class="muted">' + kind + '</span>' : '') +
+      (m.details ? ' <span class="muted">— ' + esc(m.details) + '</span>' : '') + '</div>';
+  }
+  function renderProblems(fatals, errors, warnings) {
     var box = document.getElementById('activity-problems');
     if (!box) return;
-    var rows = (fatals || []).concat(errors || []);
-    if (!rows.length) { box.innerHTML = '<div class="muted">no recent problems</div>'; return; }
-    box.innerHTML = rows.slice(0, 25).map(function (m) {
-      var cls = m.severity === 'fatal' ? 'status-warn' : 'muted';
-      var tag = '<strong class="' + cls + '">' + esc(m.severity) + '</strong>';
-      var kind = [m.category, m.what].filter(Boolean).map(esc).join(':');
-      return '<div class="run-meta">' + tag + ' ' + esc(shortEntry(m.entry)) +
-        (kind ? ' <span class="muted">' + kind + '</span>' : '') +
-        (m.details ? ' <span class="muted">— ' + esc(m.details) + '</span>' : '') + '</div>';
-    }).join('');
+    // Render each severity as its OWN capped group — fatals first, then errors, then warnings — so a
+    // wall of fatals can't starve the other severities (the earlier concat+slice bug). Newest first
+    // within each group (the backend orders by the BIGSERIAL id).
+    var CAP = 10;
+    var html = (fatals || []).slice(0, CAP).map(renderRow).join('')
+             + (errors || []).slice(0, CAP).map(renderRow).join('')
+             + (warnings || []).slice(0, CAP).map(renderRow).join('');
+    box.innerHTML = html || '<div class="muted">no recent messages</div>';
   }
   async function pollActivity() {
     var resp;
@@ -187,7 +194,7 @@
     var a = await resp.json();
     if (label) label.textContent = '';
     renderFleet(a.fleet);
-    renderProblems(a.recent_fatals, a.recent_errors);
+    renderProblems(a.recent_fatals, a.recent_errors, a.recent_warnings);
   }
   pollActivity();
   setInterval(pollActivity, PERIOD);
