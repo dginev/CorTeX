@@ -7,9 +7,9 @@
 
 //! A general purpose processing framework for corpora of scientific documents
 
-#![doc(html_root_url = "https://dginev.github.io/rust-cortex/")]
+#![doc(html_root_url = "https://dginev.github.io/CorTeX/")]
 #![doc(
-  html_logo_url = "https://raw.githubusercontent.com/dginev/rust-cortex/master/public/img/logo.jpg"
+  html_logo_url = "https://raw.githubusercontent.com/dginev/CorTeX/master/public/img/logo-light.png"
 )]
 #![deny(missing_docs)]
 #![recursion_limit = "256"]

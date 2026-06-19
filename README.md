@@ -1,5 +1,7 @@
-![CorTeX Framework](./public/img/logo.jpg) Framework
-======
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./public/img/logo-dark.png">
+  <img alt="CorTeX Framework" src="./public/img/logo-light.png" width="360">
+</picture>
 
 **A general purpose processing framework for corpora of scientific documents**
 
