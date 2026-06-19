@@ -331,7 +331,10 @@ impl Backend {
       // — a snapshot failure must never undo the (critical) run close, so log and carry on.
       if let Err(e) = mark::snapshot_tasks(&mut self.connection, corpus_id, service_id) {
         tracing::warn!(
-          "run-completion-on-drain: baseline snapshot for ({corpus_id}, {service_id}) failed (non-fatal): {e:?}"
+          corpus_id,
+          service_id,
+          error = ?e,
+          "run-completion-on-drain: baseline snapshot failed (non-fatal)"
         );
       }
     }

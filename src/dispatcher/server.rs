@@ -257,7 +257,7 @@ pub fn mark_done_batch(backend: &mut Backend, reports: &[TaskReport]) -> Result<
   let mut success = false;
   match backend.mark_done(reports) {
     Err(e) => {
-      warn!("mark_done attempt failed: {e:?}");
+      warn!(error = ?e, batch = reports.len(), "mark_done attempt failed");
       // DB persist failed, retry
       let mut retries = 0;
       while retries < 3 {
@@ -268,7 +268,7 @@ pub fn mark_done_batch(backend: &mut Backend, reports: &[TaskReport]) -> Result<
             success = true;
             break;
           },
-          Err(e) => warn!("mark_done retry failed: {e:?}"),
+          Err(e) => warn!(error = ?e, attempt = retries, "mark_done retry failed"),
         };
       }
     },
@@ -283,8 +283,9 @@ pub fn mark_done_batch(backend: &mut Backend, reports: &[TaskReport]) -> Result<
   }
   let request_duration = (chrono::Utc::now() - request_time).num_milliseconds();
   debug!(
-    "finalize: reporting {} tasks to DB took {request_duration}ms.",
-    reports.len()
+    count = reports.len(),
+    took_ms = request_duration,
+    "mark_done: persisted batch to DB"
   );
   Ok(())
 }

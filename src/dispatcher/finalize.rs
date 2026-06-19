@@ -172,7 +172,10 @@ fn complete_drained_runs(backend: &mut backend::Backend, touched: &HashSet<(i32,
       Ok(true) => debug!(corpus_id, service_id, "finalize: closed drained run"),
       Ok(false) => {},
       Err(e) => warn!(
-        "finalize: run-completion check ({corpus_id}, {service_id}) failed (non-fatal): {e:?}"
+        corpus_id,
+        service_id,
+        error = ?e,
+        "finalize: run-completion check failed (non-fatal)"
       ),
     }
   }
@@ -186,7 +189,10 @@ fn invalidate_touched(backend: &mut backend::Backend, touched: &mut HashSet<(i32
   for (corpus_id, service_id) in touched.drain() {
     if let Err(e) = backend.invalidate_report_cache(corpus_id, service_id) {
       warn!(
-        "finalize: report-cache invalidate ({corpus_id}, {service_id}) failed (non-fatal): {e:?}"
+        corpus_id,
+        service_id,
+        error = ?e,
+        "finalize: report-cache invalidate failed (non-fatal)"
       );
     }
   }

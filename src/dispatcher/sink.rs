@@ -79,8 +79,10 @@ fn run_writer(rx: &Receiver<WriteCommand>, done_tx: &SyncSender<TaskReport>) {
           Ok(f) => Some(f),
           Err(e) => {
             warn!(
-              "sink writer: File::create({recv_path:?}) failed ({e:?}); task {} left Queued for the reaper",
-              task.id
+              task_id = task.id,
+              path = ?recv_path,
+              error = ?e,
+              "sink writer: File::create failed; task left Queued for the reaper"
             );
             None
           },
@@ -88,11 +90,15 @@ fn run_writer(rx: &Receiver<WriteCommand>, done_tx: &SyncSender<TaskReport>) {
         current = Some((*task, recv_path, file));
       },
       WriteCommand::Chunk(bytes) => {
-        if let Some((_, _, slot)) = current.as_mut()
+        if let Some((task, _, slot)) = current.as_mut()
           && let Some(file) = slot
           && let Err(e) = file.write_all(&bytes)
         {
-          warn!("sink writer: write to result file failed ({e:?}); abandoning result");
+          warn!(
+            task_id = task.id,
+            error = ?e,
+            "sink writer: write to result file failed; abandoning result"
+          );
           // Stop writing; the (now-partial) file makes the result untrustworthy, so Commit
           // skips the report and the task is recovered by the reaper.
           *slot = None;
@@ -109,8 +115,8 @@ fn run_writer(rx: &Receiver<WriteCommand>, done_tx: &SyncSender<TaskReport>) {
             },
             None => {
               warn!(
-                "sink writer: no result file for task {} (create/write failed); skipping report (reaper will recover)",
-                task.id
+                task_id = task.id,
+                "sink writer: no result file (create/write failed); skipping report (reaper will recover)"
               );
             },
           }
@@ -122,7 +128,8 @@ fn run_writer(rx: &Receiver<WriteCommand>, done_tx: &SyncSender<TaskReport>) {
           std::fs::remove_file(&recv_path).ok();
           let taskid = task.id;
           warn!(
-            "sink: result for task {taskid} exceeded the {max_result_bytes}-byte cap — rejected (Invalid)"
+            task_id = taskid,
+            max_result_bytes, "sink: result exceeded byte cap — rejected (Invalid)"
           );
           let report = TaskReport {
             task,
@@ -262,17 +269,22 @@ impl Sink {
             Ok(_) => break p,
             Err(e) if attempt < BIND_ATTEMPTS => {
               warn!(
-                "sink: bind {address} attempt {attempt}/{BIND_ATTEMPTS} failed ({e}); \
-                 retrying in 500ms (port handover from a restarting dispatcher?)"
+                address = %address,
+                attempt,
+                max_attempts = BIND_ATTEMPTS,
+                error = %e,
+                "sink: bind failed; retrying in 500ms (port handover from a restarting dispatcher?)"
               );
               tokio::time::sleep(Duration::from_millis(500)).await;
               attempt += 1;
             },
             Err(e) => {
-              return Err(io::Error::other(format!(
-                "sink: zeromq bind {address} failed after {BIND_ATTEMPTS} attempts: {e}"
-              ))
-              .into());
+              return Err(
+                io::Error::other(format!(
+                  "sink: zeromq bind {address} failed after {BIND_ATTEMPTS} attempts: {e}"
+                ))
+                .into(),
+              );
             },
           }
         }
@@ -327,7 +339,7 @@ impl Sink {
           Err(e) => {
             return Err(Box::<dyn Error>::from(io::Error::other(format!(
               "sink: zeromq recv failed: {e}"
-            ))))
+            ))));
           },
         };
 
@@ -335,7 +347,11 @@ impl Sink {
           Ok(h) => h,
           Err(reason) => {
             if let Some(n) = discard_log.record() {
-              warn!("sink: discarded {n} malformed reply(ies) [latest: {reason}] (rate-limited)");
+              warn!(
+                discarded = n,
+                reason = %reason,
+                "sink: discarded malformed reply(ies) (rate-limited)"
+              );
             }
             continue;
           },
@@ -345,9 +361,11 @@ impl Sink {
         let taskid = header.taskid;
         let request_time = chrono::Utc::now();
         trace!(
-          "sink {sink_job_count}: incoming result for {:?}, worker {:?}, taskid: {taskid}",
-          header.service,
-          header.identity
+          job = sink_job_count,
+          service = ?header.service,
+          worker = ?header.identity,
+          task_id = taskid,
+          "sink: incoming result"
         );
 
         if let Some(task_progress) = progress_queue_arc.remove(taskid) {
@@ -361,8 +379,8 @@ impl Sink {
             Some(service) => {
               if service.id == task.service_id {
                 if service.id == 1 {
-                  // No payload needed for init — its (empty) data frames are ignored; report inline,
-                  // no disk write, so no writer involved.
+                  // No payload needed for init — its (empty) data frames are ignored; report
+                  // inline, no disk write, so no writer involved.
                   server::send_done(
                     done_tx,
                     TaskReport {
@@ -380,9 +398,10 @@ impl Sink {
                     helpers::result_archive_path(&task.entry, &service.name, sandbox_id);
 
                   // Hard size cap (disk protection): sum the data frames; an over-cap result is
-                  // rejected (Invalid) without being written. The whole multipart message is already
-                  // received (ZMQ delivers it atomically — true of libzmq too), so this is the same
-                  // disk-protection guarantee as the streamed check, just computed up front.
+                  // rejected (Invalid) without being written. The whole multipart message is
+                  // already received (ZMQ delivers it atomically — true of libzmq
+                  // too), so this is the same disk-protection guarantee as the
+                  // streamed check, just computed up front.
                   let data_bytes: usize = msg.iter().skip(3).map(|f| f.len()).sum();
                   let oversized = data_bytes > max_result_bytes;
 
@@ -432,8 +451,9 @@ impl Sink {
                     },
                     None => {
                       warn!(
-                        "sink: could not derive a result path for task entry {:?}; leaving Queued",
-                        task.entry
+                        task_id = task.id,
+                        entry = ?task.entry,
+                        "sink: could not derive a result path; leaving Queued"
                       );
                     },
                   }
@@ -444,8 +464,12 @@ impl Sink {
                   .received(header.identity.clone(), service.id, taskid);
               } else if let Some(n) = discard_log.record() {
                 warn!(
-                  "sink: discarded {n} reply(ies) [latest: service-id mismatch — service {:?} (id {}), task is {}, task {taskid}] (rate-limited)",
-                  header.service, service.id, task.service_id
+                  discarded = n,
+                  service = ?header.service,
+                  service_id = service.id,
+                  task_service_id = task.service_id,
+                  task_id = taskid,
+                  "sink: discarded reply(ies) [service-id mismatch] (rate-limited)"
                 );
               }
             },
@@ -453,14 +477,19 @@ impl Sink {
         } else if let Some(n) = discard_log.record() {
           // No such in-flight task — drop the message (already fully received; nothing to drain).
           warn!(
-            "sink: discarded {n} reply(ies) for unknown task id(s) [latest: {taskid}] (rate-limited)"
+            discarded = n,
+            task_id = taskid,
+            "sink: discarded reply(ies) for unknown task id(s) (rate-limited)"
           );
         }
 
         let request_duration = (chrono::Utc::now() - request_time).num_milliseconds();
         let total_incoming: usize = msg.iter().skip(3).map(|f| f.len()).sum();
         trace!(
-          "sink {sink_job_count}: received {total_incoming} bytes, recv took {request_duration}ms."
+          job = sink_job_count,
+          bytes = total_incoming,
+          recv_ms = request_duration,
+          "sink: received result"
         );
 
         // Bounded run: terminate once the ventilator has signalled dispatching is done AND every

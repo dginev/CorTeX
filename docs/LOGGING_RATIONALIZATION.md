@@ -81,25 +81,37 @@ initialized a subscriber**, so `RUST_LOG` was dead in the CLI and there was no v
 - `bin/cortex.rs`: add global `-v/--verbose` (counted) and `-q/--quiet` flags to `Cli`, and call
   `init_cli_tracing(verbose, quiet)` at the top of `main()`.
 
-### Phase 2 — structured correlation fields (the keystone; Arm 8a) — ⛏️ ROLLING OUT
+### Phase 2 — structured correlation fields (the keystone; Arm 8a) — ⛏️ CODEBASE-WIDE SWEEP
 Arm 8's explicit requirement: *"consistent run/task ids in every log line so an agent can
-correlate."* Most dispatcher events are plain interpolated strings; a few already carry fields
-(`ventilator.rs:223` — `in_flight = …, requeued = …, dead_lettered = …`), which is the template.
+correlate."* Owner directive (2026-06-19): **be consistent in the entire codebase.** `jobs.rs`
+(`kind`/`actor`/`job`/`elapsed_ms`/`error`), `finalize.rs:110,172` (`corpus_id`/`service_id`), and
+`ventilator.rs:223` were already in the target style — they define it.
 
-**Convention:** default-visible (`info`/`warn`/`error`) per-task and lifecycle events carry, where in
-scope, the canonical fields `task_id`, `service` (`%service_name`), `corpus`, `worker`
-(`%identity_str`) — recorded as `tracing` fields, not interpolated into the message. `trace`/`debug`
-narration is converted opportunistically (lower priority — filtered out by default).
+#### The canonical convention (the codebase-wide standard)
 
-Rollout order (one file at a time, each verified — the dispatcher's race-prone code has heavy
-D-4/D-5/D-6 history, so no sweeping single-pass rewrite):
-1. **`ventilator.rs`** (hottest, most-read) — the reference implementation. *(this pass)*
-2. `sink.rs` — result-commit + termination + writer-death events.
-3. `manager.rs` — thread-lifecycle errors already carry intent; add run context.
-4. `finalize.rs` — batch-flush errors.
+A `tracing` event records **identifiers and quantities as structured fields**, never interpolated
+into the message string; the message is a short static `component: description`.
 
-Fields-on-events (not per-dispatch spans) is the chosen mechanism: it matches the existing local
-convention and avoids per-dispatch span overhead on the hot path (the D-11 lesson).
+- Move every interpolated variable into a field — preserve all information, drop nothing.
+- Field syntax: bare `name` when it equals the variable; `name = expr`; `name = %expr` for `Display`
+  (strings, uuids, errors-with-Display); `name = ?expr` for `Debug` (paths, structs, `Option`, enums).
+  A `{x}` → `%x`; a `{x:?}` → `?x`.
+- Canonical field names (use when in scope): `actor`, `job` (uuid), `corpus`/`corpus_id`,
+  `service`/`service_id`, `task_id`, `entry`, `worker`, `error`, plus event-specific quantities
+  (`count`, `attempt`, `bytes`, `elapsed_ms`/`took_ms`/`recv_ms`, `discarded`, …).
+- Keep the level unchanged. Leave already-structured events, and events with no variables, alone.
+- Fields-on-events, **not** per-dispatch spans — matches the existing convention and avoids per-event
+  span overhead on the hot path (the D-11 lesson).
+
+#### Status
+- ✅ **Dispatcher + backend done:** `ventilator.rs`, `sink.rs`, `finalize.rs`, `server.rs`,
+  `backend.rs`. (`manager.rs`'s events are thread-lifecycle messages with no identifiers in scope —
+  already clean static strings, nothing to field-ify.)
+- ⛏️ **Frontend (admin actions):** `concerns.rs`, `webauthn.rs`, `corpora.rs`, `management.rs`,
+  `audit.rs`, `retention.rs`, `reports.rs` — converting the interpolating events to the convention
+  (the already-structured ones in `concerns.rs` are left as-is).
+- Done one file at a time, verified centrally (build + `clippy --all-targets` + `fmt --check`); the
+  dispatcher's race-prone code (D-4/D-5/D-6 history) gets no sweeping single-pass rewrite.
 
 ### Phase 3 — per-consumer projections — DEFERRED (with Arm 8b)
 - **CLI:** `--log-format=auto|text|json` (needs the `tracing-subscriber/json` feature — not yet
