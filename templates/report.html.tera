@@ -37,7 +37,7 @@
       {% endif %}
     </div>
     <table id="corpus-report" class="table report-table">
-      <caption class="report-caption">Outcomes <span class="report-sep">·</span> share of {{ global.rerun_completed | group_thousands }} processed</caption>
+      <caption class="report-caption">Results <span class="report-sep">·</span> share of {{ global.rerun_completed | group_thousands }} processed</caption>
       <thead>
         <tr>
           <th scope="col" class="left">Status</th>
