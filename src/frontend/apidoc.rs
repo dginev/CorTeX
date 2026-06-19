@@ -20,7 +20,7 @@ use rocket::http::ContentType;
 use rocket::{Build, Rocket, State};
 use rocket_okapi::openapi_get_routes_spec;
 use rocket_okapi::rapidoc::{
-  GeneralConfig, NavConfig, NavItemSpacing, RapiDocConfig, make_rapidoc,
+  GeneralConfig, NavConfig, NavItemSpacing, RapiDocConfig, SlotsConfig, make_rapidoc,
 };
 use rocket_okapi::settings::{OpenApiSettings, UrlObject};
 
@@ -119,6 +119,20 @@ hierarchy (paginated).\n\
 \n\
 Conversion history (`/api/runs…`) is **append-only over the API** — never deletable or mutable via \
 `/api` (pruning is a human-admin action). See `MANUAL.md` for the full operator and agent guide.";
+
+/// A tiny script injected into the RapiDoc page's default slot so the docs follow the viewer's
+/// OS/browser light/dark preference — RapiDoc's `theme` attribute is otherwise a fixed Light/Dark.
+/// It sets `theme` on the `#rapidoc` element on load and whenever `prefers-color-scheme` flips. The
+/// script renders invisibly (no output), and the static gh-pages page
+/// (`scripts/build-docs-site.sh`) carries the same logic, so both surfaces behave identically.
+const RAPIDOC_THEME_SCRIPT: &str = "<script>\
+(function(){\
+var mq=window.matchMedia('(prefers-color-scheme: dark)');\
+function apply(){var rd=document.getElementById('rapidoc');\
+if(rd)rd.setAttribute('theme',mq.matches?'dark':'light');}\
+apply();mq.addEventListener('change',apply);window.addEventListener('DOMContentLoaded',apply);\
+})();\
+</script>";
 
 /// Builds the agent-API routes **and** the OpenAPI 3 spec from the single `#[openapi]` handler
 /// list, then applies the nav summaries + `info` metadata. The one source of truth shared by
@@ -223,6 +237,12 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
         nav: NavConfig {
           use_path_in_nav_bar: true,
           nav_item_spacing: NavItemSpacing::Compact,
+          ..Default::default()
+        },
+        // Follow the viewer's OS/browser light/dark preference (the bundled template's `theme` is
+        // otherwise fixed). The script lives in the default slot, which RapiDoc renders invisibly.
+        slots: SlotsConfig {
+          default: vec![RAPIDOC_THEME_SCRIPT.to_string()],
           ..Default::default()
         },
         ..Default::default()

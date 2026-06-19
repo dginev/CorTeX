@@ -70,9 +70,9 @@ cat > "$OUT/api/index.html" <<HTML
 </head>
 <body>
   <rapi-doc
+    id="rapidoc"
     spec-url="openapi.json"
     render-style="read"
-    theme="light"
     show-header="false"
     allow-try="false"
     allow-authentication="false"
@@ -87,6 +87,19 @@ cat > "$OUT/api/index.html" <<HTML
       <a href="openapi.json">openapi.json</a>
     </div>
   </rapi-doc>
+  <script>
+    // Follow the viewer's OS/browser light/dark preference (mirrors the live /api/docs theme script).
+    (function () {
+      var mq = window.matchMedia('(prefers-color-scheme: dark)');
+      function apply() {
+        var rd = document.getElementById('rapidoc');
+        if (rd) rd.setAttribute('theme', mq.matches ? 'dark' : 'light');
+      }
+      apply();
+      mq.addEventListener('change', apply);
+      window.addEventListener('DOMContentLoaded', apply);
+    })();
+  </script>
 </body>
 </html>
 HTML
