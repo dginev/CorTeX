@@ -15,7 +15,7 @@
        always: the running quality mid-run, the final breakdown when done. Progress is shown
        apart so "awaiting"/"in progress" are not peers of the quality outcomes. #}
     <div class="report-progress">
-      <span class="bar-track" style="display:block;width:100%"><span class="bar ok" style="--bar-width: {{ global.processed_percent | default(value='0') }}%"></span></span>
+      <span class="bar-track" style="display:block;width:100%"><span class="bar progress" style="--bar-width: {{ global.processed_percent | default(value='0') }}%"></span></span>
       <p class="report-progress-summary">
         <strong>{{ global.rerun_completed | group_thousands }}</strong> of {{ global.total | group_thousands }} processed
         <span class="report-sep">·</span> {{ global.processed_percent | float(default=0) | round }}%
@@ -23,6 +23,18 @@
         {% if global.queued and global.queued != "0" %}<span class="report-sep">·</span> <a href="/workers/{{global.service_name_uri}}">{{ global.queued | group_thousands }} in&nbsp;progress</a>{% endif %}
         {% if global.blocked and global.blocked != "0" %}<span class="report-sep">·</span> {{ global.blocked | group_thousands }} blocked{% endif %}
       </p>
+      {# Live run-diff: of the processed-so-far tasks, how they moved vs the previous run's baseline
+         snapshot — an early divergence read. Shown only when a baseline exists and something has
+         completed (handler gates on compared > 0). Read-through cached, so it adds no per-load DB
+         cost. #}
+      {% if global.livediff_regressed %}
+      <p class="report-progress-summary report-livediff">
+        vs last run
+        <span class="report-sep">·</span> <span class="count-fatal">&minus;{{ global.livediff_regressed | group_thousands }} regressed</span>
+        <span class="report-sep">·</span> <span class="count-ok">+{{ global.livediff_improved | group_thousands }} improved</span>
+        <span class="report-sep">·</span> {{ global.livediff_unchanged | group_thousands }} unchanged
+      </p>
+      {% endif %}
     </div>
     <table id="corpus-report" class="table report-table">
       <caption class="report-caption">Outcomes <span class="report-sep">·</span> share of {{ global.rerun_completed | group_thousands }} processed</caption>

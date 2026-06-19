@@ -12,8 +12,8 @@ use std::str;
 use std::sync::Arc;
 
 use crate::backend::{
-  DbPool, PooledConn, RerunOptions, mark_all_blocked, mark_blocked, mark_rerun, progress_report,
-  resume_all_blocked, resume_blocked, save_historical_tasks,
+  DbPool, PooledConn, RerunOptions, live_run_diff, mark_all_blocked, mark_blocked, mark_rerun,
+  progress_report, resume_all_blocked, resume_blocked, save_historical_tasks,
 };
 use crate::frontend::actor::AdminSession;
 use crate::frontend::helpers::*;
@@ -205,6 +205,16 @@ pub fn serve_report(
             "0.00".to_string()
           },
         );
+        // Live run-diff: of the tasks completed so far, how many improved / regressed / stayed the
+        // same vs the previous run's baseline snapshot. Read-through cached (the join is the only
+        // expensive bit — the headline counts above stay live), shown only once there's a baseline
+        // and something completed to compare.
+        let ld = live_run_diff(connection, corpus.id, service.id);
+        if ld.compared() > 0 {
+          global.insert("livediff_improved".to_string(), ld.improved.to_string());
+          global.insert("livediff_regressed".to_string(), ld.regressed.to_string());
+          global.insert("livediff_unchanged".to_string(), ld.unchanged.to_string());
+        }
         // Record the report into the globals
         for (key, val) in report {
           global.insert(key.clone(), val.to_string());
