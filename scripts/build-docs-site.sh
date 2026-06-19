@@ -76,6 +76,8 @@ cat > "$OUT/api/index.html" <<HTML
     show-header="false"
     allow-try="false"
     allow-authentication="false"
+    use-path-in-nav-bar="true"
+    nav-item-spacing="compact"
     schema-style="table"
     primary-color="#2a5d84"
     regular-font="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">

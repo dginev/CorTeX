@@ -19,7 +19,9 @@
 use rocket::http::ContentType;
 use rocket::{Build, Rocket, State};
 use rocket_okapi::openapi_get_routes_spec;
-use rocket_okapi::rapidoc::{GeneralConfig, RapiDocConfig, make_rapidoc};
+use rocket_okapi::rapidoc::{
+  GeneralConfig, NavConfig, NavItemSpacing, RapiDocConfig, make_rapidoc,
+};
 use rocket_okapi::settings::{OpenApiSettings, UrlObject};
 
 // Each documented handler is imported alongside its `#[openapi]`-generated
@@ -215,14 +217,26 @@ pub fn mount(rocket: Rocket<Build>) -> Rocket<Build> {
           spec_urls: vec![UrlObject::new("CorTeX API", "/api/openapi.json")],
           ..Default::default()
         },
+        // The left nav is a route dictionary (`METHOD /path`), not prose: predictable to scan,
+        // one line per endpoint. The descriptive summary + full description stay in the detail
+        // panel. Compact spacing keeps the (40-route) list dense.
+        nav: NavConfig {
+          use_path_in_nav_bar: true,
+          nav_item_spacing: NavItemSpacing::Compact,
+          ..Default::default()
+        },
         ..Default::default()
       }),
     )
 }
 
-/// Give every operation in `spec` a short one-line `summary` (for the RapiDoc left-nav) derived
-/// from its long `description`, leaving the description intact for the detail panel. Idempotent —
-/// only fills an empty summary.
+/// Give every operation in `spec` a one-line `summary` derived from its long `description`,
+/// leaving the description intact for the detail panel. Idempotent — only fills an empty summary.
+///
+/// The summary is the operation's heading in the RapiDoc detail panel and the `summary` field in
+/// the spec (useful to OpenAPI tooling); the left **nav** is path-based (`use_path_in_nav_bar`), so
+/// it no longer depends on this text being short — hence the generous length guard in
+/// [`short_summary`] rather than the old hard nav-width cap.
 fn add_nav_summaries(spec: &mut rocket_okapi::okapi::openapi3::OpenApi) {
   for path_item in spec.paths.values_mut() {
     for op in [
@@ -244,9 +258,11 @@ fn add_nav_summaries(spec: &mut rocket_okapi::okapi::openapi3::OpenApi) {
   }
 }
 
-/// A terse nav label from a long description: drops a leading `` `METHOD /path` `` code-span (the
-/// nav already shows the method + path) and markdown emphasis, keeps the first sentence, and caps
-/// the length so the RapiDoc left-nav stays readable.
+/// A one-line summary from a long description: drops a leading `` `METHOD /path` `` code-span (the
+/// path is already shown in the nav and the detail-panel header) and markdown emphasis, then keeps
+/// the lead clause up to the first clause boundary (`. ; : —`). That yields a terse, complete
+/// heading rather than a run-on; a generous length guard only ellipsizes a pathologically long lead
+/// clause that has no early boundary.
 fn short_summary(description: &str) -> String {
   let mut text = description.trim();
   // Strip a leading backtick code span (e.g. "`GET /api/status`") + a following em-dash/colon/dash.
@@ -264,9 +280,11 @@ fn short_summary(description: &str) -> String {
       text = rest;
     }
   }
-  // First sentence / line, minus trailing punctuation and markdown emphasis.
+  // Lead clause: stop at the first sentence/clause boundary so a packed first sentence becomes a
+  // terse heading (the full text stays in the description below). Trailing punctuation + markdown
+  // emphasis are stripped.
   let first = text
-    .split(['.', '\n'])
+    .split(['.', ';', ':', '—', '\n'])
     .next()
     .unwrap_or(text)
     .trim()
@@ -276,7 +294,9 @@ fn short_summary(description: &str) -> String {
     .filter(|c| !matches!(c, '`' | '*' | '_'))
     .collect();
   let cleaned = cleaned.trim();
-  const CAP: usize = 64;
+  // Generous guard only: the path-based nav means this no longer has to fit a narrow nav column, so
+  // a normal first sentence passes through whole; only a runaway one is ellipsized.
+  const CAP: usize = 100;
   if cleaned.chars().count() > CAP {
     let truncated: String = cleaned.chars().take(CAP - 1).collect();
     format!("{}…", truncated.trim_end())
@@ -290,8 +310,9 @@ mod summary_tests {
   use super::short_summary;
 
   #[test]
-  fn derives_terse_nav_labels() {
-    // A leading "`GET /path` — …" code span is dropped (the nav already shows the path).
+  fn derives_terse_summaries() {
+    // A leading "`GET /path` — …" code span is dropped (the nav + panel header already show the
+    // path).
     assert_eq!(
       short_summary("`GET /api/status` — the agent twin of the dashboard feed. More detail here."),
       "the agent twin of the dashboard feed"
@@ -301,11 +322,25 @@ mod summary_tests {
       short_summary("Lists all registered corpora."),
       "Lists all registered corpora"
     );
-    // A long first sentence is capped with an ellipsis.
-    let long = "Lists every single registered corpus across the whole deployment with all of its many associated services";
+    // The summary stops at the first clause boundary (`. ; : —`), so a packed first sentence
+    // becomes a terse lead clause instead of a run-on heading (the full text stays in the
+    // description).
+    assert_eq!(
+      short_summary("Registers a corpus and starts an in-process import job; returns 202 Accepted"),
+      "Registers a corpus and starts an in-process import job"
+    );
+    assert_eq!(
+      short_summary(
+        "Inspects a single corpus: its activated services and per-service status counts"
+      ),
+      "Inspects a single corpus"
+    );
+    // A pathologically long lead clause with no early boundary (>100 chars) is ellipsized as a
+    // guard.
+    let long = "Lists every single registered corpus across the whole deployment together with all of its many associated services and their workers";
     let summary = short_summary(long);
     assert!(
-      summary.chars().count() <= 64 && summary.ends_with('…'),
+      summary.chars().count() <= 100 && summary.ends_with('…'),
       "got {summary:?}"
     );
   }
