@@ -60,41 +60,23 @@
   </div>
 
   <style>
-    #live-activity-card details { margin: .25rem 0; }
-    #live-activity-card summary { cursor: pointer; font-weight: 600; user-select: none; list-style: none; }
-    #live-activity-card summary::-webkit-details-marker { display: none; }
-    #live-activity-card summary .muted { font-weight: 400; }
-    /* Disclosure caret: points right when collapsed, rotates down (90°) when the section is open. */
-    #live-activity-card .acc-caret { display: inline-block; width: 1em; transition: transform .15s ease; }
-    #live-activity-card details[open] > summary .acc-caret { transform: rotate(90deg); }
-    /* The expanded content is its own wider panel (~85vw), centered on the viewport via the
-       margin-based full-bleed — correct for the symmetric dashboard column (the earlier
-       transform/left version double-counted the column offset and flung the content off to the
-       side). The card + group headings stay at normal dashboard width for continuity; the bordered
-       box makes each expanded severity read as a distinct panel. */
-    #live-activity-card .activity-list { width: 85vw; margin-left: calc(50% - 42.5vw);
-      box-sizing: border-box; margin-top: .35rem; padding: .5rem .75rem; border: 1px solid #d7dee6;
-      border-radius: 6px; background: rgba(0, 0, 0, .015); }
-    /* Hanging indent: when a long message wraps, the continuation lines align under the message text,
-       not back at the severity tag. Monospace + 0.85em signals machine-generated log output. */
-    .activity-row { padding-left: 2.4em; text-indent: -2.4em; line-height: 1.4; margin: .1rem 0;
+    /* The WHOLE card breaks out to ~85vw (margin-based full-bleed, centered on the symmetric
+       dashboard column) so the title, fleet line and stream are one cohesive wide panel — rather than
+       a narrow header with a detached wide text block under it. */
+    #live-activity-card { width: 85vw; margin-left: calc(50% - 42.5vw); box-sizing: border-box; }
+    /* The stream is a bounded, scrolling region inside the card — a contained live log tail, set off
+       from the header by a hairline rule. */
+    #live-activity-card .activity-list { margin-top: .5rem; padding-top: .5rem; max-height: 60vh;
+      overflow-y: auto; border-top: 1px solid #d7dee6; }
+    /* Hanging indent (~past the "HH:MM:SS severity" prefix): a wrapped long message's continuation
+       lines align under the message text. Monospace + 0.85em signals machine-generated log output. */
+    .activity-row { padding-left: 5.2em; text-indent: -5.2em; line-height: 1.4; margin: .1rem 0;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85em; }
   </style>
   <div class="admin-card wide" id="live-activity-card">
     <div class="muted">Latest dispatcher activity <span class="live-dot" id="activity-dot"></span> <span class="muted" id="activity-label">— polling…</span></div>
     <div id="activity-fleet" class="muted run-meta" style="margin:.35rem 0">fleet idle</div>
-    <details id="acc-fatal" open>
-      <summary><i class="fa fa-caret-right acc-caret"></i> Fatals <span class="muted" id="count-fatal">0</span></summary>
-      <div id="list-fatal" class="activity-list"></div>
-    </details>
-    <details id="acc-error">
-      <summary><i class="fa fa-caret-right acc-caret"></i> Errors <span class="muted" id="count-error">0</span></summary>
-      <div id="list-error" class="activity-list"></div>
-    </details>
-    <details id="acc-warning">
-      <summary><i class="fa fa-caret-right acc-caret"></i> Warnings <span class="muted" id="count-warning">0</span></summary>
-      <div id="list-warning" class="activity-list"></div>
-    </details>
+    <div id="activity-stream" class="activity-list"><div class="muted">no recent messages</div></div>
   </div>
 
   <hr>
@@ -200,29 +182,27 @@
     box.innerHTML = esc(String(fleet.length)) + ' active worker' + (fleet.length === 1 ? '' : 's') +
       ' · ' + group(returned) + ' returned · newest: ' + esc(fleet[0].name);
   }
+  // HH:MM:SS from an ISO "YYYY-MM-DDTHH:MM:SSZ" (recorded_at); '' when absent (pre-migration row).
+  function hms(when) { return (when && when.length >= 19) ? when.slice(11, 19) : ''; }
   function renderRow(m) {
-    // fatal + error are both problems (status-warn); warning is muted. The severity word disambiguates.
+    // fatal + error are problems (status-warn); warning is muted. The severity word disambiguates.
     var cls = m.severity === 'warning' ? 'muted' : 'status-warn';
+    var t = hms(m.when);
+    var ts = t ? '<span class="muted">' + esc(t) + '</span> ' : '';
     var tag = '<strong class="' + cls + '">' + esc(m.severity) + '</strong>';
     var kind = [m.category, m.what].filter(Boolean).map(esc).join(':');
-    return '<div class="activity-row">' + tag + ' ' + esc(shortEntry(m.entry)) +
+    return '<div class="activity-row">' + ts + tag + ' ' + esc(shortEntry(m.entry)) +
       (kind ? ' <span class="muted">' + kind + '</span>' : '') +
       (m.details ? ' <span class="muted">— ' + esc(m.details) + '</span>' : '') + '</div>';
   }
-  // Fill one accordion section's list + count. Updates the inner content only (not the <details>
-  // element), so the user's expand/collapse state survives each 4s poll. Each severity is capped at
-  // 33 rows (~100 total across the three), newest first (the backend orders by the BIGSERIAL id).
-  function fillSection(listId, countId, rows) {
-    var list = document.getElementById(listId), cnt = document.getElementById(countId);
-    if (!list) return;
-    var shown = (rows || []).slice(0, 33);
-    list.innerHTML = shown.length ? shown.map(renderRow).join('') : '<div class="muted">none</div>';
-    if (cnt) cnt.textContent = (rows || []).length;
-  }
-  function renderProblems(fatals, errors, warnings) {
-    fillSection('list-fatal', 'count-fatal', fatals);
-    fillSection('list-error', 'count-error', errors);
-    fillSection('list-warning', 'count-warning', warnings);
+  // Unified stream: all severities intermeshed, newest-first (the backend sorts by recorded_at), so
+  // each pulse refreshes one streaming log tail rather than three separate lists.
+  function renderStream(rows) {
+    var box = document.getElementById('activity-stream');
+    if (!box) return;
+    box.innerHTML = (rows && rows.length)
+      ? rows.map(renderRow).join('')
+      : '<div class="muted">no recent messages</div>';
   }
   async function pollActivity() {
     var resp;
@@ -233,7 +213,7 @@
     if (label) label.textContent = '';
     if (dot) dot.classList.remove('stale');
     renderFleet(a.fleet);
-    renderProblems(a.recent_fatals, a.recent_errors, a.recent_warnings);
+    renderStream(a.recent);
     beat();
   }
   pollActivity();

@@ -202,12 +202,12 @@ pub struct FleetWorkerDto {
   pub time_last_return: Option<String>,
 }
 
-/// One recent conversion problem (a fatal or error message) for the [`LiveActivityDto`] feed — read
+/// One recent conversion message (fatal/error/warning) for the [`LiveActivityDto`] stream — read
 /// from the `log_*` rows the dispatcher's finalize thread already persists, joined to the task's
 /// entry/corpus/service. The live signal of a run's health.
 #[derive(Serialize, JsonSchema)]
 pub struct ActivityMessageDto {
-  /// `"fatal"` or `"error"`.
+  /// `"fatal"`, `"error"`, or `"warning"`.
   pub severity: String,
   /// The corpus the converting task belongs to.
   pub corpus: String,
@@ -221,6 +221,9 @@ pub struct ActivityMessageDto {
   pub what: Option<String>,
   /// The message detail, truncated for the feed.
   pub details: Option<String>,
+  /// When the message was recorded (RFC 3339 UTC); `None` for rows written before the
+  /// `recorded_at` column existed (they sort last in the stream).
+  pub when: Option<String>,
 }
 
 /// The admin **live activity** feed: the actively-converting fleet plus the most recent conversion
@@ -231,18 +234,19 @@ pub struct ActivityMessageDto {
 pub struct LiveActivityDto {
   /// Recently-active workers, newest dispatch first.
   pub fleet: Vec<FleetWorkerDto>,
-  /// The latest fatal messages (most recent first).
-  pub recent_fatals: Vec<ActivityMessageDto>,
-  /// The latest error messages (most recent first).
-  pub recent_errors: Vec<ActivityMessageDto>,
-  /// The latest warning messages (most recent first).
-  pub recent_warnings: Vec<ActivityMessageDto>,
+  /// The most recent conversion messages — fatals, errors, and warnings **intermeshed and sorted
+  /// newest-first by `recorded_at`** (a live streaming-log tail), capped at ~100.
+  pub recent: Vec<ActivityMessageDto>,
 }
 
-/// A raw recent-message row joined across `log_* → tasks → corpora/services`. Severity is tagged in
-/// Rust (one query per fixed table), so this projection carries no severity column.
+/// A raw recent-message row from the unified [`recent_activity`] UNION — already carries its
+/// `severity` (a SQL literal per branch) and the `recorded_at` timestamp formatted to ISO in SQL
+/// (`when_iso`), so ordering is a lexical sort (ISO 8601 sorts chronologically) with no chrono type
+/// to thread through the projection.
 #[derive(QueryableByName)]
 struct MessageRow {
+  #[diesel(sql_type = Text)]
+  severity: String,
   #[diesel(sql_type = Text)]
   entry: String,
   #[diesel(sql_type = Text)]
@@ -255,10 +259,12 @@ struct MessageRow {
   what: Option<String>,
   #[diesel(sql_type = Nullable<Text>)]
   details: Option<String>,
+  #[diesel(sql_type = Nullable<Text>)]
+  when_iso: Option<String>,
 }
 
 impl MessageRow {
-  fn into_dto(self, severity: &str) -> ActivityMessageDto {
+  fn into_dto(self) -> ActivityMessageDto {
     // Cap detail length so the live-poll payload stays small (details can be up to 2000 chars).
     let details = self.details.map(|d| {
       const MAX: usize = 300;
@@ -269,41 +275,57 @@ impl MessageRow {
       }
     });
     ActivityMessageDto {
-      severity: severity.to_string(),
+      severity: self.severity,
       corpus: self.corpus,
       service: self.service,
       entry: self.entry,
       category: self.category,
       what: self.what,
       details,
+      when: self.when_iso,
     }
   }
 }
 
-/// The latest `limit` messages from a fixed `log_*` table for one **service**, joined to
-/// entry/corpus/service. `table` is an internal literal (`"log_fatals"`/`"log_errors"`), never user
-/// input — safe to interpolate. `id` is the BIGSERIAL PK, so `ORDER BY id DESC LIMIT n` walks
-/// newest-first and is index-cheap even on the ~100M-row production log tables. Best-effort: a
-/// query error degrades to an empty list.
-fn recent_messages(
+/// The most recent fatal/error/warning messages for one **service**, **intermeshed and sorted
+/// newest-first by `recorded_at`** — a unified streaming-log tail. Each severity-partitioned table
+/// has its own BIGSERIAL `id` sequence (not comparable across tables), so the shared `recorded_at`
+/// timestamp is the only valid cross-severity ordering key; it is formatted to ISO in SQL so the
+/// outer `ORDER BY` is a lexical (= chronological) sort with `NULLS LAST` for pre-migration rows.
+/// Each inner branch is bounded by `per_table` via its own `id`-PK scan (index-cheap even on the
+/// ~100M-row production tables); the outer `LIMIT total` takes the global newest. The table names +
+/// severity literals are fixed (never user input). Best-effort: a query error degrades to empty.
+fn recent_activity(
   connection: &mut PgConnection,
-  table: &str,
   service_id: i32,
-  limit: i64,
+  per_table: i64,
+  total: i64,
 ) -> Vec<MessageRow> {
+  // One UNION branch per severity table; `$1` = service_id, `$2` = per-table cap, `$3` = total cap.
+  let branch = |table: &str, severity: &str| {
+    format!(
+      "(SELECT '{severity}' AS severity, t.entry AS entry, c.name AS corpus, s.name AS service, \
+               l.category AS category, l.what AS what, l.details AS details, \
+               to_char(l.recorded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS when_iso \
+        FROM {table} l \
+        JOIN tasks t ON t.id = l.task_id \
+        JOIN corpora c ON c.id = t.corpus_id \
+        JOIN services s ON s.id = t.service_id \
+        WHERE t.service_id = $1 \
+        ORDER BY l.id DESC LIMIT $2)"
+    )
+  };
   let query = format!(
-    "SELECT t.entry AS entry, c.name AS corpus, s.name AS service, \
-            l.category AS category, l.what AS what, l.details AS details \
-     FROM {table} l \
-     JOIN tasks t ON t.id = l.task_id \
-     JOIN corpora c ON c.id = t.corpus_id \
-     JOIN services s ON s.id = t.service_id \
-     WHERE t.service_id = $1 \
-     ORDER BY l.id DESC LIMIT $2"
+    "SELECT severity, entry, corpus, service, category, what, details, when_iso FROM ( {} UNION ALL \
+     {} UNION ALL {} ) u ORDER BY when_iso DESC NULLS LAST LIMIT $3",
+    branch("log_fatals", "fatal"),
+    branch("log_errors", "error"),
+    branch("log_warnings", "warning"),
   );
   sql_query(query)
     .bind::<Integer, _>(service_id)
-    .bind::<BigInt, _>(limit)
+    .bind::<BigInt, _>(per_table)
+    .bind::<BigInt, _>(total)
     .get_results::<MessageRow>(connection)
     .unwrap_or_default()
 }
@@ -319,9 +341,7 @@ fn recent_messages(
 pub fn live_activity(pool: &DbPool, limit: i64) -> LiveActivityDto {
   let mut activity = LiveActivityDto {
     fleet: Vec::new(),
-    recent_fatals: Vec::new(),
-    recent_errors: Vec::new(),
-    recent_warnings: Vec::new(),
+    recent: Vec::new(),
   };
   if let Ok(mut connection) = pool.get() {
     let active_service = HistoricalRun::recent_all(&mut connection, 1)
@@ -346,17 +366,11 @@ pub fn live_activity(pool: &DbPool, limit: i64) -> LiveActivityDto {
         })
         .collect();
     }
-    activity.recent_fatals = recent_messages(&mut connection, "log_fatals", service_id, limit)
+    // Fetch up to `limit` per severity, intermeshed + sorted newest-first by recorded_at, capped at
+    // `limit` total — a unified streaming-log tail.
+    activity.recent = recent_activity(&mut connection, service_id, limit, limit)
       .into_iter()
-      .map(|m| m.into_dto("fatal"))
-      .collect();
-    activity.recent_errors = recent_messages(&mut connection, "log_errors", service_id, limit)
-      .into_iter()
-      .map(|m| m.into_dto("error"))
-      .collect();
-    activity.recent_warnings = recent_messages(&mut connection, "log_warnings", service_id, limit)
-      .into_iter()
-      .map(|m| m.into_dto("warning"))
+      .map(MessageRow::into_dto)
       .collect();
   }
   activity
@@ -371,7 +385,7 @@ pub fn admin_logs_feed(
   pool: &State<DbPool>,
 ) -> Result<Json<LiveActivityDto>, Status> {
   let _session = session.ok_or(Status::Unauthorized)?;
-  Ok(Json(live_activity(pool, 33)))
+  Ok(Json(live_activity(pool, 100)))
 }
 
 /// `GET /api/logs` — the **agent twin** of the dashboard's `/admin/logs.json` feed: the live fleet
@@ -380,7 +394,7 @@ pub fn admin_logs_feed(
 #[rocket_okapi::openapi(tag = "Management")]
 #[get("/api/logs")]
 pub fn api_logs(_actor: Actor, pool: &State<DbPool>) -> Json<LiveActivityDto> {
-  Json(live_activity(pool, 33))
+  Json(live_activity(pool, 100))
 }
 
 /// The sign-in page (`GET /admin/login?<bad>&<next>`): a form to enter an admin token, plus a "sign

@@ -58,6 +58,10 @@ pub struct LogWarning {
   pub what: Option<String>,
   /// technical details of the message, e.g. localization info (nullable column)
   pub details: Option<String>,
+  /// when the message was recorded (server clock); auto-stamped by the column DEFAULT on insert,
+  /// so the dispatcher's `Insertable` (which omits it) is unaffected. `None` for pre-migration
+  /// rows.
+  pub recorded_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 #[derive(Insertable, Clone, Debug)]
 #[diesel(table_name = log_warnings)]
@@ -87,6 +91,10 @@ pub struct LogError {
   pub what: Option<String>,
   /// technical details of the message, e.g. localization info (nullable column)
   pub details: Option<String>,
+  /// when the message was recorded (server clock); auto-stamped by the column DEFAULT on insert,
+  /// so the dispatcher's `Insertable` (which omits it) is unaffected. `None` for pre-migration
+  /// rows.
+  pub recorded_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 #[derive(Insertable, Clone, Debug)]
 #[diesel(table_name = log_errors)]
@@ -116,6 +124,10 @@ pub struct LogFatal {
   pub what: Option<String>,
   /// technical details of the message, e.g. localization info (nullable column)
   pub details: Option<String>,
+  /// when the message was recorded (server clock); auto-stamped by the column DEFAULT on insert,
+  /// so the dispatcher's `Insertable` (which omits it) is unaffected. `None` for pre-migration
+  /// rows.
+  pub recorded_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 #[derive(Insertable, Clone, Debug)]
 #[diesel(table_name = log_fatals)]
