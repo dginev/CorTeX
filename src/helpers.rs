@@ -660,6 +660,22 @@ pub fn random_mark() -> i32 {
   i32::from(mark_rng)
 }
 
+/// Random temporary task `status` sentinel for the `mark_rerun` two-phase reset.
+///
+/// `mark_rerun` stamps the in-scope tasks with this value, then re-selects them by
+/// `status = <sentinel>` to delete their logs and flip them to `TODO`. The sentinel must be
+/// disjoint from **every** value a task can otherwise legitimately hold, or an unrelated task gets
+/// swept into the rerun: live leases occupy `[1, 65536]` (`fetch_tasks` stamps `1 + u16`), `TODO`
+/// is `0`, and completed/Blocked tasks are `< 0`. So we draw a **positive** value strictly *above*
+/// the maximum lease — in `[65537, 131072]` — which collides with none of them. (The old rerun mark
+/// reused `random_mark`'s raw `u16`, which overlapped the live-lease range and aliased `TODO` at 0;
+/// KNOWN_ISSUES R-13.) All temp marks stay `> 0`.
+pub fn rerun_mark() -> i32 {
+  // One past the largest value `fetch_tasks` can stamp on a lease (`1 + u16::MAX` = 65536).
+  const LEASE_CEILING: i32 = u16::MAX as i32 + 1;
+  LEASE_CEILING + 1 + i32::from(rand_in_range(0, u16::MAX))
+}
+
 /// Helper for generating a random i32 in a range, to avoid loading the rng crate + boilerplate
 pub fn rand_in_range(from: u16, to: u16) -> u16 {
   let mut rng = rand::rng();
@@ -830,6 +846,26 @@ mod log_decode_tests {
     // instead of panicking.
     assert!(result_archive_path("", "tex_to_html", None).is_none());
     assert!(result_archive_path("/", "tex_to_html", None).is_none());
+  }
+}
+
+#[cfg(test)]
+mod rerun_mark_tests {
+  use super::rerun_mark;
+
+  #[test]
+  fn rerun_mark_stays_above_the_lease_space() {
+    // `fetch_tasks` stamps a lease as `1 + u16` (max 65536) and `TODO` is 0; the rerun sentinel
+    // must never land in `[0, 65536]`, or it could sweep a live in-flight lease (or alias `TODO`)
+    // into the rerun and double-dispatch it. All temp marks are `> 0`. KNOWN_ISSUES R-13.
+    for _ in 0..10_000 {
+      let mark = rerun_mark();
+      assert!(
+        mark > i32::from(u16::MAX) + 1,
+        "rerun mark {mark} overlaps the lease space [1, 65536]"
+      );
+      assert!(mark > 0, "temp marks must be positive");
+    }
   }
 }
 

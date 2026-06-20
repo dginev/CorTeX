@@ -8,7 +8,7 @@ use diesel::*;
 
 use super::RerunOptions;
 use crate::concerns::{CortexInsertable, MarkRerun};
-use crate::helpers::{NewTaskMessage, TaskReport, TaskStatus, random_mark};
+use crate::helpers::{NewTaskMessage, TaskReport, TaskStatus, rerun_mark};
 use crate::models::{
   Corpus, HistoricalRun, LogError, LogFatal, LogInfo, LogInvalid, LogRecord, LogWarning,
   NewHistoricalRun, NewLogError, NewLogFatal, NewLogInfo, NewLogInvalid, NewLogWarning, NewTask,
@@ -239,8 +239,11 @@ pub(crate) fn mark_rerun<'a>(
       owner_opt.unwrap_or_else(|| "admin".to_string()),
       description,
     )?;
-    // Rerun = set status to TODO for all tasks, deleting old logs
-    let mark: i32 = random_mark();
+    // Rerun = set status to TODO for all tasks, deleting old logs. The temporary `mark` is a
+    // positive sentinel drawn *above* the max lease (R-13): we re-select the scope below by
+    // `status = mark`, so it must not collide with a live in-flight lease (`[1, 65536]`) or `TODO`
+    // (0) — else an unrelated task would be swept into the rerun and double-dispatched.
+    let mark: i32 = rerun_mark();
 
     // First, mark as blocked all of the tasks in the chosen scope, using a special mark
     match severity_opt {
