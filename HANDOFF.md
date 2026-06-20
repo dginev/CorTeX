@@ -27,6 +27,17 @@ throughput approaches the engine's real speed.**
 End-to-end speedup **6.5×** vs an expected converter speedup of **20–30×** → roughly **3–5× of headroom
 is being lost in the pipeline**, not the engine.
 
+**Measurement caveat — failure mix.** These are *aggregate task* throughput numbers, not pure conversion
+speed: a task "finishes" either by a real conversion or by a *fast failure*. Perl produces **more
+Fatals/Invalids** than Rust (baseline ~202 fatal + 151 invalid vs Rust ~50 + 95), and a fast-failing paper
+(e.g. `Fatal:invalid:empty_input`) resolves almost instantly — so some of Perl's ~2.1/s is **cheap
+fast-Fatals inflating its aggregate rate**. Two consequences: (a) the true *converter* speedup on the
+papers that actually convert is likely **higher than 6.3×** — Perl's slow part is its *successful*
+conversions, which the aggregate dilutes with quick failures; (b) that makes the pipeline-bound gap even
+starker. **Validate in the investigation:** segment throughput + per-paper wall-clock **by outcome**
+(`no_problem`/`warning` vs `fatal`/`invalid`), and compute the engine speedup on the **shared
+`no_problem` set** both engines convert — not the divergent failure tails.
+
 ## Evidence it's pipeline-bound (not the converter)
 
 1. **Sub-linear worker scaling.** 72 Rust workers → ~13.4/s; **124 workers (bare-metal, earlier) → only
