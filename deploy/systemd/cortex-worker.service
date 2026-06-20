@@ -1,0 +1,41 @@
+[Unit]
+Description=CorTeX latexml-oxide worker fleet (cortex_worker --harness)
+Documentation=file:/home/deyan/git/cortex/docs/CORTEX_WORKER_HARNESS.md
+# Needs the network up and the dispatcher's ZMQ ports (:51695/:51696) reachable. On a co-located host
+# we order after the local dispatcher; a remote fleet just needs the network (the worker retries the
+# connection, so this is best-effort ordering, not a hard dependency).
+After=network-online.target cortex-dispatcher.service
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=deyan
+Group=deyan
+# CWD = the latexml-oxide checkout (binary + resources/dumps live here; LATEXML_DUMP_DIR is also set
+# explicitly in worker.env so dump resolution is machine-independent).
+WorkingDirectory=/home/deyan/git/latexml-oxide
+# The script owns ALL parameters (sources /etc/cortex/worker.env, validates, refuses to start on a
+# missing one). It `exec`s the harness, so the harness is this unit's MainPID.
+ExecStart=/home/deyan/git/cortex/scripts/run_worker.sh
+# Respawn the supervisor if it dies; StartLimitBurst backs off a tight crash loop.
+Restart=always
+RestartSec=5
+# SIGTERM tells the harness to tear its fleet down cleanly (kill children, let in-flight tasks re-lease
+# via the dispatcher reaper). Drain window before SIGKILL — a 72-child teardown is quick.
+KillSignal=SIGTERM
+TimeoutStopSec=120
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=false
+PrivateTmp=true
+# Optional HARD host-level backstop beneath the harness governor + per-child RLIMIT_AS (they compose).
+# Size to the fleet's RAM slice so a spike can't reach PG: at 72 workers the fleet measured ~80 GB
+# (≈1.1 GB/worker), so e.g. 120G leaves generous headroom for PG (autovacuum) + OS. Left commented —
+# the harness mem-pressure governor (auto floor) is the active control; enable this only if you want a
+# cgroup ceiling too. Tune per host.
+# MemoryMax=120G
+
+[Install]
+WantedBy=multi-user.target
