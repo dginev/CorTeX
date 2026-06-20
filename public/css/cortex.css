@@ -800,8 +800,9 @@ body {
   height: auto;
   /* Negative indent footer by its height */
   margin-bottom: 15px;
-  /* Pad bottom by footer height */
-  padding: 0 0 15px;
+  /* Reserve the real fixed-footer height (`navbar-fixed-bottom` ~50px) so bottom-of-page content —
+     e.g. the report prev/next pagination — clears it; matches `html { scroll-padding-bottom }`. */
+  padding: 0 0 4rem;
 }
 footer {
   height: 15px;
