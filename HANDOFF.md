@@ -100,6 +100,24 @@ the Perl worker's 45-min budget — see D-17; the Rust worker wants 240).
 - **Ventilator source-streaming.** `src/dispatcher/ventilator.rs` — reading the source archive from `/data`
   + streaming it out; `fetch_tasks` batch + lease marking.
 
+## Follow-up — `loaded_file` parity: log binding loads in Rust (full transitive deps)
+
+The experiment exposed a `loaded_file` semantics gap: **Perl logs ~78 files/paper, Rust ~44** — *not*
+double-counting (both ~1:1 distinct) and *not* a Rust I/O bug. The difference is **`.ltxml` binding loads**:
+Perl loads each package's LaTeXML binding (`amsmath.sty.ltxml`, `article.cls.ltxml`, `Base.pool.ltxml`, …)
+from disk and logs a `(Loading …)` for each; Rust has those bindings **compiled in** (`runtime-bindings`
+off), so it never loads them → never logs them. Rust's `loaded_file` is therefore only the raw disk reads
+(pools/cls/sty/fonts with no compiled binding) — e.g. **13 vs 51** distinct on `math0104260`.
+
+**Wanted (owner, 2026-06-20):** Rust should emit a `loaded_file` note **every time it loads/applies a
+binding**, including transitively (when a binding pulls in another), so the report captures the **full
+transitive dependency set** and matches Perl's coverage in effect. Implementation: in latexml-oxide's
+binding-resolution path, emit a note per compiled-in binding applied (the same note stream that now reaches
+`cortex.log` via the logger fix), keyed by the logical package name (e.g. `amsmath.sty.ltxml`/`amsmath`),
+not a disk path. **Interaction with the perf-opt:** this *raises* Rust's `loaded_file` volume toward Perl's
+~78/paper (~2× the current 44), which makes the **dedup/aggregate-per-(corpus,service)** item above more
+important — do the two together (log full deps, store them compactly).
+
 ## Constraints
 
 - **Do not regress Perl compatibility** — the same dispatcher must keep serving the Perl worker (D-17:
