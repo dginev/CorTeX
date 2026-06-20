@@ -1,6 +1,6 @@
 [Unit]
 Description=CorTeX latexml-oxide worker fleet (cortex_worker --harness)
-Documentation=file:/home/deyan/git/cortex/docs/CORTEX_WORKER_HARNESS.md
+Documentation=file:/home/deyan/git/cortex/MANUAL.md
 # Needs the network up and the dispatcher's ZMQ ports (:51695/:51696) reachable. On a co-located host
 # we order after the local dispatcher; a remote fleet just needs the network (the worker retries the
 # connection, so this is best-effort ordering, not a hard dependency).

@@ -231,8 +231,13 @@ run them on the worker host(s), pointed at the dispatcher's ports. The robust mo
 conversion per process** with a per-process RAM cap, so a runaway paper kills only its own worker
 (the dispatcher's lease reaper recovers the task) and the worker is respawned.
 
-Run the whole fleet with one self-supervising command (`--harness` spawns and respawns
-single-conversion children; sane memory defaults need no flags):
+Run the whole fleet with the **canonical launcher** — `sudo systemctl enable --now cortex-worker`
+(its `ExecStart` is `scripts/run_worker.sh`, which sources `/etc/cortex/worker.env`; per-host
+template: `deploy/systemd/worker.env.example`). It pins `--workers` (= **physical** cores + 1/8 — the
+harness's own CPU default sizes to *logical* cores and over-commits) plus the service/endpoints in a
+version-controlled env file and **refuses to start on a missing parameter**, so a fleet never comes up
+with the wrong settings by accident. The underlying command it runs (`--harness` spawns and respawns
+single-conversion children; the validated memory defaults need no flags):
 
 ```bash
 cortex_worker --harness \
@@ -242,7 +247,8 @@ cortex_worker --harness \
   --profile ar5iv
 # Optional overrides:
 #   --workers N               # default: CPU-derived (a deliberate over-commit)
-#   --child-mem-limit-mb 8192  # per-child RLIMIT_AS hard cap (default 8 GiB)
+#   --child-mem-limit-mb 5632  # per-child RLIMIT_AS cap — this IS the default (~4 GB RSS); do NOT
+#                              # raise to 8192 (a 72-worker sweep at 8192 once spiked to 207 GB -> OOM)
 #   --mem-pressure-floor-mb N  # fleet governor floor (default: max(cap, 10% RAM); 0 disables)
 ```
 
@@ -253,11 +259,11 @@ cortex_worker --harness \
   `workers × cap` — most papers use a fraction of the per-child cap, so sizing to the cap would idle
   the box. Two limits keep it safe: the **per-child cap** below contains a *single* runaway job, and
   the **fleet governor** contains the *aggregate*.
-- **Per-child cap.** `--child-mem-limit-mb` (default 8192) enforces a per-child `setrlimit(RLIMIT_AS)`;
+- **Per-child cap.** `--child-mem-limit-mb` (default 5632) enforces a per-child `setrlimit(RLIMIT_AS)`;
   a breach surfaces as a clean `Fatal:oom` + `Status:conversion:3` (exit 137), then a respawn. This
   bounds *address space* (VSZ), not RSS — with the worker's mimalloc allocator the true resident kill
-  point sits below the number; 8 GiB is sized so a legitimate ~6 GB job reliably completes
-  (effective resident ceiling ≈6.5–7 GB RSS).
+  point sits ~1–1.5 GiB below the number, so the 5632 cap trips at a ~4 GB RSS ceiling (lowered from
+  8192 after a 72-worker sweep at 8192 OOMed the box at 207 GB aggregate).
 - **Fleet memory-pressure governor.** While system `MemAvailable` drops below `--mem-pressure-floor-mb`
   (auto = `max(cap, 10% RAM)`), the harness SIGTERMs its **largest-RSS** child (task re-leased) and
   pauses respawns until memory recovers — a deliberate, attributable shed in place of a random kernel
