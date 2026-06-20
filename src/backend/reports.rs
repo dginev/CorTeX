@@ -90,10 +90,26 @@ pub fn live_run_diff(
   diff
 }
 
-/// Of the tasks completed so far (`status < 0`), compare each to its status in the LATEST baseline
+/// Of the tasks completed so far (`status < 0`), compare each to its status in the baseline
 /// snapshot. Severity ints are ordered best→worst (`no_problem` -1 … `invalid` -5), so a *higher*
-/// current status than the baseline is an improvement, lower a regression. `DISTINCT ON` picks each
-/// task's most-recent snapshot (the prior run's completion). This join is the cached cost.
+/// current status than the baseline is an improvement, lower a regression. This join is the cached
+/// cost.
+///
+/// **Baseline = the most-recent snapshot taken STRICTLY BEFORE the current run started**
+/// (`h.saved_at < max(historical_runs.start_time)` for the scope), NOT simply the latest snapshot.
+/// This is the fix for the "−0 regressed · +0 improved · all unchanged" idle-scope bug: the
+/// completion-on-drain path (`backend::complete_run_if_drained`) snapshots a run's OWN outcomes at
+/// the moment it finishes, as the baseline for the *next* run. Once a run completes and the scope
+/// goes idle, the live `tasks` table and that latest snapshot are the SAME run, so a naive
+/// "latest snapshot" baseline compares the run against itself → a vacuous all-unchanged diff.
+/// Anchoring on the current run's `start_time` excludes that self-snapshot (it was saved at this
+/// run's *end*, after its *start*) and falls back to the prior run's snapshot — the true "vs last
+/// run". It is uniform: while a run is in progress its self-snapshot does not exist yet, so nothing
+/// is excluded and the in-progress early-divergence signal is unchanged; and a genuine no-op rerun
+/// still reads 0/0 vs the real last run rather than silently walking back to an older one. The
+/// `COALESCE(..., 'infinity')` preserves legacy behaviour for a scope with manual snapshots but no
+/// run boundary (no `historical_runs` row) — there, all snapshots remain eligible. `DISTINCT ON`
+/// then picks each task's most-recent *eligible* snapshot.
 fn compute_live_run_diff(
   connection: &mut PgConnection,
   corpus_id: i32,
@@ -113,6 +129,9 @@ fn compute_live_run_diff(
        SELECT DISTINCT ON (h.task_id) h.task_id, h.status \
        FROM historical_tasks h JOIN tasks tt ON tt.id = h.task_id \
        WHERE tt.corpus_id = $1 AND tt.service_id = $2 \
+         AND h.saved_at < COALESCE( \
+           (SELECT max(start_time) FROM historical_runs \
+            WHERE corpus_id = $1 AND service_id = $2), 'infinity'::timestamp) \
        ORDER BY h.task_id, h.saved_at DESC \
      ) b ON b.task_id = t.id \
      WHERE t.corpus_id = $1 AND t.service_id = $2 AND t.status < 0",
@@ -1369,5 +1388,172 @@ mod rollup_equivalence_tests {
     // all-severities view → live
     assert!(!report_uses_rollup(Some("warning"), None, None, true));
     assert!(!report_uses_rollup(None, None, None, false));
+  }
+}
+
+#[cfg(test)]
+mod live_run_diff_baseline_tests {
+  //! Regression for the "−0 regressed · +0 improved · all unchanged" idle-scope bug: the live
+  //! run-diff baseline must be the most-recent snapshot taken BEFORE the current run started, never
+  //! the run's OWN completion-on-drain self-snapshot. With the buggy "latest snapshot" baseline a
+  //! completed, idle scope compared the live `tasks` against the very snapshot they were frozen
+  //! into → a vacuous all-unchanged diff. See [`super::compute_live_run_diff`].
+  use super::compute_live_run_diff;
+  use crate::backend;
+  use crate::helpers::TaskStatus;
+  use crate::models::{Corpus, NewCorpus, NewService, Service};
+  use crate::schema::{corpora, historical_runs, historical_tasks, services, tasks};
+  use chrono::{NaiveDate, NaiveDateTime};
+  use diesel::prelude::*;
+
+  const CORPUS_NAME: &str = "live-diff-baseline corpus";
+  const SERVICE_NAME: &str = "live_diff_baseline_svc";
+
+  fn ts(year: i32, month: u32, day: u32) -> NaiveDateTime {
+    NaiveDate::from_ymd_opt(year, month, day)
+      .unwrap()
+      .and_hms_opt(0, 0, 0)
+      .unwrap()
+  }
+
+  fn add_task(conn: &mut PgConnection, entry: &str, service: i32, corpus: i32, status: i32) -> i64 {
+    diesel::insert_into(tasks::table)
+      .values((
+        tasks::entry.eq(entry),
+        tasks::service_id.eq(service),
+        tasks::corpus_id.eq(corpus),
+        tasks::status.eq(status),
+      ))
+      .returning(tasks::id)
+      .get_result(conn)
+      .expect("insert task")
+  }
+
+  fn add_snapshot(conn: &mut PgConnection, task_id: i64, status: i32, saved_at: NaiveDateTime) {
+    diesel::insert_into(historical_tasks::table)
+      .values((
+        historical_tasks::task_id.eq(task_id),
+        historical_tasks::status.eq(status),
+        historical_tasks::saved_at.eq(saved_at),
+      ))
+      .execute(conn)
+      .expect("insert historical snapshot");
+  }
+
+  #[test]
+  fn baseline_excludes_the_current_runs_own_self_snapshot() {
+    let mut backend = backend::testdb();
+
+    // --- Clean slate -----------------------------------------------------------------------------
+    if let Ok(existing) = Corpus::find_by_name(CORPUS_NAME, &mut backend.connection) {
+      // historical_tasks cascades away with tasks (FK ON DELETE CASCADE); drop runs explicitly.
+      diesel::delete(historical_runs::table.filter(historical_runs::corpus_id.eq(existing.id)))
+        .execute(&mut backend.connection)
+        .ok();
+      diesel::delete(tasks::table.filter(tasks::corpus_id.eq(existing.id)))
+        .execute(&mut backend.connection)
+        .ok();
+      diesel::delete(corpora::table.filter(corpora::id.eq(existing.id)))
+        .execute(&mut backend.connection)
+        .ok();
+    }
+    diesel::delete(services::table.filter(services::name.eq(SERVICE_NAME)))
+      .execute(&mut backend.connection)
+      .ok();
+
+    // --- Seed corpus + service -------------------------------------------------------------------
+    backend
+      .add(&NewCorpus {
+        name: CORPUS_NAME.to_string(),
+        path: "/tmp/live-diff-baseline".to_string(),
+        complex: true,
+        description: String::new(),
+      })
+      .expect("add corpus");
+    let corpus = Corpus::find_by_name(CORPUS_NAME, &mut backend.connection).expect("corpus");
+    backend
+      .add(&NewService {
+        name: SERVICE_NAME.to_string(),
+        version: 0.1,
+        inputformat: "tex".to_string(),
+        outputformat: "html".to_string(),
+        inputconverter: Some("import".to_string()),
+        complex: true,
+        description: String::from("live-diff baseline service"),
+      })
+      .expect("add service");
+    let service = Service::find_by_name(SERVICE_NAME, &mut backend.connection).expect("service");
+
+    let no_problem = TaskStatus::NoProblem.raw(); // -1 (best)
+    let warning = TaskStatus::Warning.raw(); // -2
+    let error = TaskStatus::Error.raw(); // -3
+    let conn = &mut backend.connection;
+
+    // Current settled outcomes of the just-completed run.
+    let t1 = add_task(conn, "/d/1", service.id, corpus.id, no_problem);
+    let t2 = add_task(conn, "/d/2", service.id, corpus.id, no_problem);
+    let t3 = add_task(conn, "/d/3", service.id, corpus.id, error);
+
+    // The current (latest) run: started at T_mid. Its completion self-snapshot lands AFTER T_mid.
+    let t_prior = ts(2025, 1, 1); // prior run's completion snapshot — the TRUE baseline
+    let t_mid = ts(2025, 6, 1); // current run start_time
+    let t_self = ts(2025, 12, 1); // current run's own completion-on-drain snapshot
+    diesel::insert_into(historical_runs::table)
+      .values((
+        historical_runs::corpus_id.eq(corpus.id),
+        historical_runs::service_id.eq(service.id),
+        historical_runs::owner.eq("tester"),
+        historical_runs::start_time.eq(t_mid),
+        historical_runs::end_time.eq(t_self),
+      ))
+      .execute(conn)
+      .expect("insert historical_run");
+
+    // Prior run's snapshot (BEFORE the current run started): t1 was a Warning then.
+    add_snapshot(conn, t1, warning, t_prior);
+    add_snapshot(conn, t2, no_problem, t_prior);
+    add_snapshot(conn, t3, error, t_prior);
+
+    // The current run's OWN self-snapshot (AFTER it started) — identical to the live tasks. A naive
+    // "latest snapshot" baseline would pick THIS and report a vacuous 0/0/all-unchanged.
+    add_snapshot(conn, t1, no_problem, t_self);
+    add_snapshot(conn, t2, no_problem, t_self);
+    add_snapshot(conn, t3, error, t_self);
+
+    let diff = compute_live_run_diff(conn, corpus.id, service.id);
+
+    // Baseline must resolve to the prior (t_prior) snapshot, NOT the self (t_self) one:
+    //   t1: Warning(-2) → NoProblem(-1)  = improved
+    //   t2: NoProblem → NoProblem        = unchanged
+    //   t3: Error → Error                = unchanged
+    assert_eq!(
+      diff.improved, 1,
+      "t1's Warning→NoProblem must register as an improvement vs the PRIOR run's snapshot"
+    );
+    assert_eq!(diff.regressed, 0, "no task regressed");
+    assert_eq!(
+      diff.unchanged, 2,
+      "t2 and t3 are unchanged; the count must NOT be 3 (which is the self-comparison bug)"
+    );
+    assert_eq!(diff.reclassified, 0, "no Invalid transitions");
+    assert_eq!(
+      diff.compared(),
+      3,
+      "all three completed tasks had a baseline"
+    );
+
+    // Cleanup.
+    diesel::delete(historical_runs::table.filter(historical_runs::corpus_id.eq(corpus.id)))
+      .execute(conn)
+      .ok();
+    diesel::delete(tasks::table.filter(tasks::corpus_id.eq(corpus.id)))
+      .execute(conn)
+      .ok();
+    diesel::delete(corpora::table.filter(corpora::id.eq(corpus.id)))
+      .execute(conn)
+      .ok();
+    diesel::delete(services::table.filter(services::name.eq(SERVICE_NAME)))
+      .execute(conn)
+      .ok();
   }
 }
