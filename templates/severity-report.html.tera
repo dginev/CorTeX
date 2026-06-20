@@ -44,10 +44,10 @@
 
   <div class="report-pagination">
     {% if global.offset_min_false %}
-    <a href="{{global.current_link_uri}}?offset={{global.prev_offset}}&page_size={{global.page_size}}&all={{global.all_messages}}">&laquo; prev</a>
+    <a href="{{global.current_link_uri}}?offset={{global.prev_offset}}&page_size={{global.page_size}}&all={{global.all_messages}}">&lt;&lt; previous</a>
     {% endif %}
     {% if global.offset_max_false %}
-    <a href="{{global.current_link_uri}}?offset={{global.next_offset}}&page_size={{global.page_size}}&all={{global.all_messages}}">next &raquo;</a>
+    <a href="{{global.current_link_uri}}?offset={{global.next_offset}}&page_size={{global.page_size}}&all={{global.all_messages}}">next &gt;&gt;</a>
     {% endif %}
   </div>
 </div>

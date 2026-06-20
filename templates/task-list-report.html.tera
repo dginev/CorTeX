@@ -38,11 +38,11 @@
 
   <div>
     {% if global.offset_min_false %}
-    <span><a href="{{global.current_link_uri}}?offset={{global.prev_offset}}&page_size={{global.page_size}}">&lt;&lt;</a></span>
+    <span><a href="{{global.current_link_uri}}?offset={{global.prev_offset}}&page_size={{global.page_size}}">&lt;&lt; previous</a></span>
     {% endif %}
     <span>[{{global.from_offset}}-{{global.to_offset}}]</span>
     {% if global.offset_max_false %}
-    <span><a href="{{global.current_link_uri}}?offset={{global.next_offset}}&page_size={{global.page_size}}">&gt;&gt;</a></span>
+    <span><a href="{{global.current_link_uri}}?offset={{global.next_offset}}&page_size={{global.page_size}}">next &gt;&gt;</a></span>
     {% endif %}
   </div>
   {% endblock content %}

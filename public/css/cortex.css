@@ -10,10 +10,13 @@
   --bg-elev: #e6e5dc;
   --bg-sunken: #cdccc3;
   --ink: #1a1a1a;
-  --ink-soft: #4a4a4a;
-  /* Muted/secondary text. Darkened from #6e6e68 (3.69:1, failed WCAG AA) to reach 4.62:1 on --bg
-     (5.08 on --bg-elev) so timestamps/hints/descriptions clear AA for normal text. */
-  --ink-muted: #5f5f5a;
+  /* Secondary text. Darkened #4a4a4a→#3a3a3a to clear WCAG AAA (1.4.6, 7:1 normal text): 8.18:1 on
+     --bg. Stays a clear step below --ink (12.5:1) and above --ink-muted, so the 3-level hierarchy
+     survives even at AAA on the non-white paper bg. */
+  --ink-soft: #3a3a3a;
+  /* Muted/secondary text. Darkened #5f5f5a→#444440 to clear WCAG AAA (7:1): 7.04:1 on --bg, 7.7 on
+     --bg-elev (was AA-only at 4.62). */
+  --ink-muted: #444440;
   --rule: #b9b8af;
   --rule-soft: #ceccc2;
   /* Form-field border — strengthened from --rule (~1.5:1) to clear WCAG 1.4.11 (≥3:1): #767670 on
@@ -23,8 +26,12 @@
   --accent-soft: #ece1f5;
   /* Text on the accent fill. Paper's accent is dark, so white reads (#fff on #7a3e9d ≈ 7:1). */
   --accent-ink: #ffffff;
-  --link: var(--accent);
-  --link-hover: #9a4ec0;
+  /* Link TEXT is decoupled from --accent (kept vibrant for graphical use — buttons, bars, focus
+     rings, which only need 3:1) and darkened to clear WCAG AAA (1.4.6, 7:1): #5d2f77 = 7.06:1 on
+     --bg. Hover goes darker still (8.76:1) + underline, so the hover state is unambiguous and also
+     AAA. White-on-hover-fill (.btn-primary:hover) only gains contrast at 12:1. */
+  --link: #5d2f77;
+  --link-hover: #4a2560;
   --code-bg: #cdccc3;
   --shadow: 0 1px 2px rgba(40, 30, 20, 0.06);
   --shadow-lg: 0 6px 24px rgba(40, 30, 20, 0.1);
@@ -65,9 +72,10 @@
   --bg-sunken: #101013;
   --ink: #e8e4dc;
   --ink-soft: #b8b3a8;
-  /* Muted/secondary text. Lightened from #807a70 (3.95:1 on --bg-elev, failed WCAG AA) to reach
-     4.59:1 on --bg-elev (4.94 on --bg) so muted text clears AA for normal text in the dark theme. */
-  --ink-muted: #8b857c;
+  /* Muted/secondary text. Lightened #8b857c→#aba7a0 to clear WCAG AAA (1.4.6, 7:1): 7.01:1 on
+     --bg-elev (the card surface where muted text sits), 7.4 on --bg (was AA-only at 4.59).
+     (--ink-soft 8.6:1 and --ink 14.2:1 already clear AAA in midnight.) */
+  --ink-muted: #aba7a0;
   --rule: #2a2a30;
   --rule-soft: #1f1f24;
   /* Form-field border — strengthened from --rule (~1.2:1, invisible) to clear WCAG 1.4.11 (≥3:1 for
@@ -117,6 +125,35 @@
   outline: 2px solid var(--accent);
 }
 
+/* WCAG 2.4.7 Focus Visible + 2.4.13 Focus Appearance (AAA): one consistent, high-contrast focus ring
+   for keyboard/AT users on every interactive element. Bootstrap 3 ships `a:focus`/`.btn:focus`
+   { outline: 5px auto -webkit-focus-ring-color; outline-offset:-2px }, which (a) out-specifies a bare
+   `:focus-visible` so our ring never won, and (b) fires on MOUSE `:focus` too (the dotted ring on
+   click `:focus-visible` was meant to avoid). So: suppress Bootstrap's plain-:focus ring, then re-add
+   our themed ring at element-level specificity for `:focus-visible` only (keyboard/AT). The ring draws
+   outside the box (no reflow); --accent clears 3:1 against both surfaces. The whole thing is gated on
+   `@supports selector(:focus-visible)` so browsers too old to support it keep Bootstrap's default ring
+   rather than losing focus indication entirely. Form fields keep their own border + box-shadow ring. */
+@supports selector(:focus-visible) {
+  a:focus,
+  button:focus,
+  .btn:focus,
+  summary:focus,
+  [tabindex]:focus {
+    outline: none;
+  }
+  a:focus-visible,
+  button:focus-visible,
+  .btn:focus-visible,
+  summary:focus-visible,
+  [tabindex]:focus-visible,
+  .corpus-card:focus-visible,
+  .footer-action:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
 /* Type scale + line-heights (theme-independent — one vocabulary for every font-size, so sizes are
    consistent and tunable in one place instead of scattered ad-hoc rem/em values). */
 :root {
@@ -138,6 +175,12 @@ body {
   font-family: var(--sans);
   font-size: var(--fs-base);
   line-height: var(--lh-base);
+}
+/* WCAG 2.4.11 Focus Not Obscured (AAA): the action bar is `navbar-fixed-bottom` (~50px), so when a
+   keyboard tab scrolls an element into view, reserve that strip — otherwise focus can land behind the
+   fixed bar. (Top nav is static, so only the bottom needs reserving.) */
+html {
+  scroll-padding-bottom: 4rem;
 }
 a,
 a:link,
@@ -629,9 +672,18 @@ hr {
     opacity: 1;
   }
 }
+/* WCAG 2.3.3 Animation from Interactions (AAA): honour a reduced-motion request globally — kill the
+   non-essential transitions/animations (chevron slides, caret rotation, bar-width fills, the
+   skip-link slide, the live-dot pulse, smooth scroll). Near-zero (not 0) so transitionend/animationend
+   handlers still fire. !important to beat the per-rule declarations. */
 @media (prefers-reduced-motion: reduce) {
-  .live-dot.beat {
-    animation: none;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
@@ -1709,6 +1761,8 @@ h3 {
 .document-lookup input:focus {
   outline: none;
   border-color: var(--accent);
+  /* Match the other form fields' focus ring (2.4.7) — border-color alone was too subtle. */
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 /* Clickable report rows: a drill-in chevron after the label (only real <a> links get it), so a row
