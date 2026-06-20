@@ -739,13 +739,6 @@ details.info-messages[open] > summary::before {
   color: var(--ink);
   text-decoration: none;
 }
-.link-total {
-  color: var(--ink);
-  text-decoration: none;
-  display: inline-block;
-  pointer-events: none;
-  cursor: default;
-}
 body {
   height: 100%;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;

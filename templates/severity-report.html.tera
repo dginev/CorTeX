@@ -30,7 +30,8 @@
       {% for category in categories %}
       <tr>
         <td class="left">
-          <a class="link-{{category.name}}" href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity_uri}}/{{category.name_uri}}?all={{global.all_messages}}">{{category.name}}</a>
+          {# The "total" aggregate is a static numeric placeholder — no link, no drill-in chevron. #}
+          {% if category.name == "total" %}{{category.name}}{% else %}<a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity_uri}}/{{category.name_uri}}?all={{global.all_messages}}">{{category.name}}</a>{% endif %}
         </td>
         <td class="bar-cell"><span class="bar-track"><span class="bar {% if global.severity == 'warning' %}warn{% elif global.severity == 'error' %}error{% elif global.severity == 'fatal' %}fatal{% endif %}" style="--bar-width: {{category.tasks_percent}}%"></span></span></td>
         <td class="right">{{ category.tasks_percent | float(default=0) | round }}%</td>

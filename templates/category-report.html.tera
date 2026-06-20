@@ -30,7 +30,8 @@
       {% for this in whats %}
       <tr>
         <td class="left">
-          <a class="link-{{this.name}}" href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}/{{global.category_uri}}/{{this.name_uri}}?all={{global.all_messages}}">{{this.name}}</a>
+          {# The "total" aggregate is a static numeric placeholder — no link, no drill-in chevron. #}
+          {% if this.name == "total" %}{{this.name}}{% else %}<a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}/{{global.category_uri}}/{{this.name_uri}}?all={{global.all_messages}}">{{this.name}}</a>{% endif %}
         </td>
         <td class="bar-cell"><span class="bar-track"><span class="bar {% if global.severity == 'warning' %}warn{% elif global.severity == 'error' %}error{% elif global.severity == 'fatal' %}fatal{% endif %}" style="--bar-width: {{this.tasks_percent}}%"></span></span></td>
         <td class="right">{{ this.tasks_percent | float(default=0) | round }}%</td>
