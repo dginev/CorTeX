@@ -24,12 +24,15 @@ use crate::models::{Task, WorkerMetadataSender};
 /// the correct backpressure when the disk cannot keep up.
 const SINK_WRITER_CHANNEL_CAPACITY: usize = 64;
 
-/// How often a **bounded** (`job_limit = Some(_)`) sink wakes from a blocked `recv()` to re-check
-/// the shared completion signal, so it can terminate once the ventilator has finished dispatching
-/// and the in-flight set has drained (KNOWN_ISSUES D-5). `recv()` is cancel-safe — its `FairQueue`
+/// How often the sink wakes from `recv()` to re-check the shared completion signal, so it can
+/// terminate once the ventilator has finished dispatching and the in-flight set has drained. The
+/// ventilator sets that signal (`dispatch_complete`) both when a **bounded** run hits its limit
+/// (KNOWN_ISSUES D-5) and on a **graceful SIGTERM/SIGINT** (O-1) — so **every** run, production
+/// included, polls on this cadence. A production sink that instead blocked plainly in `recv()` with
+/// an idle fleet never noticed the shutdown and hung the supervisor's stop the full timeout →
+/// SIGKILL on every restart/deploy (KNOWN_ISSUES D-16). `recv()` is cancel-safe — its `FairQueue`
 /// buffers messages behind a `Mutex` and the `recv` future holds no message — so a timed-out poll
-/// loses nothing. Perpetual production runs (`job_limit = None`) never use this; they block
-/// plainly.
+/// loses nothing.
 const SINK_TERMINATION_POLL: Duration = Duration::from_millis(250);
 
 /// A unit of work streamed from the sink's receive loop to an archive-writer thread (dispatcher
@@ -221,7 +224,9 @@ impl Sink {
   /// Starts a receiver/sink `Server` (ZMQ Pull), to accept processing responses.
   /// The sink shares state with other manager threads via queues for tasks in progress,
   /// as well as a queue for completed tasks pending persisting to disk.
-  /// A job limit can be provided as a termination condition for the sink server.
+  /// Termination is driven entirely by the shared `dispatch_complete` signal (set by the ventilator
+  /// on a bounded run's end **or** a graceful shutdown), not by `_job_limit` — the sink stops once
+  /// dispatching is done and the in-flight set has drained.
   ///
   /// **Phase 5a (transport swap):** the receive loop now runs on the pure-Rust async `zeromq`
   /// transport, driven by a current-thread tokio runtime this sink thread owns. `zeromq` delivers
@@ -241,7 +246,7 @@ impl Sink {
     sandboxes_arc: &Arc<server::SandboxCache>,
     progress_queue_arc: &Arc<server::InFlightSet>,
     done_tx: &SyncSender<TaskReport>,
-    job_limit: Option<usize>,
+    _job_limit: Option<usize>,
     dispatch_complete: &Arc<AtomicBool>,
   ) -> Result<(), Box<dyn Error>> {
     // Hard cap on a single result's on-disk size (config `dispatcher.max_result_bytes`, default
@@ -310,11 +315,6 @@ impl Sink {
       // sustained bad-reply flood must not turn per-message `stderr` writes into a throughput-DoS
       // (KNOWN_ISSUES D-11) — count, don't narrate.
       let mut discard_log = server::RateLimitedLog::new(Duration::from_secs(5));
-      // A bounded run (`job_limit = Some(_)`) must be able to stop once the ventilator signals
-      // dispatching is done and the in-flight set has drained; a perpetual production run
-      // (`job_limit = None`) blocks plainly forever (terminated only by the manager's supervised
-      // abort), exactly as before.
-      let bounded = job_limit.is_some();
 
       loop {
         // Fail-fast: a writer thread that died (e.g. a panic in `generate_report`) must bring down
@@ -330,24 +330,22 @@ impl Sink {
         // the whole message arrives at once, so a short/malformed reply is just a short frame
         // vector (handled by `parse_reply_envelope`), never a desync of the next reply.
         //
-        // Bounded run: poll the recv so we wake to re-check the shared completion signal even when
-        // no result is arriving (e.g. the ventilator finished and the last result already landed
-        // before `dispatch_complete` flipped). The timeout only ever fires while idle — i.e. with
-        // nothing mid-delivery — and `recv()` is cancel-safe, so dropping the timed-out future
-        // loses no message (KNOWN_ISSUES D-5).
-        let recv_outcome = if bounded {
-          match tokio::time::timeout(SINK_TERMINATION_POLL, pull.recv()).await {
-            Ok(inner) => inner,
-            Err(_elapsed) => {
-              if dispatch_complete.load(Ordering::Acquire) && progress_queue_arc.is_empty() {
-                info!("sink: dispatching complete and in-flight drained; terminating sink");
-                break;
-              }
-              continue;
-            },
-          }
-        } else {
-          pull.recv().await
+        // Always poll the recv on a short timeout (every run, production included) so the sink
+        // wakes to re-check the shared completion signal even when idle —
+        // `dispatch_complete` is set by the ventilator both at a bounded run's end (D-5)
+        // and on a graceful SIGTERM/SIGINT (O-1). The timeout only fires while idle
+        // (nothing mid-delivery), and `recv()` is cancel-safe, so a dropped timed-out
+        // future loses no message (KNOWN_ISSUES D-5 + the D-16 idle-shutdown
+        // hang this closes: a production sink no longer blocks past the shutdown signal).
+        let recv_outcome = match tokio::time::timeout(SINK_TERMINATION_POLL, pull.recv()).await {
+          Ok(inner) => inner,
+          Err(_elapsed) => {
+            if dispatch_complete.load(Ordering::Acquire) && progress_queue_arc.is_empty() {
+              info!("sink: dispatching complete and in-flight drained; terminating sink");
+              break;
+            }
+            continue;
+          },
         };
         let msg = match recv_outcome {
           Ok(m) => m,
@@ -507,13 +505,14 @@ impl Sink {
           "sink: received result"
         );
 
-        // Bounded run: terminate once the ventilator has signalled dispatching is done AND every
-        // dispatched task has come back (the in-flight set is empty) — the shared completion
-        // condition that replaced the old per-thread `sink_job_count >= limit` (KNOWN_ISSUES D-5).
-        // Checked here right after a result lands (so the run ends promptly when the last one
-        // arrives) and on the recv-timeout poll above (so a sink already blocked when the signal
-        // flips still wakes to notice).
-        if bounded && dispatch_complete.load(Ordering::Acquire) && progress_queue_arc.is_empty() {
+        // Terminate once the ventilator has signalled dispatching is done AND every dispatched task
+        // has come back (the in-flight set is empty) — the shared completion condition that
+        // replaced the old per-thread `sink_job_count >= limit` (KNOWN_ISSUES D-5), set on
+        // a bounded run's end or a graceful shutdown (D-16). Checked here right after a
+        // result lands (so the run ends promptly when the last one arrives) and on the
+        // recv-timeout poll above (so a sink already blocked when the signal flips still
+        // wakes to notice).
+        if dispatch_complete.load(Ordering::Acquire) && progress_queue_arc.is_empty() {
           info!("sink: dispatching complete and in-flight drained; terminating sink");
           break;
         }
