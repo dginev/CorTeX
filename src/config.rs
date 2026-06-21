@@ -157,6 +157,27 @@ pub struct DispatcherConfig {
   /// (Probe interval/count are fixed sane
   /// values in [`crate::dispatcher::server::apply_tcp_keepalive`].)
   pub tcp_keepalive_idle_seconds: i32,
+  /// **Input-archive prefetcher pool size (D-20).** Number of background threads that warm the
+  /// next batch of task input archives into the OS page cache **ahead of dispatch**, so the
+  /// ventilator's inline `/data` read is served from RAM (~0.02 ms) instead of the cold
+  /// QLC-RAID6 platter (~10 ms median — the single-thread dispatch ceiling at full-arXiv scale
+  /// where the working set ≫ RAM). The warmers `open + read → discard`; the warmed bytes are
+  /// **reclaimable page cache**, not dispatcher RSS, so this cannot OOM (the kernel drops the
+  /// cache before the workers' anon memory). Graceful: a warm that lags or fails just leaves a
+  /// cold read, exactly as before. Default **8** (the warmers outpace dispatch ~8×, keeping the
+  /// window warm); **0 disables** (the ventilator reads inline, the pre-D-20 behavior).
+  pub input_prefetchers: usize,
+  /// **Per-entry prefetch cap (MiB).** Input archives larger than this are **not** prefetched —
+  /// they fall through to the ventilator's existing chunk-streaming read (O(chunk) resident, never
+  /// the whole file), so the rare 50–100 MB monster streams cold instead of doubling its bytes in
+  /// cache. Default **50**.
+  pub prefetch_max_entry_mb: usize,
+  /// **Total prefetch warm budget per batch (MiB).** The warmers stop warming a fetch batch once
+  /// their cumulative warmed bytes reach this, so a batch that clusters large entries can't dump
+  /// tens of GiB into page cache and churn out Postgres's working set; the batch's tail streams
+  /// cold. The typical batch (~`queue_size` × mean-entry ≈ a few hundred MiB) warms fully well
+  /// under this. Default **8192** (8 GiB).
+  pub prefetch_budget_mb: usize,
 }
 impl Default for DispatcherConfig {
   fn default() -> Self {
@@ -174,6 +195,9 @@ impl Default for DispatcherConfig {
       lease_timeout_seconds: 240,
       reap_interval_seconds: 60,
       tcp_keepalive_idle_seconds: 120,
+      input_prefetchers: 8,
+      prefetch_max_entry_mb: 50,
+      prefetch_budget_mb: 8192,
     }
   }
 }

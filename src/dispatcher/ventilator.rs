@@ -6,6 +6,7 @@ use std::sync::mpsc::SyncSender;
 use std::time::Duration;
 
 use crate::backend;
+use crate::dispatcher::prefetch::Prefetcher;
 use crate::dispatcher::server;
 use crate::helpers;
 use crate::helpers::{TaskProgress, TaskReport};
@@ -136,6 +137,19 @@ impl Ventilator {
     // sustained malformed-request flood must not turn per-message `stderr` writes into a
     // throughput-DoS (KNOWN_ISSUES D-11) — count, don't narrate.
     let mut discard_log = server::RateLimitedLog::new(Duration::from_secs(5));
+
+    // Input-archive prefetcher (D-20): warm each fetched batch's archives into the OS page cache
+    // ahead of dispatch, so the inline `/data` read below is served from RAM (~0.02 ms) instead of
+    // the cold QLC-RAID6 platter (~10 ms — the single-thread dispatch ceiling at full-arXiv scale).
+    // A no-op when `input_prefetchers = 0`; the read path stays byte-for-byte unchanged. Each
+    // warmer's channel is sized to a full batch so the round-robin feed never drops within one.
+    let dispatcher_cfg = &crate::config::config().dispatcher;
+    let prefetcher = Prefetcher::new(
+      dispatcher_cfg.input_prefetchers,
+      self.queue_size,
+      dispatcher_cfg.prefetch_max_entry_mb * 1024 * 1024,
+      dispatcher_cfg.prefetch_budget_mb * 1024 * 1024,
+    );
 
     loop {
       // Graceful shutdown (O-1): a SIGTERM/SIGINT set the flag. Stop leasing new work, signal
@@ -282,6 +296,11 @@ impl Ventilator {
           let fetched_tasks = backend
             .fetch_tasks(&service, self.queue_size)
             .unwrap_or_default();
+          // D-20: warm this batch's input archives into page cache in DISPATCH order. `task_queue`
+          // is popped LIFO (from the end after the `extend` below), so the batch is dispatched in
+          // reverse of fetch order — feed reversed so the next-to-dispatch archives warm first.
+          // No-op when prefetching is disabled.
+          prefetcher.warm_batch(fetched_tasks.iter().rev().map(|task| task.entry.clone()));
           // D-17: capture the effective lease for THIS service — its `lease_timeout_seconds`
           // override, else the global dispatcher default — at dispatch time. `expected_at` uses the
           // captured value, so one dispatcher serves fast (latexml-oxide) and slow (Perl) services

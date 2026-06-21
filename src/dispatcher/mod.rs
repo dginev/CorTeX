@@ -5,6 +5,8 @@
 pub mod finalize;
 /// Manager orchestrating all dispatcher threads
 pub mod manager;
+/// Input-archive page-cache prefetcher (D-20)
+pub mod prefetch;
 /// Shared server utility functions between all dispatcher components
 pub mod server;
 /// Receiver ZMQ sink component
