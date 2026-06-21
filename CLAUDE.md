@@ -26,9 +26,11 @@ Active branch: **`master`** (the `productize-2026` sprint branch was merged and 
   `Warning=-2`, `Error=-3`, `Fatal=-4`, `Invalid=-5`, `Blocked<-5`, `Queued>0` (a positive lease
   mark). These ints are also hardcoded in `scripts/*.sh`.
 - **Magic service ids:** `1=init`, `2=import`, `>2`=real services. Code relies on this.
-- **`Backend::default()` opens a NEW PgConnection** — every Rocket handler does this per request;
-  `WorkerMetadata` spawns a new thread+connection per ZMQ transaction. (Pooling is Arm 3; don't add
-  more unpooled connections.)
+- **DB connections are POOLED now (Arm 3 landed).** The frontend injects an **r2d2 `DbPool`** into
+  handlers via Rocket `State` (~110 handlers `pool.get()`; ~5 legacy `Backend::default()` callers
+  remain). The dispatcher's ventilator + finalize each hold **one long-lived** `PgConnection`, and the
+  **`WorkerMetadata` writer is a single pooled background thread** (D-1 replaced the old
+  thread+connection-per-ZMQ-transaction spawn). **Don't add new unpooled per-event connections.**
 - **DB URL is now RUNTIME config** (Arm 1 landed): `backend::default_db_address()` reads
   `config().database.url` from figment (`src/config.rs`) — precedence: defaults → `cortex.toml` →
   `CORTEX_`-prefixed env (`CORTEX_DATABASE__URL`) → legacy `DATABASE_URL`/`.env` (loaded at runtime via
