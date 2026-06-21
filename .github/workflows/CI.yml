@@ -102,7 +102,7 @@ jobs:
         # config().auth.rerun_tokens). Those tokens live in config.json, which is gitignored (it is a
         # real deployment's secrets file), so CI materializes it from the shipped template — which
         # carries exactly the test fixtures token1/token2 used by the suite.
-        run: cp config.default.json config.json
+        run: cp config.example.json config.json
 
       - name: Tests
         # --no-fail-fast so one failing binary doesn't mask the rest. The L-1 teardown SIGSEGV is
