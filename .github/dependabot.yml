@@ -7,9 +7,6 @@ updates:
     time: "10:00"
   open-pull-requests-limit: 10
   ignore:
-  - dependency-name: redis
-    versions:
-    - ">= 0.11.a, < 0.12"
   - dependency-name: time
     versions:
     - ">= 0.2.a, < 0.3"

@@ -7,7 +7,6 @@
 # Environment overrides nest with `__`, e.g.:
 #   CORTEX_DATABASE__URL=postgres://user:pass@host/db
 #   CORTEX_DISPATCHER__SOURCE_PORT=51695
-#   CORTEX_CACHE__REDIS_URL=redis://127.0.0.1/
 #
 # The historic DATABASE_URL / TEST_DATABASE_URL variables (e.g. from a local `.env`) remain
 # authoritative when set, so existing deployments keep working without a cortex.toml.
@@ -22,15 +21,10 @@ result_port = 51696
 queue_size = 800       # must not exceed PostgreSQL's max_locks_per_transaction
 message_size = 100000  # bytes per ZeroMQ chunk
 
-[cache]
-redis_url = "redis://127.0.0.1/"
-required = false       # frontend currently still requires Redis; see plan Arm 11
-
-# Frontend auth / secrets. The legacy `config.json`, if present in the working directory, overrides
-# this section for backwards compatibility.
-# [auth]
-# captcha_secret = ""
-# rerun_tokens = { "secret-token" = "username" }   # gate the rerun / save-snapshot actions
+# Frontend auth / secrets are NOT set here. Admin/API + rerun tokens live in the JSON token file
+# (`config.json` in the CWD, or `CORTEX_AUTH_FILE`) — see `config.example.json`; manage it with
+# `cortex set-admin-token` / `revoke-token`. (`CortexConfig.auth` is `#[serde(skip)]`, so figment
+# never reads a `cortex.toml [auth]` section — one source of truth for tokens.)
 
 [assets]
 template_dir = "templates"   # use an absolute path for packaged installs (decouples from the CWD)
