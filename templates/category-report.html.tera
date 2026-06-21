@@ -42,13 +42,14 @@
     </tbody>
   </table>
 
-  <div class="report-pagination">
+  <nav class="report-pagination" aria-label="Message pages">
     {% if global.offset_min_false %}
-    <a href="{{global.current_link_uri}}?offset={{global.prev_offset}}&page_size={{global.page_size}}&all={{global.all_messages}}">&lt;&lt; previous</a>
-    {% endif %}
+    <a href="{{global.current_link_uri}}?offset={{global.prev_offset}}&page_size={{global.page_size}}&all={{global.all_messages}}"><i class="fa fa-arrow-left"></i> Previous</a>
+    {% else %}<span class="muted"><i class="fa fa-arrow-left"></i> Previous</span>{% endif %}
+    <span class="report-sep">·</span>
     {% if global.offset_max_false %}
-    <a href="{{global.current_link_uri}}?offset={{global.next_offset}}&page_size={{global.page_size}}&all={{global.all_messages}}">next &gt;&gt;</a>
-    {% endif %}
-  </div>
+    <a href="{{global.current_link_uri}}?offset={{global.next_offset}}&page_size={{global.page_size}}&all={{global.all_messages}}">Next <i class="fa fa-arrow-right"></i></a>
+    {% else %}<span class="muted">Next <i class="fa fa-arrow-right"></i></span>{% endif %}
+  </nav>
 </div>
 {% endblock content %}

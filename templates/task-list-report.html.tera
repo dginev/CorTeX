@@ -36,13 +36,15 @@
     {% include "entry-view-report" %}
   </div>
 
-  <div>
+  <nav class="report-pagination" aria-label="Task pages">
     {% if global.offset_min_false %}
-    <span><a href="{{global.current_link_uri}}?offset={{global.prev_offset}}&page_size={{global.page_size}}">&lt;&lt; previous</a></span>
-    {% endif %}
-    <span>[{{global.from_offset}}-{{global.to_offset}}]</span>
+    <a href="{{global.current_link_uri}}?offset={{global.prev_offset}}&page_size={{global.page_size}}"><i class="fa fa-arrow-left"></i> Previous</a>
+    {% else %}<span class="muted"><i class="fa fa-arrow-left"></i> Previous</span>{% endif %}
+    <span class="report-sep">·</span>
+    <span class="muted">[{{global.from_offset}}&ndash;{{global.to_offset}}]</span>
+    <span class="report-sep">·</span>
     {% if global.offset_max_false %}
-    <span><a href="{{global.current_link_uri}}?offset={{global.next_offset}}&page_size={{global.page_size}}">next &gt;&gt;</a></span>
-    {% endif %}
-  </div>
+    <a href="{{global.current_link_uri}}?offset={{global.next_offset}}&page_size={{global.page_size}}">Next <i class="fa fa-arrow-right"></i></a>
+    {% else %}<span class="muted">Next <i class="fa fa-arrow-right"></i></span>{% endif %}
+  </nav>
   {% endblock content %}

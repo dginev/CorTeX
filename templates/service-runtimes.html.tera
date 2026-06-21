@@ -78,7 +78,7 @@
       </table>
 
       {# Pagination #}
-      <nav class="runtime-pager" aria-label="Slowest-conversions pages">
+      <nav class="report-pagination" aria-label="Slowest-conversions pages">
         {% if global.has_prev == "true" %}
         <a href="/runtimes/{{global.service_name_uri}}?offset={{global.prev_offset}}&page_size={{global.page_size}}"><i class="fa fa-arrow-left"></i> Previous</a>
         {% else %}<span class="muted"><i class="fa fa-arrow-left"></i> Previous</span>{% endif %}

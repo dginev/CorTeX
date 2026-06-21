@@ -41,10 +41,10 @@
   </table>
 
   {% if has_prev or has_next %}
-  <nav class="center" aria-label="Audit log pages">
-    {% if has_prev %}<a href="/admin/audit?page={{ prev_page }}{% if actor_filter %}&amp;actor={{ actor_filter }}{% endif %}">&larr; newer</a>{% else %}<span class="muted">&larr; newer</span>{% endif %}
-    &nbsp;&middot;&nbsp;<span class="muted">page {{ page + 1 }}</span>&nbsp;&middot;&nbsp;
-    {% if has_next %}<a href="/admin/audit?page={{ next_page }}{% if actor_filter %}&amp;actor={{ actor_filter }}{% endif %}">older &rarr;</a>{% else %}<span class="muted">older &rarr;</span>{% endif %}
+  <nav class="report-pagination" aria-label="Audit log pages">
+    {% if has_prev %}<a href="/admin/audit?page={{ prev_page }}{% if actor_filter %}&amp;actor={{ actor_filter }}{% endif %}"><i class="fa fa-arrow-left"></i> Newer</a>{% else %}<span class="muted"><i class="fa fa-arrow-left"></i> Newer</span>{% endif %}
+    <span class="report-sep">·</span><span class="muted">page {{ page + 1 }}</span><span class="report-sep">·</span>
+    {% if has_next %}<a href="/admin/audit?page={{ next_page }}{% if actor_filter %}&amp;actor={{ actor_filter }}{% endif %}">Older <i class="fa fa-arrow-right"></i></a>{% else %}<span class="muted">Older <i class="fa fa-arrow-right"></i></span>{% endif %}
   </nav>
   {% endif %}
 </div>

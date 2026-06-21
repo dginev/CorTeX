@@ -1917,7 +1917,8 @@ h3 {
   text-align: center;
   font-size: var(--fs-md);
 }
-.report-pagination a {
+.report-pagination a,
+.report-pagination .muted {
   padding: 0 0.6rem;
 }
 
