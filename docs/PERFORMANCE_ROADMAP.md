@@ -1,8 +1,9 @@
-# CorTeX Long-Term Performance and Robustness Handoff
+# CorTeX Long-Term Performance and Robustness Roadmap
 
-**Status:** OPEN. Reviewed 2026-06-20, tightened to non-speculative work.
+**Status:** OPEN. Reviewed 2026-06-20, tightened to non-speculative work. (Was `HANDOFF.md` at the repo
+root; relocated here as a standing roadmap once the original perf-opt easy-win handoff was completed.)
 
-This handoff only lists improvements that are certain to help CorTeX long-term because they address observed workload behavior, current code structure, or already-documented operational limits. It intentionally excludes minor cleanup and deployment-dependent ideas.
+This roadmap only lists improvements that are certain to help CorTeX long-term because they address observed workload behavior, current code structure, or already-documented operational limits. It intentionally excludes minor cleanup and deployment-dependent ideas.
 
 ## Performance Review
 
