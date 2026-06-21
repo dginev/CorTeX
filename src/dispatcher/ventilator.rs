@@ -151,6 +151,32 @@ impl Ventilator {
         dispatch_complete.store(true, Ordering::SeqCst);
         return Ok(real_dispatched);
       }
+      // Reap timed-out in-flight tasks on a **wall-clock** cadence, decoupled from worker request
+      // traffic (D-19). Runs at the top of every loop iteration — including the idle ~250ms
+      // RCVTIMEO ticks below — so an expired task is requeued/dead-lettered within
+      // ~`reap_interval` even at a fully idle tail (e.g. D-18-deferred empty results awaiting
+      // retry after the fleet drained), not just when a worker next happens to ask for work.
+      // The `reap_interval` gate keeps the actual scan to its cadence; the per-iteration
+      // timestamp compare is cheap. Routes each expired task back to its own service's queue
+      // or reports it Fatal, so the in-flight set drains even while saturated (backpressure)
+      // — closes the D-6 reaping-coupling residual.
+      let now_sec = chrono::Utc::now().timestamp();
+      if now_sec - last_reap_sec >= reap_interval_secs {
+        last_reap_sec = now_sec;
+        let reaped = server::reap_expired_into(&mut queues, progress_queue_arc, done_tx);
+        // Health signal (Arm 8 observability; transport-independent): the in-flight gauge plus the
+        // re-lease / dead-letter counts for this reaping pass. Only logged when something actually
+        // timed out (the cadence is otherwise quiet), at `info` because a dead-letter is a task we
+        // gave up on — an operator-relevant event.
+        if reaped.requeued + reaped.dead_lettered > 0 {
+          info!(
+            in_flight = progress_queue_arc.len(),
+            requeued = reaped.requeued,
+            dead_lettered = reaped.dead_lettered,
+            "dispatcher: reaped timed-out in-flight tasks"
+          );
+        }
+      }
       let mut identity = zmq::Message::new();
       let mut msg = zmq::Message::new();
       // A worker request is exactly `[identity, service_name]` on the ROUTER: the DEALER worker
@@ -167,8 +193,9 @@ impl Ventilator {
       // service, taskid, …]` envelope hardening.
       match ventilator.recv(&mut identity, 0) {
         Ok(()) => {},
-        // RCVTIMEO elapsed with no request — loop back to re-check the shutdown flag (D-15: an idle
-        // ventilator now stops within ~250ms of SIGTERM instead of hanging the supervisor stop).
+        // RCVTIMEO elapsed with no request — loop back to re-check the shutdown flag and run the
+        // wall-clock reap at the top of the loop (D-15 + D-19: an idle ventilator both stops within
+        // ~250ms of SIGTERM and keeps reaping expired in-flight tasks).
         Err(zmq::Error::EAGAIN) => continue,
         Err(e) => return Err(e.into()),
       }
@@ -209,25 +236,7 @@ impl Ventilator {
       // Whether this iteration actually leased a task to the worker (vs. a mock-reply). Drives the
       // bounded-run source-drain check at the bottom of the loop.
       let mut dispatched_this_iter = false;
-      // Reap timed-out in-flight tasks on a cadence (decoupled from refetch): routes each expired
-      // task back to its own service's queue or reports it Fatal, so the in-flight set drains even
-      // while saturated (backpressure) — closes the D-6 reaping-coupling residual.
-      if request_time.timestamp() - last_reap_sec >= reap_interval_secs {
-        last_reap_sec = request_time.timestamp();
-        let reaped = server::reap_expired_into(&mut queues, progress_queue_arc, done_tx);
-        // Health signal (Arm 8 observability; transport-independent): the in-flight gauge plus the
-        // re-lease / dead-letter counts for this reaping pass. Only logged when something actually
-        // timed out (the cadence is otherwise quiet), at `info` because a dead-letter is a task we
-        // gave up on — an operator-relevant event.
-        if reaped.requeued + reaped.dead_lettered > 0 {
-          info!(
-            in_flight = progress_queue_arc.len(),
-            requeued = reaped.requeued,
-            dead_lettered = reaped.dead_lettered,
-            "dispatcher: reaped timed-out in-flight tasks"
-          );
-        }
-      }
+      // (Reaping happens at the loop top now, on a wall-clock cadence — see D-19 above.)
       // Requests for unknown service names will be silently ignored.
       let service_opt = match server::get_sync_service(&service_name, services_arc, &mut backend) {
         Some(s) => Some(s),
