@@ -1,147 +1,125 @@
-# HANDOFF — cortex-worker (latexml-oxide) fleet performance optimization
+# CorTeX Long-Term Performance and Robustness Handoff
 
-**Status:** OPEN. **Gates cortex v0.6.0** (owner call, 2026-06-20): do not cut v0.6.0 until the
-pipeline-throughput improvements discovered below are landed (or the hard floor is proven + documented).
+**Status:** OPEN. Reviewed 2026-06-20, tightened to non-speculative work.
 
-## TL;DR
+This handoff only lists improvements that are certain to help CorTeX long-term because they address observed workload behavior, current code structure, or already-documented operational limits. It intentionally excludes minor cleanup and deployment-dependent ideas.
 
-A controlled **Rust-vs-Perl experiment** — both engines dockerized, **72 workers each**, on the **same
-10k shuffled arXiv sandbox** (`sandbox-arxiv-10k-shuffle`), the **same dispatcher** — measured
-latexml-oxide at **~6.5× faster end-to-end** than the legacy Perl LaTeXML. But latexml-oxide is known
-to be **20–30× faster as a converter**. The gap means the **Rust fleet is pipeline-bound, not
-engine-bound**: the converter finishes fast, then waits on the shared CorTeX path
-(ventilator → sink → finalize → Postgres). **Goal: find + fix the easy-win bottlenecks so fleet
-throughput approaches the engine's real speed.**
+## Performance Review
 
-## The numbers (PRELIMINARY — finalize at Perl #192 completion)
+### P1. Add end-to-end pipeline timing before further throughput work
 
-| metric (72 workers) | Rust (latexml-oxide) #190 | Perl (LaTeXML) #192 |
-|---|---|---|
-| throughput | **13.4 papers/s** | ~2.1 papers/s |
-| per paper / worker | **5.4 s** | ~35 s |
-| 10k wall-clock | ~12 min | ~80 min (projected) |
-| `log_*` rows / run | ~1.12 M | ~0.9 M |
-| `loaded_file` rows / run | ~440 k | ~810 k |
-| robustness | clean (pathological tail only) | `rq=0 dl=0` (with lease=2760) |
+**Certain value:** The current dispatcher has multiple real shared stages: source streaming in `src/dispatcher/ventilator.rs`, result receive/write/parse in `src/dispatcher/sink.rs`, report parsing in `src/helpers.rs::generate_report`, and DB persistence in `src/backend/mark.rs::mark_done` through `src/dispatcher/finalize.rs`. The 72-worker latexml-oxide run measured about **13.4 papers/s**, far below the engine-level speedup expected from latexml-oxide, so CorTeX needs stage-level evidence before changing architecture.
 
-End-to-end speedup **6.5×** vs an expected converter speedup of **20–30×** → roughly **3–5× of headroom
-is being lost in the pipeline**, not the engine.
+**Plan:**
 
-**Measurement caveat — failure mix.** These are *aggregate task* throughput numbers, not pure conversion
-speed: a task "finishes" either by a real conversion or by a *fast failure*. Perl produces **more
-Fatals/Invalids** than Rust (baseline ~202 fatal + 151 invalid vs Rust ~50 + 95), and a fast-failing paper
-(e.g. `Fatal:invalid:empty_input`) resolves almost instantly — so some of Perl's ~2.1/s is **cheap
-fast-Fatals inflating its aggregate rate**. Two consequences: (a) the true *converter* speedup on the
-papers that actually convert is likely **higher than 6.3×** — Perl's slow part is its *successful*
-conversions, which the aggregate dilutes with quick failures; (b) that makes the pipeline-bound gap even
-starker. **Validate in the investigation:** segment throughput + per-paper wall-clock **by outcome**
-(`no_problem`/`warning` vs `fatal`/`invalid`), and compute the engine speedup on the **shared
-`no_problem` set** both engines convert — not the divergent failure tails.
+1. Add structured timing for each finalized task: task leased, source stream started/finished, sink received bytes, writer began/finished archive write, `generate_report` began/finished, done queue handoff, `mark_done` transaction began/finished.
+2. Emit low-cardinality aggregate metrics: p50/p95/p99 per stage, bytes in/out, finalize batch size, finalize transaction latency, and sink writer utilization.
+3. Run the same 10k sandbox at fixed worker counts, then repeat after each major change. This becomes the permanent regression harness for dispatcher throughput.
 
-## Evidence it's pipeline-bound (not the converter)
+**Done when:** a run can answer, with numbers, whether the bottleneck is source I/O, sink I/O, log parsing, DB writes, or queueing.
 
-1. **Sub-linear worker scaling.** 72 Rust workers → ~13.4/s; **124 workers (bare-metal, earlier) → only
-   ~16/s peak.** Nearly doubling workers barely moved throughput ⇒ a shared ceiling, not per-worker compute.
-2. **Per-paper math.** 5.4 s/paper/worker at 72w. If the engine converts a typical arXiv paper in well
-   under a second standalone, the remaining ~4+ s/paper is pipeline wait (source stream-in, result
-   stream-out, lease, parse, finalize).
-3. **Write amplification.** ~1.12 M `log_*` rows per 10k run (440 k of them `loaded_file`), inserted into
-   `log_infos` already at **62 GB**. The finalize path batch-INSERTs all of these on the hot path.
-4. **Prior expectation.** Project notes already flag that "latexml-oxide flips the bottleneck to I/O+DB."
-   This experiment is the first hard measurement of it.
+### P2. Compact high-volume log storage
 
-## Reproduce
+**Certain value:** The current model stores every parsed log message as an independent row across `log_infos`, `log_warnings`, `log_errors`, `log_fatals`, and `log_invalids`. A 10k run already writes roughly 1M+ `log_*` rows, and `loaded_file`/info rows dominate. This is a permanent scaling cost: larger corpora and more complete Rust dependency logging will increase DB size, WAL volume, index churn, finalize latency, report latency, and maintenance work.
 
-Both images are built on **ubuntu:24.04** (TL2023 parity, so a Rust-vs-Perl diff is the engine, not the texmf tree):
+**Plan:**
 
-```bash
-# Rust fleet (latexml-oxide), 72 workers:
-docker run -d --name cw-fleet  --network host --shm-size=32g --hostname=$(hostname) \
-  -e WORKERS=72        cortex-worker:latest 127.0.0.1
-# Perl fleet (legacy LaTeXML), 72 workers (override baked into the image):
-docker run -d --name perl-fleet --network host --shm-size=32g --hostname=$(hostname) \
-  -e CORTEX_WORKERS=72 latexml-plugin-cortex:3.0 latexml_harness 127.0.0.1 51695 51696 tex_to_html
-# Rerun a service on the sandbox to feed a fleet (clean-slate, R-13 verified):
-./target/release/cortex rerun sandbox-arxiv-10k-shuffle <oxidized-tex-to-html|tex_to_html> --yes
+1. Measure current duplication by category, especially `loaded_file`, grouped through tasks by `(corpus_id, service_id, category, what/details)`.
+2. Introduce compact storage for repetitive dependency/load facts. A durable shape is:
+   - `loaded_files(id, service_id, logical_name, source_kind)`
+   - `task_loaded_files(task_id, loaded_file_id)`
+3. Keep diagnostic severities in the existing log tables unless measurement shows another high-duplication class.
+4. Adapt `generate_report`/`mark_done` so repetitive facts enter the compact path while report pages and APIs keep their current semantics.
+5. Keep old `log_infos` rows readable; compact new runs first. Backfill only if historical storage pressure justifies it.
+
+**Done when:** rows written per 10k run, WAL generated per run, DB size growth, and finalize p95 are materially lower with no report fidelity loss.
+
+### P3. Fix status overview aggregation with measured indexing
+
+**Certain value:** `src/backend/reports.rs::progress_report` computes live status counts from `tasks` for each corpus/service. The schema has partial status indexes and a `service_id` index, but no covering `(corpus_id, service_id, status)` index for this query shape. The code path is known and durable; improving it reduces page/API cost for large corpora.
+
+**Plan:**
+
+1. Capture `EXPLAIN (ANALYZE, BUFFERS)` for `progress_report` on the largest corpus/service pairs.
+2. If the plan is not already index-efficient, add:
+
+```sql
+CREATE INDEX CONCURRENTLY tasks_corpus_service_status_idx
+ON tasks (corpus_id, service_id, status);
 ```
 
-Run them **sequentially** (not both at once) to avoid CPU/RAM contention skewing the numbers.
-Dispatcher config in use: `cortex.toml [dispatcher] lease_timeout_seconds = 2760` (raised from 240 to fit
-the Perl worker's 45-min budget — see D-17; the Rust worker wants 240).
+3. After the index exists, replace per-service N+1 calls with one query per corpus: `WHERE corpus_id = $1 GROUP BY service_id, status`.
+4. Keep status aggregation separate from `report_grain_cache`; status includes `TODO`, `Queued`, and `Blocked`, not only message-backed severities.
 
-## Investigation plan
+**Done when:** corpus overview/API status counts use one measured efficient query per corpus.
 
-1. **Establish the engine's TRUE rate** (isolate the converter from the pipeline): run
-   `cortex_worker --standalone --input <zip> --output <zip>` over a representative sample and measure
-   papers/s. `(standalone_rate × 72) ÷ 13.4` = the pipeline tax. This tells us how much headroom exists.
-2. **Profile the pipeline under Rust load** — where does a paper's wall-clock go between *leased* and
-   *finalized*? Trace: ventilator source-send → sink recv + archive-write → `generate_report` parse →
-   finalize batch INSERT → status UPDATE.
-3. **Worker-count sweep on a clean box** — plot fleet throughput vs worker count (32/48/64/72/96/124); the
-   knee localizes the ceiling.
-4. **DB-side** — insert rate, checkpoint frequency (`max_wal_size` now 16 GB), lock/HOT contention on the
-   `log_*` tables, and the `report_summary` rollup refresh cost on run completion.
+## Robustness Review
 
-## Candidate bottlenecks (ranked suspects — confirm before fixing)
+### R1. Make lease timeout service-specific
 
-- **Finalize / DB writes (most likely).** `src/backend/mark.rs::mark_done` batch-INSERTs ~1.12 M `log_*`
-  rows/run + status UPDATEs, one transaction per drain, chunked at 16 k rows; `finalize_batch_size=1024`.
-  Suspects: batch sizing, per-row overhead, index maintenance on the 62 GB `log_*` tables (D-8 write
-  amplification), a single serialized finalize thread.
-- **`loaded_file` volume.** 440 k highly-repetitive rows/run (every paper logs `TeX.pool`/`latexml.sty`/
-  `article.cls`…). Consider aggregating per-(corpus,service) instead of one row/task — a large write
-  reduction with no information loss (cf. P-2 territory).
-- **Sink archive-writing.** `src/dispatcher/sink.rs` — result ZIP streamed in and written to `/data` by the
-  archive-writer pool (`SINK_WRITERS`). Is the pool the limiter? Is `/data` (QLC RAID6) the I/O floor?
-- **`generate_report` parsing.** `src/helpers.rs::generate_report` parses each `cortex.log` → message
-  structs; a 32 KB log with thousands of `(Loading …)` lines — is the regex/parse hot?
-- **Connection model.** `WorkerMetadata` spawns a new thread+`PgConnection` per ZMQ transaction; finalize
-  DB access. Pooling (Arm 3) interactions.
-- **Ventilator source-streaming.** `src/dispatcher/ventilator.rs` — reading the source archive from `/data`
-  + streaming it out; `fetch_tasks` batch + lease marking.
+**Certain value:** The current lease timeout is global (`dispatcher.lease_timeout_seconds`, read by `TaskProgress::expected_at`). This already conflicts with mixed worker runtimes: fast latexml-oxide wants a short lease for prompt dead-worker recovery, while slow Perl workers need a much longer lease to avoid false reaping. A per-service lease is a correctness and operations improvement independent of future architecture.
 
-## Follow-up — `loaded_file` parity: log binding loads in Rust (full transitive deps)
+**Plan:**
 
-The experiment exposed a `loaded_file` semantics gap: **Perl logs ~78 files/paper, Rust ~44** — *not*
-double-counting (both ~1:1 distinct) and *not* a Rust I/O bug. The difference is **`.ltxml` binding loads**:
-Perl loads each package's LaTeXML binding (`amsmath.sty.ltxml`, `article.cls.ltxml`, `Base.pool.ltxml`, …)
-from disk and logs a `(Loading …)` for each; Rust has those bindings **compiled in** (`runtime-bindings`
-off), so it never loads them → never logs them. Rust's `loaded_file` is therefore only the raw disk reads
-(pools/cls/sty/fonts with no compiled binding) — e.g. **13 vs 51** distinct on `math0104260`.
+1. Add nullable `services.lease_timeout_seconds`; `NULL` preserves the global dispatcher default.
+2. Store the effective lease timeout in `TaskProgress` at dispatch time so later config changes do not alter already-leased tasks.
+3. Update reaper tests to cover two services with different lease durations.
+4. Expose the setting in CLI/API/admin service configuration and document recommended values for known worker classes.
 
-**Wanted (owner, 2026-06-20):** Rust should emit a `loaded_file` note **every time it loads/applies a
-binding**, including transitively (when a binding pulls in another), so the report captures the **full
-transitive dependency set** and matches Perl's coverage in effect. Implementation: in latexml-oxide's
-binding-resolution path, emit a note per compiled-in binding applied (the same note stream that now reaches
-`cortex.log` via the logger fix), keyed by the logical package name (e.g. `amsmath.sty.ltxml`/`amsmath`),
-not a disk path. **Interaction with the perf-opt:** this *raises* Rust's `loaded_file` volume toward Perl's
-~78/paper (~2× the current 44), which makes the **dedup/aggregate-per-(corpus,service)** item above more
-important — do the two together (log full deps, store them compactly).
+**Done when:** one dispatcher can safely serve fast and slow services without either false reaps or unnecessarily delayed recovery.
 
-## Constraints
+### R2. Add hard timeouts to blocking admin operations where the backend supports them
 
-- **Do not regress Perl compatibility** — the same dispatcher must keep serving the Perl worker (D-17:
-  lease tuning is per-engine; the proper fix is a per-service `lease_timeout` in the DB).
-- **Maximum-robustness mandate** (`docs/DESIGN_PRINCIPLES.md`): no unbounded per-event resource
-  acquisition, no silent loss, idempotent crash-consistent writes. Any finalize/sink change must preserve
-  the loss-free + crash-consistent guarantees (`mark_done`'s single-transaction batch, the lease reaper).
-- **Keep the integrity this experiment verified**: all 5 severities parsed, every `no_problem` → valid
-  HTML, failed → cortex.log-only, no archive corruption through ZMQ → sink → `/data`.
+**Certain value:** Background jobs are detached in-process threads (`src/jobs.rs::spawn_job`). The job table can mark stale jobs interrupted, but Rust cannot force-cancel a blocked thread. Adding timeouts to blocking calls that support them reduces the chance of leaked job threads and pinned DB connections.
 
-## Definition of done
+**Plan:**
 
-- The throughput gap toward the ~20–30× engine speedup is **materially closed** (top 1–2 bottlenecks
-  fixed), **or** the hard floor is identified and documented with evidence.
-- No robustness regression; both Rust and Perl still run clean on the 10k sandbox.
-- **Then** cut cortex v0.6.0.
+1. Set PostgreSQL `statement_timeout` and `lock_timeout` on maintenance-job connections before `REINDEX`, `ANALYZE`, report-cache invalidation, and any future long-running SQL job.
+2. Make timeout values configurable under `[jobs]` or a maintenance-specific config section.
+3. Ensure timed-out jobs finish as `failed` with the failing table/operation in the message.
+4. Document the remaining in-process limitation: a non-DB blocking syscall can still require process restart to reclaim the thread.
 
-## Related / loose ends
+**Done when:** DB-backed admin jobs cannot block forever on a lock or runaway statement.
 
-- **D-17** (`docs/POSSIBLE_UPGRADES.md`): per-service `lease_timeout` — the Rust(180s)-vs-Perl(2700s) lease
-  mismatch surfaced by this experiment; interim mitigation is the global `lease_timeout_seconds = 2760`.
-- **`loaded_file` fix** (latexml-oxide logger: capture `(Loading …)` notes into `cortex.log`): landed;
-  adds ~440 k rows/run — a direct input to the write-amplification suspect above.
-- **5 oxidized #190 stragglers** left in TODO (pathological tail, recoverable, not a bug) — close at the
-  v0.6.0 wrap.
-- The cortex commits staged for v0.6.0 (R-13, the worker launcher, D-16, D-17, the docker work) are on
-  `master` but **the version bump + tag wait on this perf work**.
+### R3. Move detailed storage probing off request paths
+
+**Certain value:** `std::fs` calls can block indefinitely on a hung network mount. The public `/healthz` is already storage-independent, which is correct. The detailed admin health/storage view should also avoid doing blocking filesystem probes directly in request handling.
+
+**Plan:**
+
+1. Add a periodic storage probe that records per-corpus status and timestamp: ok, unreadable, timed out, stale.
+2. Serve detailed health from the last recorded probe result instead of calling filesystem metadata APIs in the request.
+3. Keep `/healthz` DB-only/storage-independent.
+4. If imports are expected to run against network mounts, route them through the same timeout policy or document that hung mounts require frontend restart.
+
+**Done when:** a hung storage mount cannot tie up repeated admin health requests.
+
+### R4. Make finalize DB failure visible and controlled
+
+**Certain value:** `server::mark_done_batch` retries DB persistence three times, then returns an error that causes dispatcher restart. That is crash-consistent because tasks remain recoverable, but it is operationally coarse: repeated DB failures can look like restart loops without enough signal.
+
+**Plan:**
+
+1. Add metrics/log fields for finalize retry count, exhausted retries, batch size, transaction latency, and time since last successful finalize.
+2. On exhausted retries, set a shared “persistence unhealthy” state before aborting so the final logs and health surfaces explain why leasing stopped/restarted.
+3. Stop leasing new work as soon as persistence is known unhealthy; let in-flight work drain as far as possible before the supervisor restart path takes over.
+
+**Done when:** DB persistence failures are diagnosable from metrics/logs and do not continue leasing avoidable new work during a known persistence outage.
+
+## Suggested Execution Order
+
+1. Add pipeline timing and finalize metrics.
+2. Implement per-service leases.
+3. Compact high-volume log storage.
+4. Measure and fix status overview aggregation.
+5. Add DB timeouts for admin jobs.
+6. Move detailed storage probing off request paths.
+
+## Validation Gates
+
+- 10k shuffled arXiv run with stage timing enabled and overhead confirmed acceptable.
+- Mixed fast/slow service test showing service-specific lease behavior.
+- Before/after DB write-volume numbers for compacted log storage.
+- `EXPLAIN (ANALYZE, BUFFERS)` before and after the status aggregation index/query change.
+- Admin job timeout test using a lock-waiting SQL statement.
+- Storage-probe test where a timed-out probe does not block the health request path.
