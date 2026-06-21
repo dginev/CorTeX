@@ -563,6 +563,31 @@ fn document_forensics_reports_status_and_messages() {
     Status::Ok,
     "the preview shell renders even without the archive (asset fetched client-side)"
   );
+  // A missing corpus / service / document in the preview path is an *informative* 404, never a 500.
+  // Regression: an unresolved corpus/service used to fall through to a half-populated
+  // `task-preview` render that Tera 500'd on (e.g. a `tex-to-html` vs `tex_to_html` slug
+  // mismatch).
+  for (path, what) in [
+    (
+      format!("/preview/no-such-corpus/{SERVICE_NAME}/0801.1234"),
+      "corpus",
+    ),
+    (
+      format!("/preview/{CORPUS_NAME}/no-such-service/0801.1234"),
+      "service",
+    ),
+    (
+      format!("/preview/{CORPUS_NAME}/{SERVICE_NAME}/no-such-doc-9999"),
+      "document",
+    ),
+  ] {
+    let response = client.get(path).dispatch();
+    assert_eq!(
+      response.status(),
+      Status::NotFound,
+      "preview of a missing {what} is a clean 404, not a 500"
+    );
+  }
 
   // The no-JS lookup shortcut: GET /document/<c>/<s>?name=<id> redirects to the canonical path URL,
   // so the service-overview "look up an article" form reaches the forensic screen with scripting

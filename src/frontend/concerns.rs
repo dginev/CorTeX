@@ -796,57 +796,58 @@ pub fn serve_entry_preview(
   let mut context = TemplateContext::default();
   let mut global = HashMap::new();
 
-  let corpus_result = Corpus::find_by_name(&corpus_name, connection);
-  if let Ok(corpus) = corpus_result {
-    let service_result = Service::find_by_name(&service_name, connection);
-    if let Ok(service) = service_result {
-      // Assemble the Download URL from where we will gather the page contents
-      // First, we need the taskid
-      let task = match Task::find_by_name(&entry_name, &corpus, &service, connection) {
-        Ok(t) => t,
-        Err(e) => return Err(NotFound(e.to_string())),
-      };
-      let download_url = format!("/entry/{}/{}", service_name, task.id);
-      global.insert("download_url".to_string(), download_url);
+  // Resolve corpus → service → document, each a clean *informative* 404. Previously an unknown
+  // corpus/service fell through to render `task-preview` with half-populated globals, which Tera
+  // then errored on → a 500 (e.g. the `tex-to-html` vs `tex_to_html` slug mismatch). Robustness
+  // mandate: no 500 on the request path — a missing anything is a 404 that says what was missing.
+  let corpus = Corpus::find_by_name(&corpus_name, connection)
+    .map_err(|_| NotFound(format!("Unknown corpus: {corpus_name}")))?;
+  let service = Service::find_by_name(&service_name, connection)
+    .map_err(|_| NotFound(format!("Unknown service: {service_name}")))?;
+  // Assemble the Download URL from where we will gather the page contents — first, the taskid.
+  let task = Task::find_by_name(&entry_name, &corpus, &service, connection).map_err(|_| {
+    NotFound(format!(
+      "No '{entry_name}' document found in {corpus_name} / {service_name}"
+    ))
+  })?;
+  let download_url = format!("/entry/{}/{}", service_name, task.id);
+  global.insert("download_url".to_string(), download_url);
 
-      // Metadata for preview page
-      global.insert(
-        "title".to_string(),
-        "Corpus Report for ".to_string() + &corpus_name,
-      );
-      global.insert(
-        "description".to_string(),
-        "An analysis framework for corpora of TeX/LaTeX documents - statistical reports for "
-          .to_string()
-          + &corpus_name,
-      );
-      global.insert("corpus_name".to_string(), corpus_name);
-      global.insert("corpus_description".to_string(), corpus.description);
-      global.insert("service_name".to_string(), service_name);
-      global.insert(
-        "service_description".to_string(),
-        service.description.clone(),
-      );
-      global.insert("type".to_string(), "Conversion".to_string());
-      global.insert("inputformat".to_string(), service.inputformat.clone());
-      global.insert("outputformat".to_string(), service.outputformat.clone());
-      match service.inputconverter {
-        Some(ref ic_service_name) => {
-          global.insert("inputconverter".to_string(), ic_service_name.clone())
-        },
-        // See the matching arm above: a missing input converter means the input is
-        // the raw imported source, served under the `import` pseudo-service. Default
-        // to "import" so the source link resolves instead of 404'ing as "missing?".
-        None => global.insert("inputconverter".to_string(), "import".to_string()),
-      };
-      global.insert(
-        "report_time".to_string(),
-        crate::frontend::helpers::report_timestamp(),
-      );
-    }
-    global.insert("severity".to_string(), entry_name.clone());
-    global.insert("entry_name".to_string(), entry_name);
-  }
+  // Metadata for preview page
+  global.insert(
+    "title".to_string(),
+    "Corpus Report for ".to_string() + &corpus_name,
+  );
+  global.insert(
+    "description".to_string(),
+    "An analysis framework for corpora of TeX/LaTeX documents - statistical reports for "
+      .to_string()
+      + &corpus_name,
+  );
+  global.insert("corpus_description".to_string(), corpus.description);
+  global.insert("service_name".to_string(), service_name);
+  global.insert(
+    "service_description".to_string(),
+    service.description.clone(),
+  );
+  global.insert("type".to_string(), "Conversion".to_string());
+  global.insert("inputformat".to_string(), service.inputformat.clone());
+  global.insert("outputformat".to_string(), service.outputformat.clone());
+  match service.inputconverter {
+    Some(ref ic_service_name) => {
+      global.insert("inputconverter".to_string(), ic_service_name.clone())
+    },
+    // A missing input converter means the input is the raw imported source, served under the
+    // `import` pseudo-service. Default to "import" so the source link resolves instead of 404'ing.
+    None => global.insert("inputconverter".to_string(), "import".to_string()),
+  };
+  global.insert(
+    "report_time".to_string(),
+    crate::frontend::helpers::report_timestamp(),
+  );
+  global.insert("corpus_name".to_string(), corpus_name);
+  global.insert("severity".to_string(), entry_name.clone());
+  global.insert("entry_name".to_string(), entry_name);
 
   // Pass the globals(reports+metadata) onto the stash
   context.global = global;
