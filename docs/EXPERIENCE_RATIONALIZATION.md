@@ -1,6 +1,6 @@
 # Experience Rationalization — admin UI · CLI · agent API as one capability surface
 
-> Status: **plan (2026-06-15)**, owner-requested. Rationalizes five directions (live ops console,
+> Status: **program (2026-06-15, owner-requested)** — partially shipped through v0.6.0. Rationalizes five directions (live ops console,
 > design-system polish, smoother workflows, a rich guided CLI, and rich agentic workflows) into one
 > coherent program. Cross-ref: [`PRODUCTIZING_PLAN.md`](PRODUCTIZING_PLAN.md) (the master plan),
 > [`DESIGN_PRINCIPLES.md`](DESIGN_PRINCIPLES.md) (the symmetry contract). The live ops console

@@ -1,9 +1,9 @@
 # CorTeX Productizing & Hardening Plan
 
-> **Status:** v1 draft (2026-06-13), produced after a full Phase-0 read of the codebase, the
+> **Status:** SHIPPED v0.5.0→v0.6.0 (retained as the current-state map); originally a v1 draft (2026-06-13) after a full Phase-0 read of the codebase, the
 > `migrations/`, the `scripts/`, the `examples/`, and every prior-work branch on `origin`.
 > Work branch: **`main`** (the `productize-2026` sprint branch was squash-merged via PR #369 on
-> 2026-06-18 and deleted; `main` is now the shipped v0.5.0 state).
+> 2026-06-18 and deleted; `main` is now the shipped v0.6.0 state).
 > **North star:** *every administrative action a human can do through a screen, an agent can do
 > through a documented API — and both see the same live + historical run state.*
 
