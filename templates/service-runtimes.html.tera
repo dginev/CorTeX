@@ -78,15 +78,13 @@
       </table>
 
       {# Pagination #}
+      {% if global.has_prev == "true" or global.has_next == "true" %}
       <nav class="report-pagination" aria-label="Slowest-conversions pages">
-        {% if global.has_prev == "true" %}
-        <a href="/runtimes/{{global.service_name_uri}}?offset={{global.prev_offset}}&page_size={{global.page_size}}"><i class="fa fa-arrow-left"></i> Previous</a>
-        {% else %}<span class="muted"><i class="fa fa-arrow-left"></i> Previous</span>{% endif %}
-        <span class="report-sep">·</span>
-        {% if global.has_next == "true" %}
-        <a href="/runtimes/{{global.service_name_uri}}?offset={{global.next_offset}}&page_size={{global.page_size}}">Next <i class="fa fa-arrow-right"></i></a>
-        {% else %}<span class="muted">Next <i class="fa fa-arrow-right"></i></span>{% endif %}
+        {% if global.has_prev == "true" %}<a href="/runtimes/{{global.service_name_uri}}?offset={{global.prev_offset}}&page_size={{global.page_size}}"><i class="fa fa-arrow-left"></i> Previous</a>{% endif %}
+        {% if global.has_prev == "true" and global.has_next == "true" %}<span class="report-sep">·</span>{% endif %}
+        {% if global.has_next == "true" %}<a href="/runtimes/{{global.service_name_uri}}?offset={{global.next_offset}}&page_size={{global.page_size}}">Next <i class="fa fa-arrow-right"></i></a>{% endif %}
       </nav>
+      {% endif %}
 
     </div>
     <div class="col-md-2"></div>

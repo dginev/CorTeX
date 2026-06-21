@@ -69,15 +69,9 @@
     <div class="col-md-1"></div>
   </div>
   <nav class="report-pagination" aria-label="Task pages">
-    {% if has_prev %}
-    <a href="/runs/{{corpus}}/{{service}}/tasks?previous_status={{selected_previous}}&current_status={{selected_current}}&previous={{previous_date}}&current={{current_date}}&offset={{prev_offset}}&page_size={{page_size}}"><i class="fa fa-arrow-left"></i> Previous</a>
-    {% else %}<span class="muted"><i class="fa fa-arrow-left"></i> Previous</span>{% endif %}
-    <span class="report-sep">·</span>
+    {% if has_prev %}<a href="/runs/{{corpus}}/{{service}}/tasks?previous_status={{selected_previous}}&current_status={{selected_current}}&previous={{previous_date}}&current={{current_date}}&offset={{prev_offset}}&page_size={{page_size}}"><i class="fa fa-arrow-left"></i> Previous</a><span class="report-sep">·</span>{% endif %}
     <span class="muted">[{{from_offset}}&ndash;{{to_offset}}]</span>
-    <span class="report-sep">·</span>
-    {% if has_next %}
-    <a href="/runs/{{corpus}}/{{service}}/tasks?previous_status={{selected_previous}}&current_status={{selected_current}}&previous={{previous_date}}&current={{current_date}}&offset={{next_offset}}&page_size={{page_size}}">Next <i class="fa fa-arrow-right"></i></a>
-    {% else %}<span class="muted">Next <i class="fa fa-arrow-right"></i></span>{% endif %}
+    {% if has_next %}<span class="report-sep">·</span><a href="/runs/{{corpus}}/{{service}}/tasks?previous_status={{selected_previous}}&current_status={{selected_current}}&previous={{previous_date}}&current={{current_date}}&offset={{next_offset}}&page_size={{page_size}}">Next <i class="fa fa-arrow-right"></i></a>{% endif %}
   </nav>
   {% endif %}
 </div>

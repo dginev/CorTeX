@@ -37,14 +37,8 @@
   </div>
 
   <nav class="report-pagination" aria-label="Task pages">
-    {% if global.offset_min_false %}
-    <a href="{{global.current_link_uri}}?offset={{global.prev_offset}}&page_size={{global.page_size}}"><i class="fa fa-arrow-left"></i> Previous</a>
-    {% else %}<span class="muted"><i class="fa fa-arrow-left"></i> Previous</span>{% endif %}
-    <span class="report-sep">·</span>
+    {% if global.offset_min_false %}<a href="{{global.current_link_uri}}?offset={{global.prev_offset}}&page_size={{global.page_size}}"><i class="fa fa-arrow-left"></i> Previous</a><span class="report-sep">·</span>{% endif %}
     <span class="muted">[{{global.from_offset}}&ndash;{{global.to_offset}}]</span>
-    <span class="report-sep">·</span>
-    {% if global.offset_max_false %}
-    <a href="{{global.current_link_uri}}?offset={{global.next_offset}}&page_size={{global.page_size}}">Next <i class="fa fa-arrow-right"></i></a>
-    {% else %}<span class="muted">Next <i class="fa fa-arrow-right"></i></span>{% endif %}
+    {% if global.offset_max_false %}<span class="report-sep">·</span><a href="{{global.current_link_uri}}?offset={{global.next_offset}}&page_size={{global.page_size}}">Next <i class="fa fa-arrow-right"></i></a>{% endif %}
   </nav>
   {% endblock content %}

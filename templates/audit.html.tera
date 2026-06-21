@@ -42,9 +42,9 @@
 
   {% if has_prev or has_next %}
   <nav class="report-pagination" aria-label="Audit log pages">
-    {% if has_prev %}<a href="/admin/audit?page={{ prev_page }}{% if actor_filter %}&amp;actor={{ actor_filter }}{% endif %}"><i class="fa fa-arrow-left"></i> Newer</a>{% else %}<span class="muted"><i class="fa fa-arrow-left"></i> Newer</span>{% endif %}
-    <span class="report-sep">·</span><span class="muted">page {{ page + 1 }}</span><span class="report-sep">·</span>
-    {% if has_next %}<a href="/admin/audit?page={{ next_page }}{% if actor_filter %}&amp;actor={{ actor_filter }}{% endif %}">Older <i class="fa fa-arrow-right"></i></a>{% else %}<span class="muted">Older <i class="fa fa-arrow-right"></i></span>{% endif %}
+    {% if has_prev %}<a href="/admin/audit?page={{ prev_page }}{% if actor_filter %}&amp;actor={{ actor_filter }}{% endif %}"><i class="fa fa-arrow-left"></i> Newer</a><span class="report-sep">·</span>{% endif %}
+    <span class="muted">page {{ page + 1 }}</span>
+    {% if has_next %}<span class="report-sep">·</span><a href="/admin/audit?page={{ next_page }}{% if actor_filter %}&amp;actor={{ actor_filter }}{% endif %}">Older <i class="fa fa-arrow-right"></i></a>{% endif %}
   </nav>
   {% endif %}
 </div>
