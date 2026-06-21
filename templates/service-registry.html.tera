@@ -16,7 +16,8 @@
         <th scope="col" class="left">Converter</th>
         <th scope="col" class="center">Complex</th>
         <th scope="col" class="left">Description</th>
-        <th scope="col" class="left">Lease (s)</th>
+        <th scope="col" class="left"
+          title="Lease timeout (seconds): how long the dispatcher waits for a worker to return a result before it reclaims the task and re-dispatches it to another worker. Tune it above a service's slowest realistic conversion so healthy long jobs aren't reaped early. Blank = the global dispatcher default.">Lease (s)</th>
         <th scope="col" class="left">Activity</th>
         <th scope="col" class="left">Manage</th>
       </tr>
@@ -35,7 +36,8 @@
             <input type="number" name="seconds" min="1" value="{{service.lease_timeout_seconds}}"
               placeholder="default"
               aria-label="Lease timeout in seconds for {{service.name}} (blank uses the global default)">
-            <button type="submit">Set</button>
+            <button type="submit"
+              title="Set this service's lease timeout — the seconds the dispatcher waits for a result before reclaiming and re-dispatching the task. Leave the field blank to fall back to the global default.">Set</button>
           </form>
         </td>
         <td class="left nowrap">
