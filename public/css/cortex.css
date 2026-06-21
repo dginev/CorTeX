@@ -629,6 +629,26 @@ hr {
 .narrow-form {
   max-width: 30rem;
 }
+/* Keep a short, atomic cell value (an arrow pair, an action group) on one line. */
+.nowrap {
+  white-space: nowrap;
+}
+/* Service-registry action cells: the lease editor stays a compact input+button on one line, and the
+   register/delete controls stack vertically instead of wrapping mid-phrase. */
+#service-registry .lease-form {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+}
+#service-registry .lease-form input {
+  width: 4.5em;
+}
+#service-registry .row-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
 .plain-list {
   list-style: none;
   padding-left: 0;

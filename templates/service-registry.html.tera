@@ -1,65 +1,70 @@
 {% extends "layout" %} {% block content %}
 <div class="center">
   <h1>Registered services</h1>
-  <p>
-    <a href="/api/services">JSON</a>
-  </p>
-  <br>
-  {% if services | length == 0 %}
-  <p>No services registered yet.</p>
-  {% else %}
-  <table id="service-registry" class="table table-striped" style="width:85%;margin:0 auto;">
-        <thead>
-          <tr>
-            <th scope="col" class="left">Service</th>
-            <th scope="col" class="right">Version</th>
-            <th scope="col" class="left">Input &rarr; Output</th>
-            <th scope="col" class="left">Input converter</th>
-            <th scope="col" class="center">Complex</th>
-            <th scope="col" class="left">Description</th>
-            <th scope="col" class="left">Lease (s)</th>
-            <th scope="col" class="left">Activity</th>
-            <th scope="col" class="left">Manage</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for service in services %}
-          <tr>
-            <td class="left">{{service.name}}</td>
-            <td class="right">{{service.version}}</td>
-            <td class="left">{{service.inputformat}} &rarr; {{service.outputformat}}</td>
-            <td class="left">{{service.inputconverter}}</td>
-            <td class="center">{{service.complex}}</td>
-            <td class="left">{{service.description}}</td>
-            <td class="left">
-              <form method="post" action="/services/{{service.name_uri}}/lease" class="inline-form">
-                <input type="number" name="seconds" min="1" value="{{service.lease_timeout_seconds}}"
-                  placeholder="default" style="width:5.5em"
-                  aria-label="Lease timeout in seconds for {{service.name}} (blank uses the global default)">
-                <button type="submit">Set</button>
-              </form>
-            </td>
-            <td class="left"><a href="/workers/{{service.name_uri}}">fleet</a> &middot;
-              <a href="/runtimes/{{service.name_uri}}"><i class="fa fa-clock-o"></i> runtimes</a></td>
-            <td class="left">
-              {% if service.name == "init" or service.name == "import" %}
-              <span class="muted" title="Infrastructure service — cannot be deleted">protected</span>
-              {% else %}
-              <a href="/services/{{service.name_uri}}/activate">register on corpus</a>
-              &nbsp;&middot;&nbsp;
-              <form method="post" action="/services/{{service.name_uri}}/delete" class="inline-form"
-                onsubmit="return confirm('Permanently delete service &quot;{{service.name}}&quot; and ALL of its tasks + log messages across every corpus? This cannot be undone.');">
-                <input type="hidden" name="confirm" value="{{service.name}}">
-                <button type="submit" class="danger">Delete</button>
-              </form>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
+  <p><a href="/api/services">JSON</a></p>
+</div>
+{% if services | length == 0 %}
+<p class="center">No services registered yet.</p>
+{% else %}
+<div class="report-layout">
+  <table id="service-registry" class="table report-table">
+    <thead>
+      <tr>
+        <th scope="col" class="left">Service</th>
+        <th scope="col" class="right">Version</th>
+        <th scope="col" class="left">Input &rarr; Output</th>
+        <th scope="col" class="left">Converter</th>
+        <th scope="col" class="center">Complex</th>
+        <th scope="col" class="left">Description</th>
+        <th scope="col" class="left">Lease (s)</th>
+        <th scope="col" class="left">Activity</th>
+        <th scope="col" class="left">Manage</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for service in services %}
+      <tr>
+        <td class="left"><strong>{{service.name}}</strong></td>
+        <td class="right">{{service.version}}</td>
+        <td class="left nowrap">{{service.inputformat}} &rarr; {{service.outputformat}}</td>
+        <td class="left">{{service.inputconverter}}</td>
+        <td class="center">{{service.complex}}</td>
+        <td class="left">{{service.description}}</td>
+        <td class="left">
+          <form method="post" action="/services/{{service.name_uri}}/lease" class="lease-form">
+            <input type="number" name="seconds" min="1" value="{{service.lease_timeout_seconds}}"
+              placeholder="default"
+              aria-label="Lease timeout in seconds for {{service.name}} (blank uses the global default)">
+            <button type="submit">Set</button>
+          </form>
+        </td>
+        <td class="left nowrap">
+          <a href="/workers/{{service.name_uri}}"><i class="fa fa-server"></i> fleet</a>
+          <span class="report-sep">·</span>
+          <a href="/runtimes/{{service.name_uri}}"><i class="fa fa-clock-o"></i> runtimes</a>
+        </td>
+        <td class="left">
+          {% if service.name == "init" or service.name == "import" %}
+          <span class="muted" title="Infrastructure service — cannot be deleted">protected</span>
+          {% else %}
+          <div class="row-actions">
+            <a href="/services/{{service.name_uri}}/activate">register on corpus</a>
+            <form method="post" action="/services/{{service.name_uri}}/delete" class="inline-form"
+              onsubmit="return confirm('Permanently delete service &quot;{{service.name}}&quot; and ALL of its tasks + log messages across every corpus? This cannot be undone.');">
+              <input type="hidden" name="confirm" value="{{service.name}}">
+              <button type="submit" class="danger">Delete</button>
+            </form>
+          </div>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
   </table>
-  {% endif %}
+</div>
+{% endif %}
 
+<div class="center">
   <hr>
   <p><a href="/services/new"><strong>+ Add a service</strong></a> &mdash; define a new service and register it on
     corpora in one step</p>
