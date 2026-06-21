@@ -70,7 +70,8 @@ use crate::frontend::runs::{
   okapi_add_operation_for_api_runs_,
 };
 use crate::frontend::services::{
-  api_service_workers, api_services, delete_service, okapi_add_operation_for_api_service_workers_,
+  api_service_runtimes, api_service_workers, api_services, delete_service,
+  okapi_add_operation_for_api_service_runtimes_, okapi_add_operation_for_api_service_workers_,
   okapi_add_operation_for_api_services_, okapi_add_operation_for_delete_service_,
   okapi_add_operation_for_register_service_, okapi_add_operation_for_set_service_lease_,
   register_service, set_service_lease,
@@ -183,6 +184,7 @@ fn routes_and_spec() -> (Vec<rocket::Route>, rocket_okapi::okapi::openapi3::Open
     register_service,
     delete_service,
     set_service_lease,
+    api_service_runtimes,
     import_corpus,
     extend_corpus,
     export_dataset,

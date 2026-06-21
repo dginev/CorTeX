@@ -10,7 +10,11 @@
     <span class="report-sep">·</span>
     <span class="muted">{{global.fleet_dispatched}} dispatched / {{global.fleet_returned}} returned (lifetime)</span>
   </p>
-  <p class="muted"><a href="/api/services/{{global.service_name}}/workers">view as JSON</a></p>
+  <p class="muted">
+    <a href="/api/services/{{global.service_name}}/workers">view as JSON</a>
+    <span class="report-sep">·</span>
+    <a href="/runtimes/{{global.service_name_uri}}"><i class="fa fa-clock-o"></i> conversion runtimes &amp; slowest papers</a>
+  </p>
   <br>
   <div>
     <table id="worker-report" class="table table-striped table-hover table-condensed">

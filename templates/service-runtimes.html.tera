@@ -1,0 +1,96 @@
+{% extends "layout" %} {% block content %}
+<div class="center">
+  <h1>Conversion runtimes &mdash; {{global.service_name}}</h1>
+  <p class="muted">
+    <a href="/workers/{{global.service_name_uri}}"><i class="fa fa-arrow-left"></i> worker fleet</a>
+    <span class="report-sep">·</span>
+    <a href="/api/services/{{global.service_name_uri}}/runtimes">view as JSON</a>
+  </p>
+  <br>
+
+  {% if global.total == "0" %}
+  <p class="muted">No conversion-runtime data yet. Per-paper runtimes appear once a run completes with
+    a worker that emits the <code>Info:cortex:runtime_ms</code> log line.</p>
+  {% else %}
+
+  {# Distribution summary #}
+  <p class="report-progress-summary">
+    <strong>{{global.total}}</strong> conversions timed
+    <span class="report-sep">·</span> mean {{global.avg}}
+    <span class="report-sep">·</span> p50 {{global.p50}}
+    <span class="report-sep">·</span> p90 {{global.p90}}
+    <span class="report-sep">·</span> p99 {{global.p99}}
+    <span class="report-sep">·</span> slowest {{global.max}}
+  </p>
+
+  <div class="row">
+    <div class="col-md-2"></div>
+    <div class="col-md-8">
+
+      {# Aggregate runtime distribution — design-system bar chart (pure CSS, no JS) #}
+      <table class="table report-table">
+        <caption class="report-caption">Runtime distribution
+          <span class="report-sep">·</span> bars coloured by speed</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="left">Range</th>
+            <th scope="col" class="left bar-col">Share</th>
+            <th scope="col" class="right">Conversions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in whats %}
+          <tr>
+            <td class="left">{{b.label}}</td>
+            <td class="bar-cell">
+              <span class="bar-track" aria-hidden="true"><span class="bar {{b.bar_class}}" style="--bar-width: {{b.pct}}%"></span></span>
+            </td>
+            <td class="right">{{b.count}}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      {# Slowest conversions (paginated) #}
+      <table class="table report-table">
+        <caption class="report-caption">Slowest conversions</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="right">#</th>
+            <th scope="col" class="left">Paper</th>
+            <th scope="col" class="left">Corpus</th>
+            <th scope="col" class="right">Runtime</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set offset_int = global.offset | int %}
+          {% for row in entries %}
+          <tr>
+            <td class="right">{{ offset_int + loop.index }}</td>
+            <td class="left">
+              <a href="/document/{{row.corpus_uri}}/{{global.service_name_uri}}/{{row.paper_uri}}">{{row.paper}}</a>
+            </td>
+            <td class="left">{{row.corpus}}</td>
+            <td class="right">{{row.runtime}}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      {# Pagination #}
+      <nav class="runtime-pager" aria-label="Slowest-conversions pages">
+        {% if global.has_prev == "true" %}
+        <a href="/runtimes/{{global.service_name_uri}}?offset={{global.prev_offset}}&page_size={{global.page_size}}"><i class="fa fa-arrow-left"></i> Previous</a>
+        {% else %}<span class="muted"><i class="fa fa-arrow-left"></i> Previous</span>{% endif %}
+        <span class="report-sep">·</span>
+        {% if global.has_next == "true" %}
+        <a href="/runtimes/{{global.service_name_uri}}?offset={{global.next_offset}}&page_size={{global.page_size}}">Next <i class="fa fa-arrow-right"></i></a>
+        {% else %}<span class="muted">Next <i class="fa fa-arrow-right"></i></span>{% endif %}
+      </nav>
+
+    </div>
+    <div class="col-md-2"></div>
+  </div>
+  {% endif %}
+</div>
+{% endblock content %}

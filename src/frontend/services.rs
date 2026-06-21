@@ -16,6 +16,7 @@
 use std::collections::HashMap;
 
 use diesel::prelude::*;
+use diesel::sql_query;
 use rocket::form::Form;
 use rocket::http::Status;
 use rocket::response::Redirect;
@@ -29,7 +30,7 @@ use crate::concerns::CortexInsertable;
 use crate::frontend::actor::{Actor, AdminReject, AdminSession, ReturnTo, require_admin_to};
 use crate::frontend::corpora::start_activate;
 use crate::frontend::helpers::{decorate_uri_encodings, group_thousands};
-use crate::frontend::params::TemplateContext;
+use crate::frontend::params::{MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE, TemplateContext};
 use crate::models::{Corpus, NewService, Service, WorkerMetadata};
 
 /// Magic service-id ceiling: ids `1=init` and `2=import` are infrastructure and must never be
@@ -752,10 +753,355 @@ pub fn delete_service_human(
   Ok(Redirect::to("/services"))
 }
 
+/// One conversion's recorded wall-time (from the worker's `Info:cortex:runtime_ms` log line), for
+/// the slowest-conversions table.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct RuntimeRowDto {
+  /// Corpus the document belongs to (a service may run on several).
+  pub corpus: String,
+  /// Document short name (paper id) — feed to the document view for forensics.
+  pub paper: String,
+  /// Task id.
+  pub task_id: i64,
+  /// Recorded conversion wall-time in milliseconds.
+  pub runtime_ms: i32,
+}
+
+/// One bar of the runtime-distribution histogram: a millisecond range and how many conversions fell
+/// in it.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct RuntimeBucketDto {
+  /// Human label for the range (e.g. `1–2s`).
+  pub label: String,
+  /// Number of conversions whose runtime fell in this range.
+  pub count: i64,
+}
+
+/// The per-service conversion-runtime report: a distribution summary, an aggregate histogram (the
+/// bar chart), and the paginated slowest conversions. Sourced from the worker's
+/// `Info:cortex:runtime_ms` log lines, so it only populates after a run with a runtime-emitting
+/// worker. Heavier than the other service views (it scans `log_infos`), hence its own page.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ServiceRuntimeDto {
+  /// Service name.
+  pub service: String,
+  /// Conversions that recorded a runtime.
+  pub total: i64,
+  /// Mean runtime (ms).
+  pub avg_ms: i32,
+  /// Median (p50) runtime (ms).
+  pub p50_ms: i32,
+  /// p90 runtime (ms).
+  pub p90_ms: i32,
+  /// p99 runtime (ms).
+  pub p99_ms: i32,
+  /// Slowest single runtime (ms).
+  pub max_ms: i32,
+  /// Distribution histogram across fixed ms buckets — the aggregate bar chart.
+  pub histogram: Vec<RuntimeBucketDto>,
+  /// Pagination offset echoed back.
+  pub offset: i64,
+  /// Page size echoed back (the cap actually applied).
+  pub page_size: i64,
+  /// The slowest conversions on this page (descending runtime).
+  pub slowest: Vec<RuntimeRowDto>,
+}
+
+/// Fixed histogram bucket labels for the runtime distribution (log-ish ms ranges). The index
+/// matches the `CASE` bucket computed in [`service_runtime_report`].
+const RUNTIME_BUCKET_LABELS: [&str; 11] = [
+  "<100ms",
+  "100–250ms",
+  "250–500ms",
+  "0.5–1s",
+  "1–2s",
+  "2–5s",
+  "5–10s",
+  "10–30s",
+  "30–60s",
+  "60–120s",
+  "≥120s",
+];
+
+/// Builds the [`ServiceRuntimeDto`] for a service from its `Info:cortex:runtime_ms` log lines —
+/// distribution summary + histogram + the paginated slowest conversions. Three scans of the
+/// service's runtime rows in `log_infos`; deliberately its own (heavier) page.
+fn service_runtime_report(
+  connection: &mut diesel::PgConnection,
+  service: &Service,
+  offset: i64,
+  page_size: i64,
+) -> Result<ServiceRuntimeDto, Status> {
+  use diesel::sql_types::{BigInt, Integer, Text};
+  // Shared predicate: this service's runtime rows, defensively requiring an integer detail so a
+  // malformed message can never break the `::int` cast.
+  const RUNTIME_WHERE: &str = "FROM log_infos li JOIN tasks t ON t.id = li.task_id \
+    WHERE t.service_id = $1 AND li.category = 'cortex' AND li.what = 'runtime_ms' \
+    AND li.details ~ '^[0-9]+$'";
+
+  #[derive(QueryableByName)]
+  struct SummaryRow {
+    #[diesel(sql_type = BigInt)]
+    total: i64,
+    #[diesel(sql_type = Integer)]
+    avg_ms: i32,
+    #[diesel(sql_type = Integer)]
+    p50: i32,
+    #[diesel(sql_type = Integer)]
+    p90: i32,
+    #[diesel(sql_type = Integer)]
+    p99: i32,
+    #[diesel(sql_type = Integer)]
+    max_ms: i32,
+  }
+  let summary: SummaryRow = sql_query(format!(
+    "SELECT count(*) AS total, \
+     coalesce(round(avg((li.details)::int))::int, 0) AS avg_ms, \
+     coalesce(percentile_disc(0.5) WITHIN GROUP (ORDER BY (li.details)::int), 0) AS p50, \
+     coalesce(percentile_disc(0.9) WITHIN GROUP (ORDER BY (li.details)::int), 0) AS p90, \
+     coalesce(percentile_disc(0.99) WITHIN GROUP (ORDER BY (li.details)::int), 0) AS p99, \
+     coalesce(max((li.details)::int), 0) AS max_ms {RUNTIME_WHERE}"
+  ))
+  .bind::<Integer, _>(service.id)
+  .get_result(connection)
+  .map_err(|_| Status::InternalServerError)?;
+
+  #[derive(QueryableByName)]
+  struct BucketRow {
+    #[diesel(sql_type = Integer)]
+    bucket: i32,
+    #[diesel(sql_type = BigInt)]
+    n: i64,
+  }
+  let bucket_rows: Vec<BucketRow> = sql_query(format!(
+    "SELECT CASE WHEN ms<100 THEN 0 WHEN ms<250 THEN 1 WHEN ms<500 THEN 2 WHEN ms<1000 THEN 3 \
+     WHEN ms<2000 THEN 4 WHEN ms<5000 THEN 5 WHEN ms<10000 THEN 6 WHEN ms<30000 THEN 7 \
+     WHEN ms<60000 THEN 8 WHEN ms<120000 THEN 9 ELSE 10 END AS bucket, count(*) AS n \
+     FROM (SELECT (li.details)::int AS ms {RUNTIME_WHERE}) q GROUP BY 1 ORDER BY 1"
+  ))
+  .bind::<Integer, _>(service.id)
+  .load(connection)
+  .map_err(|_| Status::InternalServerError)?;
+  let mut counts = [0i64; RUNTIME_BUCKET_LABELS.len()];
+  for row in &bucket_rows {
+    if let Some(slot) = counts.get_mut(row.bucket as usize) {
+      *slot = row.n;
+    }
+  }
+  let histogram = RUNTIME_BUCKET_LABELS
+    .iter()
+    .zip(counts)
+    .map(|(label, count)| RuntimeBucketDto {
+      label: (*label).to_string(),
+      count,
+    })
+    .collect();
+
+  #[derive(QueryableByName)]
+  struct SlowRow {
+    #[diesel(sql_type = Text)]
+    corpus: String,
+    #[diesel(sql_type = Text)]
+    entry: String,
+    #[diesel(sql_type = BigInt)]
+    task_id: i64,
+    #[diesel(sql_type = Integer)]
+    runtime_ms: i32,
+  }
+  let slow_rows: Vec<SlowRow> = sql_query(
+    "SELECT c.name AS corpus, t.entry AS entry, t.id AS task_id, (li.details)::int AS runtime_ms \
+     FROM log_infos li JOIN tasks t ON t.id = li.task_id JOIN corpora c ON c.id = t.corpus_id \
+     WHERE t.service_id = $1 AND li.category = 'cortex' AND li.what = 'runtime_ms' \
+     AND li.details ~ '^[0-9]+$' ORDER BY (li.details)::int DESC LIMIT $2 OFFSET $3",
+  )
+  .bind::<Integer, _>(service.id)
+  .bind::<BigInt, _>(page_size)
+  .bind::<BigInt, _>(offset)
+  .load(connection)
+  .map_err(|_| Status::InternalServerError)?;
+  let slowest = slow_rows
+    .into_iter()
+    .map(|row| RuntimeRowDto {
+      corpus: row.corpus,
+      // The paper id is the entry's parent-dir name (`…/<paper>/<paper>.zip`).
+      paper: std::path::Path::new(&row.entry)
+        .parent()
+        .and_then(|p| p.file_name())
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or(row.entry),
+      task_id: row.task_id,
+      runtime_ms: row.runtime_ms,
+    })
+    .collect();
+
+  Ok(ServiceRuntimeDto {
+    service: service.name.clone(),
+    total: summary.total,
+    avg_ms: summary.avg_ms,
+    p50_ms: summary.p50,
+    p90_ms: summary.p90,
+    p99_ms: summary.p99,
+    max_ms: summary.max_ms,
+    histogram,
+    offset,
+    page_size,
+    slowest,
+  })
+}
+
+/// Human-readable runtime: `<N> ms` under a second, else `<N.N> s`.
+fn format_runtime(ms: i32) -> String {
+  if ms < 1000 {
+    format!("{ms} ms")
+  } else {
+    format!("{:.1} s", f64::from(ms) / 1000.0)
+  }
+}
+
+/// Conversion-runtime report for a service (agent twin of the runtime screen): distribution summary
+/// + histogram + paginated slowest conversions, from the worker's `runtime_ms` log lines.
+/// **Token-gated** via the [`Actor`] guard (`401` without a token). Paginated
+/// (`offset`/`page_size`, default 100, max `MAX_REPORT_PAGE_SIZE`; `offset` capped at
+/// `MAX_REPORT_OFFSET`); `404` if the service is unknown.
+#[rocket_okapi::openapi(tag = "Services")]
+#[get("/api/services/<service>/runtimes?<offset>&<page_size>")]
+pub fn api_service_runtimes(
+  _caller: Actor,
+  service: &str,
+  offset: Option<i64>,
+  page_size: Option<i64>,
+  pool: &State<DbPool>,
+) -> Result<Json<ServiceRuntimeDto>, Status> {
+  let offset = offset.unwrap_or(0).clamp(0, MAX_REPORT_OFFSET);
+  let page_size = page_size.unwrap_or(100).clamp(1, MAX_REPORT_PAGE_SIZE);
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let service_record = resolve(service, &mut connection)?;
+  Ok(Json(service_runtime_report(
+    &mut connection,
+    &service_record,
+    offset,
+    page_size,
+  )?))
+}
+
+/// The conversion-runtime screen for a service (HTML twin of [`api_service_runtimes`]): the
+/// aggregate runtime histogram (bar chart) + the paginated slowest conversions, reached from the
+/// worker screen. **Signed-in admins only** (anonymous → sign-in). Separate from the worker view
+/// because it scans `log_infos`. `404` if the service is unknown.
+#[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
+#[get("/runtimes/<service>?<offset>&<page_size>")]
+pub fn service_runtimes_page(
+  service: &str,
+  offset: Option<i64>,
+  page_size: Option<i64>,
+  session: Option<AdminSession>,
+  return_to: ReturnTo,
+  pool: &State<DbPool>,
+) -> Result<Template, AdminReject> {
+  require_admin_to(session, &return_to)?;
+  let offset = offset.unwrap_or(0).clamp(0, MAX_REPORT_OFFSET);
+  let page_size = page_size.unwrap_or(100).clamp(1, MAX_REPORT_PAGE_SIZE);
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let service_record = resolve(service, &mut connection)?;
+  let report = service_runtime_report(&mut connection, &service_record, offset, page_size)?;
+
+  // Histogram rows (reusing the `whats` list slot): each carries a CSS bar width as a percentage of
+  // the busiest bucket, so the template is a pure-CSS bar chart (no JS).
+  let max_bucket = report
+    .histogram
+    .iter()
+    .map(|b| b.count)
+    .max()
+    .unwrap_or(0)
+    .max(1);
+  let histogram: Vec<HashMap<String, String>> = report
+    .histogram
+    .iter()
+    .enumerate()
+    .map(|(i, bucket)| {
+      // Colour the bars by speed using the report design tokens: fast buckets (≤2 s) ok, mid
+      // (2–30 s) warn, slow (≥30 s) fatal — so the distribution's health reads at a glance.
+      let bar_class = if i <= 4 {
+        "ok"
+      } else if i <= 7 {
+        "warn"
+      } else {
+        "fatal"
+      };
+      HashMap::from([
+        ("label".to_string(), bucket.label.clone()),
+        ("count".to_string(), group_thousands(bucket.count)),
+        (
+          "pct".to_string(),
+          format!("{:.1}", 100.0 * bucket.count as f64 / max_bucket as f64),
+        ),
+        ("bar_class".to_string(), bar_class.to_string()),
+      ])
+    })
+    .collect();
+  // Slowest-conversion rows (reusing the `entries` list slot).
+  let entries: Vec<HashMap<String, String>> = report
+    .slowest
+    .iter()
+    .map(|row| {
+      HashMap::from([
+        ("corpus".to_string(), row.corpus.clone()),
+        ("paper".to_string(), row.paper.clone()),
+        ("task_id".to_string(), row.task_id.to_string()),
+        ("runtime".to_string(), format_runtime(row.runtime_ms)),
+        (
+          "runtime_ms".to_string(),
+          group_thousands(i64::from(row.runtime_ms)),
+        ),
+      ])
+    })
+    .collect();
+
+  let mut global = HashMap::new();
+  global.insert(
+    "title".to_string(),
+    format!("Conversion runtimes — {service}"),
+  );
+  global.insert(
+    "description".to_string(),
+    format!("Per-paper conversion wall-times for service {service}: distribution + slowest"),
+  );
+  global.insert("service_name".to_string(), service.to_string());
+  global.insert("total".to_string(), group_thousands(report.total));
+  global.insert("avg".to_string(), format_runtime(report.avg_ms));
+  global.insert("p50".to_string(), format_runtime(report.p50_ms));
+  global.insert("p90".to_string(), format_runtime(report.p90_ms));
+  global.insert("p99".to_string(), format_runtime(report.p99_ms));
+  global.insert("max".to_string(), format_runtime(report.max_ms));
+  // Pagination: prev/next offsets + whether each exists (next exists only if more rows remain).
+  global.insert("offset".to_string(), offset.to_string());
+  global.insert("page_size".to_string(), page_size.to_string());
+  global.insert("has_prev".to_string(), (offset > 0).to_string());
+  global.insert(
+    "prev_offset".to_string(),
+    (offset - page_size).max(0).to_string(),
+  );
+  global.insert(
+    "has_next".to_string(),
+    (offset + page_size < report.total).to_string(),
+  );
+  global.insert("next_offset".to_string(), (offset + page_size).to_string());
+
+  let mut context = TemplateContext {
+    global,
+    entries: Some(entries),
+    whats: Some(histogram),
+    is_admin: true,
+    ..TemplateContext::default()
+  };
+  decorate_uri_encodings(&mut context);
+  Ok(Template::render("service-runtimes", context))
+}
+
 /// The route set for the services capability (registry + worker-fleet, screens + agent API).
 pub fn routes() -> Vec<Route> {
   // NB: `api_services` + `api_service_workers` + `register_service` + `delete_service` +
-  // `set_service_lease` are mounted via `frontend::apidoc` (rocket_okapi).
+  // `set_service_lease` + `api_service_runtimes` are mounted via `frontend::apidoc` (rocket_okapi).
   routes![
     add_service_page,
     create_service_human,
@@ -763,6 +1109,7 @@ pub fn routes() -> Vec<Route> {
     activate_on_corpus_human,
     services_page,
     worker_report_page,
+    service_runtimes_page,
     delete_service_human,
     set_service_lease_human
   ]
