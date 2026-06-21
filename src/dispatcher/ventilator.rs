@@ -273,10 +273,19 @@ impl Ventilator {
           let fetched_tasks = backend
             .fetch_tasks(&service, self.queue_size)
             .unwrap_or_default();
+          // D-17: capture the effective lease for THIS service — its `lease_timeout_seconds`
+          // override, else the global dispatcher default — at dispatch time. `expected_at` uses the
+          // captured value, so one dispatcher serves fast (latexml-oxide) and slow (Perl) services
+          // with the right lease each, and a later config change never re-times an in-flight task.
+          let lease = service
+            .lease_timeout_seconds
+            .map(i64::from)
+            .unwrap_or_else(|| crate::config::config().dispatcher.lease_timeout_seconds);
           task_queue.extend(fetched_tasks.into_iter().map(|task| TaskProgress {
             task,
             created_at: now,
             retries: 0,
+            lease_timeout_seconds: lease,
           }));
         }
 

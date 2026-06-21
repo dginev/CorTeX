@@ -36,6 +36,12 @@ pub struct Service {
   /// Stable external handle (UUIDv7, DB-generated), independent of the mutable `name` — for
   /// public/API references that must survive a rename. Immutable once assigned (Arm 3 / D8).
   pub public_id: uuid::Uuid,
+  /// Per-service lease / visibility-timeout override in seconds (D-17). `None` ⇒ use the global
+  /// `dispatcher.lease_timeout_seconds`. Lets one dispatcher serve fast (latexml-oxide, short
+  /// lease) and slow (Perl LaTeXML, long lease) worker classes without false reaps or delayed
+  /// dead-worker recovery. Captured into `TaskProgress` at dispatch time, so a config change
+  /// never re-times an already-leased task.
+  pub lease_timeout_seconds: Option<i32>,
 }
 /// Insertable struct for `Service`
 #[derive(Insertable, Clone, Debug)]

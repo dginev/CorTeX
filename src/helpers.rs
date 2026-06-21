@@ -75,15 +75,19 @@ pub struct TaskProgress {
   pub created_at: i64,
   /// number of dispatch retries
   pub retries: i64,
+  /// the effective lease / visibility timeout (seconds) for THIS task, captured at dispatch time
+  /// from the owning service's `lease_timeout_seconds` override or the global dispatcher default
+  /// (D-17). Stored per-task so a config change never re-times an already-leased task, and so one
+  /// dispatcher can serve fast (latexml-oxide) and slow (Perl) services with different leases.
+  pub lease_timeout_seconds: i64,
 }
 impl TaskProgress {
-  /// What is the latest admissible time for this task to be completed? The base deadline is the
-  /// configured lease / visibility timeout (`dispatcher.lease_timeout_seconds`, default 1 h); each
-  /// retry extends it by another full timeout (`(retries + 1) × timeout`), so a task that keeps
-  /// timing out backs off rather than re-leasing ever-faster.
+  /// What is the latest admissible time for this task to be completed? The base deadline is this
+  /// task's captured lease / visibility timeout (`lease_timeout_seconds`); each retry extends it by
+  /// another full timeout (`(retries + 1) × timeout`), so a task that keeps timing out backs off
+  /// rather than re-leasing ever-faster.
   pub fn expected_at(&self) -> i64 {
-    self.created_at
-      + ((self.retries + 1) * crate::config::config().dispatcher.lease_timeout_seconds)
+    self.created_at + ((self.retries + 1) * self.lease_timeout_seconds)
   }
 }
 

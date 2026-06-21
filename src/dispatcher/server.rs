@@ -342,6 +342,8 @@ pub fn classify_expired(expired: TaskProgress) -> ExpiredOutcome {
       task: expired.task,
       created_at: expired.created_at,
       retries: expired.retries + 1,
+      // D-17: a re-lease keeps the per-task lease captured at first dispatch.
+      lease_timeout_seconds: expired.lease_timeout_seconds,
     })
   }
 }
@@ -453,7 +455,32 @@ mod tests {
       },
       created_at: 0,
       retries: 0,
+      lease_timeout_seconds: 3600,
     }
+  }
+
+  #[test]
+  fn reaper_honors_per_service_lease_timeouts() {
+    // D-17: two tasks both dispatched 100 s ago — one on a fast service (60 s lease → expired) and
+    // one on a slow service (3600 s lease → still valid). `take_expired` must reap only the
+    // short-lease task, so one dispatcher serves fast and slow workers without false-reaping the
+    // slow one mid-conversion.
+    let now = chrono::Utc::now().timestamp();
+    let set = InFlightSet::new();
+    let mut short = dummy_progress(1);
+    short.created_at = now - 100;
+    short.lease_timeout_seconds = 60; // expected_at = now - 40 → expired
+    set.insert(short);
+    let mut long = dummy_progress(2);
+    long.created_at = now - 100;
+    long.lease_timeout_seconds = 3600; // expected_at = now + 3500 → still leased
+    set.insert(long);
+    let expired = set.take_expired();
+    assert_eq!(expired.len(), 1, "only the short-lease task expired");
+    assert_eq!(
+      expired[0].task.id, 1,
+      "the short-lease (fast-service) task is reaped; the slow service's long lease is honored"
+    );
   }
 
   #[test]
