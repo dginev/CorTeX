@@ -37,6 +37,14 @@ Active branch: **`master`** (the `productize-2026` sprint branch was merged and 
   `dotenvy`, highest precedence). **No recompile to switch databases** — e.g. point the frontend at a
   populated DB with `DATABASE_URL=… cargo run --bin frontend` (see `docs/TEST_DRIVE.md`). The old
   compile-time `dotenv!`/`DEFAULT_DB_ADDRESS` baking is gone.
+- **Admin/API tokens have ONE source: the JSON token file** (`config.rs::TokenFile`), read by
+  `auth_file_path()` — default `config.json` in the CWD, override `CORTEX_AUTH_FILE` (prod keeps the
+  live token outside the repo at `/etc/cortex/config.json`; the repo `config.json` is the gitignored
+  demo/test fixture; `config.example.json` is the tracked template). It is **not** layered with a
+  `cortex.toml [auth]` section — `CortexConfig.auth` is `#[serde(skip)]`, so figment never parses one
+  and there's no file-vs-file override. `cortex set-admin-token`/`revoke-token` **read/modify/write
+  this same JSON file** (not `cortex.toml`); a minted token activates immediately (the frontend
+  re-reads it per gated request). `cortex init` scaffolds an **empty** token file if none exists.
 - **Redis has been removed** (Arm 14 #6.2). Frontend reports are now served from the
   `report_summary` materialized-view rollup (`src/backend/rollup.rs`, `reports::task_report`),
   refreshed on the run-completion path (finalize drain + at-least-daily, plus `mark_new_run`); the

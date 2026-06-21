@@ -108,6 +108,7 @@ curl -s -H "$T" -X DELETE 'http://127.0.0.1:8044/api/corpora/demo?confirm=demo'
 ## Notes
 
 - Read-only browsing needs no secrets. The token-gated write actions (rerun, save-snapshot) read
-  `config.json` / `CORTEX_AUTH__…`.
+  tokens from the **single** JSON token file — `config.json` in the CWD, or wherever
+  `CORTEX_AUTH_FILE` points (there is no `cortex.toml [auth]` layering).
 - Run the **dispatcher** + a **worker** as well (see `INSTALL.md` §7) to watch tasks actually move
   through TODO → result; the frontend alone is a read/report view of whatever the DB already holds.

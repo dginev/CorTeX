@@ -178,7 +178,9 @@ impl Default for DispatcherConfig {
   }
 }
 
-/// Frontend authentication / secrets (formerly the hand-edited `config.json`).
+/// Frontend authentication / secrets. The **only** source is the JSON token file
+/// ([`auth_file_path`] — `config.json` / `CORTEX_AUTH_FILE`); this is never read from or written to
+/// `cortex.toml` (the [`CortexConfig::auth`] field is `#[serde(skip)]`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AuthConfig {
   /// Password-like tokens mapped to a human-readable owner. The bootstrap / break-glass + agent
@@ -256,7 +258,11 @@ pub struct CortexConfig {
   pub database: DatabaseConfig,
   /// ZeroMQ dispatcher settings.
   pub dispatcher: DispatcherConfig,
-  /// Frontend authentication / secrets.
+  /// Frontend authentication / secrets. **Loaded solely from the JSON token file** (`config.json`
+  /// / `CORTEX_AUTH_FILE`), never from `cortex.toml` — `#[serde(skip)]` keeps figment from
+  /// parsing an `[auth]` section, so tokens have one source of truth and there is no
+  /// file-vs-file override.
+  #[serde(skip)]
   pub auth: AuthConfig,
   /// On-disk asset locations.
   pub assets: AssetsConfig,
@@ -291,19 +297,19 @@ impl CortexConfig {
     if let Ok(url) = std::env::var("TEST_DATABASE_URL") {
       config.database.test_url = url;
     }
-    // Back-compat: the legacy frontend `config.json` (rerun_tokens) remains authoritative for the
-    // auth section so running deployments keep working. The path defaults to `config.json` in the
-    // working directory but is **overridable via `CORTEX_AUTH_FILE`** ([`auth_file_path`]) — so a
-    // deployment keeps its live admin token in a file *outside the repo* (e.g.
-    // `/etc/cortex/config.json`, root-owned), while the repo's `config.json` stays the demo/test
-    // fixture and the real token is never checked into git. The new home for these values is the
-    // `[auth]` section of `cortex.toml` / `CORTEX_AUTH__*` (written by `cortex set-admin-token`);
-    // the prototype's `captcha_secret` is gone — bot protection is a deployment concern (an
-    // Anubis reverse proxy), not framework code (docs/DEPLOYMENT.md).
+    // Tokens have ONE source of truth: the JSON token file (`config.json`, overridable via
+    // `CORTEX_AUTH_FILE` — so a deployment keeps its live token *outside the repo* at e.g.
+    // `/etc/cortex/config.json`, root-owned, while the repo `config.json` stays the demo/test
+    // fixture and the real token is never checked into git). It is **not** layered with a
+    // `cortex.toml [auth]` section: `auth` is `#[serde(skip)]`, so figment never parses one and
+    // there is no file-vs-file override to reason about. Read fresh here; `cortex set-admin-token`
+    // / `revoke-token` write this same file. (The prototype's `captcha_secret` is gone — bot
+    // protection is a deployment concern, an Anubis reverse proxy, not framework code; see
+    // docs/DEPLOYMENT.md.)
     let auth_file = auth_file_path();
     if let Ok(text) = std::fs::read_to_string(&auth_file) {
-      match serde_json::from_str::<LegacyFrontendConfig>(&text) {
-        Ok(legacy) => config.auth.rerun_tokens = legacy.rerun_tokens,
+      match serde_json::from_str::<TokenFile>(&text) {
+        Ok(parsed) => config.auth.rerun_tokens = parsed.rerun_tokens,
         Err(e) => eprintln!("-- ignoring malformed {}: {e}", auth_file.display()),
       }
     }
@@ -311,11 +317,15 @@ impl CortexConfig {
   }
 }
 
-/// Legacy on-disk shape of the prototype `config.json`, read only for backwards compatibility.
-/// Extra fields (e.g. the removed `captcha_secret`) are ignored.
-#[derive(Deserialize)]
-struct LegacyFrontendConfig {
-  rerun_tokens: HashMap<String, String>,
+/// On-disk shape of the JSON token file (`config.json` / `CORTEX_AUTH_FILE`) — the **single source
+/// of truth** for `rerun_tokens`. Read by the config loader and read/modified/written by
+/// `cortex set-admin-token` / `revoke-token`. Extra fields (e.g. the removed `captcha_secret`) are
+/// ignored.
+#[derive(Deserialize, Serialize, Default)]
+pub(crate) struct TokenFile {
+  /// `token → owner` map; the bearer credentials the frontend resolves on every gated request.
+  #[serde(default)]
+  pub(crate) rerun_tokens: HashMap<String, String>,
 }
 
 /// Serializes the non-secret configuration sections (everything except the `auth` secrets) to TOML.
@@ -348,7 +358,7 @@ pub fn config_file_path() -> std::path::PathBuf {
 }
 
 /// The path of the **token file** — the JSON holding `rerun_tokens` (admin/agent credentials). It
-/// is **gitignored** and scaffolded by `cortex init`; the tracked `config.default.json` is only a
+/// is **gitignored** and scaffolded by `cortex init`; the tracked `config.example.json` is only a
 /// template. Defaults to `config.json` in the working directory, **overridable via
 /// `CORTEX_AUTH_FILE`** so a deployment keeps its live token *outside the repo* (e.g.
 /// `/etc/cortex/config.json`, root-owned) and the repo copy stays the demo/test fixture — the live

@@ -136,7 +136,7 @@ manager. This is a key hardening surface.
 | Build a sandbox archive from an ID list | `examples/sandbox_arxiv.rs` | example bin |
 | Export an HTML dataset (per month / per severity) | ~~`scripts/bundle-html-dataset*.sh`~~ → `cortex export-dataset` (`backend::export_html_dataset`) | **CLI (landed)** |
 | Tune Postgres for scale | hand-run `ALTER TABLE … autovacuum …` from `INSTALL.md` | manual SQL |
-| Configure everything | hand-edit `config.default.json`, `.env`, `Rocket.toml` | manual |
+| Configure everything | hand-edit `config.example.json`, `.env`, `Rocket.toml` | manual |
 
 (Full per-item breakdown — inputs, called methods, hardcoded assumptions, target interface — is in
 the working notes; condensed into the arms below.)

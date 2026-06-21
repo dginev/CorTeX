@@ -41,7 +41,7 @@ cargo run --bin frontend                                        # serves http://
 **Admin token & secrets**: writes and the `/admin` sign-in are gated by an admin token (sent as an
 `X-Cortex-Token` header or `?token=` query) mapped to an
 owner (`rerun_tokens`). Tokens live in a **gitignored token file** — the default is `config.json` in
-the working directory (the tracked `config.default.json` is a *demo template only*, never your real
+the working directory (the tracked `config.example.json` is a *demo template only*, never your real
 token), scaffolded/managed by `cortex set-admin-token`. To keep a **production** token out of the
 repository entirely, put it in a JSON file outside the tree and point `CORTEX_AUTH_FILE` at it (it
 overrides the in-repo config):

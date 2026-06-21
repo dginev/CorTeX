@@ -281,10 +281,14 @@ fn mask_db_password(url: &str) -> String {
 /// Deep-merges a partial JSON patch onto the running config, validates it, and persists the
 /// non-secret sections to `path` as TOML. Returns the merged configuration.
 fn merge_and_persist(patch: &serde_json::Value, path: &Path) -> Result<CortexConfig, Status> {
-  let merged: CortexConfig = Figment::from(Serialized::defaults(config().clone()))
+  let mut merged: CortexConfig = Figment::from(Serialized::defaults(config().clone()))
     .merge(Serialized::defaults(patch))
     .extract()
     .map_err(|_| Status::UnprocessableEntity)?;
+  // `auth` is `#[serde(skip)]` (tokens live solely in the JSON token file, never cortex.toml), so
+  // the figment round-trip above drops it. Restore the live, token-populated auth so the returned
+  // DTO's masked token count is accurate — Settings never edits or persists tokens regardless.
+  merged.auth = config().auth.clone();
   // The figment extract above only checks *types*. Reject a structurally-valid but operationally
   // **bricking** value (a zero pool/queue, an out-of-range port) BEFORE persisting — otherwise it
   // is written to disk and silently breaks the next restart.

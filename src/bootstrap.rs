@@ -18,7 +18,7 @@ use rand::RngExt;
 use rand::distr::Alphanumeric;
 use serde::Serialize;
 
-use crate::config::{CortexConfig, to_persisted_toml};
+use crate::config::{CortexConfig, TokenFile, to_persisted_toml};
 use crate::migrations;
 
 /// Write `cortex.toml` **atomically**: serialize to a sibling temp file, then `rename` it over the
@@ -181,6 +181,16 @@ pub fn init(database_url: &str, config_path: &Path) -> Result<InitOutcome, Strin
     write_config_atomically(config_path, &toml)?;
     true
   };
+  // Scaffold an **empty** JSON token file (`config.json` / `CORTEX_AUTH_FILE`) — the single source
+  // of truth for admin/API tokens — if one is missing, so the operator has a discoverable place for
+  // `cortex set-admin-token` to fill in. Seeded empty on purpose: never copy the demo
+  // `config.example.json` tokens into a live deployment (they are public in the repo).
+  let auth_path = crate::config::auth_file_path();
+  if !auth_path.exists() {
+    let empty = serde_json::to_string_pretty(&TokenFile::default())
+      .map_err(|e| format!("cannot serialize token file: {e}"))?;
+    write_config_atomically(&auth_path, &empty)?;
+  }
   Ok(InitOutcome {
     migrations_applied,
     config_created,
@@ -196,9 +206,6 @@ pub struct SetTokenOutcome {
   pub replaced: bool,
   /// How many tokens are configured after the write.
   pub token_count: usize,
-  /// `true` if a legacy `config.json` in the working directory shadows `cortex.toml`'s `[auth]`
-  /// (so the written token will not take effect until that file is reconciled or removed).
-  pub shadowed_by_legacy_json: bool,
 }
 
 /// Generates a fresh random admin/API token: 32 URL-safe alphanumeric characters (~190 bits). Used
@@ -213,57 +220,40 @@ pub fn generate_token() -> String {
     .collect()
 }
 
-/// Sets (or updates) an admin/API token in the `[auth].rerun_tokens` table of `config_path`,
-/// **merging** into the existing file so other sections and other tokens are preserved — no
-/// hand-editing of `cortex.toml`. The library logic behind `cortex set-admin-token`.
+/// Sets (or updates) an admin/API token in the JSON token file at `auth_path` (`config.json` /
+/// `CORTEX_AUTH_FILE`) — the **single source of truth** for `rerun_tokens` — **merging** into the
+/// existing file so other tokens are preserved. The library logic behind `cortex set-admin-token`.
 ///
-/// If the file is missing it is first scaffolded from the defaults (a complete config, like `cortex
-/// init`) so the result is always valid. Because `to_persisted_toml` never writes secrets, this
-/// merges at the raw-TOML level rather than re-serializing a `CortexConfig`. Mapping the token to a
+/// If the file is missing it is created with just this token (an empty `rerun_tokens` map
+/// otherwise). There is no `cortex.toml [auth]` layering anymore, so a written token takes effect
+/// immediately (the frontend re-reads this file on every gated request). Mapping the token to a
 /// per-person `owner` is what gives the audit log its actor (`docs/archive/AAA_DESIGN.md`).
 pub fn set_admin_token(
-  config_path: &Path,
+  auth_path: &Path,
   token: &str,
   owner: &str,
 ) -> Result<SetTokenOutcome, String> {
   if token.is_empty() {
     return Err("refusing to set an empty token".to_string());
   }
-  // Start from the existing file, or a fresh complete scaffold when none exists yet.
-  let existing = match std::fs::read_to_string(config_path) {
-    Ok(text) => text,
-    Err(_) => to_persisted_toml(&CortexConfig::default())
-      .map_err(|e| format!("cannot scaffold config: {e}"))?,
+  // Read the existing token file (empty map when none exists yet), merge, write back as JSON.
+  let mut file: TokenFile = match std::fs::read_to_string(auth_path) {
+    Ok(text) => serde_json::from_str(&text)
+      .map_err(|e| format!("cannot parse {}: {e}", auth_path.display()))?,
+    Err(_) => TokenFile::default(),
   };
-  let mut document: toml::Table = existing
-    .parse()
-    .map_err(|e| format!("cannot parse {}: {e}", config_path.display()))?;
-  // Navigate/create [auth].rerun_tokens, then insert. `entry` preserves any sibling keys.
-  let auth = document
-    .entry("auth")
-    .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-  let auth_table = auth
-    .as_table_mut()
-    .ok_or_else(|| "the [auth] section is not a table".to_string())?;
-  let tokens = auth_table
-    .entry("rerun_tokens")
-    .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-  let tokens_table = tokens
-    .as_table_mut()
-    .ok_or_else(|| "auth.rerun_tokens is not a table".to_string())?;
-  let replaced = tokens_table
-    .insert(token.to_string(), toml::Value::String(owner.to_string()))
+  let replaced = file
+    .rerun_tokens
+    .insert(token.to_string(), owner.to_string())
     .is_some();
-  let token_count = tokens_table.len();
+  let token_count = file.rerun_tokens.len();
   let serialized =
-    toml::to_string_pretty(&document).map_err(|e| format!("cannot serialize config: {e}"))?;
-  write_config_atomically(config_path, &serialized)?;
+    serde_json::to_string_pretty(&file).map_err(|e| format!("cannot serialize token file: {e}"))?;
+  write_config_atomically(auth_path, &serialized)?;
   Ok(SetTokenOutcome {
     owner: owner.to_string(),
     replaced,
     token_count,
-    // The loader treats a working-directory config.json as authoritative for [auth] (back-compat).
-    shadowed_by_legacy_json: Path::new("config.json").exists(),
   })
 }
 
@@ -274,64 +264,54 @@ pub struct RevokeTokenOutcome {
   pub revoked: usize,
   /// How many tokens remain configured afterward.
   pub token_count: usize,
-  /// `true` if a legacy `config.json` shadows `cortex.toml`'s `[auth]` — the revoke will not take
-  /// effect until that file is reconciled or removed.
-  pub shadowed_by_legacy_json: bool,
 }
 
-/// Revokes admin/API token(s) from the `[auth].rerun_tokens` table of `config_path` — the inverse
-/// of [`set_admin_token`]. Removes either a specific `token` or **every** token mapped to `owner`
-/// (the caller supplies exactly one). Merges into the existing file (other sections + other tokens
-/// are preserved) and writes atomically; rewrites only when something actually changed. The library
-/// logic behind `cortex revoke-token`. A revoked token stops working immediately — the frontend
-/// resolves `auth.rerun_tokens` live on every request.
+/// Revokes admin/API token(s) from the JSON token file at `auth_path` (`config.json` /
+/// `CORTEX_AUTH_FILE`) — the inverse of [`set_admin_token`]. Removes either a specific `token` or
+/// **every** token mapped to `owner` (the caller supplies exactly one). Merges into the existing
+/// file (other tokens are preserved) and writes atomically; rewrites only when something actually
+/// changed. The library logic behind `cortex revoke-token`. A revoked token stops working
+/// immediately — the frontend re-reads this file on every gated request.
 pub fn revoke_admin_token(
-  config_path: &Path,
+  auth_path: &Path,
   token: Option<&str>,
   owner: Option<&str>,
 ) -> Result<RevokeTokenOutcome, String> {
-  let shadowed_by_legacy_json = Path::new("config.json").exists();
-  let existing = std::fs::read_to_string(config_path)
-    .map_err(|_| format!("no config at {} — nothing to revoke", config_path.display()))?;
-  let mut document: toml::Table = existing
-    .parse()
-    .map_err(|e| format!("cannot parse {}: {e}", config_path.display()))?;
-  // Navigate to [auth].rerun_tokens; if absent, there is simply nothing to revoke.
-  let tokens_table = document
-    .get_mut("auth")
-    .and_then(|auth| auth.as_table_mut())
-    .and_then(|auth| auth.get_mut("rerun_tokens"))
-    .and_then(|tokens| tokens.as_table_mut());
-  let (revoked, token_count) = match tokens_table {
-    None => (0, 0),
-    Some(tokens) => {
-      let revoked = match (token, owner) {
-        (Some(tok), _) => usize::from(tokens.remove(tok).is_some()),
-        (None, Some(own)) => {
-          let matching: Vec<String> = tokens
-            .iter()
-            .filter(|(_, value)| value.as_str() == Some(own))
-            .map(|(key, _)| key.clone())
-            .collect();
-          for key in &matching {
-            tokens.remove(key);
-          }
-          matching.len()
-        },
-        (None, None) => return Err("specify a token to revoke, or --owner <name>".to_string()),
-      };
-      (revoked, tokens.len())
+  let mut file: TokenFile = match std::fs::read_to_string(auth_path) {
+    Ok(text) => serde_json::from_str(&text)
+      .map_err(|e| format!("cannot parse {}: {e}", auth_path.display()))?,
+    Err(_) => {
+      return Err(format!(
+        "no token file at {} — nothing to revoke",
+        auth_path.display()
+      ));
     },
   };
+  let revoked = match (token, owner) {
+    (Some(tok), _) => usize::from(file.rerun_tokens.remove(tok).is_some()),
+    (None, Some(own)) => {
+      let matching: Vec<String> = file
+        .rerun_tokens
+        .iter()
+        .filter(|(_, value)| value.as_str() == own)
+        .map(|(key, _)| key.clone())
+        .collect();
+      for key in &matching {
+        file.rerun_tokens.remove(key);
+      }
+      matching.len()
+    },
+    (None, None) => return Err("specify a token to revoke, or --owner <name>".to_string()),
+  };
+  let token_count = file.rerun_tokens.len();
   if revoked > 0 {
-    let serialized =
-      toml::to_string_pretty(&document).map_err(|e| format!("cannot serialize config: {e}"))?;
-    write_config_atomically(config_path, &serialized)?;
+    let serialized = serde_json::to_string_pretty(&file)
+      .map_err(|e| format!("cannot serialize token file: {e}"))?;
+    write_config_atomically(auth_path, &serialized)?;
   }
   Ok(RevokeTokenOutcome {
     revoked,
     token_count,
-    shadowed_by_legacy_json,
   })
 }
 

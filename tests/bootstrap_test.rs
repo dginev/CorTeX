@@ -148,26 +148,26 @@ fn init_is_idempotent_and_scaffolds_config() {
 }
 
 #[test]
-fn set_admin_token_scaffolds_merges_and_updates() {
-  let mut config_path = std::env::temp_dir();
-  config_path.push("cortex_set_token_test.toml");
-  let _ = std::fs::remove_file(&config_path);
+fn set_admin_token_creates_merges_and_updates() {
+  // Tokens live solely in the JSON token file (config.json / CORTEX_AUTH_FILE), never cortex.toml.
+  let mut auth_path = std::env::temp_dir();
+  auth_path.push("cortex_set_token_test.json");
+  let _ = std::fs::remove_file(&auth_path);
 
-  // No file yet → scaffolds a complete config AND adds the token.
-  let outcome = bootstrap::set_admin_token(&config_path, "tok-aaa", "alice").expect("add token");
+  // No file yet → creates the token file AND adds the token.
+  let outcome = bootstrap::set_admin_token(&auth_path, "tok-aaa", "alice").expect("add token");
   assert!(
     !outcome.replaced,
     "the first write of a token is an add, not an update"
   );
   assert_eq!(outcome.token_count, 1);
-  let written = std::fs::read_to_string(&config_path).expect("written");
   assert!(
-    written.contains("[dispatcher]"),
-    "a fresh file is scaffolded with the operational sections too"
+    auth_path.exists(),
+    "the token file is created on first write"
   );
 
-  // A second token MERGES — the first token and the operational sections survive.
-  let outcome = bootstrap::set_admin_token(&config_path, "tok-bbb", "bob").expect("add token 2");
+  // A second token MERGES — the first token survives.
+  let outcome = bootstrap::set_admin_token(&auth_path, "tok-bbb", "bob").expect("add token 2");
   assert!(!outcome.replaced);
   assert_eq!(
     outcome.token_count, 2,
@@ -175,83 +175,75 @@ fn set_admin_token_scaffolds_merges_and_updates() {
   );
 
   // Re-setting an existing token UPDATES its owner (no new entry).
-  let outcome = bootstrap::set_admin_token(&config_path, "tok-aaa", "alice2").expect("update");
+  let outcome = bootstrap::set_admin_token(&auth_path, "tok-aaa", "alice2").expect("update");
   assert!(outcome.replaced, "an existing token is an update");
   assert_eq!(
     outcome.token_count, 2,
     "the count is unchanged on an update"
   );
 
-  // The result parses as valid TOML with both tokens under [auth].rerun_tokens, owners correct.
-  let written = std::fs::read_to_string(&config_path).expect("written");
-  let document: toml::Table = written.parse().expect("valid toml");
-  let tokens = document["auth"]["rerun_tokens"]
-    .as_table()
-    .expect("auth.rerun_tokens table");
+  // The result parses as valid JSON with both tokens under rerun_tokens, owners correct.
+  let written = std::fs::read_to_string(&auth_path).expect("written");
+  let document: serde_json::Value = serde_json::from_str(&written).expect("valid json");
+  let tokens = document["rerun_tokens"]
+    .as_object()
+    .expect("rerun_tokens object");
   assert_eq!(
     tokens["tok-aaa"].as_str(),
     Some("alice2"),
     "the re-set token's owner was updated"
   );
   assert_eq!(tokens["tok-bbb"].as_str(), Some("bob"));
-  assert!(
-    written.contains("[dispatcher]"),
-    "operational sections are preserved across merges"
-  );
 
-  let _ = std::fs::remove_file(&config_path);
+  let _ = std::fs::remove_file(&auth_path);
 }
 
 #[test]
 fn revoke_token_removes_by_value_or_owner_and_preserves_the_rest() {
-  let mut config_path = std::env::temp_dir();
-  config_path.push("cortex_revoke_token_test.toml");
-  let _ = std::fs::remove_file(&config_path);
+  let mut auth_path = std::env::temp_dir();
+  auth_path.push("cortex_revoke_token_test.json");
+  let _ = std::fs::remove_file(&auth_path);
 
   // Seed three tokens: one alice, two bob.
-  bootstrap::set_admin_token(&config_path, "tok-aaa", "alice").expect("seed aaa");
-  bootstrap::set_admin_token(&config_path, "tok-bbb", "bob").expect("seed bbb");
-  bootstrap::set_admin_token(&config_path, "tok-ccc", "bob").expect("seed ccc");
+  bootstrap::set_admin_token(&auth_path, "tok-aaa", "alice").expect("seed aaa");
+  bootstrap::set_admin_token(&auth_path, "tok-bbb", "bob").expect("seed bbb");
+  bootstrap::set_admin_token(&auth_path, "tok-ccc", "bob").expect("seed ccc");
 
   // Revoke a SPECIFIC token.
   let outcome =
-    bootstrap::revoke_admin_token(&config_path, Some("tok-aaa"), None).expect("revoke aaa");
+    bootstrap::revoke_admin_token(&auth_path, Some("tok-aaa"), None).expect("revoke aaa");
   assert_eq!(outcome.revoked, 1, "one token removed by value");
   assert_eq!(outcome.token_count, 2, "two remain");
 
   // Revoking an already-gone token is an idempotent no-op, not an error.
   let outcome =
-    bootstrap::revoke_admin_token(&config_path, Some("tok-aaa"), None).expect("revoke missing");
+    bootstrap::revoke_admin_token(&auth_path, Some("tok-aaa"), None).expect("revoke missing");
   assert_eq!(outcome.revoked, 0, "already-gone token removes nothing");
   assert_eq!(outcome.token_count, 2);
 
   // Revoke ALL of an owner's tokens.
-  let outcome = bootstrap::revoke_admin_token(&config_path, None, Some("bob")).expect("revoke bob");
+  let outcome = bootstrap::revoke_admin_token(&auth_path, None, Some("bob")).expect("revoke bob");
   assert_eq!(outcome.revoked, 2, "both of bob's tokens removed");
   assert_eq!(outcome.token_count, 0, "none remain");
 
-  // Operational sections survive; rerun_tokens is now empty.
-  let written = std::fs::read_to_string(&config_path).expect("written");
+  // rerun_tokens is now empty.
+  let written = std::fs::read_to_string(&auth_path).expect("written");
+  let document: serde_json::Value = serde_json::from_str(&written).expect("valid json");
   assert!(
-    written.contains("[dispatcher]"),
-    "operational sections preserved across revokes"
-  );
-  let document: toml::Table = written.parse().expect("valid toml");
-  assert!(
-    document["auth"]["rerun_tokens"]
-      .as_table()
-      .expect("rerun_tokens table")
+    document["rerun_tokens"]
+      .as_object()
+      .expect("rerun_tokens object")
       .is_empty(),
     "all tokens revoked"
   );
 
   // Neither selector → an error (the CLI guards this too).
   assert!(
-    bootstrap::revoke_admin_token(&config_path, None, None).is_err(),
+    bootstrap::revoke_admin_token(&auth_path, None, None).is_err(),
     "must specify a token or an owner"
   );
 
-  let _ = std::fs::remove_file(&config_path);
+  let _ = std::fs::remove_file(&auth_path);
 }
 
 #[test]

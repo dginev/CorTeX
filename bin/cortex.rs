@@ -22,7 +22,7 @@ use cortex::backend::{
   task_messages,
 };
 use cortex::bootstrap::{self, DoctorReport};
-use cortex::config::config_file_path;
+use cortex::config::{auth_file_path, config_file_path};
 use cortex::frontend::audit::AuditDto;
 use cortex::frontend::corpora::CorpusDto;
 use cortex::frontend::helpers::group_thousands;
@@ -2242,24 +2242,17 @@ fn run_set_admin_token(token: Option<String>, generate: bool, owner: String) {
       std::process::exit(2);
     },
   };
-  match bootstrap::set_admin_token(&config_file_path(), &token, &owner) {
+  match bootstrap::set_admin_token(&auth_file_path(), &token, &owner) {
     Ok(outcome) => {
       println!(
         "{} admin token for owner '{}' in {} ({} token(s) configured).",
         if outcome.replaced { "Updated" } else { "Added" },
         owner,
-        config_file_path().display(),
+        auth_file_path().display(),
         outcome.token_count,
       );
       if generate {
         println!("\n  token: {token}\n  (store it now — it is shown only once)");
-      }
-      if outcome.shadowed_by_legacy_json {
-        eprintln!(
-          "\nWARNING: a legacy config.json in this directory overrides [auth] in cortex.toml, so \
-           this token will NOT take effect until you move its rerun_tokens into cortex.toml (or \
-           remove config.json)."
-        );
       }
     },
     Err(error) => {
@@ -2283,7 +2276,7 @@ fn run_revoke_token(token: Option<String>, owner: Option<String>) {
     },
     _ => {},
   }
-  match bootstrap::revoke_admin_token(&config_file_path(), token.as_deref(), owner.as_deref()) {
+  match bootstrap::revoke_admin_token(&auth_file_path(), token.as_deref(), owner.as_deref()) {
     Ok(outcome) => {
       if outcome.revoked == 0 {
         println!(
@@ -2294,15 +2287,8 @@ fn run_revoke_token(token: Option<String>, owner: Option<String>) {
         println!(
           "Revoked {} token(s) in {} ({} remaining).",
           outcome.revoked,
-          config_file_path().display(),
+          auth_file_path().display(),
           outcome.token_count
-        );
-      }
-      if outcome.shadowed_by_legacy_json {
-        eprintln!(
-          "\nWARNING: a legacy config.json in this directory overrides [auth] in cortex.toml, so \
-           this revoke will NOT take effect until you remove the token from config.json (or remove \
-           config.json)."
         );
       }
     },
