@@ -542,61 +542,68 @@ fn read_cortex_log(result: &Path) -> Result<String, String> {
   Ok(decode_worker_log(&raw))
 }
 
-/// Generates a `TaskReport`, given the path to a result archive (`.zip`) from a `CorTeX` processing
-/// job. Expects a `cortex.log` file in the archive, following the `LaTeXML` messaging conventions;
-/// a missing/unreadable log leaves the task `Fatal` (the default).
-pub fn generate_report(task: Task, result: &Path) -> TaskReport {
-  let mut messages = Vec::new();
-  let mut status = TaskStatus::Fatal; // Fatal by default
-  match read_cortex_log(result) {
-    Ok(log_string) => {
-      // Look for the special status message - Fatal otherwise!
-      for message in parse_log(task.id, &log_string).into_iter() {
-        // Invalids are a bit of a workaround for now, they're fatal messages in latexml, but
-        // we want them separated out in cortex
-        let mut skip_message = false;
-        match message {
-          NewTaskMessage::Invalid(ref _log_invalid) => {
-            status = TaskStatus::Invalid;
-          },
-          NewTaskMessage::Info(ref _log_info) => {
-            let message_what = message.what();
-            if message.category() == "conversion" && !message_what.is_empty() {
-              // Adapt status to the CorTeX scheme: cortex_status = -(latexml_status+1)
-              let latexml_scheme_status = match message_what.parse::<i32>() {
-                Ok(num) => num,
-                Err(e) => {
-                  println!(
-                    "-- generate_report: failed to parse conversion status {message_what:?}: {e:?}"
-                  );
-                  3 // latexml raw fatal
-                },
-              };
-              let cortex_scheme_status = -(latexml_scheme_status + 1);
-              if status != TaskStatus::Invalid {
-                // Invalid status is final, and derived, all others are set directly from the log.
-                status = TaskStatus::from_raw(cortex_scheme_status);
-              }
-              skip_message = true; // do not record the status message
-            }
-          },
-          _ => {},
-        };
-        if !skip_message {
-          messages.push(message);
-        }
-      }
-    },
+/// Generates a `TaskReport` from a result archive (`.zip`) of a `CorTeX` processing job, following
+/// the `LaTeXML` messaging conventions in its `cortex.log`. Returns **`None` when the archive is
+/// unreadable or empty** (0-byte, truncated, non-zip, or no `cortex.log` entry): that is an
+/// *infrastructure* failure — the worker returned nothing usable — **not** a conversion verdict, so
+/// we do **not** fabricate a terminal `Fatal`. The caller (sink) skips finalizing it, leaving the
+/// task in-flight for the lease reaper, which **retries** it and only dead-letters it (with a
+/// `cortex/never_completed_with_retries` message) after `MAX_DISPATCH_RETRIES` — never a silent,
+/// unretried Fatal (KNOWN_ISSUES D-18). A *readable* `cortex.log` always yields `Some` — a genuine
+/// verdict, even when it parses to `Fatal`.
+pub fn generate_report(task: Task, result: &Path) -> Option<TaskReport> {
+  let log_string = match read_cortex_log(result) {
+    Ok(log_string) => log_string,
     Err(reason) => {
-      println!("-- generate_report: {reason} (result {result:?}); task left Fatal");
+      // Infrastructure failure (D-18): don't invent a verdict — defer to the reaper's retry path.
+      println!("-- generate_report: {reason} (result {result:?}); deferring to the reaper (D-18)");
+      return None;
     },
+  };
+  let mut messages = Vec::new();
+  let mut status = TaskStatus::Fatal; // Fatal by default — overridden by the conversion status line.
+  // Look for the special status message - Fatal otherwise!
+  for message in parse_log(task.id, &log_string).into_iter() {
+    // Invalids are a bit of a workaround for now, they're fatal messages in latexml, but
+    // we want them separated out in cortex
+    let mut skip_message = false;
+    match message {
+      NewTaskMessage::Invalid(ref _log_invalid) => {
+        status = TaskStatus::Invalid;
+      },
+      NewTaskMessage::Info(ref _log_info) => {
+        let message_what = message.what();
+        if message.category() == "conversion" && !message_what.is_empty() {
+          // Adapt status to the CorTeX scheme: cortex_status = -(latexml_status+1)
+          let latexml_scheme_status = match message_what.parse::<i32>() {
+            Ok(num) => num,
+            Err(e) => {
+              println!(
+                "-- generate_report: failed to parse conversion status {message_what:?}: {e:?}"
+              );
+              3 // latexml raw fatal
+            },
+          };
+          let cortex_scheme_status = -(latexml_scheme_status + 1);
+          if status != TaskStatus::Invalid {
+            // Invalid status is final, and derived, all others are set directly from the log.
+            status = TaskStatus::from_raw(cortex_scheme_status);
+          }
+          skip_message = true; // do not record the status message
+        }
+      },
+      _ => {},
+    };
+    if !skip_message {
+      messages.push(message);
+    }
   }
 
-  TaskReport {
+  Some(TaskReport {
     task,
     status,
     messages,
-  }
+  })
 }
 
 /// Returns an open file handle to the task's entry
@@ -791,6 +798,51 @@ mod log_decode_tests {
     // A missing / non-zip path is a graceful Err (task left Fatal), never a panic.
     assert!(read_cortex_log(std::path::Path::new("/nonexistent/x.zip")).is_err());
     std::fs::remove_file(&zip_path).ok();
+  }
+
+  #[test]
+  fn generate_report_defers_unreadable_archives_to_the_reaper() {
+    use super::{Task, TaskStatus, generate_report};
+    use std::fs::File;
+    use std::io::Write;
+    let task = || Task {
+      id: 42,
+      service_id: 3,
+      corpus_id: 2,
+      status: 0,
+      entry: "/d/x.zip".to_string(),
+    };
+    // D-18: a 0-byte / missing / non-zip archive is an *infrastructure* failure → None, so the sink
+    // defers to the reaper (retry → dead-letter with a message) instead of a silent terminal Fatal.
+    let empty = std::env::temp_dir().join("cortex_d18_empty_result.zip");
+    File::create(&empty).unwrap(); // 0 bytes — "not a readable zip"
+    assert!(
+      generate_report(task(), &empty).is_none(),
+      "a 0-byte result archive defers to the reaper (None), never a fabricated Fatal"
+    );
+    assert!(
+      generate_report(task(), std::path::Path::new("/nonexistent/x.zip")).is_none(),
+      "a missing result archive defers to the reaper (None)"
+    );
+    // A *readable* cortex.log is always a genuine verdict — Some, even when it parses a conversion
+    // status (here conversion:0 → NoProblem).
+    let good = std::env::temp_dir().join("cortex_d18_good_result.zip");
+    {
+      let mut zw = zip::ZipWriter::new(File::create(&good).unwrap());
+      let opts: zip::write::FileOptions<()> = zip::write::FileOptions::default();
+      zw.start_file("cortex.log", opts).unwrap();
+      zw.write_all(b"Info:conversion:0 clean run\n").unwrap();
+      zw.finish().unwrap();
+    }
+    let report =
+      generate_report(task(), &good).expect("a readable cortex.log yields a verdict (Some)");
+    assert_eq!(
+      report.status,
+      TaskStatus::NoProblem,
+      "conversion:0 status line -> NoProblem"
+    );
+    std::fs::remove_file(&empty).ok();
+    std::fs::remove_file(&good).ok();
   }
 
   #[test]

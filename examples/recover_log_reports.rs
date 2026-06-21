@@ -82,8 +82,13 @@ fn main() {
         .to_string();
       let html_entry_path = Path::new(&html_entry);
       if html_entry_path.exists() {
-        let report = generate_report(task, html_entry_path);
-        batch_reports.push(report);
+        // generate_report returns None for an unreadable/empty archive (D-18); nothing to persist
+        // for those here (this offline pass re-derives reports from existing result files — the
+        // live reaper is what retries them), so skip the None just like the dispatcher's
+        // sink does.
+        if let Some(report) = generate_report(task, html_entry_path) {
+          batch_reports.push(report);
+        }
       } else {
         eprintln!("-- Missing result file: {:?}", html_entry);
       }

@@ -110,8 +110,23 @@ fn run_writer(rx: &Receiver<WriteCommand>, done_tx: &SyncSender<TaskReport>) {
           match file {
             Some(f) => {
               drop(f); // flush + close before generate_report reads the archive back
-              let report = helpers::generate_report(task, &recv_path);
-              server::send_done(done_tx, report);
+              let task_id = task.id;
+              match helpers::generate_report(task, &recv_path) {
+                Some(report) => server::send_done(done_tx, report),
+                // Unreadable / empty result archive (0-byte, truncated, no `cortex.log`) — an
+                // infrastructure failure, not a verdict. Skip finalizing it (exactly like the
+                // no-file case below) so the lease reaper recovers the task: retry, then
+                // dead-letter with a message after MAX_DISPATCH_RETRIES — never a
+                // silent terminal Fatal (D-18). Drop the stale 0-byte artifact so a
+                // retry writes a clean file.
+                None => {
+                  std::fs::remove_file(&recv_path).ok();
+                  warn!(
+                    task_id,
+                    "sink writer: empty/unreadable result archive; skipping report so the reaper recovers the task (D-18)"
+                  );
+                },
+              }
             },
             None => {
               warn!(
