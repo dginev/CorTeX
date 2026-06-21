@@ -6,7 +6,7 @@
 {% if services | length == 0 %}
 <p class="center">No services registered yet.</p>
 {% else %}
-<div class="report-layout">
+<div class="report-layout report-layout-wide">
   <table id="service-registry" class="table report-table">
     <thead>
       <tr>

@@ -626,6 +626,11 @@ hr {
 .col-md-1 {
   display: none;
 }
+/* Dense, many-column admin tables (e.g. the service registry) opt out of the 85% reading-column cap
+   and use the full content width — still centred, still horizontally scrollable on overflow. */
+.report-layout-wide {
+  max-width: none;
+}
 .narrow-form {
   max-width: 30rem;
 }
