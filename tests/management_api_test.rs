@@ -624,7 +624,34 @@ fn openapi_spec_and_rapidoc_are_served() {
 
 // Custom harness (Cargo.toml `harness = false`): run the cases then `_exit(0)`, skipping the racy
 // libpq/OpenSSL atexit teardown that SIGSEGVs after assertions pass (KNOWN_ISSUES L-1).
+/// Two distinct, *closed* localhost ports: bind two ephemeral ports simultaneously (so they
+/// differ), capture their numbers, then drop both listeners — the ports are now free, i.e. nothing
+/// is listening. A deterministic target for the dispatcher-reachability probe, so the "dispatcher
+/// not listening" health remediation is asserted reliably even on a host running a co-located
+/// production dispatcher on the default 51695/51696 (which would otherwise satisfy the probe and
+/// drop the remediation — a false test failure). The tiny race (another process grabbing a
+/// just-freed port mid-test) is negligible for a local test.
+fn reserve_closed_ports() -> (u16, u16) {
+  let a = std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port a");
+  let b = std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port b");
+  (
+    a.local_addr().expect("addr a").port(),
+    b.local_addr().expect("addr b").port(),
+  )
+}
+
 fn main() {
+  // Isolation: pin the dispatcher-reachability probe at closed ports BEFORE the first `config()`
+  // access (inside the first `client()` below), so the layered figment (`CORTEX_`-prefixed env)
+  // overrides the default 51695/51696. Without this, a co-located production dispatcher makes the
+  // probe succeed and the health report omits the "dispatcher not listening" remediation the test
+  // asserts — the suite then "can't pass while a dispatcher is up". Now it is deterministic.
+  let (source_port, result_port) = reserve_closed_ports();
+  unsafe {
+    std::env::set_var("CORTEX_DISPATCHER__SOURCE_PORT", source_port.to_string());
+    std::env::set_var("CORTEX_DISPATCHER__RESULT_PORT", result_port.to_string());
+  }
+
   get_api_config_returns_masked_contract();
   healthz_reports_ok_when_db_reachable();
   api_index_lists_the_agent_surface();
