@@ -28,6 +28,10 @@ for v in WORKERS SERVICE SOURCE_ADDRESS SINK_ADDRESS PROFILE WORKER_BIN; do
 done
 [ -x "$WORKER_BIN" ] || { echo "run_worker: WORKER_BIN not executable: $WORKER_BIN" >&2; exit 3; }
 
+# Ensure the disk-backed scratch dir exists (TMPDIR from the env file; the worker stages unpack/convert
+# there via tempfile/env::temp_dir). Must NOT be a ramdisk — see worker.env.example / KNOWN_ISSUES D-18.
+[ -n "${TMPDIR:-}" ] && mkdir -p "$TMPDIR"
+
 echo "run_worker: cortex_worker --harness --workers $WORKERS --service $SERVICE" \
      "$SOURCE_ADDRESS -> $SINK_ADDRESS --profile $PROFILE (dumps: ${LATEXML_DUMP_DIR:-binary default})"
 
