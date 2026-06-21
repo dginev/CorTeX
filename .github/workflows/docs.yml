@@ -1,6 +1,6 @@
 name: Docs
 
-# Publish the documentation site to GitHub Pages on every push to master.
+# Publish the documentation site to GitHub Pages on every push to main.
 #
 # This is the modern replacement for the dead Travis-CI `scripts/doc-upload.sh` (Travis is no longer
 # wired up; the gh-pages branch had been frozen at its last Travis deploy). The site bundles BOTH
@@ -10,13 +10,13 @@ name: Docs
 # The OpenAPI spec is generated from the live `#[openapi]` routes, so the published API docs can
 # never drift from the served API.
 #
-# Only master deploys (the docs reflect shipped state); pull requests just build the site as a smoke
+# Only main deploys (the docs reflect shipped state); pull requests just build the site as a smoke
 # test (no deploy). System deps + toolchain mirror CI.yml so the doc build matches the test build;
 # no database is needed (the `openapi` subcommand neither reads config nor connects to Postgres).
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -51,8 +51,8 @@ jobs:
         run: scripts/build-docs-site.sh
 
       - name: Deploy to GitHub Pages
-        # Only the master branch publishes; PR runs stop after the build above (smoke test).
-        if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+        # Only the main branch publishes; PR runs stop after the build above (smoke test).
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
