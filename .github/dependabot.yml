@@ -16,3 +16,10 @@ updates:
   - dependency-name: sys-info
     versions:
     - 0.8.0
+  # schemars is hard-coupled to rocket_okapi/okapi, which pin schemars 0.8.
+  # Bumping to 0.9 puts two schemars versions in the graph and breaks the
+  # JsonSchema trait bound on our okapi DTOs (see closed PR #390). Unpin once
+  # rocket_okapi ships a schemars-0.9-compatible release.
+  - dependency-name: schemars
+    versions:
+    - ">= 0.9"
