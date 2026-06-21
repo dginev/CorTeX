@@ -257,6 +257,15 @@ enum WorkerEvent {
     /// The returned task id.
     task_id: i64,
   },
+  /// `name` pinged for work but the queue was empty (a mock-reply): a liveness heartbeat that
+  /// refreshes `time_last_dispatch` ("last dispatch requested") WITHOUT counting a dispatch, so a
+  /// drained corpus's idle pollers don't inflate `total_dispatched` / outstanding.
+  Heartbeat {
+    /// Worker identity.
+    name: String,
+    /// Service the worker is registered against.
+    service_id: i32,
+  },
 }
 
 /// A cloneable, non-blocking handle the ventilator and sink use to enqueue worker-metadata events.
@@ -282,6 +291,13 @@ impl WorkerMetadataSender {
       service_id,
       task_id,
     });
+  }
+  /// Enqueue a liveness heartbeat for an empty-queue ping (non-blocking, best-effort). Refreshes
+  /// the worker's last-seen time without counting a dispatch.
+  pub fn heartbeat(&self, name: String, service_id: i32) {
+    let _ = self
+      .tx
+      .try_send(WorkerEvent::Heartbeat { name, service_id });
   }
 }
 
@@ -311,6 +327,9 @@ pub fn start_metadata_writer(pool: DbPool) -> WorkerMetadataSender {
           service_id,
           task_id,
         } => upsert_received(&mut pooled, &name, service_id, task_id, now),
+        WorkerEvent::Heartbeat { name, service_id } => {
+          upsert_heartbeat(&mut pooled, &name, service_id, now)
+        },
       };
       if let Err(error) = result {
         eprintln!("-- worker metadata writer: upsert failed: {error:?}");
@@ -349,6 +368,36 @@ fn upsert_dispatched(
       worker_metadata::total_dispatched.eq(worker_metadata::total_dispatched + 1),
       worker_metadata::time_last_dispatch.eq(now),
     ))
+    .execute(connection)
+}
+
+/// Inserts — or, on `(name, service_id)` conflict, updates — only the liveness timestamp for a
+/// worker that pinged an empty queue. Unlike [`upsert_dispatched`] it does NOT bump
+/// `total_dispatched` (the ping leased no task); it just refreshes `time_last_dispatch` ("last
+/// dispatch requested") so an idle-but-alive worker still reads as fresh/active. The insert branch
+/// seeds a zero-tally row for a worker whose very first contact was an empty ping.
+fn upsert_heartbeat(
+  connection: &mut PgConnection,
+  name: &str,
+  service_id: i32,
+  now: SystemTime,
+) -> QueryResult<usize> {
+  insert_into(worker_metadata::table)
+    .values(&NewWorkerMetadata {
+      name: name.to_string(),
+      service_id,
+      last_dispatched_task_id: 0,
+      last_returned_task_id: None,
+      total_dispatched: 0,
+      total_returned: 0,
+      first_seen: now,
+      session_seen: Some(now),
+      time_last_dispatch: now,
+      time_last_return: None,
+    })
+    .on_conflict((worker_metadata::name, worker_metadata::service_id))
+    .do_update()
+    .set((worker_metadata::time_last_dispatch.eq(now),))
     .execute(connection)
 }
 
@@ -429,6 +478,48 @@ mod tests {
       "return preserved across the dispatch upsert"
     );
     assert_eq!(row.last_dispatched_task_id, 99);
+
+    clear(connection, worker);
+  }
+
+  #[test]
+  fn heartbeat_refreshes_liveness_without_counting_a_dispatch() {
+    let worker = "wm-test:heartbeat:1";
+    let mut backend = backend::testdb();
+    let connection = &mut backend.connection;
+    clear(connection, worker);
+    let early = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000);
+    let later = SystemTime::UNIX_EPOCH + Duration::from_secs(2_000);
+
+    // A first contact that is an empty-queue ping seeds a live row with zero tallies.
+    upsert_heartbeat(connection, worker, SERVICE_ID, early).expect("heartbeat seed");
+    let row = load(connection, worker);
+    assert_eq!(row.total_dispatched, 0, "a ping is not a dispatch");
+    assert_eq!(row.total_returned, 0);
+
+    // A real lease lands and IS counted.
+    upsert_dispatched(connection, worker, SERVICE_ID, 7, early).expect("dispatched");
+    // Subsequent idle pings only advance the timestamp — outstanding must stay at 1, not climb.
+    upsert_heartbeat(connection, worker, SERVICE_ID, later).expect("heartbeat refresh");
+    upsert_heartbeat(connection, worker, SERVICE_ID, later).expect("heartbeat refresh");
+    let row = load(connection, worker);
+    assert_eq!(
+      row.total_dispatched, 1,
+      "idle pings did not inflate dispatched"
+    );
+    assert_eq!(
+      row.total_dispatched - row.total_returned,
+      1,
+      "outstanding reflects the one real in-flight task, not the pings"
+    );
+    assert_eq!(
+      row.time_last_dispatch, later,
+      "the ping refreshed last-dispatch-requested"
+    );
+    assert_eq!(
+      row.last_dispatched_task_id, 7,
+      "the real lease id is preserved"
+    );
 
     clear(connection, worker);
   }

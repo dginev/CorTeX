@@ -21,7 +21,7 @@
       <thead>
         <tr>
           <th scope="col" class="center">Identity</th>
-          <th scope="col" class="center">Last Dispatch Time</th>
+          <th scope="col" class="center" title="When the dispatcher last answered a work request from this worker — including empty-queue pings that lease no task. A live but idle worker stays current here even after the corpus is drained, so this tracks liveness, not work done.">Last Dispatch Requested</th>
           <th scope="col" class="center">Last Returned Time</th>
           <th scope="col" class="center">First Seen</th>
           <th scope="col" class="center" width="90px;">Total Tasks Dispatched</th>

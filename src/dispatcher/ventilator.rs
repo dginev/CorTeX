@@ -318,7 +318,6 @@ impl Ventilator {
         }
 
         ventilator.send(identity, SNDMORE)?;
-        let mut taskid = -1;
         if let Some(current_task_progress) = task_queue.pop() {
           dispatched_this_iter = true;
           // A `retries == 0` task is entering the pipeline for the first time; a re-leased task
@@ -339,7 +338,7 @@ impl Ventilator {
           progress_queue_arc.insert(current_task_progress.clone());
 
           let current_task = current_task_progress.task;
-          taskid = current_task.id;
+          let mut taskid = current_task.id;
           let serviceid = current_task.service_id;
           // Memoise this task's corpus → sandbox id now, before the payload is sent (so before the
           // result can return), so the sink scopes the result archive without its own DB hit (F-6).
@@ -396,6 +395,9 @@ impl Ventilator {
               ventilator.send(Vec::new(), 0)?;
             }
           }
+          // A real task was leased — count it as a dispatch (drives total_dispatched /
+          // outstanding).
+          self.metadata.dispatched(identity_str, service.id, taskid);
         } else {
           trace!(
             job = source_job_count,
@@ -404,9 +406,13 @@ impl Ventilator {
           );
           ventilator.send("0", SNDMORE)?;
           ventilator.send(Vec::new(), 0)?;
+          // An empty-queue ping leased no task: record a liveness heartbeat (refreshes the worker's
+          // "last dispatch requested" time so an idle-but-alive poller still reads as fresh) but do
+          // NOT bump the dispatch tally. Counting these is what made a fully-drained corpus's idle
+          // pollers accrue phantom "outstanding" forever — total_dispatched meant "replies sent",
+          // not "tasks leased" (the 17k-outstanding /workers confusion).
+          self.metadata.heartbeat(identity_str, service.id);
         }
-        // Update this worker's metadata (non-blocking enqueue to the background writer)
-        self.metadata.dispatched(identity_str, service.id, taskid);
       } else {
         warn!(
           service = %service_name,
