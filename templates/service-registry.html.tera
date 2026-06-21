@@ -8,10 +8,7 @@
   {% if services | length == 0 %}
   <p>No services registered yet.</p>
   {% else %}
-  <div class="row">
-    <div class="col-md-1"></div>
-    <div class="col-md-10">
-      <table id="service-registry" class="table table-striped">
+  <table id="service-registry" class="table table-striped" style="width:85%;margin:0 auto;">
         <thead>
           <tr>
             <th scope="col" class="left">Service</th>
@@ -21,7 +18,7 @@
             <th scope="col" class="center">Complex</th>
             <th scope="col" class="left">Description</th>
             <th scope="col" class="left">Lease (s)</th>
-            <th scope="col" class="left">Workers</th>
+            <th scope="col" class="left">Activity</th>
             <th scope="col" class="left">Manage</th>
           </tr>
         </thead>
@@ -42,7 +39,8 @@
                 <button type="submit">Set</button>
               </form>
             </td>
-            <td class="left"><a href="/workers/{{service.name_uri}}">fleet</a></td>
+            <td class="left"><a href="/workers/{{service.name_uri}}">fleet</a> &middot;
+              <a href="/runtimes/{{service.name_uri}}"><i class="fa fa-clock-o"></i> runtimes</a></td>
             <td class="left">
               {% if service.name == "init" or service.name == "import" %}
               <span class="muted" title="Infrastructure service — cannot be deleted">protected</span>
@@ -59,10 +57,7 @@
           </tr>
           {% endfor %}
         </tbody>
-      </table>
-    </div>
-    <div class="col-md-1"></div>
-  </div>
+  </table>
   {% endif %}
 
   <hr>
