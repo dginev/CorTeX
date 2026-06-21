@@ -1070,6 +1070,28 @@ pub fn savetasks(
   serve_savetasks(&mut connection, corpus_name.to_lowercase(), service_name)
 }
 
+/// A stray **GET** to a rerun URL — which is a POST-only mutation (the rerun modal issues a
+/// cookie-gated XHR `POST`) — used to dead-end at a confusing `404`: e.g. a copied/bookmarked form
+/// action, or a stale tab navigated directly. Redirect it to the matching report page, where the
+/// rerun control lives, instead. `303 See Other`, so the browser switches to a `GET`. The trailing
+/// `<scope..>` captures the optional `severity[/category[/what]]` segments **and matches zero
+/// segments too**, so the bare `/rerun/<c>/<s>` (rerun-all) is covered by this single route — a
+/// separate 2-segment route would *collide* with it and abort Rocket at ignite.
+#[get("/rerun/<corpus_name>/<service_name>/<scope..>")]
+pub fn rerun_get_redirect(
+  corpus_name: &str,
+  service_name: &str,
+  scope: std::path::PathBuf,
+) -> rocket::response::Redirect {
+  let scope = scope.display().to_string();
+  let target = if scope.is_empty() {
+    format!("/corpus/{corpus_name}/{service_name}")
+  } else {
+    format!("/corpus/{corpus_name}/{service_name}/{scope}")
+  };
+  rocket::response::Redirect::to(target)
+}
+
 /// The document-serving + human rerun/save-snapshot route set, migrated out of `bin/frontend.rs`
 /// onto the pooled, testable library surface.
 pub fn routes() -> Vec<Route> {
@@ -1081,6 +1103,7 @@ pub fn routes() -> Vec<Route> {
     rerun_severity,
     rerun_category,
     rerun_what,
+    rerun_get_redirect,
     pause_run,
     resume_run,
     pause_all,
