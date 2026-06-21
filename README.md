@@ -5,7 +5,7 @@
 
 **A general purpose processing framework for corpora of scientific documents**
 
-[![CI](https://github.com/dginev/CorTeX/actions/workflows/CI.yml/badge.svg)](https://github.com/dginev/CorTeX/actions/workflows/CI.yml) [![Library docs](https://img.shields.io/badge/docs-library-blue.svg)](https://dginev.github.io/CorTeX/cortex/index.html) [![Agent API](https://img.shields.io/badge/docs-agent%20API-blue.svg)](https://dginev.github.io/CorTeX/api/) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/dginev/CorTeX/master/LICENSE) ![version](https://img.shields.io/badge/version-0.5.0-orange.svg)
+[![CI](https://github.com/dginev/CorTeX/actions/workflows/CI.yml/badge.svg)](https://github.com/dginev/CorTeX/actions/workflows/CI.yml) [![Library docs](https://img.shields.io/badge/docs-library-blue.svg)](https://dginev.github.io/CorTeX/cortex/index.html) [![Agent API](https://img.shields.io/badge/docs-agent%20API-blue.svg)](https://dginev.github.io/CorTeX/api/) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/dginev/CorTeX/main/LICENSE) ![version](https://img.shields.io/badge/version-0.5.0-orange.svg)
 
 
 **News**:

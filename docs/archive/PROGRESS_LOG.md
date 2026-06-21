@@ -722,7 +722,7 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](../PRODUCTIZING_PLAN.md); the
   `mark_new_run`; `redis` crate dropped, frontend boots without it. `TaskStatus` is now `Copy`.
   CI (`.github/workflows/CI.yml`) refreshed (nightly, diesel 2.x, no Redis, fmt + clippy gates).
 - **Found + recorded (not fixed):** KNOWN_ISSUES **L-1** — pre-existing flaky at-exit SIGSEGV in
-  DB-pool test binaries (teardown race; reproduced on clean `master`, never under gdb).
+  DB-pool test binaries (teardown race; reproduced on clean `main`, never under gdb).
 - **Arm 14 #7 — report pagination (done):** the category and `what` aggregate reports now paginate
   (previously only task-list reports did). Backend: `category_rollup`/`what_rollup` take `limit`/
   `offset` (deterministic `task_count DESC, name ASC` order for stable paging), threaded from
@@ -1088,7 +1088,7 @@ current-state map live in [`PRODUCTIZING_PLAN.md`](../PRODUCTIZING_PLAN.md); the
 - **Dependabot security pass (with `gh` now authed):** triaged the 6 open advisories. The **diesel** ones
   (incl. the lone *high*, "SQLite UTF-8 corruption") are SQLite-/`COPY`-specific — we use **Postgres only,
   no `COPY`** — and this branch already resolves **diesel 2.3.10 ≥ the 2.3.8 patch**, so they're a
-  master-branch artifact that clears on merge. Cleared the two genuinely-bumpable ones with no code change:
+  main-branch artifact that clears on merge. Cleared the two genuinely-bumpable ones with no code change:
   **rand 0.8.5 → 0.8.6** (low) and the transitive **time 0.3.41 → 0.3.47** (medium). `build` +
   `clippy --all-targets` + lib tests clean. **Remaining:** the `time = "0.1.4"` direct dep (1 medium, an
   unmaintained crate — `time::get_time()` in the dispatcher) needs a real **migration off `time` 0.1 → chrono**

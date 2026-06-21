@@ -9,7 +9,7 @@
 
 #![doc(html_root_url = "https://dginev.github.io/CorTeX/")]
 #![doc(
-  html_logo_url = "https://raw.githubusercontent.com/dginev/CorTeX/master/public/img/logo-icon.png"
+  html_logo_url = "https://raw.githubusercontent.com/dginev/CorTeX/main/public/img/logo-icon.png"
 )]
 #![deny(missing_docs)]
 #![recursion_limit = "256"]

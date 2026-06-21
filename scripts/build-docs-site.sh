@@ -11,7 +11,7 @@
 #                                    drift from the served API.
 #
 # This replaces the dead Travis-CI `doc-upload.sh`; the live deploy is `.github/workflows/docs.yml`
-# (force-pushes the output to the `gh-pages` branch on every push to master). Run it locally to
+# (force-pushes the output to the `gh-pages` branch on every push to main). Run it locally to
 # preview the exact site the workflow publishes:
 #
 #   scripts/build-docs-site.sh                 # -> target/gh-pages-site
@@ -176,7 +176,7 @@ cat > "$OUT/index.html" <<'HTML'
   </div>
   <footer>
     Source: <a href="https://github.com/dginev/CorTeX">github.com/dginev/CorTeX</a>.
-    Generated from the <code>master</code> branch.
+    Generated from the <code>main</code> branch.
   </footer>
 </body>
 </html>

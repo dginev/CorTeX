@@ -2,9 +2,9 @@
 
 CorTeX is a distributed corpus-conversion framework for scholarly documents. We **productized** it
 (admin-only prototype → self-installing, agent-first + human-first app) — the sprint shipped as
-**v0.5.0** (PR #369, squash-merged to `master` 2026-06-18). The plan and current-state map live in
+**v0.5.0** (PR #369, squash-merged to `main` 2026-06-18). The plan and current-state map live in
 **[`docs/PRODUCTIZING_PLAN.md`](docs/PRODUCTIZING_PLAN.md)** — read it before non-trivial work.
-Active branch: **`master`** (the `productize-2026` sprint branch was merged and deleted).
+Active branch: **`main`** (the `productize-2026` sprint branch was merged and deleted).
 
 ## What this system is (the 60-second model)
 
@@ -112,7 +112,7 @@ additionally needs `latexmlc` (skips otherwise): `cargo test`.
 
 ## Git workflow
 
-- Branch off `master`; **do not push to `master`.** Owner reviews on GitHub — current preference is
+- Branch off `main`; **do not push to `main`.** Owner reviews on GitHub — current preference is
   **branch + push, no PR**. One branch per arm.
 - If a pre-push hook can't find `cargo`, `source ~/.cargo/env` first.
 - Git identity: `Deyan Ginev <deyan.ginev@gmail.com>`.

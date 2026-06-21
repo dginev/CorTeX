@@ -2,8 +2,8 @@
 
 > **Status:** v1 draft (2026-06-13), produced after a full Phase-0 read of the codebase, the
 > `migrations/`, the `scripts/`, the `examples/`, and every prior-work branch on `origin`.
-> Work branch: **`master`** (the `productize-2026` sprint branch was squash-merged via PR #369 on
-> 2026-06-18 and deleted; `master` is now the shipped v0.5.0 state).
+> Work branch: **`main`** (the `productize-2026` sprint branch was squash-merged via PR #369 on
+> 2026-06-18 and deleted; `main` is now the shipped v0.5.0 state).
 > **North star:** *every administrative action a human can do through a screen, an agent can do
 > through a documented API — and both see the same live + historical run state.*
 
@@ -143,7 +143,7 @@ the working notes; condensed into the arms below.)
 
 ### 1.6 Prior-work branches (git `origin`)
 
-- **`origin/admin-ui`** — **UNMERGED, absent from `master`, 32 ahead / 249 behind, last touched
+- **`origin/admin-ui`** — **UNMERGED, absent from `main`, 32 ahead / 249 behind, last touched
   2020-10, built on Rocket 0.4 + diesel 1.4.** A *prior, unfinished attempt at exactly this
   sprint's goals.* Adds: `users` + `user_permissions(owner/developer/viewer per corpus,service)` +
   `user_actions` (audit log) tables and models; Google-OAuth sign-in (`verify_oauth`); an admin
@@ -154,12 +154,12 @@ the working notes; condensed into the arms below.)
   behind), but the authoritative design reference** for arms 7 (process supervision) and 9
   (identity/permissions/audit). Its API is OAuth+form/server-rendered, **not** agent-first JSON — so
   the agent API is greenfield.
-- **`origin/historical-tasks`** — already on `master` (run-to-run task diff/regression: the
+- **`origin/historical-tasks`** — already on `main` (run-to-run task diff/regression: the
   `historical_tasks` table, `diff-summary`/`diff-history` screens). Don't redo.
-- **`origin/diesel-2.2`** — already incorporated (master is on diesel 2.2.10 + nightly).
+- **`origin/diesel-2.2`** — already incorporated (main is on diesel 2.2.10 + nightly).
 - **`origin/recover-log-reports`**, **`origin/sandbox-recoveries`** — ops/ventilator reliability
-  fixes; superseded by `master` (which has the evolved versions). The `examples/recover_log_reports.rs`
-  recovery script is on master.
+  fixes; superseded by `main` (which has the evolved versions). The `examples/recover_log_reports.rs`
+  recovery script is on main.
 
 Net: only `admin-ui` carries unmerged, productization-aligned work, and it is reference-only.
 
@@ -170,7 +170,7 @@ Confirmed by reading `Cargo.toml` + grepping `src/`:
 > **Advisory status (2026-06-16): `cargo audit` is clean — 0 vulnerabilities across 445
 > dependencies on `productize-2026`.** The 🔴/⚠️ items below were the *sprint-start* state and are
 > now all **resolved** (flipped to 🟢, kept for history). The GitHub Dependabot alerts (6, incl. 1
-> high) are against the **default branch / `master`** — the pre-sprint prototype this branch
+> high) are against the **default branch / `main`** — the pre-sprint prototype this branch
 > supersedes — not this tree.
 
 - 🟢 **`time` (RUSTSEC-2020-0071) — RESOLVED.** Was `time = "0.1.4"`, used in ~10 files via
@@ -722,7 +722,7 @@ Everything else parallelizes off this spine.
 | **7 runs** | 8b, 10 | run state to observe; job machinery to export |
 | **2 self-install** | (parallel) | only needs 1 + embedded migrations |
 
-Each arm ships on its own branch off `master` (owner workflow: branch + push, no PR). The
+Each arm ships on its own branch off `main` (owner workflow: branch + push, no PR). The
 `tracing`/`metrics` rails and the screen↔API symmetry contract are applied **continuously**, not as
 a final arm.
 
