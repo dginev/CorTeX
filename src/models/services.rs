@@ -90,6 +90,20 @@ impl Service {
       .get_results(connection)
   }
 
+  /// Sets (or clears, with `None`) this service's per-service lease / visibility-timeout override
+  /// (D-17). `None` ⇒ fall back to the global `dispatcher.lease_timeout_seconds`. Captured into
+  /// `TaskProgress` only at lease time, so a change takes effect on the **next** dispatch and never
+  /// re-times an already-leased task. Returns the rows updated (1, or 0 if the service vanished).
+  pub fn set_lease_timeout(
+    &self,
+    seconds: Option<i32>,
+    connection: &mut PgConnection,
+  ) -> Result<usize, Error> {
+    update(services::table.find(self.id))
+      .set(services::lease_timeout_seconds.eq(seconds))
+      .execute(connection)
+  }
+
   /// Returns a hash representation of the `Service`, usually for frontend reports
   pub fn to_hash(&self) -> HashMap<String, String> {
     let mut hm = HashMap::new();
@@ -107,6 +121,15 @@ impl Service {
       },
     );
     hm.insert("complex".to_string(), self.complex.to_string());
+    // Empty string = no per-service override (the global dispatcher lease applies); the template
+    // renders that as a "default" placeholder.
+    hm.insert(
+      "lease_timeout_seconds".to_string(),
+      self
+        .lease_timeout_seconds
+        .map(|seconds| seconds.to_string())
+        .unwrap_or_default(),
+    );
     hm
   }
 

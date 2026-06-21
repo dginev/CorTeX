@@ -135,8 +135,10 @@ Key sections of `cortex.toml`:
 
 - `[database]` — `url`, `test_url`.
 - `[dispatcher]` — `source_port` (51695), `result_port` (51696), `max_in_flight`, queue/retry knobs.
-- `[auth]` — `rerun_tokens` (token → owner map; managed via `set-admin-token`, not hand-edited).
 - `[webauthn]` — passkey relying-party settings (origin, rp-id), if passkeys are enabled.
+
+Tokens are **not** a `cortex.toml` section — they live in the JSON token file (`config.json`;
+`rerun_tokens` token → owner map), managed via `set-admin-token` / `revoke-token`, never hand-edited.
 
 ## 4. Access & authentication
 
@@ -458,6 +460,7 @@ cortex create-service tex_to_html --inputformat tex --outputformat html   # 1. d
 cortex import   arxmliv /data/arxmliv             # 2. register a corpus, one import task per document
 cortex activate arxmliv tex_to_html               # 3. queue one conversion task per document
 cortex extend   arxmliv                           # later: re-scan the path, import + queue only NEW documents
+cortex set-service-lease tex_to_html 600          # tune a service's lease/visibility timeout (s); --clear → global default (D-17)
 ```
 
 `create-service` *defines* a service in the registry (only the built-in `init`/`import` are seeded, so

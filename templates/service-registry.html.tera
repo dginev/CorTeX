@@ -20,6 +20,7 @@
             <th scope="col" class="left">Input converter</th>
             <th scope="col" class="center">Complex</th>
             <th scope="col" class="left">Description</th>
+            <th scope="col" class="left">Lease (s)</th>
             <th scope="col" class="left">Workers</th>
             <th scope="col" class="left">Manage</th>
           </tr>
@@ -33,6 +34,14 @@
             <td class="left">{{service.inputconverter}}</td>
             <td class="center">{{service.complex}}</td>
             <td class="left">{{service.description}}</td>
+            <td class="left">
+              <form method="post" action="/services/{{service.name_uri}}/lease" class="inline-form">
+                <input type="number" name="seconds" min="1" value="{{service.lease_timeout_seconds}}"
+                  placeholder="default" style="width:5.5em"
+                  aria-label="Lease timeout in seconds for {{service.name}} (blank uses the global default)">
+                <button type="submit">Set</button>
+              </form>
+            </td>
             <td class="left"><a href="/workers/{{service.name_uri}}">fleet</a></td>
             <td class="left">
               {% if service.name == "init" or service.name == "import" %}

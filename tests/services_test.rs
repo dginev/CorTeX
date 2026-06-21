@@ -792,10 +792,86 @@ fn service_create_reshows_friendly_error_on_name_collision() {
     diesel::delete(services::table.filter(services::name.eq(name))).execute(&mut db.connection);
 }
 
+/// The per-service lease override (D-17), set/read/cleared across the agent surfaces: token-gated
+/// `PUT /api/services/<s>/lease`, reflected in the `GET /api/services` DTO, a non-positive value
+/// rejected, and `null` clearing the override back to the global default.
+fn service_lease_set_read_and_clear() {
+  seed(); // a fresh service starts with no override (NULL lease).
+  let client = client();
+  let lease_url = format!("/api/services/{SERVICE_NAME}/lease");
+
+  // Write is admin-only — no token is 401 (even with a valid body).
+  let response = client
+    .put(&lease_url)
+    .header(ContentType::JSON)
+    .body(r#"{"seconds":120}"#)
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Unauthorized,
+    "set-lease without a token is 401"
+  );
+
+  // Set 120s -> 200 and the returned DTO carries the new lease.
+  let response = client
+    .put(format!("{lease_url}?token=token1"))
+    .header(ContentType::JSON)
+    .body(r#"{"seconds":120}"#)
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  let dto: Value = serde_json::from_str(&response.into_string().unwrap()).unwrap();
+  assert_eq!(dto["lease_timeout_seconds"], 120);
+
+  // The registry read reflects the override.
+  let response = client.get("/api/services?token=token1").dispatch();
+  let services: Value = serde_json::from_str(&response.into_string().unwrap()).unwrap();
+  let ours = services
+    .as_array()
+    .unwrap()
+    .iter()
+    .find(|s| s["name"] == SERVICE_NAME)
+    .expect("our service is in the registry");
+  assert_eq!(ours["lease_timeout_seconds"], 120);
+
+  // A non-positive lease is rejected (400) and leaves the value unchanged.
+  let response = client
+    .put(format!("{lease_url}?token=token1"))
+    .header(ContentType::JSON)
+    .body(r#"{"seconds":0}"#)
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::BadRequest,
+    "a non-positive lease is rejected"
+  );
+
+  // null clears the override -> 200, lease back to null (global default applies).
+  let response = client
+    .put(format!("{lease_url}?token=token1"))
+    .header(ContentType::JSON)
+    .body(r#"{"seconds":null}"#)
+    .dispatch();
+  assert_eq!(response.status(), Status::Ok);
+  let dto: Value = serde_json::from_str(&response.into_string().unwrap()).unwrap();
+  assert!(
+    dto["lease_timeout_seconds"].is_null(),
+    "null clears the per-service override"
+  );
+
+  // Unknown service -> 404 (the guard precedes the lookup; token is valid here).
+  let response = client
+    .put("/api/services/no_such_svc_xyz/lease?token=token1")
+    .header(ContentType::JSON)
+    .body(r#"{"seconds":120}"#)
+    .dispatch();
+  assert_eq!(response.status(), Status::NotFound);
+}
+
 fn main() {
   worker_fleet_api_and_screen();
   service_activation_flows();
   service_create_reshows_friendly_error_on_name_collision();
+  service_lease_set_read_and_clear();
   eprintln!("services_test: all cases passed");
   unsafe { libc::_exit(0) }
 }

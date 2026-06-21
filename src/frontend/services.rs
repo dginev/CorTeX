@@ -58,6 +58,9 @@ pub struct ServiceDto {
   pub complex: bool,
   /// Human-readable description.
   pub description: String,
+  /// Per-service lease / visibility-timeout override in seconds (D-17), or `null` to use the
+  /// global `dispatcher.lease_timeout_seconds`. Set via `PUT /api/services/<service>/lease`.
+  pub lease_timeout_seconds: Option<i32>,
 }
 
 impl From<Service> for ServiceDto {
@@ -71,6 +74,7 @@ impl From<Service> for ServiceDto {
       inputconverter: service.inputconverter,
       complex: service.complex,
       description: service.description,
+      lease_timeout_seconds: service.lease_timeout_seconds,
     }
   }
 }
@@ -210,6 +214,78 @@ pub fn register_service(
   let service =
     Service::find_by_name(&name, &mut connection).map_err(|_| Status::InternalServerError)?;
   Ok((Status::Created, Json(ServiceDto::from(service))))
+}
+
+/// Request body for setting a service's per-service lease timeout (D-17).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct LeaseUpdateRequest {
+  /// New lease / visibility-timeout in seconds (must be positive), or `null` to clear the override
+  /// and fall back to the global `dispatcher.lease_timeout_seconds`.
+  pub seconds: Option<i32>,
+}
+
+/// Rejects a non-positive lease (`Some(<= 0)`); `None` (clear) and any positive value pass. Shared
+/// by the agent and human lease setters.
+fn valid_lease(seconds: Option<i32>) -> bool { !matches!(seconds, Some(value) if value <= 0) }
+
+/// Sets (or clears) a service's per-service lease / visibility timeout — the agent twin of the
+/// registry screen's inline "lease" form (D-17). **Token-gated** via the [`Actor`] guard (`401`
+/// without a valid token); `400` if `seconds` is non-positive, `404` if the service is unknown,
+/// `200` with the updated [`ServiceDto`] on success. `null` clears the override (the service falls
+/// back to the global dispatcher lease). Takes effect on the next dispatch — an already-leased task
+/// keeps the timeout captured when it was leased.
+#[rocket_okapi::openapi(tag = "Services")]
+#[put("/api/services/<service>/lease", format = "json", data = "<request>")]
+pub fn set_service_lease(
+  service: &str,
+  request: Json<LeaseUpdateRequest>,
+  _actor: Actor,
+  pool: &State<DbPool>,
+) -> Result<Json<ServiceDto>, Status> {
+  let seconds = request.into_inner().seconds;
+  if !valid_lease(seconds) {
+    return Err(Status::BadRequest);
+  }
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let service_record = resolve(service, &mut connection)?;
+  service_record
+    .set_lease_timeout(seconds, &mut connection)
+    .map_err(|_| Status::InternalServerError)?;
+  let updated = resolve(service, &mut connection)?;
+  Ok(Json(ServiceDto::from(updated)))
+}
+
+/// Fields of the registry screen's inline "set lease" form. A blank value parses to `None` (clear).
+#[derive(FromForm)]
+pub struct SetLeaseForm {
+  /// New lease in seconds; blank clears the per-service override (the global default applies).
+  pub seconds: Option<i32>,
+}
+
+/// The human twin of [`set_service_lease`]: the registry screen's inline per-service lease form.
+/// **Gated by the signed-in [`AdminSession`] cookie** (anonymous → sign-in). A blank value clears
+/// the override; a non-positive value is `400`. Redirects back to `/services`; `404` if unknown.
+#[post("/services/<service>/lease", data = "<form>")]
+pub fn set_service_lease_human(
+  service: &str,
+  form: Form<SetLeaseForm>,
+  session: Option<AdminSession>,
+  pool: &State<DbPool>,
+) -> Result<Redirect, Status> {
+  if session.is_none() {
+    return Ok(Redirect::to("/admin/login"));
+  }
+  let seconds = form.into_inner().seconds;
+  if !valid_lease(seconds) {
+    return Err(Status::BadRequest);
+  }
+  let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
+  let service_record =
+    Service::find_by_name(service, &mut connection).map_err(|_| Status::NotFound)?;
+  service_record
+    .set_lease_timeout(seconds, &mut connection)
+    .map_err(|_| Status::InternalServerError)?;
+  Ok(Redirect::to("/services"))
 }
 
 /// The corpus ids a service is already activated on (i.e. has at least one task for) — so the
@@ -678,8 +754,8 @@ pub fn delete_service_human(
 
 /// The route set for the services capability (registry + worker-fleet, screens + agent API).
 pub fn routes() -> Vec<Route> {
-  // NB: `api_services` + `api_service_workers` + `register_service` + `delete_service` are mounted
-  // via `frontend::apidoc` (rocket_okapi).
+  // NB: `api_services` + `api_service_workers` + `register_service` + `delete_service` +
+  // `set_service_lease` are mounted via `frontend::apidoc` (rocket_okapi).
   routes![
     add_service_page,
     create_service_human,
@@ -687,6 +763,7 @@ pub fn routes() -> Vec<Route> {
     activate_on_corpus_human,
     services_page,
     worker_report_page,
-    delete_service_human
+    delete_service_human,
+    set_service_lease_human
   ]
 }

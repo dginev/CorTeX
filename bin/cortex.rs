@@ -165,7 +165,7 @@ enum Command {
   /// `scripts/build-docs-site.sh`) or to feed an OpenAPI client generator —
   /// `cortex openapi > openapi.json`.
   Openapi,
-  /// Set or generate an admin/API token in cortex.toml's [auth] section (no hand-editing).
+  /// Set or generate an admin/API token in the JSON token file (config.json; no hand-editing).
   SetAdminToken {
     /// The token value to set. Omit and pass --generate to create a random one.
     token: Option<String>,
@@ -176,7 +176,8 @@ enum Command {
     #[arg(long, default_value = "admin")]
     owner: String,
   },
-  /// Revoke an admin/API token from cortex.toml's [auth] — the inverse of set-admin-token.
+  /// Revoke an admin/API token from the JSON token file (config.json) — the inverse of
+  /// set-admin-token.
   ///
   /// Pass a `<TOKEN>` to revoke that one, or `--owner <name>` to revoke every token attributed to
   /// an owner (e.g. when a person leaves). A revoked token stops working immediately.
@@ -462,6 +463,23 @@ enum Command {
     #[arg(long, default_value = "")]
     description: String,
   },
+  /// Set or clear a service's per-service lease / visibility timeout (D-17).
+  ///
+  /// The CLI twin of the registry screen's inline lease form and the agent
+  /// `PUT /api/services/<service>/lease`. A longer lease suits a slow worker class (e.g. Perl
+  /// LaTeXML) so the reaper doesn't re-dispatch a task still legitimately converting; a shorter one
+  /// speeds dead-worker recovery for a fast class. `--clear` removes the override so the service
+  /// falls back to the global `dispatcher.lease_timeout_seconds`. Takes effect on the next
+  /// dispatch.
+  SetServiceLease {
+    /// Service name (e.g. tex_to_html).
+    service: String,
+    /// New lease in seconds (positive). Omit and pass --clear to remove the override.
+    seconds: Option<i32>,
+    /// Clear the per-service override (fall back to the global dispatcher lease).
+    #[arg(long, conflicts_with = "seconds")]
+    clear: bool,
+  },
   /// Activate a service on a corpus (create its conversion tasks).
   ///
   /// The CLI twin of the corpus screen's "Register a service" form and the agent
@@ -727,6 +745,11 @@ fn main() {
       service,
       yes,
     } => run_deactivate(corpus, service, yes),
+    Command::SetServiceLease {
+      service,
+      seconds,
+      clear,
+    } => run_set_service_lease(service, seconds, clear),
     Command::DeleteCorpus { name, yes } => run_delete_corpus(name, yes),
     Command::DeleteService { name, yes } => run_delete_service(name, yes),
     Command::TuneDb => println!("{}", bootstrap::db_tuning_guidance()),
@@ -1967,6 +1990,44 @@ fn run_create_service(
   );
 }
 
+/// Sets or clears a service's per-service lease timeout (D-17). The CLI twin of
+/// `PUT /api/services/<service>/lease`. Exits `2` on bad args, `1` if the service is unknown or the
+/// update fails.
+fn run_set_service_lease(service_name: String, seconds: Option<i32>, clear: bool) {
+  let value = match (clear, seconds) {
+    (true, _) => None,
+    (false, Some(seconds)) if seconds > 0 => Some(seconds),
+    (false, Some(_)) => {
+      eprintln!("error: <SECONDS> must be a positive integer (or pass --clear to remove it)");
+      std::process::exit(2);
+    },
+    (false, None) => {
+      eprintln!("error: provide <SECONDS> to set the lease, or --clear to remove the override");
+      std::process::exit(2);
+    },
+  };
+  let mut backend = backend::from_address(default_db_address());
+  let service = match Service::find_by_name(&service_name.to_lowercase(), &mut backend.connection) {
+    Ok(service) => service,
+    Err(_) => {
+      eprintln!("No service named {service_name:?}.");
+      std::process::exit(1);
+    },
+  };
+  if let Err(error) = service.set_lease_timeout(value, &mut backend.connection) {
+    eprintln!("Could not update the lease: {error}");
+    std::process::exit(1);
+  }
+  match value {
+    Some(seconds) => {
+      println!("Set '{service_name}' lease to {seconds}s (effective on the next dispatch).")
+    },
+    None => {
+      println!("Cleared '{service_name}' lease override (using the global dispatcher default).")
+    },
+  }
+}
+
 /// Re-scans a corpus's path for newly-arrived documents and imports them — the CLI surface of the
 /// corpus screen's "Extend" button and the agent `POST /api/corpora/<name>/extend`, driving the
 /// same `Importer::extend_corpus` + `Backend::extend_service`. Adds an import task per new document
@@ -2636,13 +2697,17 @@ fn run_services(json: bool) {
   println!("{} service(s):", dtos.len());
   for service in &dtos {
     println!(
-      "  {}  {}  v{}  ·  {} → {}{}",
+      "  {}  {}  v{}  ·  {} → {}{}{}",
       service.public_id,
       service.name,
       service.version,
       service.inputformat,
       service.outputformat,
-      if service.complex { " (complex)" } else { "" }
+      if service.complex { " (complex)" } else { "" },
+      match service.lease_timeout_seconds {
+        Some(seconds) => format!("  ·  lease {seconds}s"),
+        None => String::new(),
+      }
     );
   }
 }
