@@ -631,6 +631,18 @@ hr {
 .report-layout-wide {
   max-width: none;
 }
+/* Full-bleed variant for tables too wide for even the Bootstrap `.container` (~1170px) — e.g. the
+   10-column jobs table, which otherwise clips its rightmost columns. Breaks out to the viewport
+   (≤1700px, centred), the same escape hatch the per-article forensic page uses, so every column is
+   visible. `.report-layout`'s `overflow-x: auto` still lets it scroll within itself on a genuinely
+   narrow screen. */
+.report-layout-bleed {
+  width: 92vw;
+  max-width: 1700px;
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
+}
 .narrow-form {
   max-width: 30rem;
 }

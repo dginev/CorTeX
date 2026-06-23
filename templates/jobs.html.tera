@@ -17,7 +17,7 @@
   {% if jobs | length == 0 %}
   <p>No {% if active %}pending {% endif %}jobs.</p>
   {% else %}
-  <div class="report-layout">
+  <div class="report-layout report-layout-bleed">
     <table id="jobs-report" class="table table-striped">
         <thead>
           <tr>
