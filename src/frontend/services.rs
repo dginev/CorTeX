@@ -823,9 +823,10 @@ const RUNTIME_BUCKET_LABELS: [&str; 11] = [
   "≥120s",
 ];
 
-/// Builds the [`ServiceRuntimeDto`] for a service from its `Info:cortex:runtime_ms` log lines —
-/// distribution summary + histogram + the paginated slowest conversions. Three scans of the
-/// service's runtime rows in `log_infos`; deliberately its own (heavier) page.
+/// Builds the [`ServiceRuntimeDto`] for a service from the denormalized `task_runtimes` table (one
+/// validated runtime per task, mirrored from each `Info:cortex:runtime_ms` log line on the finalize
+/// path) — distribution summary + histogram + the paginated slowest conversions. Three index-only
+/// scans over `(service_id, runtime_ms)`.
 fn service_runtime_report(
   connection: &mut diesel::PgConnection,
   service: &Service,
@@ -833,11 +834,9 @@ fn service_runtime_report(
   page_size: i64,
 ) -> Result<ServiceRuntimeDto, Status> {
   use diesel::sql_types::{BigInt, Integer, Text};
-  // Shared predicate: this service's runtime rows, defensively requiring an integer detail so a
-  // malformed message can never break the `::int` cast.
-  const RUNTIME_WHERE: &str = "FROM log_infos li JOIN tasks t ON t.id = li.task_id \
-    WHERE t.service_id = $1 AND li.category = 'cortex' AND li.what = 'runtime_ms' \
-    AND li.details ~ '^[0-9]+$'";
+  // All three scans read the denormalized `task_runtimes` table (one validated `runtime_ms` int per
+  // task, with `service_id` inlined), so the per-service filter and aggregates run index-only over
+  // `(service_id, runtime_ms)` — no `log_infos`-to-`tasks` join, no `::int` cast, no `~` guard.
 
   #[derive(QueryableByName)]
   struct SummaryRow {
@@ -854,14 +853,14 @@ fn service_runtime_report(
     #[diesel(sql_type = Integer)]
     max_ms: i32,
   }
-  let summary: SummaryRow = sql_query(format!(
+  let summary: SummaryRow = sql_query(
     "SELECT count(*) AS total, \
-     coalesce(round(avg((li.details)::int))::int, 0) AS avg_ms, \
-     coalesce(percentile_disc(0.5) WITHIN GROUP (ORDER BY (li.details)::int), 0) AS p50, \
-     coalesce(percentile_disc(0.9) WITHIN GROUP (ORDER BY (li.details)::int), 0) AS p90, \
-     coalesce(percentile_disc(0.99) WITHIN GROUP (ORDER BY (li.details)::int), 0) AS p99, \
-     coalesce(max((li.details)::int), 0) AS max_ms {RUNTIME_WHERE}"
-  ))
+     coalesce(round(avg(runtime_ms))::int, 0) AS avg_ms, \
+     coalesce(percentile_disc(0.5) WITHIN GROUP (ORDER BY runtime_ms), 0) AS p50, \
+     coalesce(percentile_disc(0.9) WITHIN GROUP (ORDER BY runtime_ms), 0) AS p90, \
+     coalesce(percentile_disc(0.99) WITHIN GROUP (ORDER BY runtime_ms), 0) AS p99, \
+     coalesce(max(runtime_ms), 0) AS max_ms FROM task_runtimes WHERE service_id = $1",
+  )
   .bind::<Integer, _>(service.id)
   .get_result(connection)
   .map_err(|_| Status::InternalServerError)?;
@@ -873,12 +872,13 @@ fn service_runtime_report(
     #[diesel(sql_type = BigInt)]
     n: i64,
   }
-  let bucket_rows: Vec<BucketRow> = sql_query(format!(
-    "SELECT CASE WHEN ms<100 THEN 0 WHEN ms<250 THEN 1 WHEN ms<500 THEN 2 WHEN ms<1000 THEN 3 \
-     WHEN ms<2000 THEN 4 WHEN ms<5000 THEN 5 WHEN ms<10000 THEN 6 WHEN ms<30000 THEN 7 \
-     WHEN ms<60000 THEN 8 WHEN ms<120000 THEN 9 ELSE 10 END AS bucket, count(*) AS n \
-     FROM (SELECT (li.details)::int AS ms {RUNTIME_WHERE}) q GROUP BY 1 ORDER BY 1"
-  ))
+  let bucket_rows: Vec<BucketRow> = sql_query(
+    "SELECT CASE WHEN runtime_ms<100 THEN 0 WHEN runtime_ms<250 THEN 1 WHEN runtime_ms<500 THEN 2 \
+     WHEN runtime_ms<1000 THEN 3 WHEN runtime_ms<2000 THEN 4 WHEN runtime_ms<5000 THEN 5 \
+     WHEN runtime_ms<10000 THEN 6 WHEN runtime_ms<30000 THEN 7 WHEN runtime_ms<60000 THEN 8 \
+     WHEN runtime_ms<120000 THEN 9 ELSE 10 END AS bucket, count(*) AS n \
+     FROM task_runtimes WHERE service_id = $1 GROUP BY 1 ORDER BY 1",
+  )
   .bind::<Integer, _>(service.id)
   .load(connection)
   .map_err(|_| Status::InternalServerError)?;
@@ -909,10 +909,9 @@ fn service_runtime_report(
     runtime_ms: i32,
   }
   let slow_rows: Vec<SlowRow> = sql_query(
-    "SELECT c.name AS corpus, t.entry AS entry, t.id AS task_id, (li.details)::int AS runtime_ms \
-     FROM log_infos li JOIN tasks t ON t.id = li.task_id JOIN corpora c ON c.id = t.corpus_id \
-     WHERE t.service_id = $1 AND li.category = 'cortex' AND li.what = 'runtime_ms' \
-     AND li.details ~ '^[0-9]+$' ORDER BY (li.details)::int DESC LIMIT $2 OFFSET $3",
+    "SELECT c.name AS corpus, t.entry AS entry, tr.task_id AS task_id, tr.runtime_ms AS runtime_ms \
+     FROM task_runtimes tr JOIN tasks t ON t.id = tr.task_id JOIN corpora c ON c.id = t.corpus_id \
+     WHERE tr.service_id = $1 ORDER BY tr.runtime_ms DESC LIMIT $2 OFFSET $3",
   )
   .bind::<Integer, _>(service.id)
   .bind::<BigInt, _>(page_size)
@@ -987,7 +986,7 @@ pub fn api_service_runtimes(
 /// The conversion-runtime screen for a service (HTML twin of [`api_service_runtimes`]): the
 /// aggregate runtime histogram (bar chart) + the paginated slowest conversions, reached from the
 /// worker screen. **Signed-in admins only** (anonymous → sign-in). Separate from the worker view
-/// because it scans `log_infos`. `404` if the service is unknown.
+/// because it reads the `task_runtimes` rollup. `404` if the service is unknown.
 #[allow(clippy::result_large_err)] // AdminReject carries a Redirect; see actor::AdminReject.
 #[get("/runtimes/<service>?<offset>&<page_size>")]
 pub fn service_runtimes_page(

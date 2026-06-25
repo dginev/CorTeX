@@ -10,6 +10,7 @@ use crate::schema::log_fatals;
 use crate::schema::log_infos;
 use crate::schema::log_invalids;
 use crate::schema::log_warnings;
+use crate::schema::task_runtimes;
 
 use super::tasks::Task;
 
@@ -42,6 +43,21 @@ pub struct NewLogInfo {
   pub what: String,
   /// technical details of the message (e.g. localization info)
   pub details: String,
+}
+
+#[derive(Insertable, Clone, Debug)]
+#[diesel(table_name = task_runtimes)]
+/// A new, insertable per-task conversion runtime — the denormalized twin of the
+/// `Info:cortex:runtime_ms` log row, with the task's `service_id` inlined so the per-service
+/// runtime report aggregates without a `tasks` join. Written on the finalize path (`mark_done`).
+pub struct NewTaskRuntime {
+  /// owner task's id (primary key — one current runtime per task)
+  pub task_id: i64,
+  /// the task's service, inlined from `tasks.service_id` so the report filters/aggregates
+  /// index-only
+  pub service_id: i32,
+  /// wall-clock conversion time in milliseconds
+  pub runtime_ms: i32,
 }
 
 #[derive(Identifiable, Queryable, AsChangeset, Associations, Clone, Debug)]

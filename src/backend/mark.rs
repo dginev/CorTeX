@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use crate::schema::{
-  historical_tasks, log_errors, log_fatals, log_infos, log_invalids, log_warnings, tasks,
+  historical_tasks, log_errors, log_fatals, log_infos, log_invalids, log_warnings, task_runtimes,
+  tasks,
 };
 use diesel::result::Error;
 use diesel::*;
@@ -12,7 +13,7 @@ use crate::helpers::{NewTaskMessage, TaskReport, TaskStatus, rerun_mark};
 use crate::models::{
   Corpus, HistoricalRun, LogError, LogFatal, LogInfo, LogInvalid, LogRecord, LogWarning,
   NewHistoricalRun, NewLogError, NewLogFatal, NewLogInfo, NewLogInvalid, NewLogWarning, NewTask,
-  Service,
+  NewTaskRuntime, Service,
 };
 
 pub(crate) fn mark_imported(
@@ -113,6 +114,8 @@ pub(crate) fn mark_done(
       delete(log_fatals::table.filter(log_fatals::task_id.eq_any(ids))).execute(t_connection)?;
       delete(log_invalids::table.filter(log_invalids::task_id.eq_any(ids)))
         .execute(t_connection)?;
+      delete(task_runtimes::table.filter(task_runtimes::task_id.eq_any(ids)))
+        .execute(t_connection)?;
     }
     // Group the finalized task ids by their target status, and partition the new messages by
     // severity table, in one pass — so both the status UPDATEs and the message INSERTs become a
@@ -124,6 +127,10 @@ pub(crate) fn mark_done(
     let mut new_errors: Vec<NewLogError> = Vec::new();
     let mut new_fatals: Vec<NewLogFatal> = Vec::new();
     let mut new_invalids: Vec<NewLogInvalid> = Vec::new();
+    // Denormalized per-task runtimes, mirrored from each report's `Info:cortex:runtime_ms` line so
+    // the per-service runtime report aggregates over this narrow table instead of re-scanning ~2.8M
+    // `log_infos` rows JOINed to `tasks` on every page view (see migration …_create_task_runtimes).
+    let mut new_runtimes: Vec<NewTaskRuntime> = Vec::new();
     for report in reports.iter() {
       ids_by_status
         .entry(report.status.raw())
@@ -133,6 +140,20 @@ pub(crate) fn mark_done(
         // The synthetic conversion-status message is not a real log entry (kept out of the tables).
         if message.severity() == "status" {
           continue;
+        }
+        // The runtime line is also an Info log row; capture its parsed value for `task_runtimes`.
+        // A malformed `details` (non-integer) just skips the denormalized row — the log row is
+        // still written below, and the report's other rows are unaffected.
+        if let NewTaskMessage::Info(record) = message
+          && record.category == "cortex"
+          && record.what == "runtime_ms"
+          && let Ok(runtime_ms) = record.details.parse::<i32>()
+        {
+          new_runtimes.push(NewTaskRuntime {
+            task_id: report.task.id,
+            service_id: report.task.service_id,
+            runtime_ms,
+          });
         }
         match message {
           NewTaskMessage::Info(record) => new_infos.push(record.clone()),
@@ -179,6 +200,13 @@ pub(crate) fn mark_done(
     }
     for chunk in new_invalids.chunks(LOG_INSERT_CHUNK) {
       insert_into(log_invalids::table)
+        .values(chunk)
+        .execute(t_connection)?;
+    }
+    // Denormalized runtimes: the prior runtime rows for these tasks were cleared in the delete loop
+    // above, so a plain insert is correct (3 columns/row → 16k rows ≈ 48k binds, under the cap).
+    for chunk in new_runtimes.chunks(LOG_INSERT_CHUNK) {
+      insert_into(task_runtimes::table)
         .values(chunk)
         .execute(t_connection)?;
     }
