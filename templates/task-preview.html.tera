@@ -68,7 +68,9 @@
                       final_main_content_write(data_url_map, conversion_report, main_content, js_collected, css_collected);
                     }
                   });
-                  var fileblob = new Blob([data], { type: 'image/png' });
+                  var asset_mime = filename.match(/\.svg$/i) ? 'image/svg+xml'
+                    : (filename.match(/\.jpe?g$/i) ? 'image/jpeg' : 'image/png');
+                  var fileblob = new Blob([data], { type: asset_mime });
                   reader.readAsDataURL(fileblob);
                 }
               });
@@ -115,11 +117,17 @@
         </html>`;
     }
 
-    // Add all assets as data URLs.
+    // Add all assets as data URLs. Rewrite BOTH `src="<file>"` (e.g. <img>, <embed>)
+    // AND `data="<file>"` — LaTeXML emits SVG figures as
+    // <object type="image/svg+xml" data="figure.svg">, whose relative `data` link
+    // otherwise has nothing to resolve against in the client-side preview (the
+    // figures silently fail to render). Match both attributes for each asset.
     $.each(data_url_map, function (filename, newurl) {
-      let escaped_name = 'src=[\'"]' + filename.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1") + '[\'"]';
-      new_src = "src=\"" + newurl + "\"";
-      main_content = main_content.replace(new RegExp(escaped_name, 'g'), new_src);
+      let esc = filename.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1");
+      main_content = main_content.replace(
+        new RegExp('src=[\'"]' + esc + '[\'"]', 'g'), 'src="' + newurl + '"');
+      main_content = main_content.replace(
+        new RegExp('data=[\'"]' + esc + '[\'"]', 'g'), 'data="' + newurl + '"');
     });
 
     // If a conversion log is present, attach it as a trailing section
