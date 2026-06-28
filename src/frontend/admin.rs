@@ -336,7 +336,7 @@ fn recent_activity(
 ///
 /// The feed is **conditioned on the active run's service** — the one actually generating messages
 /// now (the latest [`HistoricalRun`]). A co-resident legacy service (e.g. a Perl `tex-to-html`
-/// sharing the DB with the Rust `oxidized-tex-to-html` run) therefore never pollutes the live view;
+/// sharing the DB with the Rust `oxidized_tex_to_html` run) therefore never pollutes the live view;
 /// the feed follows whatever is converting. With no runs yet, the feed is simply empty.
 pub fn live_activity(pool: &DbPool, limit: i64) -> LiveActivityDto {
   let mut activity = LiveActivityDto {

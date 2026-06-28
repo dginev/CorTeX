@@ -243,7 +243,7 @@ single-conversion children; the validated memory defaults need no flags):
 
 ```bash
 cortex_worker --harness \
-  --service oxidized-tex-to-html \             # MUST match the registered service name exactly
+  --service oxidized_tex_to_html \             # MUST match the registered service name exactly
   --source-address tcp://DISPATCHER_HOST:51695 \
   --sink-address   tcp://DISPATCHER_HOST:51696 \
   --profile ar5iv
@@ -256,7 +256,7 @@ cortex_worker --harness \
 
 - **Service name must match exactly.** The ventilator leases tasks for this name and the sink
   re-validates each returned result against the task's service id — a mismatch **silently discards**
-  the result. The CorTeX preview registers this service as `oxidized-tex-to-html` (hyphenated).
+  the result. The CorTeX preview registers this service as `oxidized_tex_to_html` (underscored).
 - **Deliberate over-commit.** The worker count defaults to CPU-derived, *not* sized to
   `workers × cap` — most papers use a fraction of the per-child cap, so sizing to the cap would idle
   the box. Two limits keep it safe: the **per-child cap** below contains a *single* runaway job, and
@@ -278,7 +278,7 @@ cortex_worker --harness \
 - **Avoid `--pool-size N`** for production: N conversion threads in one process share one RAM
   ceiling and false-positive the memory guards on every in-flight paper.
 
-Watch the fleet at **`/workers/oxidized-tex-to-html`** (per-worker dispatch/return tallies, in-flight
+Watch the fleet at **`/workers/oxidized_tex_to_html`** (per-worker dispatch/return tallies, in-flight
 backlog, liveness age). Full design and tuning: latexml-oxide
 `docs/CORTEX_WORKER_HARNESS.md`; the supervision mechanism: pericortex `docs/HARNESS.md`.
 
