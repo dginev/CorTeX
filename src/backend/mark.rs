@@ -127,7 +127,7 @@ pub(crate) fn mark_done(
     let mut new_errors: Vec<NewLogError> = Vec::new();
     let mut new_fatals: Vec<NewLogFatal> = Vec::new();
     let mut new_invalids: Vec<NewLogInvalid> = Vec::new();
-    // Denormalized per-task runtimes, mirrored from each report's `Info:cortex:runtime_ms` line so
+    // Denormalized per-task runtimes, mirrored from each report's `Info:runtime_ms:<N>` line so
     // the per-service runtime report aggregates over this narrow table instead of re-scanning ~2.8M
     // `log_infos` rows JOINed to `tasks` on every page view (see migration …_create_task_runtimes).
     let mut new_runtimes: Vec<NewTaskRuntime> = Vec::new();
@@ -142,18 +142,29 @@ pub(crate) fn mark_done(
           continue;
         }
         // The runtime line is also an Info log row; capture its parsed value for `task_runtimes`.
-        // A malformed `details` (non-integer) just skips the denormalized row — the log row is
-        // still written below, and the report's other rows are unaffected.
-        if let NewTaskMessage::Info(record) = message
-          && record.category == "cortex"
-          && record.what == "runtime_ms"
-          && let Ok(runtime_ms) = record.details.parse::<i32>()
-        {
-          new_runtimes.push(NewTaskRuntime {
-            task_id: report.task.id,
-            service_id: report.task.service_id,
-            runtime_ms,
-          });
+        // The latexml-oxide worker now emits `Info:runtime_ms:<N>` (category=`runtime_ms`, the
+        // value in `what`) so the runtime surfaces as its own report category + per-value
+        // subreport; older workers emitted `Info:cortex:runtime_ms <N>` (what=`runtime_ms`,
+        // value in `details`). We accept BOTH so a rolling/mixed fleet keeps populating the
+        // per-service runtime report. A malformed value just skips the denormalized row —
+        // the log row is still written below, and the report's other rows are unaffected.
+        if let NewTaskMessage::Info(record) = message {
+          let runtime_value = if record.category == "runtime_ms" {
+            Some(record.what.as_str())
+          } else if record.category == "cortex" && record.what == "runtime_ms" {
+            Some(record.details.as_str())
+          } else {
+            None
+          };
+          if let Some(value) = runtime_value
+            && let Ok(runtime_ms) = value.parse::<i32>()
+          {
+            new_runtimes.push(NewTaskRuntime {
+              task_id: report.task.id,
+              service_id: report.task.service_id,
+              runtime_ms,
+            });
+          }
         }
         match message {
           NewTaskMessage::Info(record) => new_infos.push(record.clone()),

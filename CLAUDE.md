@@ -45,13 +45,18 @@ Active branch: **`main`** (the `productize-2026` sprint branch was merged and de
   and there's no file-vs-file override. `cortex set-admin-token`/`revoke-token` **read/modify/write
   this same JSON file** (not `cortex.toml`); a minted token activates immediately (the frontend
   re-reads it per gated request). `cortex init` scaffolds an **empty** token file if none exists.
-- **Redis has been removed** (Arm 14 #6.2). Frontend reports are now served from the
-  `report_summary` materialized-view rollup (`src/backend/rollup.rs`, `reports::task_report`),
-  refreshed on the run-completion path (finalize drain + at-least-daily, plus `mark_new_run`); the
-  old `cached/worker.rs` cache daemon, the `redis` crate, and the dead `CacheConfig` (Redis settings,
-  incl. the phantom Settings-page inputs) are gone. **The frontend boots without Redis.**
-  (The thin uncached proxy formerly at `src/frontend/cached/` was renamed to
-  `src/frontend/render.rs`.)
+- **Redis has been removed** (Arm 14 #6.2). Frontend drill-down reports are served from the
+  per-`(corpus, service, severity)` **`report_grain_cache`** table (`src/backend/rollup.rs`,
+  `reports::task_report`) — the global `report_summary` matview was **retired** (migration
+  `…retire_report_summary_matview`). A slice is (re)populated **lazily on a cold miss** and
+  invalidated on the rerun / run-completion / manual-refresh paths. The heaviest slice — full-arXiv
+  `info`, ~127 s (it aggregates ~255M `log_infos` rows; `EXPLAIN ANALYZE` 2026-06-28, see
+  POSSIBLE_UPGRADES P-6) — is **never** computed on the request thread: `serve_report` tries a 4 s
+  budget-bounded inline populate (`rollup::populate_scope_bounded`) and hands an overrun to a
+  **background job** (`jobs::spawn_report_populate`), rendering a self-refreshing "report computing"
+  page (`concerns::defer_cold_slice`). The old `cached/worker.rs` cache daemon, the `redis` crate,
+  and the dead `CacheConfig` are gone. **The frontend boots without Redis.** (The thin uncached proxy
+  formerly at `src/frontend/cached/` was renamed to `src/frontend/render.rs`.)
 - **CWD-coupled:** `load_config()` reads `config.json` from the CWD (panics if missing), and
   `Rocket.toml`/`templates/`/`public/` are CWD-relative — **run binaries from the repo root.**
 - **The dispatcher panics on purpose** (mutex poisoning → process abort → external restart). Don't

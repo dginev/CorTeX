@@ -754,6 +754,28 @@ mod log_decode_tests {
   }
 
   #[test]
+  fn runtime_line_parses_into_the_fields_mark_done_keys_on() {
+    use super::NewTaskMessage;
+    // New latexml-oxide format `Info:runtime_ms:<N>`: the value is the report category's drill-down
+    // `what` (mark.rs reads `what` for the denormalized runtime), details empty.
+    let new = parse_log(7, "Info:runtime_ms:12345\n");
+    assert_eq!(new.len(), 1);
+    let m = &new[0];
+    assert!(matches!(m, NewTaskMessage::Info(_)));
+    assert_eq!(m.category(), "runtime_ms");
+    assert_eq!(m.what(), "12345");
+    assert_eq!(m.details(), "");
+    // Legacy format `Info:cortex:runtime_ms <N>` must still parse the way the backward-compat arm
+    // expects: value in `details`, `what` is the literal `runtime_ms` (a mixed/rolling fleet).
+    let old = parse_log(7, "Info:cortex:runtime_ms 12345\n");
+    assert_eq!(old.len(), 1);
+    let m = &old[0];
+    assert_eq!(m.category(), "cortex");
+    assert_eq!(m.what(), "runtime_ms");
+    assert_eq!(m.details(), "12345");
+  }
+
+  #[test]
   fn fatal_invalid_category_is_separated_into_invalid() {
     // Perl-LaTeXML emits `Fatal('invalid', …)` for an unprocessable input (no TeX source,
     // PDF-only, binary). cortex must separate that out as its distinct **Invalid** outcome (own

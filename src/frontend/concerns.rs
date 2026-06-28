@@ -30,6 +30,12 @@ pub const UNKNOWN: &str = "_unknown_";
 /// large-corpus live aggregations, not normal traffic.
 const SLOW_REPORT_WARN_MS: i64 = 2000;
 
+/// How long a cold report slice may aggregate **inline** on the request path before we abandon the
+/// attempt and hand it to a background job (showing a "report computing" page instead). Small and
+/// empty slices finish in well under this; only the largest (full-arXiv `info`) ones exceed it.
+/// This is the hard ceiling on how long a single report view can pin its pooled connection (P-2).
+const INLINE_POPULATE_BUDGET_MS: u32 = 4000;
+
 /// Default cap on concurrent expensive **live** (`?all=true`) report aggregations (KNOWN_ISSUES
 /// P-2). Each such request holds a pooled connection for its whole multi-second run, so without a
 /// bound a burst can exhaust the pool (default 32) and `503` every other request. Four lets a small
@@ -67,12 +73,61 @@ impl Default for LiveReportLimiter {
   fn default() -> Self { Self::new(MAX_CONCURRENT_LIVE_REPORTS) }
 }
 
+/// Decide whether a cold rollup slice should be aggregated **in the background** — returning
+/// `true`, so the caller renders the "report computing" shell — instead of inline on the request
+/// path.
+///
+/// Returns `false` (serve normally/inline) for a live report, an already-warm slice, or a slice
+/// small enough to aggregate within [`INLINE_POPULATE_BUDGET_MS`]. Returns `true` only when the
+/// slice is genuinely large: either a background job is already populating it, or a bounded inline
+/// attempt overran the budget (the full-arXiv `info` case), in which case this spawns the
+/// (debounced) background populate job before returning. Empty severities aggregate to zero rows
+/// well inside the budget, so they serve inline and never get stuck "computing".
+fn defer_cold_slice(
+  connection: &mut PgConnection,
+  pool: &crate::backend::DbPool,
+  used_rollup: bool,
+  severity: Option<&str>,
+  corpus: &Corpus,
+  service: &Service,
+) -> bool {
+  if !used_rollup {
+    return false;
+  }
+  let Some(sev) = severity else {
+    return false;
+  };
+  if crate::backend::scope_cached(connection, corpus.id, service.id, sev) {
+    return false; // already warm — read it directly
+  }
+  if crate::jobs::report_populate_active(connection, corpus.id, service.id, sev) {
+    return true; // a background job is already aggregating this slice
+  }
+  // Try inline, bounded: small and empty slices finish well inside the budget and serve as before.
+  if crate::backend::populate_scope_bounded(
+    connection,
+    corpus.id,
+    service.id,
+    sev,
+    INLINE_POPULATE_BUDGET_MS,
+  )
+  .is_ok()
+  {
+    return false;
+  }
+  // Overran the budget — hand the heavy aggregation to a background job and show "computing".
+  let _ =
+    crate::jobs::spawn_report_populate(pool.clone(), corpus.id, service.id, sev, "report-view");
+  true
+}
+
 /// Prepare a configurable report for a <corpus,server> pair, reading over the caller-supplied
 /// (pooled) `connection` — no per-request fresh `Backend::default()`. `404` on unknown
 /// corpus/service.
 #[allow(clippy::too_many_arguments)]
 pub fn serve_report(
   connection: &mut PgConnection,
+  pool: &crate::backend::DbPool,
   corpus_name: String,
   service_name: String,
   severity: Option<String>,
@@ -151,6 +206,17 @@ pub fn serve_report(
       // Cloned so the freshness footer can look up this drill-down's cache slice *after*
       // `task_report` populates it below (the owned `severity` is moved into `task_report`).
       let report_severity = severity.clone();
+      // Cold-miss handoff: if this rollup slice is too large to aggregate inline (the full-arXiv
+      // `info` case is minutes), hand it to a background job and render a "report computing" shell
+      // instead of blocking the request thread (see [`defer_cold_slice`]).
+      let report_computing = defer_cold_slice(
+        connection,
+        pool,
+        used_rollup,
+        report_severity.as_deref(),
+        &corpus,
+        &service,
+      );
       match service.inputconverter {
         Some(ref ic_service_name) => {
           global.insert("inputconverter".to_string(), ic_service_name.clone())
@@ -239,27 +305,37 @@ pub fn serve_report(
           Some(ref s) => s == "no_problem",
           None => false,
         };
-        let fetched_report = task_report(
-          connection,
-          &mut global,
-          &corpus,
-          &service,
-          severity,
-          None,
-          None,
-          &params,
-        );
-        template = if no_problem_kind {
-          // Record the report into "entries" vector
-          context.entries = Some(fetched_report);
-          // And set the task list template
-          "task-list-report"
+        if report_computing {
+          // Slice is being aggregated in the background (see the cold-miss handoff above) — render
+          // the categories shell empty with a "computing" notice rather than running the heavy
+          // `task_report` aggregation inline. `report_computing` is only ever set for a rollup
+          // severity, which excludes `no_problem`, so this is always the categories template.
+          global.insert("report_computing".to_string(), "true".to_string());
+          context.categories = Some(Vec::new());
+          template = "severity-report";
         } else {
-          // Record the report into "categories" vector
-          context.categories = Some(fetched_report);
-          // And set the severity template
-          "severity-report"
-        };
+          let fetched_report = task_report(
+            connection,
+            &mut global,
+            &corpus,
+            &service,
+            severity,
+            None,
+            None,
+            &params,
+          );
+          template = if no_problem_kind {
+            // Record the report into "entries" vector
+            context.entries = Some(fetched_report);
+            // And set the task list template
+            "task-list-report"
+          } else {
+            // Record the report into "categories" vector
+            context.categories = Some(fetched_report);
+            // And set the severity template
+            "severity-report"
+          };
+        }
       } else if what.is_none() {
         // Category-level report
         global.insert("severity".to_string(), severity.clone().unwrap_or_default());
@@ -269,27 +345,36 @@ pub fn serve_report(
         );
         global.insert("category".to_string(), category.clone().unwrap_or_default());
         let no_messages_kind = category.as_deref() == Some("no_messages");
-        let fetched_report = task_report(
-          connection,
-          &mut global,
-          &corpus,
-          &service,
-          severity,
-          category,
-          None,
-          &params,
-        );
-        template = if no_messages_kind {
-          // Record the report into "entries" vector
-          context.entries = Some(fetched_report);
-          // And set the task list template
-          "task-list-report"
+        if report_computing {
+          // Same cold-miss handoff as the severity branch; `report_computing` excludes the
+          // `no_messages` per-task list, so this is always the `what`-drill-down (category)
+          // template.
+          global.insert("report_computing".to_string(), "true".to_string());
+          context.whats = Some(Vec::new());
+          template = "category-report";
         } else {
-          // Record the report into "whats" vector
-          context.whats = Some(fetched_report);
-          // And set the category template
-          "category-report"
-        };
+          let fetched_report = task_report(
+            connection,
+            &mut global,
+            &corpus,
+            &service,
+            severity,
+            category,
+            None,
+            &params,
+          );
+          template = if no_messages_kind {
+            // Record the report into "entries" vector
+            context.entries = Some(fetched_report);
+            // And set the task list template
+            "task-list-report"
+          } else {
+            // Record the report into "whats" vector
+            context.whats = Some(fetched_report);
+            // And set the category template
+            "category-report"
+          };
+        }
       } else {
         // What-level report
         global.insert("severity".to_string(), severity.clone().unwrap_or_default());

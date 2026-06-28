@@ -837,39 +837,14 @@ pub fn refresh_reports_human(
   Ok(rocket::response::Redirect::to(format!("/jobs/{uuid}")))
 }
 
-/// Acknowledgement for the report-footer "Force refresh": the spawned rebuild job's uuid, for the
-/// page to poll `GET /api/jobs/<job>` and reload itself once the rollup is fresh.
-#[derive(Serialize)]
-pub struct ForceRefreshAck {
-  /// The spawned (or debounced-reused) refresh job's external uuid.
-  pub job: String,
-}
-
-/// Report-footer **"Force refresh"**: rebuild the `report_summary` rollup *now* and return the job
-/// uuid as JSON so the page can poll it and reload with fresh numbers (the matview's normal cadence
-/// is finalize-drain + at-least-daily). **Gated by the signed-in [`AdminSession`] cookie** — the
-/// footer only shows the button to admins, and a missing session is a clean `401` for the XHR
-/// rather than an HTML redirect. Debounced: a refresh already in flight is reused, not piled on.
-#[post("/reports/refresh/now")]
-pub fn force_refresh_reports(
-  session: Option<AdminSession>,
-  pool: &State<DbPool>,
-) -> Result<Json<ForceRefreshAck>, Status> {
-  let session = session.ok_or(Status::Unauthorized)?;
-  let job = jobs::spawn_report_refresh(pool.inner().clone(), &session.owner)
-    .map_err(|_| Status::InternalServerError)?;
-  Ok(Json(ForceRefreshAck {
-    job: job.to_string(),
-  }))
-}
-
 /// Report-footer **"Refresh this report"**: drop the cached report grains for *this*
 /// `(corpus, service)` scope so the next view recomputes them from current data. Scoped (not the
-/// global all-corpora bust [`force_refresh_reports`] does) and **synchronous** — busting
+/// global all-corpora bust [`refresh_reports`] does) and **synchronous** — busting
 /// `report_grain_cache` is an instant keyed `DELETE`, so there is no background job to poll; the
 /// caller just reloads. **Gated by the signed-in [`AdminSession`] cookie** (the footer shows the
 /// button only to admins; a missing session is a clean `401` for the XHR rather than an HTML
-/// redirect). `404` on an unknown corpus/service, `204` on success.
+/// redirect). `404` on an unknown corpus/service, `204` on success. Agent twin:
+/// [`refresh_report_scope_api`].
 #[post("/corpus/<corpus_name>/<service_name>/refresh")]
 pub fn refresh_report_scope(
   corpus_name: String,
@@ -886,6 +861,47 @@ pub fn refresh_report_scope(
   crate::backend::invalidate_scope(&mut connection, corpus.id, service.id)
     .map_err(|_| Status::InternalServerError)?;
   Ok(Status::NoContent)
+}
+
+/// Acknowledgement of a scoped report-cache refresh: the scope that was busted and who busted it.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ScopeRefreshAckDto {
+  /// Corpus whose cached report grains were dropped.
+  pub corpus: String,
+  /// Service whose cached report grains were dropped.
+  pub service: String,
+  /// The token-resolved actor recorded as the initiator.
+  pub actor: String,
+}
+
+/// Busts *this* `(corpus, service)`'s cached report grains — the **agent twin** of the report
+/// footer's "Refresh this report" action ([`refresh_report_scope`]) — so its reports recompute from
+/// current data on the next view (a heavy slice recomputes off the request path; see
+/// [`crate::frontend::concerns::serve_report`]). Scoped, unlike the global bust [`refresh_reports`]
+/// does. The bust is an instant keyed `DELETE`, so this returns `200 OK` immediately — there is no
+/// background job to poll. **Token-gated** via the [`Actor`] guard (`X-Cortex-Token` header or
+/// `?token=`); `401` without a valid token, `404` on an unknown corpus/service.
+#[rocket_okapi::openapi(tag = "Reports")]
+#[post("/api/reports/<corpus>/<service>/refresh")]
+pub fn refresh_report_scope_api(
+  corpus: &str,
+  service: &str,
+  actor: Actor,
+  pool: &State<DbPool>,
+) -> Result<Json<ScopeRefreshAckDto>, Status> {
+  let mut connection = pooled(pool)?;
+  let corpus_record =
+    Corpus::find_by_name(&corpus.to_lowercase(), &mut connection).map_err(|_| Status::NotFound)?;
+  let service_record = Service::find_by_name(&service.to_lowercase(), &mut connection)
+    .map_err(|_| Status::NotFound)?;
+  crate::backend::invalidate_scope(&mut connection, corpus_record.id, service_record.id)
+    .map_err(|_| Status::InternalServerError)?;
+  tracing::info!(actor = %actor.owner, corpus, service, "scoped report refresh via API");
+  Ok(Json(ScopeRefreshAckDto {
+    corpus: corpus_record.name,
+    service: service_record.name,
+    actor: actor.owner,
+  }))
 }
 
 // --- The human report screens (HTML twins of the typed report API above) -----------------------
@@ -912,6 +928,7 @@ pub fn top_service_report(
   let mut connection = pooled(pool)?;
   serve_report(
     &mut connection,
+    pool.inner(),
     corpus_name,
     service_name,
     None,
@@ -934,6 +951,7 @@ pub fn severity_service_report(
   let mut connection = pooled(pool)?;
   serve_report(
     &mut connection,
+    pool.inner(),
     corpus_name,
     service_name,
     Some(severity),
@@ -966,6 +984,7 @@ pub async fn severity_service_report_all(
   let mut connection = pooled(pool)?;
   serve_report(
     &mut connection,
+    pool.inner(),
     corpus_name,
     service_name,
     Some(severity),
@@ -989,6 +1008,7 @@ pub fn category_service_report(
   let mut connection = pooled(pool)?;
   serve_report(
     &mut connection,
+    pool.inner(),
     corpus_name,
     service_name,
     Some(severity),
@@ -1021,6 +1041,7 @@ pub async fn category_service_report_all(
   let mut connection = pooled(pool)?;
   serve_report(
     &mut connection,
+    pool.inner(),
     corpus_name,
     service_name,
     Some(severity),
@@ -1045,6 +1066,7 @@ pub fn what_service_report(
   let mut connection = pooled(pool)?;
   serve_report(
     &mut connection,
+    pool.inner(),
     corpus_name,
     service_name,
     Some(severity),
@@ -1071,6 +1093,7 @@ pub fn what_service_report_all(
   let mut connection = pooled(pool)?;
   serve_report(
     &mut connection,
+    pool.inner(),
     corpus_name,
     service_name,
     Some(severity),
@@ -1084,10 +1107,10 @@ pub fn what_service_report_all(
 /// The route set for the reports capability (typed API + the human report screens).
 pub fn routes() -> Vec<Route> {
   // NB: the agent report routes (`api_category_report`, `api_what_report`, `rerun_report`,
-  // `refresh_reports`) are mounted via `frontend::apidoc` (rocket_okapi).
+  // `refresh_reports`, `refresh_report_scope_api`) are mounted via `frontend::apidoc`
+  // (rocket_okapi).
   routes![
     refresh_reports_human,
-    force_refresh_reports,
     refresh_report_scope,
     top_service_report,
     severity_service_report,

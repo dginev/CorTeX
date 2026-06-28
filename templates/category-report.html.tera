@@ -16,6 +16,13 @@
   </p>
   {% endif %}
 
+  {% if global.report_computing %}
+  <p class="report-computing" role="status">
+    This report is being computed in the background (a large corpus can take a few minutes). The page
+    refreshes automatically when it is ready &middot; <a href="/jobs">background jobs</a>.
+  </p>
+  {% endif %}
+
   <table id="corpus-report" class="table report-table">
     <thead>
       <tr>

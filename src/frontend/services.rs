@@ -753,7 +753,7 @@ pub fn delete_service_human(
   Ok(Redirect::to("/services"))
 }
 
-/// One conversion's recorded wall-time (from the worker's `Info:cortex:runtime_ms` log line), for
+/// One conversion's recorded wall-time (from the worker's `Info:runtime_ms:<N>` log line), for
 /// the slowest-conversions table.
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct RuntimeRowDto {
@@ -779,7 +779,7 @@ pub struct RuntimeBucketDto {
 
 /// The per-service conversion-runtime report: a distribution summary, an aggregate histogram (the
 /// bar chart), and the paginated slowest conversions. Sourced from the worker's
-/// `Info:cortex:runtime_ms` log lines, so it only populates after a run with a runtime-emitting
+/// `Info:runtime_ms:<N>` log lines, so it only populates after a run with a runtime-emitting
 /// worker. Heavier than the other service views (it scans `log_infos`), hence its own page.
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct ServiceRuntimeDto {
@@ -824,7 +824,7 @@ const RUNTIME_BUCKET_LABELS: [&str; 11] = [
 ];
 
 /// Builds the [`ServiceRuntimeDto`] for a service from the denormalized `task_runtimes` table (one
-/// validated runtime per task, mirrored from each `Info:cortex:runtime_ms` log line on the finalize
+/// validated runtime per task, mirrored from each `Info:runtime_ms:<N>` log line on the finalize
 /// path) — distribution summary + histogram + the paginated slowest conversions. Three index-only
 /// scans over `(service_id, runtime_ms)`.
 fn service_runtime_report(

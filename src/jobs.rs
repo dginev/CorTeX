@@ -180,6 +180,67 @@ pub fn spawn_report_refresh(pool: DbPool, actor: &str) -> Result<Uuid, String> {
   })
 }
 
+/// The job `kind` for a single `(corpus, service, severity)` report-cache populate.
+pub const POPULATE_REPORT_KIND: &str = "populate_report";
+
+/// Whether a populate job for exactly this `(corpus, service, severity)` slice is already queued or
+/// running — the request path's pre-check, so a burst of viewers of a still-computing report
+/// doesn't each re-attempt the (bounded) inline aggregation while the background job is already on
+/// it.
+pub fn report_populate_active(
+  connection: &mut PgConnection,
+  corpus_id: i32,
+  service_id: i32,
+  severity: &str,
+) -> bool {
+  list_recent(connection, true, 200)
+    .into_iter()
+    .any(|job| populate_job_matches(&job, corpus_id, service_id, severity))
+}
+
+fn populate_job_matches(job: &Job, corpus_id: i32, service_id: i32, severity: &str) -> bool {
+  job.kind == POPULATE_REPORT_KIND
+    && job.params.get("corpus_id").and_then(Value::as_i64) == Some(corpus_id as i64)
+    && job.params.get("service_id").and_then(Value::as_i64) == Some(service_id as i64)
+    && job.params.get("severity").and_then(Value::as_str) == Some(severity)
+}
+
+/// Spawns a background job that (re)computes one `(corpus, service, severity)` report slice
+/// (`rollup::populate_scope`) **off** the request path — the heavy aggregation behind a cold report
+/// view (minutes for the full-arXiv `info` slice) runs here instead of pinning a frontend
+/// connection and blocking the viewer, who is shown a "report computing" page that refreshes when
+/// the slice is ready. **Debounced** per scope: an already-active populate for the same slice is
+/// reused (its uuid returned) rather than spawning a duplicate. Poll `GET /api/jobs/<uuid>` for
+/// status/health.
+pub fn spawn_report_populate(
+  pool: DbPool,
+  corpus_id: i32,
+  service_id: i32,
+  severity: &str,
+  actor: &str,
+) -> Result<Uuid, String> {
+  {
+    let mut connection = pool.get().map_err(|e| e.to_string())?;
+    if let Some(existing) = list_recent(&mut connection, true, 200)
+      .into_iter()
+      .find(|job| populate_job_matches(job, corpus_id, service_id, severity))
+    {
+      return Ok(existing.uuid);
+    }
+  }
+  let severity = severity.to_string();
+  let params =
+    serde_json::json!({ "corpus_id": corpus_id, "service_id": service_id, "severity": severity });
+  spawn_job(pool, POPULATE_REPORT_KIND, actor, params, move |progress| {
+    let mut connection = progress.pool.get().map_err(|e| e.to_string())?;
+    progress.step(0, Some(1), &format!("aggregating the {severity} report"));
+    crate::backend::populate_scope(&mut connection, corpus_id, service_id, &severity)
+      .map_err(|e| e.to_string())?;
+    progress.step(1, Some(1), "report ready");
+    Ok(serde_json::json!({ "populated": severity }))
+  })
+}
+
 /// The job `kind` for an online index rebuild.
 pub const REINDEX_KIND: &str = "reindex";
 
@@ -416,4 +477,48 @@ pub fn interrupt_orphans(connection: &mut PgConnection) -> usize {
     ))
     .execute(connection)
     .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn job(kind: &str, params: Value) -> Job {
+    let t = chrono::NaiveDate::from_ymd_opt(2026, 6, 28)
+      .unwrap()
+      .and_hms_opt(0, 0, 0)
+      .unwrap();
+    Job {
+      id: 1,
+      uuid: Uuid::nil(),
+      kind: kind.to_string(),
+      status: "running".to_string(),
+      progress_current: 0,
+      progress_total: None,
+      message: String::new(),
+      actor: "test".to_string(),
+      params,
+      result: None,
+      created_at: t,
+      updated_at: t,
+    }
+  }
+
+  // The populate-job debounce keys on the (corpus_id, service_id, severity) it stored in `params` —
+  // and the ids are JSON numbers (i64) compared against the i32 args, the easy-to-break part.
+  #[test]
+  fn populate_job_matches_only_its_own_scope() {
+    let p = serde_json::json!({ "corpus_id": 7, "service_id": 3, "severity": "info" });
+    let j = job(POPULATE_REPORT_KIND, p);
+    assert!(populate_job_matches(&j, 7, 3, "info"));
+    assert!(!populate_job_matches(&j, 7, 3, "warning")); // other severity of the same scope
+    assert!(!populate_job_matches(&j, 8, 3, "info")); // other corpus
+    assert!(!populate_job_matches(&j, 7, 4, "info")); // other service
+    // A different kind with identical params must never be mistaken for a populate job.
+    let other = job(
+      REFRESH_REPORTS_KIND,
+      serde_json::json!({ "corpus_id": 7, "service_id": 3, "severity": "info" }),
+    );
+    assert!(!populate_job_matches(&other, 7, 3, "info"));
+  }
 }

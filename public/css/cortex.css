@@ -1949,6 +1949,13 @@ h3 {
   font-size: var(--fs-sm);
   color: var(--ink-muted);
 }
+.report-computing {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.9rem;
+  border-left: 3px solid var(--accent, #b58900);
+  background: var(--surface-2, rgba(181, 137, 0, 0.08));
+  font-size: var(--fs-sm);
+}
 .report-pagination {
   margin: 1.5rem 0;
   text-align: center;

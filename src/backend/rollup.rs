@@ -16,8 +16,16 @@
 //!
 //! * **cold miss** — a reader for an un-cached slice runs the scoped aggregation once
 //!   ([`populate_scope`]) and stores it, then reads. This is the only place the heavy scan happens,
-//!   and it is bounded to one log table for one corpus (ms for a typical corpus; a couple of
-//!   seconds for the largest, paid once until invalidated).
+//!   and it is bounded to one log table for one corpus (ms for a typical corpus, paid once until
+//!   invalidated). For the largest slice it is **minutes**: the full-arXiv `info` slice joins every
+//!   completed task (~2.8M) to ~255M `log_infos` rows (~half the 531M-row table), then sorts and
+//!   `COUNT(DISTINCT task_id)`-aggregates them — ~127 s measured (`EXPLAIN ANALYZE`, 2026-06-28),
+//!   dominated by a 17 GB on-disk sort and the distinct-count, *not* the scan (so no single-table
+//!   index makes it fast — see POSSIBLE_UPGRADES). Far too long for the request thread, so the
+//!   frontend doesn't run it there: [`crate::frontend::concerns::serve_report`] tries a
+//!   **budget-bounded** inline populate ([`populate_scope_bounded`]) and, if it overruns, hands the
+//!   aggregation to a background job ([`crate::jobs::spawn_report_populate`]) and shows a "report
+//!   computing" page that refreshes when the slice lands.
 //! * **rerun** — [`invalidate_scope`] clears the reran scope; the next view repopulates fresh.
 //! * **run-completion** — the dispatcher finalize thread invalidates only the scopes it touched.
 //! * **force refresh** — [`invalidate_all`] drops every cached slice (a cheap DELETE, not a scan);
@@ -117,7 +125,7 @@ pub(crate) fn report_cache_computed_at(
 /// Whether `report_grain_cache` already holds the given `(corpus, service, severity)` slice. A
 /// slice with zero messages produces no `ROLLUP` rows, so this stays `false` for empty severities —
 /// their (cheap, no-row) aggregation simply re-runs on each read, which is harmless.
-fn scope_cached(
+pub(crate) fn scope_cached(
   connection: &mut PgConnection,
   corpus_id: i32,
   service_id: i32,
@@ -157,40 +165,82 @@ pub(crate) fn populate_scope(
     return Ok(());
   };
   connection.transaction::<(), diesel::result::Error, _>(|conn| {
-    sql_query(
-      "DELETE FROM report_grain_cache \
-         WHERE corpus_id = $1 AND service_id = $2 AND severity = $3",
-    )
-    .bind::<Integer, _>(corpus_id)
-    .bind::<Integer, _>(service_id)
-    .bind::<Text, _>(severity)
-    .execute(conn)?;
-    sql_query(format!(
-      "INSERT INTO report_grain_cache \
-         (corpus_id, service_id, severity, category, what, category_is_total, what_is_total, \
-          task_count, message_count) \
-       SELECT $1, $2, $3, \
-         CASE WHEN GROUPING(COALESCE(l.category, '')) = 1 THEN NULL \
-              ELSE COALESCE(l.category, '') END, \
-         CASE WHEN GROUPING(COALESCE(l.what, '')) = 1 THEN NULL \
-              ELSE COALESCE(l.what, '') END, \
-         GROUPING(COALESCE(l.category, ''))::int, GROUPING(COALESCE(l.what, ''))::int, \
-         COUNT(DISTINCT l.task_id)::bigint, COUNT(*)::bigint \
-       FROM tasks t JOIN {table} l ON l.task_id = t.id \
-       WHERE t.corpus_id = $1 AND t.service_id = $2 AND {status_pred} \
-       GROUP BY ROLLUP(COALESCE(l.category, ''), COALESCE(l.what, '')) \
-       HAVING COUNT(*) > 0 \
-       ON CONFLICT (corpus_id, service_id, severity, category_is_total, what_is_total, category, what) \
-         DO UPDATE SET task_count = EXCLUDED.task_count, \
-                       message_count = EXCLUDED.message_count, \
-                       computed_at = now()"
-    ))
-    .bind::<Integer, _>(corpus_id)
-    .bind::<Integer, _>(service_id)
-    .bind::<Text, _>(severity)
-    .execute(conn)?;
-    Ok(())
+    populate_scope_slice(conn, corpus_id, service_id, severity, table, status_pred)
   })
+}
+
+/// Request-path variant of [`populate_scope`] that abandons the aggregation if it runs past
+/// `budget_ms`, leaving the slice uncached so the caller can hand off to a background job
+/// ([`crate::jobs::spawn_report_populate`]). A per-transaction `statement_timeout` bounds how long
+/// this holds its pooled connection: small and empty slices finish well inside the budget and are
+/// served inline exactly as before, but the full-arXiv `info` slice (minutes) is cancelled instead
+/// of pinning a frontend connection and blocking the viewer (the P-2 pool-saturation class). Both
+/// outcomes leave a crash-consistent state — the whole DELETE+INSERT is one transaction, and a
+/// cancel rolls it back. `Ok(())` means the slice was populated within budget; an `Err` means it
+/// was cancelled (or otherwise failed) and the slice is still uncached.
+pub(crate) fn populate_scope_bounded(
+  connection: &mut PgConnection,
+  corpus_id: i32,
+  service_id: i32,
+  severity: &str,
+  budget_ms: u32,
+) -> QueryResult<()> {
+  let Some((table, status_pred)) = severity_scope(severity) else {
+    return Ok(());
+  };
+  connection.transaction::<(), diesel::result::Error, _>(|conn| {
+    // Transaction-local cap on the heavy INSERT...SELECT below; `budget_ms` is our own integer
+    // (never user input), so the interpolation is injection-safe. On expiry Postgres cancels the
+    // statement (SQLSTATE 57014) and Diesel surfaces an `Err`, rolling back the whole slice.
+    sql_query(format!("SET LOCAL statement_timeout = {budget_ms}")).execute(conn)?;
+    populate_scope_slice(conn, corpus_id, service_id, severity, table, status_pred)
+  })
+}
+
+/// The DELETE + ROLLUP-aggregate INSERT for one slice, run inside the caller's transaction (shared
+/// by [`populate_scope`] and [`populate_scope_bounded`] so the heavy query has a single
+/// definition).
+fn populate_scope_slice(
+  conn: &mut PgConnection,
+  corpus_id: i32,
+  service_id: i32,
+  severity: &str,
+  table: &str,
+  status_pred: &str,
+) -> QueryResult<()> {
+  sql_query(
+    "DELETE FROM report_grain_cache \
+       WHERE corpus_id = $1 AND service_id = $2 AND severity = $3",
+  )
+  .bind::<Integer, _>(corpus_id)
+  .bind::<Integer, _>(service_id)
+  .bind::<Text, _>(severity)
+  .execute(conn)?;
+  sql_query(format!(
+    "INSERT INTO report_grain_cache \
+       (corpus_id, service_id, severity, category, what, category_is_total, what_is_total, \
+        task_count, message_count) \
+     SELECT $1, $2, $3, \
+       CASE WHEN GROUPING(COALESCE(l.category, '')) = 1 THEN NULL \
+            ELSE COALESCE(l.category, '') END, \
+       CASE WHEN GROUPING(COALESCE(l.what, '')) = 1 THEN NULL \
+            ELSE COALESCE(l.what, '') END, \
+       GROUPING(COALESCE(l.category, ''))::int, GROUPING(COALESCE(l.what, ''))::int, \
+       COUNT(DISTINCT l.task_id)::bigint, COUNT(*)::bigint \
+     FROM tasks t JOIN {table} l ON l.task_id = t.id \
+     WHERE t.corpus_id = $1 AND t.service_id = $2 AND {status_pred} \
+     GROUP BY ROLLUP(COALESCE(l.category, ''), COALESCE(l.what, '')) \
+     HAVING COUNT(*) > 0 \
+     ON CONFLICT (corpus_id, service_id, severity, category_is_total, what_is_total, category, what) \
+       DO UPDATE SET task_count = EXCLUDED.task_count, \
+                     message_count = EXCLUDED.message_count, \
+                     computed_at = now()"
+  ))
+  .bind::<Integer, _>(corpus_id)
+  .bind::<Integer, _>(service_id)
+  .bind::<Text, _>(severity)
+  .execute(conn)?;
+  Ok(())
 }
 
 /// Ensure the slice is cached, populating it on a cold miss. Shared by every reader.

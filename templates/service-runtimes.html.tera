@@ -10,7 +10,7 @@
 
   {% if global.total == "0" %}
   <p class="muted">No conversion-runtime data yet. Per-paper runtimes appear once a run completes with
-    a worker that emits the <code>Info:cortex:runtime_ms</code> log line.</p>
+    a worker that emits the <code>Info:runtime_ms:N</code> log line.</p>
   {% else %}
 
   {# Distribution summary #}

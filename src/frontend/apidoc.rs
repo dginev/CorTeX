@@ -55,10 +55,11 @@ use crate::frontend::reports::{
   okapi_add_operation_for_api_category_report_, okapi_add_operation_for_api_document_,
   okapi_add_operation_for_api_entry_list_, okapi_add_operation_for_api_service_overview_,
   okapi_add_operation_for_api_what_report_, okapi_add_operation_for_pause_all_api_,
-  okapi_add_operation_for_pause_run_api_, okapi_add_operation_for_refresh_reports_,
-  okapi_add_operation_for_rerun_report_, okapi_add_operation_for_resume_all_api_,
-  okapi_add_operation_for_resume_run_api_, pause_all_api, pause_run_api, refresh_reports,
-  rerun_report, resume_all_api, resume_run_api,
+  okapi_add_operation_for_pause_run_api_, okapi_add_operation_for_refresh_report_scope_api_,
+  okapi_add_operation_for_refresh_reports_, okapi_add_operation_for_rerun_report_,
+  okapi_add_operation_for_resume_all_api_, okapi_add_operation_for_resume_run_api_, pause_all_api,
+  pause_run_api, refresh_report_scope_api, refresh_reports, rerun_report, resume_all_api,
+  resume_run_api,
 };
 use crate::frontend::retention::{
   api_historical_stats, okapi_add_operation_for_api_historical_stats_,
@@ -199,6 +200,7 @@ fn routes_and_spec() -> (Vec<rocket::Route>, rocket_okapi::okapi::openapi3::Open
     pause_all_api,
     resume_all_api,
     refresh_reports,
+    refresh_report_scope_api,
     reindex,
     analyze,
     put_config,

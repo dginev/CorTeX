@@ -345,6 +345,55 @@ fn category_and_what_reports_match_seed() {
     "the ack carries a poll URL for the job's status/health"
   );
 
+  // --- Scoped report refresh: the agent twin of the footer "Refresh this report" — token-gated,
+  // synchronous (an instant keyed DELETE → 200 + a small DTO, no job to poll). --------------------
+  let response = client
+    .post(format!("/api/reports/{CORPUS_NAME}/{SERVICE_NAME}/refresh"))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Unauthorized,
+    "scoped refresh without a token is 401"
+  );
+  let response = client
+    .post(format!(
+      "/api/reports/{CORPUS_NAME}/{SERVICE_NAME}/refresh?token=bogus"
+    ))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Unauthorized,
+    "scoped refresh with an unknown token is 401"
+  );
+  let response = client
+    .post(format!(
+      "/api/reports/{CORPUS_NAME}/{SERVICE_NAME}/refresh?token=token1"
+    ))
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::Ok,
+    "scoped refresh with a valid token is 200 (synchronous bust, no job)"
+  );
+  let ack: Value = response.into_json().expect("scope refresh ack json");
+  assert_eq!(ack["actor"], "username1", "attributed to the token owner");
+  assert_eq!(
+    ack["corpus"], CORPUS_NAME,
+    "echoes the busted scope's corpus"
+  );
+  assert_eq!(
+    ack["service"], SERVICE_NAME,
+    "echoes the busted scope's service"
+  );
+  let response = client
+    .post("/api/reports/no-such-corpus-xyz/no_svc/refresh?token=token1")
+    .dispatch();
+  assert_eq!(
+    response.status(),
+    Status::NotFound,
+    "scoped refresh on an unknown corpus is 404"
+  );
+
   // --- Error catchers are content-negotiated: agents (an /api path or Accept: json) get a JSON
   // `{error, status}`; humans get the themed HTML error page (the error-path symmetry contract).
   // ---

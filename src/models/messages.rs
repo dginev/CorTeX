@@ -48,7 +48,7 @@ pub struct NewLogInfo {
 #[derive(Insertable, Clone, Debug)]
 #[diesel(table_name = task_runtimes)]
 /// A new, insertable per-task conversion runtime — the denormalized twin of the
-/// `Info:cortex:runtime_ms` log row, with the task's `service_id` inlined so the per-service
+/// `Info:runtime_ms:<N>` log row, with the task's `service_id` inlined so the per-service
 /// runtime report aggregates without a `tasks` join. Written on the finalize path (`mark_done`).
 pub struct NewTaskRuntime {
   /// owner task's id (primary key — one current runtime per task)

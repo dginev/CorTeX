@@ -18,6 +18,8 @@
     </script>
     <meta http-equiv="Content-Type" content="text/html" />
     <meta charset="utf-8" />
+    {# Auto-refresh a report that is still aggregating in the background until its slice is ready. #}
+    {% if global.report_computing %}<meta http-equiv="refresh" content="8" />{% endif %}
     <title> {% if global.title %} {{global.title}} | CorTeX Framework {% endif %}</title>
 
     <!-- Vendored locally (no external CDNs — self-contained, resilient, private; KNOWN_ISSUES X-6). -->
