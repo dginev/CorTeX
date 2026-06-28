@@ -20,11 +20,9 @@ use std::process;
 ///
 ///   * no args         -> extend every registered corpus (whole tree)
 ///   * <corpus_path>   -> extend only the corpus registered at that path
-///   * <yymm_prefix>   -> additionally scope the import to a single monthly
-///                        sub-directory (e.g. "2606"), so a monthly release only
-///                        (re)imports the new month instead of walking every
-///                        already-processed sub-directory. Recommended for the
-///                        routine monthly maintenance update.
+///   * <yymm_prefix>   -> additionally scope the import to a single monthly sub-directory (e.g.
+///     "2606"), so a monthly release only (re)imports the new month instead of walking every
+///     already-processed sub-directory. Recommended for the routine monthly maintenance update.
 ///
 /// Exits NON-ZERO if any corpus extension or service registration fails, so a
 /// calling orchestrator can gate on a clean import.
