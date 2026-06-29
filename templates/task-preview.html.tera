@@ -136,8 +136,8 @@
         '<h2 class="ltx_title ltx_title_section">Cortex Conversion Report</h2>' +
         '<div id="S1.p1" class="ltx_para">' +
         '<p class="ltx_p">' +
-        conversion_report.split("\n").join('</p><p class="ltx_p">');
-      '</p>' +
+        conversion_report.split("\n").join('</p><p class="ltx_p">') +
+        '</p>' +
         '</div></section></article>';
       main_content = main_content.replace(/<\/article>/, html_report);
     }
@@ -208,6 +208,15 @@
         main_content = main_content.replace(/<\/head>/, simple_css + "\n</head>");
         main_content = main_content.replace(/<\/body>/, "\n" + maybe_mathjax_js + "\n" + fire_loaded + "\n</body>");
       }
+      // The ar5iv stylesheet injected above renders each `.ltx_p` conversion-log line as HYPHENATED
+      // prose, so it hyphenates `ambiguous_math`/`unparsed_math` (e.g. `ambigu-ous`). cortex.css
+      // cannot reach this `document.write`-rendered document, so disable hyphenation here, after the
+      // ar5iv CSS, scoped by the report's id so it wins specificity. Wrapping is KEPT — the long
+      // token-type footprint still wraps at char boundaries (overflow-wrap), just without a hyphen.
+      var report_css = '<style>' +
+        '#latexml-conversion-report .ltx_p{-webkit-hyphens:none;hyphens:none;overflow-wrap:anywhere;}' +
+        '</' + 'style>';
+      main_content = main_content.replace(/<\/head>/, report_css + "\n</head>");
     }
     document.write(main_content);
   }
