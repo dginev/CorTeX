@@ -48,8 +48,9 @@ pub struct SandboxSelection {
   /// optional `what` narrowing within the category (needs `category`)
   #[serde(default)]
   pub what: Option<String>,
-  /// optional substring the parent `entry` path must contain, matched as `entry LIKE '%…%'` (e.g.
-  /// `2506.` carves one arXiv month). `None`/empty = no narrowing.
+  /// optional substring the parent `entry` must contain, matched at any position (`entry LIKE
+  /// '%…%'`). Include slashes for precision — `/2605/` carves exactly the arXiv month (a bare
+  /// `2605.` also matches mid-id paths like `…0302605.zip`). `None`/empty = no narrowing.
   #[serde(default)]
   pub entry: Option<String>,
   /// optional hard cap on how many entries the carve captures — the first `n` by `entry` order
@@ -219,9 +220,12 @@ pub fn create_sandbox(
     .map_err(|message| Error::QueryBuilderError(message.into()))?;
   let selection_json = serde_json::to_value(selection).ok();
 
-  // Optional entry-substring narrowing: `2506.` → `LIKE '%2506.%'`. Always bound (default `%` =
-  // match every entry) so the three SQL branches share one extra bind slot. Trimmed; blank = no
-  // narrowing.
+  // Optional entry-substring narrowing, matched at ANY position so a filter can target any path
+  // slot (`entry LIKE '%…%'`). Include slashes for precision: `/2605/` carves exactly the arXiv
+  // month directory, whereas a bare `2605.` also matches mid-id paths like
+  // `.../cond-mat0302605/cond-mat0302605.zip` (`0302605.zip` literally contains `2605.`). Always
+  // bound (default `%` = match every entry) so the three SQL branches share one extra bind slot.
+  // Trimmed; blank = no narrowing.
   let entry_pattern = selection
     .entry
     .as_deref()

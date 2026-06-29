@@ -122,7 +122,7 @@
       <label for="sbx-what">What <span class="muted">(optional)</span></label>
       <input id="sbx-what" type="text" name="what" placeholder="e.g. foo.cls" aria-label="Message what filter (optional)">
       <label for="sbx-entry">Entry filter <span class="muted">(optional)</span></label>
-      <input id="sbx-entry" type="text" name="entry" placeholder="path contains, e.g. 2506. for one arXiv month" aria-label="Entry path substring filter (optional)">
+      <input id="sbx-entry" type="text" name="entry" placeholder="path contains, e.g. /2506/ for one arXiv month" aria-label="Entry path substring filter (optional)">
       <label for="sbx-max">Max entries <span class="muted">(optional)</span></label>
       <input id="sbx-max" type="number" name="max_entries" min="1" placeholder="no limit" aria-label="Maximum entries to capture (optional)">
       <button type="submit" class="btn-primary action-submit">Prepare sandbox</button>

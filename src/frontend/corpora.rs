@@ -740,8 +740,8 @@ pub struct SandboxRequest {
   /// Optional `what` narrowing within the category (needs `category`).
   #[serde(default)]
   pub what: Option<String>,
-  /// Optional substring the parent `entry` path must contain (`entry LIKE '%…%'`, e.g. `2506.` for
-  /// one arXiv month). Empty/absent = no narrowing.
+  /// Optional substring the parent `entry` path must contain (`entry LIKE '%…%'`, e.g. `/2506/`
+  /// for one arXiv month). Empty/absent = no narrowing.
   #[serde(default)]
   pub entry: Option<String>,
   /// Optional hard cap on the number of entries captured (the first `n` by `entry` order). Absent

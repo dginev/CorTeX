@@ -393,7 +393,7 @@ enum Command {
     /// Restrict to a message `what` within the category.
     #[arg(long)]
     what: Option<String>,
-    /// Restrict to entries whose path contains this substring (e.g. `2506.` for one arXiv month).
+    /// Restrict to entries whose path contains this substring (e.g. `/2506/` for one arXiv month).
     #[arg(long)]
     entry: Option<String>,
     /// Cap the carve at the first N entries (by entry order) — a deterministic size limit.
