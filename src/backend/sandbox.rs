@@ -32,8 +32,9 @@ use crate::models::{Corpus, NewSandboxCorpus};
 pub struct SandboxSelection {
   /// the service whose conversion results are being filtered
   pub service_id: i32,
-  /// optional **task-status** filter (`no_problem` | `warning` | `error` | `fatal` | `invalid`) —
-  /// the task's overall outcome. Intersected with the message filter below.
+  /// optional **task-status** filter (`todo` | `no_problem` | `warning` | `error` | `fatal` |
+  /// `invalid`) — the task's status (`todo` = not yet run). Intersected with the message filter
+  /// below.
   #[serde(default)]
   pub status: Option<String>,
   /// optional **message-severity** filter (`info` | `warning` | `error` | `fatal` | `invalid`) —
@@ -142,7 +143,9 @@ impl SandboxSelection {
       Some(key) => Some(
         TaskStatus::from_key(key)
           .ok_or_else(|| {
-            format!("unknown task status '{key}' (use no_problem, warning, error, fatal, invalid)")
+            format!(
+              "unknown task status '{key}' (use todo, no_problem, warning, error, fatal, invalid)"
+            )
           })?
           .raw(),
       ),
