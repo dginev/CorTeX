@@ -379,8 +379,8 @@ enum Command {
     /// Service whose conversion results are filtered (e.g. tex_to_html).
     #[arg(long)]
     service: String,
-    /// Filter by task status (`no_problem`|`warning`|`error`|`fatal`|`invalid`) — intersected with
-    /// the message filter; supply at least one of the two.
+    /// Filter by task status (`todo`|`no_problem`|`warning`|`error`|`fatal`|`invalid`) —
+    /// intersected with the message filter; supply at least one of the two.
     #[arg(long)]
     status: Option<String>,
     /// Filter by message severity (`info`|`warning`|`error`|`fatal`|`invalid`) — tasks that
@@ -2080,7 +2080,7 @@ fn run_extend(corpus_name: String) {
     .select_services(&mut importer.backend.connection)
     .unwrap_or_default();
   for service in services.iter().filter(|service| service.id > 2) {
-    if let Err(error) = importer.backend.extend_service(service, &corpus_path) {
+    if let Err(error) = importer.backend.extend_service(service, &importer.corpus) {
       eprintln!(
         "Warning: could not extend service {}: {error}",
         service.name
@@ -2130,9 +2130,9 @@ fn run_activate(corpus_name: String, service_name: String, owner: String, descri
     std::process::exit(1);
   }
   println!("Activating {} on {} …", service.name, corpus.name);
-  // `register_service` looks the corpus up by path and creates a TODO task per imported document.
+  // `register_service` creates a TODO task per imported document for the resolved corpus.
   // It is idempotent-neutral: an already-activated pair returns a descriptive Err (no wipe).
-  if let Err(error) = backend.register_service(&service, &corpus.path, owner, description) {
+  if let Err(error) = backend.register_service(&service, &corpus, owner, description) {
     eprintln!("Activation failed: {error}");
     std::process::exit(1);
   }

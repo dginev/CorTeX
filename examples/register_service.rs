@@ -8,7 +8,7 @@
 //! Register a service with a given name on a corpus with a given path
 //! Example run: `cargo run --release --example register_service tex_to_html /data/arxmliv/`
 use cortex::backend::Backend;
-use cortex::models::Service;
+use cortex::models::{Corpus, Service};
 use std::env;
 
 fn main() {
@@ -36,12 +36,14 @@ fn main() {
   let service_registered_result = Service::find_by_name(&service_name, &mut backend.connection);
   assert!(service_registered_result.is_ok());
   let service_registered = service_registered_result.unwrap();
+  let corpus = Corpus::find_by_path(&corpus_path, &mut backend.connection)
+    .expect("corpus exists for the given path");
 
   assert!(
     backend
       .register_service(
         &service_registered,
-        &corpus_path,
+        &corpus,
         "cli-admin".to_string(),
         "Newly registered service, initial run.".to_string(),
       )

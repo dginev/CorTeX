@@ -98,7 +98,7 @@ fn main() {
               "   Extending service {:?} on corpus {:?}",
               service.name, corpus.name
             );
-            if let Err(e) = backend.extend_service(&service, &corpus.path) {
+            if let Err(e) = backend.extend_service(&service, &corpus) {
               eprintln!(
                 "-- Service extension FAILED for {:?} on {:?}: {e:?}",
                 service.name, corpus.name

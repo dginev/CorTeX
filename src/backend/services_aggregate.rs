@@ -9,13 +9,15 @@ use diesel::*;
 pub(crate) fn register_service(
   connection: &mut PgConnection,
   service: &Service,
-  corpus_path: &str,
+  corpus: &Corpus,
   owner: String,
   description: String,
 ) -> Result<(), Error> {
   use crate::schema::tasks::dsl::*;
   use crate::schema::{log_errors, log_fatals, log_infos, log_invalids, log_warnings};
-  let corpus = Corpus::find_by_path(corpus_path, connection)?;
+  // The caller resolves the exact corpus (by name) and passes it in — we must NOT re-resolve by
+  // path, because a sandbox shares its parent's path (`find_by_path` would return the parent and
+  // we'd register/check against the wrong corpus). See KNOWN_ISSUES — sandbox activation.
   let todo_raw = TaskStatus::TODO.raw();
   let service_id_val = service.id;
   let corpus_id_val = corpus.id;
@@ -96,17 +98,19 @@ pub(crate) fn register_service(
     // `mark_new_run` error rolls the freshly-created tasks back too — never
     // tasks-created-but-no-run, nor a "failed" activate job that in fact created the tasks.
     // `mark_new_run`'s own transaction nests here as a savepoint.
-    mark::mark_new_run(t_connection, &corpus, service, owner, description)
+    mark::mark_new_run(t_connection, corpus, service, owner, description)
   })
 }
 
 pub(crate) fn extend_service(
   connection: &mut PgConnection,
   service: &Service,
-  corpus_path: &str,
+  corpus: &Corpus,
 ) -> Result<(), Error> {
   use crate::schema::tasks::dsl::*;
-  let corpus = Corpus::find_by_path(corpus_path, connection)?;
+  // Resolve by the passed corpus, NOT by path: a sandbox shares its parent's path, so
+  // `find_by_path` would return the parent and extend the wrong corpus (same bug as
+  // register_service).
   let todo_raw = TaskStatus::TODO.raw();
 
   let import_service = Service::find_by_name("import", connection)?;

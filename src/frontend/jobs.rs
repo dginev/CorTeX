@@ -186,11 +186,24 @@ pub fn job_page(
   uuid: &str,
   session: Option<AdminSession>,
   return_to: ReturnTo,
+  pool: &State<DbPool>,
 ) -> Result<Template, AdminReject> {
   require_admin_to(session, &return_to)?;
+  // Load the job server-side so a terminal job — especially a FAILED one — renders its status and
+  // message immediately. This page is cookie-gated (AdminSession), but the client-side poll hits
+  // the Actor-token-gated `/api/jobs/<uuid>`; without the token the fetch 401s and the page used
+  // to show a misleading "not found". Rendering the state here makes failures visible regardless
+  // of the poll.
+  let job = Uuid::parse_str(uuid).ok().and_then(|parsed| {
+    let mut connection = pool.get().ok()?;
+    let found = jobs::find_job(&mut connection, parsed)?;
+    let now = jobs::db_now(&mut connection);
+    Some(JobDto::at(found, now))
+  });
   let global = serde_json::json!({
     "title": "Job progress",
     "description": "Background job progress",
+    "job": job,
   });
   Ok(Template::render("job", context! { uuid, global }))
 }

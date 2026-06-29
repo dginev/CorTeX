@@ -99,11 +99,13 @@ fn main() {
     },
   };
 
+  let corpus = Corpus::find_by_path(&corpus_path, &mut backend.connection)
+    .expect("corpus exists for the given path");
   assert!(
     backend
       .register_service(
         &service_registered,
-        &corpus_path,
+        &corpus,
         "cli-admin".to_string(),
         "Newly registered service, initial run.".to_string(),
       )

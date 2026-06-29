@@ -232,31 +232,28 @@ impl Backend {
     tasks_aggregate::clear_limbo_tasks_except(&mut self.connection, in_flight)
   }
 
-  /// Activates an existing service on a given corpus (via PATH)
+  /// Activates an existing service on the given corpus.
   /// if the service has previously been registered, this call will `RESET` the service into a mint
   /// state also removing any related log messages. The new run is attributed to `owner` with
-  /// `description` (the UI/API thread the actor; the CLI passes a default).
+  /// `description` (the UI/API thread the actor; the CLI passes a default). Takes the resolved
+  /// `Corpus` (not a path): a sandbox shares its parent's path, so a path lookup would hit the
+  /// parent.
   pub fn register_service(
     &mut self,
     service: &Service,
-    corpus_path: &str,
+    corpus: &Corpus,
     owner: String,
     description: String,
   ) -> Result<(), Error> {
-    services_aggregate::register_service(
-      &mut self.connection,
-      service,
-      corpus_path,
-      owner,
-      description,
-    )
+    services_aggregate::register_service(&mut self.connection, service, corpus, owner, description)
   }
 
-  /// Extends an existing service on a given corpus (via PATH)
+  /// Extends an existing service on the given corpus.
   /// if the service has previously been registered, this call will ignore existing entries and
-  /// simply add newly encountered ones
-  pub fn extend_service(&mut self, service: &Service, corpus_path: &str) -> Result<(), Error> {
-    services_aggregate::extend_service(&mut self.connection, service, corpus_path)
+  /// simply add newly encountered ones. Takes the resolved `Corpus` (not a path) for the same
+  /// sandbox-shares-parent-path reason as `register_service`.
+  pub fn extend_service(&mut self, service: &Service, corpus: &Corpus) -> Result<(), Error> {
+    services_aggregate::extend_service(&mut self.connection, service, corpus)
   }
 
   /// Permanently destroys a service by name — its definition plus all of its tasks + `log_*` rows

@@ -250,7 +250,7 @@ fn register_service_creates_tasks_and_attributes_the_run() {
 
   db.register_service(
     &target,
-    corpus_path,
+    &corpus,
     "activator-bob".to_string(),
     "test activation".to_string(),
   )
@@ -291,7 +291,7 @@ fn register_service_creates_tasks_and_attributes_the_run() {
   .expect("seed a log on the activated task");
   let reregister = db.register_service(
     &target,
-    corpus_path,
+    &corpus,
     "activator-bob".to_string(),
     "re-activation".to_string(),
   );

@@ -726,7 +726,8 @@ pub struct SandboxRequest {
   pub name: String,
   /// The service whose conversion results are filtered.
   pub service_id: i32,
-  /// Optional **task-status** filter (`no_problem` | `warning` | `error` | `fatal` | `invalid`).
+  /// Optional **task-status** filter (`todo` | `no_problem` | `warning` | `error` | `fatal` |
+  /// `invalid`).
   #[serde(default)]
   pub status: Option<String>,
   /// Optional **message-severity** filter (`info` | `warning` | `error` | `fatal` | `invalid`) —
@@ -988,7 +989,6 @@ pub fn extend_corpus_human(
 /// (non-init/import) services, returning the resulting import-task count.
 fn run_extend(database_url: &str, corpus: Corpus, progress: &JobProgress) -> Result<Value, String> {
   let corpus_id = corpus.id;
-  let corpus_path = corpus.path.clone();
   let mut importer = Importer {
     corpus,
     backend: from_address(database_url),
@@ -1006,7 +1006,7 @@ fn run_extend(database_url: &str, corpus: Corpus, progress: &JobProgress) -> Res
   for service in services.iter().filter(|service| service.id > 2) {
     importer
       .backend
-      .extend_service(service, &corpus_path)
+      .extend_service(service, &importer.corpus)
       .map_err(|error| error.to_string())?;
   }
   let imported = count_service_tasks(&mut importer.backend.connection, corpus_id, 2);
@@ -1117,7 +1117,6 @@ fn run_activate(
   progress: &JobProgress,
 ) -> Result<Value, String> {
   let (corpus_id, service_id) = (corpus.id, service.id);
-  let corpus_path = corpus.path.clone();
   let corpus_name = corpus.name.clone();
   let service_name = service.name.clone();
   let mut backend = from_address(database_url);
@@ -1129,7 +1128,7 @@ fn run_activate(
   backend
     .register_service(
       &service,
-      &corpus_path,
+      &corpus,
       owner,
       format!("Activated service {service_name} on {corpus_name}"),
     )

@@ -3,18 +3,27 @@
 <div class="col-md-6">
   <h1>Job progress</h1>
   <p class="muted">Job <code id="uuid">{{ uuid }}</code></p>
-  <p>Status: <span id="status" class="status">…</span> &middot; <span id="kind" class="muted"></span></p>
+  <p>Status:
+    <span id="status" class="status{% if global.job %}{% if global.job.status == 'succeeded' %} ok{% elif global.job.status == 'failed' or global.job.status == 'interrupted' %} fail{% endif %}{% endif %}">{% if global.job %}{{ global.job.status }}{% else %}not found{% endif %}</span>
+    &middot; <span id="kind" class="muted">{% if global.job %}{{ global.job.kind }}{% endif %}</span>
+  </p>
   <p id="duration" class="muted" hidden></p>
-  <progress id="bar" max="1" value="0"></progress>
-  <p id="message" class="muted"></p>
+  <progress id="bar" max="{% if global.job and global.job.progress_total %}{{ global.job.progress_total }}{% else %}1{% endif %}" value="{% if global.job %}{{ global.job.progress_current }}{% else %}0{% endif %}"></progress>
+  <p id="message" class="muted">{% if global.job %}{{ global.job.message }}{% endif %}</p>
   <pre id="result" hidden></pre>
   <p id="next-step" class="status-ok"></p>
   <p><a href="/jobs">&larr; all background jobs</a></p>
 
+  <!-- The job's current state is rendered server-side (the spans above + this JSON), so a terminal
+       job — especially a FAILED one — is visible even when the token-gated `/api/jobs` poll can't
+       read it from this cookie-gated page. -->
+  <script type="application/json" id="job-data">{% if global.job %}{{ global.job | json_encode() | safe }}{% else %}null{% endif %}</script>
   <script>
     // Vanilla fetch polling — no JS framework (D11). Light and dependency-free.
     const uuid = document.getElementById('uuid').textContent;
     const terminal = ['succeeded', 'failed', 'interrupted'];
+    let initialJob = null;
+    try { initialJob = JSON.parse(document.getElementById('job-data').textContent); } catch (e) {}
     let timer = null;
     function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
     // Human-friendly elapsed time from the DTO's duration_seconds (updated_at - created_at).
@@ -39,15 +48,11 @@
         default: return '';
       }
     }
-    async function poll() {
-      let resp;
-      try { resp = await fetch('/api/jobs/' + uuid); } catch (e) { return; }
-      if (!resp.ok) { document.getElementById('status').textContent = 'not found'; if (timer) clearInterval(timer); return; }
-      const job = await resp.json();
+    function render(job) {
       const status = document.getElementById('status');
       status.textContent = job.status;
       status.className = 'status' + (job.status === 'succeeded' ? ' ok' : (job.status === 'failed' || job.status === 'interrupted' ? ' fail' : ''));
-      document.getElementById('kind').textContent = job.kind;
+      document.getElementById('kind').textContent = job.kind || '';
       document.getElementById('message').textContent = job.message || '';
       const bar = document.getElementById('bar');
       if (job.progress_total) { bar.max = job.progress_total; bar.value = job.progress_current; }
@@ -62,8 +67,18 @@
         if (job.status === 'succeeded') { document.getElementById('next-step').innerHTML = nextStep(job); }
       }
     }
-    timer = setInterval(poll, 1000);
-    poll();
+    async function poll() {
+      let resp;
+      try { resp = await fetch('/api/jobs/' + uuid); } catch (e) { return; }
+      // A non-ok poll (e.g. 401 — this page is cookie-gated, the API is token-gated) must NOT clobber
+      // the server-rendered state with a misleading "not found": keep the last-known state and stop.
+      if (!resp.ok) { if (timer) clearInterval(timer); return; }
+      render(await resp.json());
+    }
+    // Render the server-provided state first (works even when the token-gated poll can't), then poll
+    // for live updates only while the job is still running (terminal jobs are already final).
+    if (initialJob) { render(initialJob); }
+    if (!initialJob || !terminal.includes(initialJob.status)) { timer = setInterval(poll, 1000); poll(); }
   </script>
 </div>
 <div class="col-md-3"></div>
