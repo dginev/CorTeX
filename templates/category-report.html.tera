@@ -1,5 +1,5 @@
 {% extends "layout" %} {% block content %}
-<div class="report">
+<div class="report report-wide">
   {% include "breadcrumb" %}
   <header class="report-header">
     <h1 class="report-title">{{global.category}} <span class="report-sep">·</span> what</h1>
@@ -38,7 +38,8 @@
       <tr>
         <td class="left">
           {# The "total" aggregate is a static numeric placeholder — no link, no drill-in chevron. #}
-          {% if this.name == "total" %}{{this.name}}{% else %}<a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}/{{global.category_uri}}/{{this.name_uri}}?all={{global.all_messages}}">{{this.name}}</a>{% endif %}
+          {# `.what-scroll` is the per-cell horizontal-scroll container (a <td> can't scroll its own overflow). #}
+          <div class="what-scroll">{% if this.name == "total" %}{{this.name}}{% else %}<a href="/corpus/{{global.corpus_name_uri}}/{{global.service_name_uri}}/{{global.severity}}/{{global.category_uri}}/{{this.name_uri}}?all={{global.all_messages}}">{{this.name}}</a>{% endif %}</div>
         </td>
         <td class="bar-cell"><span class="bar-track"><span class="bar {% if global.severity == 'warning' %}warn{% elif global.severity == 'error' %}error{% elif global.severity == 'fatal' %}fatal{% endif %}" style="--bar-width: {{this.tasks_percent}}%"></span></span></td>
         <td class="right">{{ this.tasks_percent | float(default=0) | round }}%</td>

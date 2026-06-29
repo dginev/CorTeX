@@ -1621,6 +1621,53 @@ h3 {
   margin: 0 auto;
   padding: 1rem;
 }
+/* What-level reports (the `ambiguous_math` / `unparsed_math` what-tables) carry long token-type
+   footprints in the What column. The report lives inside `<main class="container">` (Bootstrap caps
+   it at ~1170px), so a plain `max-width` only widens within that cap and leaves a wide screen mostly
+   empty. Break out to the viewport at 90% — the same escape hatch `.report-layout-bleed` /
+   `.document-report-page` use (`left:50%` + `translateX(-50%)` centres a 90vw block on the viewport
+   regardless of the narrower container it sits in). No max-width cap: "full 90% of the page". A
+   too-wide table still scrolls within itself rather than overflowing. */
+.report.report-wide {
+  width: 90vw;
+  max-width: none;
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
+  overflow-x: auto;
+}
+/* The footprint (first) column is capped at 75% of the table so the count columns stay visible; the
+   long underscore-joined footprint stays on ONE line and scrolls horizontally within the cell when
+   it exceeds the cap. A `<td>` can't scroll its own overflow (overflow on a table-cell is undefined),
+   so the inner `.what-scroll` block is the scroll container. (The proportion bar is a fixed 10rem —
+   see `.bar-cell` — so the footprint column can claim its 75%.) Scoped via `.report-wide`. */
+.report-wide .report-table {
+  /* Fixed layout so a long nowrap footprint can't stretch its column past its share: column widths
+     come from the header row, NOT the content, so the table stays within the 90vw `.report-wide` and
+     the footprint scrolls WITHIN its cell. (Under the default auto layout the unbreakable 199-char
+     string sets the column's min-content width and `max-width` is ignored — the bug in the shot.) */
+  table-layout: fixed;
+}
+/* Reserve the small columns (proportion bar + the three count columns) explicit widths; the What
+   column takes the remaining width — ~70% on a normal screen, i.e. AT MOST 75% as asked, without
+   pinning it to exactly 75% (which would squeeze the count headers into clipping). */
+.report-wide .report-table th.bar-col {
+  width: 10rem;
+}
+.report-wide .report-table th.right {
+  width: 6rem;
+}
+.report-wide .report-table td.left .what-scroll {
+  overflow-x: auto;
+  white-space: nowrap;
+}
+/* The per-cell horizontal scrollbar on `.what-scroll` otherwise sits right on the footprint glyphs
+   (notably in Firefox). A taller line box — inherited by `.what-scroll` — lifts the text off the
+   scrollbar so they don't touch. (A td `padding-bottom` can't fix this: it adds room *outside* the
+   scroll box, not between the text and its scrollbar.) */
+.report-wide .report-table td {
+  line-height: 2.5rem;
+}
 .report-header {
   border-bottom: 1px solid var(--rule);
   padding-bottom: 0.85rem;
@@ -1656,9 +1703,10 @@ h3 {
 .report-table {
   width: 100%;
 }
-/* Inline proportion bar. */
+/* Inline proportion bar — a fixed 10rem column (was 42%), so the adjacent What column gets the
+   remaining width (it needs it on the wide what-level report, where footprints are long). */
 .bar-cell {
-  width: 42%;
+  width: 10rem;
 }
 .bar-track {
   display: block;
