@@ -22,6 +22,7 @@ cortex.toml
 
 # Local environment / secrets — never commit real credentials (template: .env.example)
 .env
+.env.predeploy
 
 # Owner's private hand-off brief (lives locally, not committed upstream)
 docs/CorTeX-productizing-HANDOFF.md
