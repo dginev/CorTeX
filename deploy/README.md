@@ -55,6 +55,25 @@ The dedicated tunnel key (`~/.ssh/cortex_tunnel_ed25519`) maps to a locked-down 
 user on the edge whose `authorized_keys` is `restrict,port-forwarding,permitlisten="127.0.0.1:8000"`
 — it can hold *only* that one reverse forward and nothing else.
 
+### Worker host prerequisites (AppArmor + Ghostscript)
+
+The worker fleet rasterizes EPS/PS figures with `gs`, staging in
+`TMPDIR=/opt/cortex-scratch`. Ubuntu's stock `gs` AppArmor profile confines
+`/usr/bin/gs` to `@{HOME}`/`/tmp`/`/mnt`/`/media` and denies the scratch dir, so
+every EPS/PS conversion silently fails (gs aborts with `/undefinedfilename` yet
+exits 0). Install the sanctioned local override (idempotent):
+
+```bash
+sudo install -d -m 755 /etc/apparmor.d/local
+sudo cp deploy/apparmor/local-gs /etc/apparmor.d/local/gs
+sudo apparmor_parser -r /etc/apparmor.d/gs
+```
+
+Also ensure `ghostscript imagemagick poppler-utils mupdf-tools` are installed
+(the converter chain) and that ImageMagick's `policy.xml` permits PS/EPS/PDF.
+The Docker worker image (`docker/cortex-worker.dockerfile`) bakes all of this in
+and is unaffected by the host `gs` profile (it runs under `docker-default`).
+
 ### Services
 
 | Unit | Role |

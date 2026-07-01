@@ -1,0 +1,29 @@
+# AppArmor local override for Ghostscript — install as /etc/apparmor.d/local/gs
+#
+# Ubuntu ships a confined `gs` profile (/etc/apparmor.d/gs) that limits
+# /usr/bin/gs to @{HOME}, /tmp, /media, /mnt and a fixed set of file
+# extensions. The CorTeX worker fleet runs gs OUT of those trees: it stages in
+# TMPDIR=/opt/cortex-scratch (a secondary NVMe, see worker.env), so every
+# EPS/PS -> PNG rasterization hit `openat(...) = EACCES` and gs aborted with
+# `/undefinedfilename` — yet exits 0, so the failure was silent until the
+# graphics post-processor learned to verify a non-empty output file. Symptom at
+# scale: ~4000 papers, every EPS/PS figure failing imageprocessing:failed_to_convert.
+#
+# The stock profile ends with `include if exists <local/gs>`, so this file is
+# the sanctioned override hook. Unrestricted by extension because the gs raster
+# path writes a temporary ".<stem>.<nonce>.gs" file before renaming to the final
+# target. Scoped to the scratch dir only.
+#
+# Apply (idempotent):
+#   sudo install -d -m 755 /etc/apparmor.d/local
+#   sudo cp deploy/apparmor/local-gs /etc/apparmor.d/local/gs
+#   sudo apparmor_parser -r /etc/apparmor.d/gs
+# Verify the worker can convert: a paper with an EPS/PS figure should emit PNGs
+# with zero imageprocessing:failed_to_convert in cortex.log.
+#
+# (Docker deployments do NOT need this: the container runs under Docker's
+# `docker-default` AppArmor profile, not the host per-binary `gs` profile, and
+# the image now installs ghostscript explicitly — see docker/cortex-worker.dockerfile
+# in the latexml-oxide repo.)
+
+  owner file rw /opt/cortex-scratch/**,
