@@ -278,10 +278,14 @@ impl Sink {
       .build()?;
 
     let recv_result: Result<(), Box<dyn Error>> = runtime.block_on(async {
-      // Retry the bind briefly (mirrors the ventilator) so a port handover from a
-      // restarting dispatcher doesn't crash-loop the sink on EADDRINUSE.
+      // Retry the bind (mirrors the ventilator) so a port handover from a restarting
+      // dispatcher doesn't crash-loop the sink on EADDRINUSE. The window must OUTLAST TCP
+      // TIME_WAIT (~60s = tcp_fin_timeout), not just a few seconds — see the ventilator's
+      // note (observed 2026-07-01: the old 7.5s window crash-looped the sink through the
+      // full 60s TIME_WAIT until systemd's start-limit gave up).
       let mut pull = {
-        const BIND_ATTEMPTS: u32 = 15;
+        // 150 * 500ms = 75s > tcp_fin_timeout (60s) TIME_WAIT, with margin.
+        const BIND_ATTEMPTS: u32 = 150;
         let mut attempt = 1u32;
         loop {
           let mut p = PullSocket::new();

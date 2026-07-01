@@ -82,14 +82,18 @@ impl Ventilator {
     // fail-fast (the manager aborts the thread → external restart), but with a diagnosable cause
     // and consistent with every other fallible call here + the sink's bind (KNOWN_ISSUES
     // robustness: no bare `unwrap` on the dispatch path).
-    // Retry the bind briefly: on a clean restart the previous dispatcher can still
-    // hold the port for a second or two (its graceful-shutdown drain, or socket
-    // TIME_WAIT), so a one-shot bind crash-loops the new process on EADDRINUSE — the
-    // "Failed to start TaskManager" abort seen restarting the dispatcher (2026-06-17).
-    // Retry with backoff; if it still fails, propagate (the manager aborts → external
-    // restart) with a diagnosable cause.
+    // Retry the bind: on a restart the port can sit in TCP TIME_WAIT held by the
+    // previous dispatcher's closed connections. That lasts ~`tcp_fin_timeout` (60s on
+    // Linux by default), NOT "a second or two" — so a short retry window crash-loops the
+    // new process on EADDRINUSE the whole time TIME_WAIT persists (observed 2026-07-01: a
+    // 7.5s / 15-attempt window kept failing on the sink port through the full 60s TIME_WAIT,
+    // systemd hit its start-limit and gave up). Size the window to comfortably OUTLAST
+    // TIME_WAIT (75s > 60s + margin) so a normal restart self-heals without operator action;
+    // a genuinely-occupied port still fails (with a diagnosable cause → manager aborts →
+    // external restart), just after the full window.
     {
-      const BIND_ATTEMPTS: u32 = 15;
+      // 150 * 500ms = 75s > tcp_fin_timeout (60s) TIME_WAIT, with margin.
+      const BIND_ATTEMPTS: u32 = 150;
       let mut attempt = 1u32;
       loop {
         match ventilator.bind(&address) {
