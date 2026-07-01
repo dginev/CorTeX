@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["complex","description","id","name","parent_corpus_id","path","public_id","selection","star"]};

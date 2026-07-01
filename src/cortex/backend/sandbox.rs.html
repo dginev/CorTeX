@@ -1,0 +1,397 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/backend/sandbox.rs`."><title>sandbox.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-1ed95124.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="cortex" data-themes="" data-resource-suffix="" data-rustdoc-version="1.98.0-nightly (f46ec5218 2026-06-30)" data-channel="nightly" data-search-js="search-9944d736.js" data-stringdex-js="stringdex-2da4960a.js" data-settings-js="settings-170eb4bf.js" ><script src="../../../static.files/storage-41dd4d93.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-417ebf0a.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-f7c3ffd8.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><h1><div class="sub-heading">cortex/backend/</div>sandbox.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="comment">// Copyright 2015-2025 Deyan Ginev. See the LICENSE
+<a href=#2 id=2 data-nosnippet>2</a>// file at the top-level directory of this distribution.
+<a href=#3 id=3 data-nosnippet>3</a>//
+<a href=#4 id=4 data-nosnippet>4</a>// Licensed under the MIT license &lt;LICENSE-MIT or http://opensource.org/licenses/MIT&gt;.
+<a href=#5 id=5 data-nosnippet>5</a>// This file may not be copied, modified, or distributed
+<a href=#6 id=6 data-nosnippet>6</a>// except according to those terms.
+<a href=#7 id=7 data-nosnippet>7</a>
+<a href=#8 id=8 data-nosnippet>8</a></span><span class="doccomment">//! Sandbox corpora (Arm 5) — carve a working subset out of a parent corpus by a **message-condition
+<a href=#9 id=9 data-nosnippet>9</a>//! filter**, as a first-class corpus an agent (or human) can iterate conversion campaigns on.
+<a href=#10 id=10 data-nosnippet>10</a>//!
+<a href=#11 id=11 data-nosnippet>11</a>//! A sandbox is an ordinary `corpora` row with two extra columns set: `parent_corpus_id` (the
+<a href=#12 id=12 data-nosnippet>12</a>//! corpus it was carved from) and `selection` (the filter predicate). The selection IS the
+<a href=#13 id=13 data-nosnippet>13</a>//! provenance — the predicate applied over the parent — so no per-task origin link is kept (owner
+<a href=#14 id=14 data-nosnippet>14</a>//! decision 2026-06-15). Sources are referenced **in place** (the sandbox shares the parent's entry
+<a href=#15 id=15 data-nosnippet>15</a>//! paths; nothing is copied) and the carved set is a **one-time snapshot** evaluated at creation.
+<a href=#16 id=16 data-nosnippet>16</a>//! See `docs/archive/SANDBOX_CORPORA.md`.
+<a href=#17 id=17 data-nosnippet>17</a>
+<a href=#18 id=18 data-nosnippet>18</a></span><span class="kw">use </span>diesel::result::Error;
+<a href=#19 id=19 data-nosnippet>19</a><span class="kw">use </span>diesel::sql_types::Text;
+<a href=#20 id=20 data-nosnippet>20</a><span class="kw">use </span>diesel::<span class="kw-2">*</span>;
+<a href=#21 id=21 data-nosnippet>21</a><span class="kw">use </span>serde::{Deserialize, Serialize};
+<a href=#22 id=22 data-nosnippet>22</a>
+<a href=#23 id=23 data-nosnippet>23</a><span class="kw">use </span><span class="kw">crate</span>::concerns::CortexInsertable;
+<a href=#24 id=24 data-nosnippet>24</a><span class="kw">use </span><span class="kw">crate</span>::helpers::TaskStatus;
+<a href=#25 id=25 data-nosnippet>25</a><span class="kw">use </span><span class="kw">crate</span>::models::{Corpus, NewSandboxCorpus};
+<a href=#26 id=26 data-nosnippet>26</a>
+<a href=#27 id=27 data-nosnippet>27</a><span class="doccomment">/// The filter that defines a sandbox: a slice of the parent corpus addressed by independent,
+<a href=#28 id=28 data-nosnippet>28</a>/// **intersected** task-status and message (`severity`/`category`/`what`) dimensions (Model C),
+<a href=#29 id=29 data-nosnippet>29</a>/// plus optional entry/limit narrowing. Serialized verbatim into the sandbox corpus's `selection`
+<a href=#30 id=30 data-nosnippet>30</a>/// JSON.
+<a href=#31 id=31 data-nosnippet>31</a></span><span class="attr">#[derive(Clone, Debug, Serialize, Deserialize)]
+<a href=#32 id=32 data-nosnippet>32</a></span><span class="kw">pub struct </span>SandboxSelection {
+<a href=#33 id=33 data-nosnippet>33</a>  <span class="doccomment">/// the service whose conversion results are being filtered
+<a href=#34 id=34 data-nosnippet>34</a>  </span><span class="kw">pub </span>service_id: i32,
+<a href=#35 id=35 data-nosnippet>35</a>  <span class="doccomment">/// optional **task-status** filter (`todo` | `no_problem` | `warning` | `error` | `fatal` |
+<a href=#36 id=36 data-nosnippet>36</a>  /// `invalid`) — the task's status (`todo` = not yet run). Intersected with the message filter
+<a href=#37 id=37 data-nosnippet>37</a>  /// below.
+<a href=#38 id=38 data-nosnippet>38</a>  </span><span class="attr">#[serde(default)]
+<a href=#39 id=39 data-nosnippet>39</a>  </span><span class="kw">pub </span>status: <span class="prelude-ty">Option</span>&lt;String&gt;,
+<a href=#40 id=40 data-nosnippet>40</a>  <span class="doccomment">/// optional **message-severity** filter (`info` | `warning` | `error` | `fatal` | `invalid`) —
+<a href=#41 id=41 data-nosnippet>41</a>  /// the carve keeps tasks that *emitted* a message of this severity (any task status).
+<a href=#42 id=42 data-nosnippet>42</a>  /// `category`/`what` narrow within it.
+<a href=#43 id=43 data-nosnippet>43</a>  </span><span class="attr">#[serde(default)]
+<a href=#44 id=44 data-nosnippet>44</a>  </span><span class="kw">pub </span>message_severity: <span class="prelude-ty">Option</span>&lt;String&gt;,
+<a href=#45 id=45 data-nosnippet>45</a>  <span class="doccomment">/// optional message-category narrowing (needs `message_severity`)
+<a href=#46 id=46 data-nosnippet>46</a>  </span><span class="attr">#[serde(default)]
+<a href=#47 id=47 data-nosnippet>47</a>  </span><span class="kw">pub </span>category: <span class="prelude-ty">Option</span>&lt;String&gt;,
+<a href=#48 id=48 data-nosnippet>48</a>  <span class="doccomment">/// optional `what` narrowing within the category (needs `category`)
+<a href=#49 id=49 data-nosnippet>49</a>  </span><span class="attr">#[serde(default)]
+<a href=#50 id=50 data-nosnippet>50</a>  </span><span class="kw">pub </span>what: <span class="prelude-ty">Option</span>&lt;String&gt;,
+<a href=#51 id=51 data-nosnippet>51</a>  <span class="doccomment">/// optional substring the parent `entry` must contain, matched at any position (`entry LIKE
+<a href=#52 id=52 data-nosnippet>52</a>  /// '%…%'`). Include slashes for precision — `/2605/` carves exactly the arXiv month (a bare
+<a href=#53 id=53 data-nosnippet>53</a>  /// `2605.` also matches mid-id paths like `…0302605.zip`). `None`/empty = no narrowing.
+<a href=#54 id=54 data-nosnippet>54</a>  </span><span class="attr">#[serde(default)]
+<a href=#55 id=55 data-nosnippet>55</a>  </span><span class="kw">pub </span>entry: <span class="prelude-ty">Option</span>&lt;String&gt;,
+<a href=#56 id=56 data-nosnippet>56</a>  <span class="doccomment">/// optional hard cap on how many entries the carve captures — the first `n` by `entry` order
+<a href=#57 id=57 data-nosnippet>57</a>  /// (deterministic). `None`/non-positive = no cap.
+<a href=#58 id=58 data-nosnippet>58</a>  </span><span class="attr">#[serde(default)]
+<a href=#59 id=59 data-nosnippet>59</a>  </span><span class="kw">pub </span>max_entries: <span class="prelude-ty">Option</span>&lt;i64&gt;,
+<a href=#60 id=60 data-nosnippet>60</a>  <span class="doccomment">/// **Legacy** (pre-Model-C) single overloaded severity — kept only so selections stored before
+<a href=#61 id=61 data-nosnippet>61</a>  /// the status/message split still render their provenance. Never set by new carves.
+<a href=#62 id=62 data-nosnippet>62</a>  </span><span class="attr">#[serde(default, skip_serializing_if = <span class="string">"Option::is_none"</span>)]
+<a href=#63 id=63 data-nosnippet>63</a>  </span><span class="kw">pub </span>severity: <span class="prelude-ty">Option</span>&lt;String&gt;,
+<a href=#64 id=64 data-nosnippet>64</a>}
+<a href=#65 id=65 data-nosnippet>65</a>
+<a href=#66 id=66 data-nosnippet>66</a><span class="doccomment">/// The message-severity → `log_*` table map (includes `info`, which has no [`TaskStatus`]). The
+<a href=#67 id=67 data-nosnippet>67</a>/// only thing the carve interpolates into SQL, and it comes from this fixed map — never user input.
+<a href=#68 id=68 data-nosnippet>68</a></span><span class="kw">fn </span>message_log_table(message_severity: <span class="kw-2">&amp;</span>str) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'static </span>str&gt; {
+<a href=#69 id=69 data-nosnippet>69</a>  <span class="kw">match </span>message_severity {
+<a href=#70 id=70 data-nosnippet>70</a>    <span class="string">"info" </span>=&gt; <span class="prelude-val">Some</span>(<span class="string">"log_infos"</span>),
+<a href=#71 id=71 data-nosnippet>71</a>    <span class="string">"warning" </span>=&gt; <span class="prelude-val">Some</span>(<span class="string">"log_warnings"</span>),
+<a href=#72 id=72 data-nosnippet>72</a>    <span class="string">"error" </span>=&gt; <span class="prelude-val">Some</span>(<span class="string">"log_errors"</span>),
+<a href=#73 id=73 data-nosnippet>73</a>    <span class="string">"fatal" </span>=&gt; <span class="prelude-val">Some</span>(<span class="string">"log_fatals"</span>),
+<a href=#74 id=74 data-nosnippet>74</a>    <span class="string">"invalid" </span>=&gt; <span class="prelude-val">Some</span>(<span class="string">"log_invalids"</span>),
+<a href=#75 id=75 data-nosnippet>75</a>    <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+<a href=#76 id=76 data-nosnippet>76</a>  }
+<a href=#77 id=77 data-nosnippet>77</a>}
+<a href=#78 id=78 data-nosnippet>78</a>
+<a href=#79 id=79 data-nosnippet>79</a><span class="doccomment">/// A validated, resolved sandbox filter: the task-status raw int to match (if any) and the message
+<a href=#80 id=80 data-nosnippet>80</a>/// `log_*` table to look in (if any). The carve uses both; the pre-flight just checks for `Err`.
+<a href=#81 id=81 data-nosnippet>81</a></span><span class="kw">pub struct </span>ResolvedFilter {
+<a href=#82 id=82 data-nosnippet>82</a>  <span class="doccomment">/// raw task-status int to match `t.status` against, or `None` for "any status"
+<a href=#83 id=83 data-nosnippet>83</a>  </span><span class="kw">pub </span>status_raw: <span class="prelude-ty">Option</span>&lt;i32&gt;,
+<a href=#84 id=84 data-nosnippet>84</a>  <span class="doccomment">/// the `log_*` table a message filter looks in, or `None` for "no message filter"
+<a href=#85 id=85 data-nosnippet>85</a>  </span><span class="kw">pub </span>message_table: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'static </span>str&gt;,
+<a href=#86 id=86 data-nosnippet>86</a>}
+<a href=#87 id=87 data-nosnippet>87</a>
+<a href=#88 id=88 data-nosnippet>88</a><span class="kw">impl </span>SandboxSelection {
+<a href=#89 id=89 data-nosnippet>89</a>  <span class="doccomment">/// A compact, human-readable summary of the carve filter — e.g.
+<a href=#90 id=90 data-nosnippet>90</a>  /// `status=no_problem, message=error/missing_file, entry~2506., limit=100`. The single source of
+<a href=#91 id=91 data-nosnippet>91</a>  /// truth for both the sandbox corpus's stored `description` and the provenance surfaced on its
+<a href=#92 id=92 data-nosnippet>92</a>  /// corpus page / detail API, so the two never drift. Falls back to the legacy `severity` for
+<a href=#93 id=93 data-nosnippet>93</a>  /// selections stored before the status/message split.
+<a href=#94 id=94 data-nosnippet>94</a>  </span><span class="kw">pub fn </span>filter_summary(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; String {
+<a href=#95 id=95 data-nosnippet>95</a>    <span class="kw">let </span><span class="kw-2">mut </span>parts: Vec&lt;String&gt; = Vec::new();
+<a href=#96 id=96 data-nosnippet>96</a>    <span class="kw">if let </span><span class="prelude-val">Some</span>(status) = <span class="kw-2">&amp;</span><span class="self">self</span>.status {
+<a href=#97 id=97 data-nosnippet>97</a>      parts.push(<span class="macro">format!</span>(<span class="string">"status={status}"</span>));
+<a href=#98 id=98 data-nosnippet>98</a>    }
+<a href=#99 id=99 data-nosnippet>99</a>    <span class="kw">if let </span><span class="prelude-val">Some</span>(message_severity) = <span class="kw-2">&amp;</span><span class="self">self</span>.message_severity {
+<a href=#100 id=100 data-nosnippet>100</a>      <span class="kw">let </span><span class="kw-2">mut </span>message = <span class="macro">format!</span>(<span class="string">"message={message_severity}"</span>);
+<a href=#101 id=101 data-nosnippet>101</a>      <span class="kw">if let </span><span class="prelude-val">Some</span>(category) = <span class="kw-2">&amp;</span><span class="self">self</span>.category {
+<a href=#102 id=102 data-nosnippet>102</a>        message.push_str(<span class="kw-2">&amp;</span><span class="macro">format!</span>(<span class="string">"/{category}"</span>));
+<a href=#103 id=103 data-nosnippet>103</a>      }
+<a href=#104 id=104 data-nosnippet>104</a>      <span class="kw">if let </span><span class="prelude-val">Some</span>(what) = <span class="kw-2">&amp;</span><span class="self">self</span>.what {
+<a href=#105 id=105 data-nosnippet>105</a>        message.push_str(<span class="kw-2">&amp;</span><span class="macro">format!</span>(<span class="string">"/{what}"</span>));
+<a href=#106 id=106 data-nosnippet>106</a>      }
+<a href=#107 id=107 data-nosnippet>107</a>      parts.push(message);
+<a href=#108 id=108 data-nosnippet>108</a>    }
+<a href=#109 id=109 data-nosnippet>109</a>    <span class="comment">// Legacy stored selections only had the overloaded `severity` (+ its category/what).
+<a href=#110 id=110 data-nosnippet>110</a>    </span><span class="kw">if </span>parts.is_empty()
+<a href=#111 id=111 data-nosnippet>111</a>      &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(severity) = <span class="kw-2">&amp;</span><span class="self">self</span>.severity
+<a href=#112 id=112 data-nosnippet>112</a>    {
+<a href=#113 id=113 data-nosnippet>113</a>      parts.push(<span class="macro">format!</span>(<span class="string">"severity={severity}"</span>));
+<a href=#114 id=114 data-nosnippet>114</a>      <span class="kw">if let </span><span class="prelude-val">Some</span>(category) = <span class="kw-2">&amp;</span><span class="self">self</span>.category {
+<a href=#115 id=115 data-nosnippet>115</a>        parts.push(<span class="macro">format!</span>(<span class="string">"category={category}"</span>));
+<a href=#116 id=116 data-nosnippet>116</a>      }
+<a href=#117 id=117 data-nosnippet>117</a>      <span class="kw">if let </span><span class="prelude-val">Some</span>(what) = <span class="kw-2">&amp;</span><span class="self">self</span>.what {
+<a href=#118 id=118 data-nosnippet>118</a>        parts.push(<span class="macro">format!</span>(<span class="string">"what={what}"</span>));
+<a href=#119 id=119 data-nosnippet>119</a>      }
+<a href=#120 id=120 data-nosnippet>120</a>    }
+<a href=#121 id=121 data-nosnippet>121</a>    <span class="kw">if let </span><span class="prelude-val">Some</span>(entry) = <span class="self">self
+<a href=#122 id=122 data-nosnippet>122</a>      </span>.entry
+<a href=#123 id=123 data-nosnippet>123</a>      .as_deref()
+<a href=#124 id=124 data-nosnippet>124</a>      .map(str::trim)
+<a href=#125 id=125 data-nosnippet>125</a>      .filter(|e| !e.is_empty())
+<a href=#126 id=126 data-nosnippet>126</a>    {
+<a href=#127 id=127 data-nosnippet>127</a>      parts.push(<span class="macro">format!</span>(<span class="string">"entry~{entry}"</span>));
+<a href=#128 id=128 data-nosnippet>128</a>    }
+<a href=#129 id=129 data-nosnippet>129</a>    <span class="kw">if let </span><span class="prelude-val">Some</span>(n) = <span class="self">self</span>.max_entries.filter(|n| <span class="kw-2">*</span>n &gt; <span class="number">0</span>) {
+<a href=#130 id=130 data-nosnippet>130</a>      parts.push(<span class="macro">format!</span>(<span class="string">"limit={n}"</span>));
+<a href=#131 id=131 data-nosnippet>131</a>    }
+<a href=#132 id=132 data-nosnippet>132</a>    parts.join(<span class="string">", "</span>)
+<a href=#133 id=133 data-nosnippet>133</a>  }
+<a href=#134 id=134 data-nosnippet>134</a>
+<a href=#135 id=135 data-nosnippet>135</a>  <span class="doccomment">/// Validates the **intersecting** task-status and message filters and resolves them for the
+<a href=#136 id=136 data-nosnippet>136</a>  /// carve, or returns a human-readable reason. They are independent dimensions (Model C):
+<a href=#137 id=137 data-nosnippet>137</a>  /// `status` matches the task's outcome; `message_severity` (+ `category`/`what`) matches a log
+<a href=#138 id=138 data-nosnippet>138</a>  /// message the task emitted, **at any task status** — so `info`+category collects every task
+<a href=#139 id=139 data-nosnippet>139</a>  /// that emitted that info message. `category` needs a `message_severity`; `what` needs a
+<a href=#140 id=140 data-nosnippet>140</a>  /// `category`; at least one of the two dimensions must be present. The **pre-flight twin** of
+<a href=#141 id=141 data-nosnippet>141</a>  /// the carve (`start_sandbox` calls it for an immediate `422`).
+<a href=#142 id=142 data-nosnippet>142</a>  </span><span class="kw">pub fn </span>validate(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;ResolvedFilter, String&gt; {
+<a href=#143 id=143 data-nosnippet>143</a>    <span class="kw">let </span>status_raw = <span class="kw">match </span><span class="self">self</span>.status.as_deref() {
+<a href=#144 id=144 data-nosnippet>144</a>      <span class="prelude-val">Some</span>(key) =&gt; <span class="prelude-val">Some</span>(
+<a href=#145 id=145 data-nosnippet>145</a>        TaskStatus::from_key(key)
+<a href=#146 id=146 data-nosnippet>146</a>          .ok_or_else(|| {
+<a href=#147 id=147 data-nosnippet>147</a>            <span class="macro">format!</span>(
+<a href=#148 id=148 data-nosnippet>148</a>              <span class="string">"unknown task status '{key}' (use todo, no_problem, warning, error, fatal, invalid)"
+<a href=#149 id=149 data-nosnippet>149</a>            </span>)
+<a href=#150 id=150 data-nosnippet>150</a>          })<span class="question-mark">?
+<a href=#151 id=151 data-nosnippet>151</a>          </span>.raw(),
+<a href=#152 id=152 data-nosnippet>152</a>      ),
+<a href=#153 id=153 data-nosnippet>153</a>      <span class="prelude-val">None </span>=&gt; <span class="prelude-val">None</span>,
+<a href=#154 id=154 data-nosnippet>154</a>    };
+<a href=#155 id=155 data-nosnippet>155</a>    <span class="kw">let </span>message_table = <span class="kw">match </span><span class="self">self</span>.message_severity.as_deref() {
+<a href=#156 id=156 data-nosnippet>156</a>      <span class="prelude-val">Some</span>(key) =&gt; <span class="prelude-val">Some</span>(message_log_table(key).ok_or_else(|| {
+<a href=#157 id=157 data-nosnippet>157</a>        <span class="macro">format!</span>(<span class="string">"unknown message severity '{key}' (use info, warning, error, fatal, invalid)"</span>)
+<a href=#158 id=158 data-nosnippet>158</a>      })<span class="question-mark">?</span>),
+<a href=#159 id=159 data-nosnippet>159</a>      <span class="prelude-val">None </span>=&gt; <span class="prelude-val">None</span>,
+<a href=#160 id=160 data-nosnippet>160</a>    };
+<a href=#161 id=161 data-nosnippet>161</a>    <span class="kw">if </span>message_table.is_none() &amp;&amp; (<span class="self">self</span>.category.is_some() || <span class="self">self</span>.what.is_some()) {
+<a href=#162 id=162 data-nosnippet>162</a>      <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="string">"category/what need a message_severity to filter on"</span>.to_string());
+<a href=#163 id=163 data-nosnippet>163</a>    }
+<a href=#164 id=164 data-nosnippet>164</a>    <span class="kw">if </span><span class="self">self</span>.what.is_some() &amp;&amp; <span class="self">self</span>.category.is_none() {
+<a href=#165 id=165 data-nosnippet>165</a>      <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="string">"what needs a category"</span>.to_string());
+<a href=#166 id=166 data-nosnippet>166</a>    }
+<a href=#167 id=167 data-nosnippet>167</a>    <span class="kw">if </span>status_raw.is_none() &amp;&amp; message_table.is_none() {
+<a href=#168 id=168 data-nosnippet>168</a>      <span class="kw">return </span><span class="prelude-val">Err</span>(
+<a href=#169 id=169 data-nosnippet>169</a>        <span class="string">"a sandbox needs at least a task-status or a message-severity filter"</span>.to_string(),
+<a href=#170 id=170 data-nosnippet>170</a>      );
+<a href=#171 id=171 data-nosnippet>171</a>    }
+<a href=#172 id=172 data-nosnippet>172</a>    <span class="prelude-val">Ok</span>(ResolvedFilter {
+<a href=#173 id=173 data-nosnippet>173</a>      status_raw,
+<a href=#174 id=174 data-nosnippet>174</a>      message_table,
+<a href=#175 id=175 data-nosnippet>175</a>    })
+<a href=#176 id=176 data-nosnippet>176</a>  }
+<a href=#177 id=177 data-nosnippet>177</a>}
+<a href=#178 id=178 data-nosnippet>178</a>
+<a href=#179 id=179 data-nosnippet>179</a><span class="doccomment">/// The result of carving a sandbox: the new corpus plus how many entries it captured.
+<a href=#180 id=180 data-nosnippet>180</a></span><span class="kw">pub struct </span>SandboxOutcome {
+<a href=#181 id=181 data-nosnippet>181</a>  <span class="doccomment">/// the freshly-created sandbox corpus
+<a href=#182 id=182 data-nosnippet>182</a>  </span><span class="kw">pub </span>sandbox: Corpus,
+<a href=#183 id=183 data-nosnippet>183</a>  <span class="doccomment">/// number of parent entries that matched the selection (= number of `TODO` tasks created)
+<a href=#184 id=184 data-nosnippet>184</a>  </span><span class="kw">pub </span>entry_count: usize,
+<a href=#185 id=185 data-nosnippet>185</a>}
+<a href=#186 id=186 data-nosnippet>186</a>
+<a href=#187 id=187 data-nosnippet>187</a><span class="doccomment">/// Carves a **sandbox corpus** from `parent` using `selection`, **entirely server-side**: it
+<a href=#188 id=188 data-nosnippet>188</a>/// inserts the sandbox `corpora` row, then a single `INSERT INTO tasks (...) SELECT ... FROM tasks
+<a href=#189 id=189 data-nosnippet>189</a>/// ...` materializes a `TODO` task per matched parent entry **without ever loading the entries into
+<a href=#190 id=190 data-nosnippet>190</a>/// the application**. A 100k-entry carve therefore costs no client RAM and no per-row bind
+<a href=#191 id=191 data-nosnippet>191</a>/// parameters (it sidesteps the 65535-parameter cap a client-side batch insert would hit); the
+<a href=#192 id=192 data-nosnippet>192</a>/// whole carve is one transaction, so it is atomic (no half-built sandbox). Because the matching
+<a href=#193 id=193 data-nosnippet>193</a>/// `SELECT` over a large parent can take minutes to an hour, this is meant to run as a **background
+<a href=#194 id=194 data-nosnippet>194</a>/// job** (`corpus_sandbox`).
+<a href=#195 id=195 data-nosnippet>195</a>///
+<a href=#196 id=196 data-nosnippet>196</a>/// A severity-only selection reads `tasks` directly; a `category`/`what` narrowing joins the
+<a href=#197 id=197 data-nosnippet>197</a>/// severity's `log_*` table (the table name comes from the fixed [`TaskStatus::to_table`] map, so
+<a href=#198 id=198 data-nosnippet>198</a>/// it is never user-controlled; ids/`category`/`what` are bound parameters). `SELECT DISTINCT`
+<a href=#199 id=199 data-nosnippet>199</a>/// collapses a parent task carrying several matching messages to a single carved entry — which also
+<a href=#200 id=200 data-nosnippet>200</a>/// satisfies the `tasks` `UNIQUE(entry, service_id, corpus_id)` constraint.
+<a href=#201 id=201 data-nosnippet>201</a>///
+<a href=#202 id=202 data-nosnippet>202</a>/// **Output-isolation note:** the sandbox is its own `corpus_id` (own tasks, runs, reports).
+<a href=#203 id=203 data-nosnippet>203</a>/// Running a *conversion* on it would, today, write result archives to the shared
+<a href=#204 id=204 data-nosnippet>204</a>/// `&lt;entry-dir&gt;/&lt;service&gt;.zip` path it inherits from the parent — so isolating a sandbox's **rerun
+<a href=#205 id=205 data-nosnippet>205</a>/// outputs** needs a follow-up (a sink output-path change), tracked in
+<a href=#206 id=206 data-nosnippet>206</a>/// `docs/archive/SANDBOX_CORPORA.md` + `docs/KNOWN_ISSUES.md`.
+<a href=#207 id=207 data-nosnippet>207</a></span><span class="kw">pub fn </span>create_sandbox(
+<a href=#208 id=208 data-nosnippet>208</a>  connection: <span class="kw-2">&amp;mut </span>PgConnection,
+<a href=#209 id=209 data-nosnippet>209</a>  parent: <span class="kw-2">&amp;</span>Corpus,
+<a href=#210 id=210 data-nosnippet>210</a>  name: <span class="kw-2">&amp;</span>str,
+<a href=#211 id=211 data-nosnippet>211</a>  selection: <span class="kw-2">&amp;</span>SandboxSelection,
+<a href=#212 id=212 data-nosnippet>212</a>) -&gt; <span class="prelude-ty">Result</span>&lt;SandboxOutcome, Error&gt; {
+<a href=#213 id=213 data-nosnippet>213</a>  <span class="comment">// Validation (the intersecting status + message filters) lives in `validate`, so the carve and
+<a href=#214 id=214 data-nosnippet>214</a>  // the `start_sandbox` pre-flight reject the identical set.
+<a href=#215 id=215 data-nosnippet>215</a>  </span><span class="kw">let </span>ResolvedFilter {
+<a href=#216 id=216 data-nosnippet>216</a>    status_raw,
+<a href=#217 id=217 data-nosnippet>217</a>    message_table,
+<a href=#218 id=218 data-nosnippet>218</a>  } = selection
+<a href=#219 id=219 data-nosnippet>219</a>    .validate()
+<a href=#220 id=220 data-nosnippet>220</a>    .map_err(|message| Error::QueryBuilderError(message.into()))<span class="question-mark">?</span>;
+<a href=#221 id=221 data-nosnippet>221</a>  <span class="kw">let </span>selection_json = serde_json::to_value(selection).ok();
+<a href=#222 id=222 data-nosnippet>222</a>
+<a href=#223 id=223 data-nosnippet>223</a>  <span class="comment">// Optional entry-substring narrowing, matched at ANY position so a filter can target any path
+<a href=#224 id=224 data-nosnippet>224</a>  // slot (`entry LIKE '%…%'`). Include slashes for precision: `/2605/` carves exactly the arXiv
+<a href=#225 id=225 data-nosnippet>225</a>  // month directory, whereas a bare `2605.` also matches mid-id paths like
+<a href=#226 id=226 data-nosnippet>226</a>  // `.../cond-mat0302605/cond-mat0302605.zip` (`0302605.zip` literally contains `2605.`). Always
+<a href=#227 id=227 data-nosnippet>227</a>  // bound (default `%` = match every entry) so the three SQL branches share one extra bind slot.
+<a href=#228 id=228 data-nosnippet>228</a>  // Trimmed; blank = no narrowing.
+<a href=#229 id=229 data-nosnippet>229</a>  </span><span class="kw">let </span>entry_pattern = selection
+<a href=#230 id=230 data-nosnippet>230</a>    .entry
+<a href=#231 id=231 data-nosnippet>231</a>    .as_deref()
+<a href=#232 id=232 data-nosnippet>232</a>    .map(str::trim)
+<a href=#233 id=233 data-nosnippet>233</a>    .filter(|e| !e.is_empty())
+<a href=#234 id=234 data-nosnippet>234</a>    .map_or_else(|| <span class="string">"%"</span>.to_string(), |e| <span class="macro">format!</span>(<span class="string">"%{e}%"</span>));
+<a href=#235 id=235 data-nosnippet>235</a>
+<a href=#236 id=236 data-nosnippet>236</a>  <span class="comment">// Optional deterministic size cap: the first `n` entries by `entry` order. `n` is a validated
+<a href=#237 id=237 data-nosnippet>237</a>  // i64, so it is safe to inline (no bind needed; an integer has no injection surface).
+<a href=#238 id=238 data-nosnippet>238</a>  // Non-positive caps are ignored. Appended after the WHERE clause of each branch.
+<a href=#239 id=239 data-nosnippet>239</a>  </span><span class="kw">let </span>limit_clause = <span class="kw">match </span>selection.max_entries {
+<a href=#240 id=240 data-nosnippet>240</a>    <span class="prelude-val">Some</span>(n) <span class="kw">if </span>n &gt; <span class="number">0 </span>=&gt; <span class="macro">format!</span>(<span class="string">" ORDER BY t.entry LIMIT {n}"</span>),
+<a href=#241 id=241 data-nosnippet>241</a>    <span class="kw">_ </span>=&gt; String::new(),
+<a href=#242 id=242 data-nosnippet>242</a>  };
+<a href=#243 id=243 data-nosnippet>243</a>
+<a href=#244 id=244 data-nosnippet>244</a>  <span class="kw">let </span>description = <span class="macro">format!</span>(
+<a href=#245 id=245 data-nosnippet>245</a>    <span class="string">"Sandbox of '{}' (filter: {})"</span>,
+<a href=#246 id=246 data-nosnippet>246</a>    parent.name,
+<a href=#247 id=247 data-nosnippet>247</a>    selection.filter_summary()
+<a href=#248 id=248 data-nosnippet>248</a>  );
+<a href=#249 id=249 data-nosnippet>249</a>
+<a href=#250 id=250 data-nosnippet>250</a>  <span class="kw">let </span>new_sandbox = NewSandboxCorpus {
+<a href=#251 id=251 data-nosnippet>251</a>    path: parent.path.clone(),
+<a href=#252 id=252 data-nosnippet>252</a>    name: name.to_string(),
+<a href=#253 id=253 data-nosnippet>253</a>    complex: parent.complex,
+<a href=#254 id=254 data-nosnippet>254</a>    description,
+<a href=#255 id=255 data-nosnippet>255</a>    parent_corpus_id: <span class="prelude-val">Some</span>(parent.id),
+<a href=#256 id=256 data-nosnippet>256</a>    selection: selection_json,
+<a href=#257 id=257 data-nosnippet>257</a>  };
+<a href=#258 id=258 data-nosnippet>258</a>
+<a href=#259 id=259 data-nosnippet>259</a>  <span class="kw">let </span>todo = TaskStatus::TODO.raw();
+<a href=#260 id=260 data-nosnippet>260</a>  <span class="kw">let </span>service_id = selection.service_id;
+<a href=#261 id=261 data-nosnippet>261</a>  <span class="kw">let </span>parent_id = parent.id;
+<a href=#262 id=262 data-nosnippet>262</a>
+<a href=#263 id=263 data-nosnippet>263</a>  connection.transaction(|t_connection| {
+<a href=#264 id=264 data-nosnippet>264</a>    new_sandbox.create(t_connection)<span class="question-mark">?</span>;
+<a href=#265 id=265 data-nosnippet>265</a>    <span class="kw">let </span>sandbox = Corpus::find_by_name(name, t_connection)<span class="question-mark">?</span>;
+<a href=#266 id=266 data-nosnippet>266</a>
+<a href=#267 id=267 data-nosnippet>267</a>    <span class="comment">// Server-side carve as ONE `INSERT … SELECT` (no rows cross into the app). The two filters are
+<a href=#268 id=268 data-nosnippet>268</a>    // INTERSECTED: an optional `t.status = &lt;status&gt;` and, independently, an optional EXISTS over
+<a href=#269 id=269 data-nosnippet>269</a>    // the message `log_*` table — so a message filter matches a task **at any status**.
+<a href=#270 id=270 data-nosnippet>270</a>    // Validated ints (ids, status, limit) are inlined (no injection surface); the only user
+<a href=#271 id=271 data-nosnippet>271</a>    // strings (category / what / entry) are bound; the only interpolated identifier is the
+<a href=#272 id=272 data-nosnippet>272</a>    // fixed-map `log_*` table name.
+<a href=#273 id=273 data-nosnippet>273</a>    </span><span class="kw">let </span>sandbox_id = sandbox.id;
+<a href=#274 id=274 data-nosnippet>274</a>    <span class="kw">let </span>status_clause = <span class="kw">match </span>status_raw {
+<a href=#275 id=275 data-nosnippet>275</a>      <span class="prelude-val">Some</span>(status) =&gt; <span class="macro">format!</span>(<span class="string">" AND t.status = {status}"</span>),
+<a href=#276 id=276 data-nosnippet>276</a>      <span class="prelude-val">None </span>=&gt; String::new(),
+<a href=#277 id=277 data-nosnippet>277</a>    };
+<a href=#278 id=278 data-nosnippet>278</a>    <span class="kw">let </span>base = <span class="macro">format!</span>(
+<a href=#279 id=279 data-nosnippet>279</a>      <span class="string">"INSERT INTO tasks (service_id, corpus_id, status, entry) \
+<a href=#280 id=280 data-nosnippet>280</a>       SELECT {service_id}, {sandbox_id}, {todo}, t.entry FROM tasks t \
+<a href=#281 id=281 data-nosnippet>281</a>       WHERE t.corpus_id = {parent_id} AND t.service_id = {service_id}{status_clause}"
+<a href=#282 id=282 data-nosnippet>282</a>    </span>);
+<a href=#283 id=283 data-nosnippet>283</a>    <span class="kw">let </span>entry_count = <span class="kw">match </span>(
+<a href=#284 id=284 data-nosnippet>284</a>      message_table,
+<a href=#285 id=285 data-nosnippet>285</a>      selection.category.as_deref(),
+<a href=#286 id=286 data-nosnippet>286</a>      selection.what.as_deref(),
+<a href=#287 id=287 data-nosnippet>287</a>    ) {
+<a href=#288 id=288 data-nosnippet>288</a>      <span class="comment">// No message filter (status-only / entry-only): a plain status + entry scan.
+<a href=#289 id=289 data-nosnippet>289</a>      </span>(<span class="prelude-val">None</span>, <span class="kw">_</span>, <span class="kw">_</span>) =&gt; sql_query(<span class="macro">format!</span>(<span class="string">"{base} AND t.entry LIKE $1{limit_clause}"</span>))
+<a href=#290 id=290 data-nosnippet>290</a>        .bind::&lt;Text, <span class="kw">_</span>&gt;(<span class="kw-2">&amp;</span>entry_pattern)
+<a href=#291 id=291 data-nosnippet>291</a>        .execute(t_connection)<span class="question-mark">?</span>,
+<a href=#292 id=292 data-nosnippet>292</a>      <span class="comment">// Message severity, no category: tasks that emitted ANY message of that severity.
+<a href=#293 id=293 data-nosnippet>293</a>      </span>(<span class="prelude-val">Some</span>(table), <span class="prelude-val">None</span>, <span class="kw">_</span>) =&gt; sql_query(<span class="macro">format!</span>(
+<a href=#294 id=294 data-nosnippet>294</a>        <span class="string">"{base} AND EXISTS (SELECT 1 FROM {table} l WHERE l.task_id = t.id) \
+<a href=#295 id=295 data-nosnippet>295</a>         AND t.entry LIKE $1{limit_clause}"
+<a href=#296 id=296 data-nosnippet>296</a>      </span>))
+<a href=#297 id=297 data-nosnippet>297</a>      .bind::&lt;Text, <span class="kw">_</span>&gt;(<span class="kw-2">&amp;</span>entry_pattern)
+<a href=#298 id=298 data-nosnippet>298</a>      .execute(t_connection)<span class="question-mark">?</span>,
+<a href=#299 id=299 data-nosnippet>299</a>      <span class="comment">// Message severity + category.
+<a href=#300 id=300 data-nosnippet>300</a>      </span>(<span class="prelude-val">Some</span>(table), <span class="prelude-val">Some</span>(category), <span class="prelude-val">None</span>) =&gt; sql_query(<span class="macro">format!</span>(
+<a href=#301 id=301 data-nosnippet>301</a>        <span class="string">"{base} AND EXISTS (SELECT 1 FROM {table} l WHERE l.task_id = t.id AND l.category = $1) \
+<a href=#302 id=302 data-nosnippet>302</a>         AND t.entry LIKE $2{limit_clause}"
+<a href=#303 id=303 data-nosnippet>303</a>      </span>))
+<a href=#304 id=304 data-nosnippet>304</a>      .bind::&lt;Text, <span class="kw">_</span>&gt;(category)
+<a href=#305 id=305 data-nosnippet>305</a>      .bind::&lt;Text, <span class="kw">_</span>&gt;(<span class="kw-2">&amp;</span>entry_pattern)
+<a href=#306 id=306 data-nosnippet>306</a>      .execute(t_connection)<span class="question-mark">?</span>,
+<a href=#307 id=307 data-nosnippet>307</a>      <span class="comment">// Message severity + category + what.
+<a href=#308 id=308 data-nosnippet>308</a>      </span>(<span class="prelude-val">Some</span>(table), <span class="prelude-val">Some</span>(category), <span class="prelude-val">Some</span>(what)) =&gt; sql_query(<span class="macro">format!</span>(
+<a href=#309 id=309 data-nosnippet>309</a>        <span class="string">"{base} AND EXISTS (SELECT 1 FROM {table} l WHERE l.task_id = t.id AND l.category = $1 \
+<a href=#310 id=310 data-nosnippet>310</a>         AND l.what = $2) AND t.entry LIKE $3{limit_clause}"
+<a href=#311 id=311 data-nosnippet>311</a>      </span>))
+<a href=#312 id=312 data-nosnippet>312</a>      .bind::&lt;Text, <span class="kw">_</span>&gt;(category)
+<a href=#313 id=313 data-nosnippet>313</a>      .bind::&lt;Text, <span class="kw">_</span>&gt;(what)
+<a href=#314 id=314 data-nosnippet>314</a>      .bind::&lt;Text, <span class="kw">_</span>&gt;(<span class="kw-2">&amp;</span>entry_pattern)
+<a href=#315 id=315 data-nosnippet>315</a>      .execute(t_connection)<span class="question-mark">?</span>,
+<a href=#316 id=316 data-nosnippet>316</a>    };
+<a href=#317 id=317 data-nosnippet>317</a>
+<a href=#318 id=318 data-nosnippet>318</a>    <span class="prelude-val">Ok</span>(SandboxOutcome {
+<a href=#319 id=319 data-nosnippet>319</a>      sandbox,
+<a href=#320 id=320 data-nosnippet>320</a>      entry_count,
+<a href=#321 id=321 data-nosnippet>321</a>    })
+<a href=#322 id=322 data-nosnippet>322</a>  })
+<a href=#323 id=323 data-nosnippet>323</a>}
+<a href=#324 id=324 data-nosnippet>324</a>
+<a href=#325 id=325 data-nosnippet>325</a><span class="attr">#[cfg(test)]
+<a href=#326 id=326 data-nosnippet>326</a></span><span class="kw">mod </span>tests {
+<a href=#327 id=327 data-nosnippet>327</a>  <span class="kw">use super</span>::<span class="kw-2">*</span>;
+<a href=#328 id=328 data-nosnippet>328</a>
+<a href=#329 id=329 data-nosnippet>329</a>  <span class="kw">fn </span>sel(
+<a href=#330 id=330 data-nosnippet>330</a>    status: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>str&gt;,
+<a href=#331 id=331 data-nosnippet>331</a>    message_severity: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>str&gt;,
+<a href=#332 id=332 data-nosnippet>332</a>    category: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>str&gt;,
+<a href=#333 id=333 data-nosnippet>333</a>    what: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>str&gt;,
+<a href=#334 id=334 data-nosnippet>334</a>  ) -&gt; SandboxSelection {
+<a href=#335 id=335 data-nosnippet>335</a>    SandboxSelection {
+<a href=#336 id=336 data-nosnippet>336</a>      service_id: <span class="number">1</span>,
+<a href=#337 id=337 data-nosnippet>337</a>      status: status.map(String::from),
+<a href=#338 id=338 data-nosnippet>338</a>      message_severity: message_severity.map(String::from),
+<a href=#339 id=339 data-nosnippet>339</a>      category: category.map(String::from),
+<a href=#340 id=340 data-nosnippet>340</a>      what: what.map(String::from),
+<a href=#341 id=341 data-nosnippet>341</a>      entry: <span class="prelude-val">None</span>,
+<a href=#342 id=342 data-nosnippet>342</a>      max_entries: <span class="prelude-val">None</span>,
+<a href=#343 id=343 data-nosnippet>343</a>      severity: <span class="prelude-val">None</span>,
+<a href=#344 id=344 data-nosnippet>344</a>    }
+<a href=#345 id=345 data-nosnippet>345</a>  }
+<a href=#346 id=346 data-nosnippet>346</a>
+<a href=#347 id=347 data-nosnippet>347</a>  <span class="attr">#[test]
+<a href=#348 id=348 data-nosnippet>348</a>  </span><span class="kw">fn </span>model_c_validation_is_status_and_message_intersected() {
+<a href=#349 id=349 data-nosnippet>349</a>    <span class="comment">// The F-7 fix: `info`+category is now VALID (info is a real message severity, `log_infos`;
+<a href=#350 id=350 data-nosnippet>350</a>    // `conversion` is a real info category — unlike `missing_file`, which is a *warning* category).
+<a href=#351 id=351 data-nosnippet>351</a>    </span><span class="macro">assert!</span>(
+<a href=#352 id=352 data-nosnippet>352</a>      sel(<span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(<span class="string">"info"</span>), <span class="prelude-val">Some</span>(<span class="string">"conversion"</span>), <span class="prelude-val">None</span>)
+<a href=#353 id=353 data-nosnippet>353</a>        .validate()
+<a href=#354 id=354 data-nosnippet>354</a>        .is_ok()
+<a href=#355 id=355 data-nosnippet>355</a>    );
+<a href=#356 id=356 data-nosnippet>356</a>    <span class="comment">// status + message intersect; status-only; message-only (any status) — all valid.
+<a href=#357 id=357 data-nosnippet>357</a>    </span><span class="macro">assert!</span>(
+<a href=#358 id=358 data-nosnippet>358</a>      sel(
+<a href=#359 id=359 data-nosnippet>359</a>        <span class="prelude-val">Some</span>(<span class="string">"no_problem"</span>),
+<a href=#360 id=360 data-nosnippet>360</a>        <span class="prelude-val">Some</span>(<span class="string">"warning"</span>),
+<a href=#361 id=361 data-nosnippet>361</a>        <span class="prelude-val">Some</span>(<span class="string">"missing_file"</span>),
+<a href=#362 id=362 data-nosnippet>362</a>        <span class="prelude-val">None
+<a href=#363 id=363 data-nosnippet>363</a>      </span>)
+<a href=#364 id=364 data-nosnippet>364</a>      .validate()
+<a href=#365 id=365 data-nosnippet>365</a>      .is_ok()
+<a href=#366 id=366 data-nosnippet>366</a>    );
+<a href=#367 id=367 data-nosnippet>367</a>    <span class="macro">assert!</span>(sel(<span class="prelude-val">Some</span>(<span class="string">"warning"</span>), <span class="prelude-val">None</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>).validate().is_ok());
+<a href=#368 id=368 data-nosnippet>368</a>    <span class="macro">assert!</span>(sel(<span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(<span class="string">"error"</span>), <span class="prelude-val">None</span>, <span class="prelude-val">None</span>).validate().is_ok());
+<a href=#369 id=369 data-nosnippet>369</a>
+<a href=#370 id=370 data-nosnippet>370</a>    <span class="comment">// category needs a message_severity; what needs a category.
+<a href=#371 id=371 data-nosnippet>371</a>    </span><span class="macro">assert!</span>(
+<a href=#372 id=372 data-nosnippet>372</a>      sel(<span class="prelude-val">Some</span>(<span class="string">"no_problem"</span>), <span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(<span class="string">"x"</span>), <span class="prelude-val">None</span>)
+<a href=#373 id=373 data-nosnippet>373</a>        .validate()
+<a href=#374 id=374 data-nosnippet>374</a>        .is_err()
+<a href=#375 id=375 data-nosnippet>375</a>    );
+<a href=#376 id=376 data-nosnippet>376</a>    <span class="macro">assert!</span>(
+<a href=#377 id=377 data-nosnippet>377</a>      sel(<span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(<span class="string">"warning"</span>), <span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(<span class="string">"x"</span>))
+<a href=#378 id=378 data-nosnippet>378</a>        .validate()
+<a href=#379 id=379 data-nosnippet>379</a>        .is_err()
+<a href=#380 id=380 data-nosnippet>380</a>    );
+<a href=#381 id=381 data-nosnippet>381</a>    <span class="comment">// `info` is a message severity, NOT a task status — rejected in the status slot.
+<a href=#382 id=382 data-nosnippet>382</a>    </span><span class="macro">assert!</span>(sel(<span class="prelude-val">Some</span>(<span class="string">"info"</span>), <span class="prelude-val">None</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>).validate().is_err());
+<a href=#383 id=383 data-nosnippet>383</a>    <span class="comment">// an empty selection (no dimension) is rejected.
+<a href=#384 id=384 data-nosnippet>384</a>    </span><span class="macro">assert!</span>(sel(<span class="prelude-val">None</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>).validate().is_err());
+<a href=#385 id=385 data-nosnippet>385</a>  }
+<a href=#386 id=386 data-nosnippet>386</a>
+<a href=#387 id=387 data-nosnippet>387</a>  <span class="attr">#[test]
+<a href=#388 id=388 data-nosnippet>388</a>  </span><span class="kw">fn </span>legacy_selection_still_renders_its_provenance() {
+<a href=#389 id=389 data-nosnippet>389</a>    <span class="comment">// A pre-Model-C stored selection (only `severity`) must still summarise for the provenance UI.
+<a href=#390 id=390 data-nosnippet>390</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>legacy = sel(<span class="prelude-val">None</span>, <span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(<span class="string">"missing_file"</span>), <span class="prelude-val">None</span>);
+<a href=#391 id=391 data-nosnippet>391</a>    legacy.severity = <span class="prelude-val">Some</span>(<span class="string">"warning"</span>.to_string());
+<a href=#392 id=392 data-nosnippet>392</a>    <span class="kw">let </span>summary = legacy.filter_summary();
+<a href=#393 id=393 data-nosnippet>393</a>    <span class="macro">assert!</span>(summary.contains(<span class="string">"severity=warning"</span>), <span class="string">"got {summary:?}"</span>);
+<a href=#394 id=394 data-nosnippet>394</a>    <span class="macro">assert!</span>(summary.contains(<span class="string">"category=missing_file"</span>), <span class="string">"got {summary:?}"</span>);
+<a href=#395 id=395 data-nosnippet>395</a>  }
+<a href=#396 id=396 data-nosnippet>396</a>}
+</code></pre></div></section></main></body></html>

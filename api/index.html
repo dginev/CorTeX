@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CorTeX agent API</title>
+  <link rel="icon" href="data:,">
+  <script type="module" src="https://cdn.jsdelivr.net/npm/rapidoc@9/dist/rapidoc-min.js"></script>
+  <style>
+    /* Overview back-links: theme-aware + readable (RapiDoc's primary-color doesn't reach this
+       light-DOM slot, so without this they fall back to the browser's blue/purple link defaults). */
+    rapi-doc [slot="overview"] a { color: #2a5d84; text-decoration: none; }
+    rapi-doc [slot="overview"] a:hover { text-decoration: underline; }
+    html[data-theme="dark"] rapi-doc [slot="overview"] a { color: #6ab0f3; }
+    /* Light/dark toggle button (created by the script below). */
+    #theme-toggle { position: fixed; top: .55rem; right: .7rem; z-index: 20; font: 13px sans-serif;
+      padding: .3rem .6rem; border-radius: 6px; border: 1px solid rgba(128,128,128,.5);
+      background: rgba(128,128,128,.15); color: inherit; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <rapi-doc
+    id="rapidoc"
+    spec-url="openapi.json"
+    render-style="read"
+    show-header="false"
+    allow-try="false"
+    allow-authentication="false"
+    use-path-in-nav-bar="true"
+    nav-item-spacing="compact"
+    schema-style="table"
+    primary-color="#2a5d84"
+    regular-font="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+    <div slot="overview" style="font:14px sans-serif;margin:0 0 1rem">
+      &larr; <a href="../">CorTeX documentation</a> &middot;
+      <a href="../cortex/index.html">Library reference</a> &middot;
+      <a href="openapi.json">openapi.json</a>
+    </div>
+  </rapi-doc>
+  <script>
+    // Theme: follow the OS light/dark preference, with a persistent manual toggle (top-right) that
+    // overrides it. Sets RapiDoc's theme + a readable primary-color per mode (the dark default is
+    // too dark on a dark background), and a data-theme on <html> for the back-link CSS above.
+    // (Mirrors the live /api/docs theme script.)
+    (function () {
+      var rd = document.getElementById('rapidoc');
+      if (!rd) return;
+      var mq = window.matchMedia('(prefers-color-scheme: dark)');
+      var KEY = 'cortex-docs-theme';
+      var stored = null; try { stored = localStorage.getItem(KEY); } catch (e) {}
+      function theme() { return stored || (mq.matches ? 'dark' : 'light'); }
+      var btn = document.createElement('button');
+      btn.id = 'theme-toggle';
+      btn.type = 'button';
+      btn.setAttribute('aria-label', 'Toggle light/dark theme');
+      function apply() {
+        var t = theme();
+        rd.setAttribute('theme', t);
+        rd.setAttribute('primary-color', t === 'dark' ? '#6ab0f3' : '#2a5d84');
+        document.documentElement.setAttribute('data-theme', t);
+        btn.textContent = t === 'dark' ? '☀ Light' : '☾ Dark';
+      }
+      btn.addEventListener('click', function () {
+        stored = theme() === 'dark' ? 'light' : 'dark';
+        try { localStorage.setItem(KEY, stored); } catch (e) {}
+        apply();
+      });
+      document.body.appendChild(btn);
+      apply();
+      mq.addEventListener('change', function () { if (!stored) apply(); });
+    })();
+  </script>
+</body>
+</html>

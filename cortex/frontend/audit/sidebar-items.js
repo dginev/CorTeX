@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["api_audit","audit_page","routes"],"struct":["AuditDto","AuditFairing","AuditPage"]};

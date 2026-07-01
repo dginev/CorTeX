@@ -1,0 +1,224 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/frontend/helpers.rs`."><title>helpers.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-1ed95124.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="cortex" data-themes="" data-resource-suffix="" data-rustdoc-version="1.98.0-nightly (f46ec5218 2026-06-30)" data-channel="nightly" data-search-js="search-9944d736.js" data-stringdex-js="stringdex-2da4960a.js" data-settings-js="settings-170eb4bf.js" ><script src="../../../static.files/storage-41dd4d93.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-417ebf0a.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-f7c3ffd8.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><h1><div class="sub-heading">cortex/frontend/</div>helpers.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! General purpose auxiliary routines that do not fit the MVC web service paradigm,
+<a href=#2 id=2 data-nosnippet>2</a>//! tending to minor tasks
+<a href=#3 id=3 data-nosnippet>3</a></span><span class="kw">use </span><span class="kw">crate</span>::frontend::params::TemplateContext;
+<a href=#4 id=4 data-nosnippet>4</a>
+<a href=#5 id=5 data-nosnippet>5</a><span class="doccomment">/// The "generated at" timestamp shown in report footers: the server's local date and time **to the
+<a href=#6 id=6 data-nosnippet>6</a>/// minute**, suffixed with the time-zone *abbreviation* — e.g. `Sat, 13 Jun 2026 22:57 EDT`.
+<a href=#7 id=7 data-nosnippet>7</a>///
+<a href=#8 id=8 data-nosnippet>8</a>/// chrono's `%Z` only renders the numeric UTC offset (`-04:00`) for `Local`, so the abbreviation
+<a href=#9 id=9 data-nosnippet>9</a>/// comes from the C library's `strftime %Z`, which reads the OS time-zone database and is
+<a href=#10 id=10 data-nosnippet>10</a>/// DST-correct. Falls back to chrono's offset rendering if the platform yields no abbreviation, so
+<a href=#11 id=11 data-nosnippet>11</a>/// the zone is never blank.
+<a href=#12 id=12 data-nosnippet>12</a></span><span class="kw">pub fn </span>report_timestamp() -&gt; String {
+<a href=#13 id=13 data-nosnippet>13</a>  <span class="kw">let </span>now = chrono::Local::now();
+<a href=#14 id=14 data-nosnippet>14</a>  <span class="kw">let </span>abbrev = local_tz_abbrev();
+<a href=#15 id=15 data-nosnippet>15</a>  <span class="kw">if </span>abbrev.is_empty() {
+<a href=#16 id=16 data-nosnippet>16</a>    now.format(<span class="string">"%a, %d %b %Y %H:%M %Z"</span>).to_string()
+<a href=#17 id=17 data-nosnippet>17</a>  } <span class="kw">else </span>{
+<a href=#18 id=18 data-nosnippet>18</a>    <span class="macro">format!</span>(<span class="string">"{} {}"</span>, now.format(<span class="string">"%a, %d %b %Y %H:%M"</span>), abbrev)
+<a href=#19 id=19 data-nosnippet>19</a>  }
+<a href=#20 id=20 data-nosnippet>20</a>}
+<a href=#21 id=21 data-nosnippet>21</a>
+<a href=#22 id=22 data-nosnippet>22</a><span class="doccomment">/// The local time-zone abbreviation (`EDT`, `EST`, `UTC`, …) from the C library's `strftime`, or an
+<a href=#23 id=23 data-nosnippet>23</a>/// empty string if unavailable — the standard, DST-correct source chrono does not expose for
+<a href=#24 id=24 data-nosnippet>24</a>/// `Local`.
+<a href=#25 id=25 data-nosnippet>25</a></span><span class="kw">fn </span>local_tz_abbrev() -&gt; String {
+<a href=#26 id=26 data-nosnippet>26</a>  <span class="comment">// SAFETY: `localtime_r` (the reentrant variant) fully initializes the stack `tm`; `strftime`
+<a href=#27 id=27 data-nosnippet>27</a>  // writes at most `buf.len()` bytes and returns the count written (0 on overflow). No borrowed
+<a href=#28 id=28 data-nosnippet>28</a>  // pointers escape, and both calls are thread-safe.
+<a href=#29 id=29 data-nosnippet>29</a>  </span><span class="kw">unsafe </span>{
+<a href=#30 id=30 data-nosnippet>30</a>    <span class="kw">let </span>now: libc::time_t = libc::time(std::ptr::null_mut());
+<a href=#31 id=31 data-nosnippet>31</a>    <span class="kw">let </span><span class="kw-2">mut </span>tm: libc::tm = std::mem::zeroed();
+<a href=#32 id=32 data-nosnippet>32</a>    <span class="kw">if </span>libc::localtime_r(<span class="kw-2">&amp;</span>now, <span class="kw-2">&amp;mut </span>tm).is_null() {
+<a href=#33 id=33 data-nosnippet>33</a>      <span class="kw">return </span>String::new();
+<a href=#34 id=34 data-nosnippet>34</a>    }
+<a href=#35 id=35 data-nosnippet>35</a>    <span class="kw">let </span><span class="kw-2">mut </span>buf = [<span class="number">0u8</span>; <span class="number">16</span>];
+<a href=#36 id=36 data-nosnippet>36</a>    <span class="kw">let </span>written = libc::strftime(
+<a href=#37 id=37 data-nosnippet>37</a>      buf.as_mut_ptr() <span class="kw">as </span><span class="kw-2">*mut </span>libc::c_char,
+<a href=#38 id=38 data-nosnippet>38</a>      buf.len(),
+<a href=#39 id=39 data-nosnippet>39</a>      <span class="string">c"%Z"</span>.as_ptr(),
+<a href=#40 id=40 data-nosnippet>40</a>      <span class="kw-2">&amp;</span>tm,
+<a href=#41 id=41 data-nosnippet>41</a>    );
+<a href=#42 id=42 data-nosnippet>42</a>    String::from_utf8_lossy(<span class="kw-2">&amp;</span>buf[..written]).into_owned()
+<a href=#43 id=43 data-nosnippet>43</a>  }
+<a href=#44 id=44 data-nosnippet>44</a>}
+<a href=#45 id=45 data-nosnippet>45</a>
+<a href=#46 id=46 data-nosnippet>46</a><span class="doccomment">/// Formats a UTC [`chrono::NaiveDateTime`] (how CorTeX stores every timestamp) as an RFC 3339 /
+<a href=#47 id=47 data-nosnippet>47</a>/// ISO 8601 string with an explicit `+00:00` offset, e.g. `2026-06-15T05:52:00+00:00`. This is the
+<a href=#48 id=48 data-nosnippet>48</a>/// machine-readable, zone-unambiguous form emitted in DTO time fields and `&lt;time datetime="…"&gt;`
+<a href=#49 id=49 data-nosnippet>49</a>/// attributes: the browser ([`public/js/localtime.js`]) rewrites it to the viewer's local time
+<a href=#50 id=50 data-nosnippet>50</a>/// *with the zone code* (EST/EDT/…), and agents get a directly parseable timestamp. Replaces the
+<a href=#51 id=51 data-nosnippet>51</a>/// old zone-ambiguous `%Y-%m-%d %H:%M` rendering, which silently displayed UTC as if it were local.
+<a href=#52 id=52 data-nosnippet>52</a></span><span class="kw">pub fn </span>iso_utc(time: chrono::NaiveDateTime) -&gt; String {
+<a href=#53 id=53 data-nosnippet>53</a>  <span class="comment">// Seconds precision (no sub-second microseconds) — cleaner in the datetime attribute and as the
+<a href=#54 id=54 data-nosnippet>54</a>  // JS-off fallback text, still a valid RFC 3339 timestamp.
+<a href=#55 id=55 data-nosnippet>55</a>  </span>time
+<a href=#56 id=56 data-nosnippet>56</a>    .and_utc()
+<a href=#57 id=57 data-nosnippet>57</a>    .to_rfc3339_opts(chrono::SecondsFormat::Secs, <span class="bool-val">true</span>)
+<a href=#58 id=58 data-nosnippet>58</a>}
+<a href=#59 id=59 data-nosnippet>59</a>
+<a href=#60 id=60 data-nosnippet>60</a><span class="doccomment">/// Groups an integer into thousands with commas (`2820484` → `2,820,484`) for human-facing counts
+<a href=#61 id=61 data-nosnippet>61</a>/// (corpus document totals, fleet throughput) that can reach millions. Agents get the raw number;
+<a href=#62 id=62 data-nosnippet>62</a>/// only the rendered HTML is grouped.
+<a href=#63 id=63 data-nosnippet>63</a></span><span class="kw">pub fn </span>group_thousands(n: i64) -&gt; String {
+<a href=#64 id=64 data-nosnippet>64</a>  <span class="kw">let </span>digits = n.unsigned_abs().to_string();
+<a href=#65 id=65 data-nosnippet>65</a>  <span class="kw">let </span><span class="kw-2">mut </span>grouped = String::new();
+<a href=#66 id=66 data-nosnippet>66</a>  <span class="kw">for </span>(i, ch) <span class="kw">in </span>digits.chars().enumerate() {
+<a href=#67 id=67 data-nosnippet>67</a>    <span class="kw">if </span>i &gt; <span class="number">0 </span>&amp;&amp; (digits.len() - i).is_multiple_of(<span class="number">3</span>) {
+<a href=#68 id=68 data-nosnippet>68</a>      grouped.push(<span class="string">','</span>);
+<a href=#69 id=69 data-nosnippet>69</a>    }
+<a href=#70 id=70 data-nosnippet>70</a>    grouped.push(ch);
+<a href=#71 id=71 data-nosnippet>71</a>  }
+<a href=#72 id=72 data-nosnippet>72</a>  <span class="kw">if </span>n &lt; <span class="number">0 </span>{
+<a href=#73 id=73 data-nosnippet>73</a>    <span class="macro">format!</span>(<span class="string">"-{grouped}"</span>)
+<a href=#74 id=74 data-nosnippet>74</a>  } <span class="kw">else </span>{
+<a href=#75 id=75 data-nosnippet>75</a>    grouped
+<a href=#76 id=76 data-nosnippet>76</a>  }
+<a href=#77 id=77 data-nosnippet>77</a>}
+<a href=#78 id=78 data-nosnippet>78</a>
+<a href=#79 id=79 data-nosnippet>79</a><span class="doccomment">/// Maps a cortex message severity into a bootstrap class for color highlight
+<a href=#80 id=80 data-nosnippet>80</a></span><span class="kw">pub fn </span>severity_highlight(severity: <span class="kw-2">&amp;</span>str) -&gt; <span class="kw-2">&amp;</span>str {
+<a href=#81 id=81 data-nosnippet>81</a>  <span class="kw">match </span>severity {
+<a href=#82 id=82 data-nosnippet>82</a>    <span class="comment">// Bootstrap highlight classes
+<a href=#83 id=83 data-nosnippet>83</a>    </span><span class="string">"no_problem" </span>=&gt; <span class="string">"success"</span>,
+<a href=#84 id=84 data-nosnippet>84</a>    <span class="string">"warning" </span>=&gt; <span class="string">"warning"</span>,
+<a href=#85 id=85 data-nosnippet>85</a>    <span class="string">"error" </span>=&gt; <span class="string">"error"</span>,
+<a href=#86 id=86 data-nosnippet>86</a>    <span class="string">"fatal" </span>=&gt; <span class="string">"danger"</span>,
+<a href=#87 id=87 data-nosnippet>87</a>    <span class="string">"invalid" </span>=&gt; <span class="string">"info"</span>,
+<a href=#88 id=88 data-nosnippet>88</a>    <span class="kw">_ </span>=&gt; <span class="string">"info"</span>,
+<a href=#89 id=89 data-nosnippet>89</a>  }
+<a href=#90 id=90 data-nosnippet>90</a>}
+<a href=#91 id=91 data-nosnippet>91</a><span class="doccomment">/// TODO: Is this outdated?
+<a href=#92 id=92 data-nosnippet>92</a>/// Maps a URI-encoded string into its regular plain text form
+<a href=#93 id=93 data-nosnippet>93</a></span><span class="kw">pub fn </span>uri_unescape(param: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>str&gt;) -&gt; <span class="prelude-ty">Option</span>&lt;String&gt; {
+<a href=#94 id=94 data-nosnippet>94</a>  <span class="kw">match </span>param {
+<a href=#95 id=95 data-nosnippet>95</a>    <span class="prelude-val">None </span>=&gt; <span class="prelude-val">None</span>,
+<a href=#96 id=96 data-nosnippet>96</a>    <span class="prelude-val">Some</span>(param_encoded) =&gt; {
+<a href=#97 id=97 data-nosnippet>97</a>      <span class="kw">let </span><span class="kw-2">mut </span>param_decoded: String = param_encoded.to_owned();
+<a href=#98 id=98 data-nosnippet>98</a>      <span class="comment">// TODO: This could/should be done faster by hoisting the table into a `LazyLock`.
+<a href=#99 id=99 data-nosnippet>99</a>      </span><span class="kw">for </span><span class="kw-2">&amp;</span>(original, replacement) <span class="kw">in </span><span class="kw-2">&amp;</span>[
+<a href=#100 id=100 data-nosnippet>100</a>        (<span class="string">"%3A"</span>, <span class="string">":"</span>),
+<a href=#101 id=101 data-nosnippet>101</a>        (<span class="string">"%2F"</span>, <span class="string">"/"</span>),
+<a href=#102 id=102 data-nosnippet>102</a>        (<span class="string">"%24"</span>, <span class="string">"$"</span>),
+<a href=#103 id=103 data-nosnippet>103</a>        (<span class="string">"%2E"</span>, <span class="string">"."</span>),
+<a href=#104 id=104 data-nosnippet>104</a>        (<span class="string">"%21"</span>, <span class="string">"!"</span>),
+<a href=#105 id=105 data-nosnippet>105</a>        (<span class="string">"%40"</span>, <span class="string">"@"</span>),
+<a href=#106 id=106 data-nosnippet>106</a>      ] {
+<a href=#107 id=107 data-nosnippet>107</a>        param_decoded = param_decoded.replace(original, replacement);
+<a href=#108 id=108 data-nosnippet>108</a>      }
+<a href=#109 id=109 data-nosnippet>109</a>      <span class="prelude-val">Some</span>(
+<a href=#110 id=110 data-nosnippet>110</a>        percent_encoding::percent_decode(param_decoded.as_bytes())
+<a href=#111 id=111 data-nosnippet>111</a>          .decode_utf8_lossy()
+<a href=#112 id=112 data-nosnippet>112</a>          .into_owned(),
+<a href=#113 id=113 data-nosnippet>113</a>      )
+<a href=#114 id=114 data-nosnippet>114</a>    },
+<a href=#115 id=115 data-nosnippet>115</a>  }
+<a href=#116 id=116 data-nosnippet>116</a>}
+<a href=#117 id=117 data-nosnippet>117</a><span class="doccomment">/// TODO: Is this outdated?
+<a href=#118 id=118 data-nosnippet>118</a>/// Maps a regular string into a URI-encoded one
+<a href=#119 id=119 data-nosnippet>119</a></span><span class="kw">pub fn </span>uri_escape(param: <span class="prelude-ty">Option</span>&lt;String&gt;) -&gt; <span class="prelude-ty">Option</span>&lt;String&gt; {
+<a href=#120 id=120 data-nosnippet>120</a>  <span class="kw">match </span>param {
+<a href=#121 id=121 data-nosnippet>121</a>    <span class="prelude-val">None </span>=&gt; <span class="prelude-val">None</span>,
+<a href=#122 id=122 data-nosnippet>122</a>    <span class="prelude-val">Some</span>(param_pure) =&gt; {
+<a href=#123 id=123 data-nosnippet>123</a>      <span class="kw">let </span><span class="kw-2">mut </span>param_encoded: String =
+<a href=#124 id=124 data-nosnippet>124</a>        percent_encoding::utf8_percent_encode(<span class="kw-2">&amp;</span>param_pure, percent_encoding::NON_ALPHANUMERIC)
+<a href=#125 id=125 data-nosnippet>125</a>          .collect::&lt;String&gt;();
+<a href=#126 id=126 data-nosnippet>126</a>      <span class="comment">// TODO: This could/should be done faster by hoisting the table into a `LazyLock`.
+<a href=#127 id=127 data-nosnippet>127</a>      </span><span class="kw">for </span><span class="kw-2">&amp;</span>(original, replacement) <span class="kw">in </span><span class="kw-2">&amp;</span>[
+<a href=#128 id=128 data-nosnippet>128</a>        (<span class="string">":"</span>, <span class="string">"%3A"</span>),
+<a href=#129 id=129 data-nosnippet>129</a>        (<span class="string">"/"</span>, <span class="string">"%2F"</span>),
+<a href=#130 id=130 data-nosnippet>130</a>        (<span class="string">"\\"</span>, <span class="string">"%5C"</span>),
+<a href=#131 id=131 data-nosnippet>131</a>        (<span class="string">"$"</span>, <span class="string">"%24"</span>),
+<a href=#132 id=132 data-nosnippet>132</a>        (<span class="string">"."</span>, <span class="string">"%2E"</span>),
+<a href=#133 id=133 data-nosnippet>133</a>        (<span class="string">"!"</span>, <span class="string">"%21"</span>),
+<a href=#134 id=134 data-nosnippet>134</a>        (<span class="string">"@"</span>, <span class="string">"%40"</span>),
+<a href=#135 id=135 data-nosnippet>135</a>      ] {
+<a href=#136 id=136 data-nosnippet>136</a>        param_encoded = param_encoded.replace(original, replacement);
+<a href=#137 id=137 data-nosnippet>137</a>      }
+<a href=#138 id=138 data-nosnippet>138</a>      <span class="comment">// if param_pure != param_encoded {
+<a href=#139 id=139 data-nosnippet>139</a>      //   println!("Encoded {:?} to {:?}", param_pure, param_encoded);
+<a href=#140 id=140 data-nosnippet>140</a>      // } else {
+<a href=#141 id=141 data-nosnippet>141</a>      //   println!("No encoding needed: {:?}", param_pure);
+<a href=#142 id=142 data-nosnippet>142</a>      // }
+<a href=#143 id=143 data-nosnippet>143</a>      </span><span class="prelude-val">Some</span>(param_encoded)
+<a href=#144 id=144 data-nosnippet>144</a>    },
+<a href=#145 id=145 data-nosnippet>145</a>  }
+<a href=#146 id=146 data-nosnippet>146</a>}
+<a href=#147 id=147 data-nosnippet>147</a><span class="doccomment">/// Auto-generates a URI-encoded "foo_uri" entry for each "foo" label associated with a clickable
+<a href=#148 id=148 data-nosnippet>148</a>/// link (for Tera templates)
+<a href=#149 id=149 data-nosnippet>149</a></span><span class="kw">pub fn </span>decorate_uri_encodings(context: <span class="kw-2">&amp;mut </span>TemplateContext) {
+<a href=#150 id=150 data-nosnippet>150</a>  <span class="kw">for </span>inner_vec <span class="kw">in </span><span class="kw-2">&amp;mut </span>[
+<a href=#151 id=151 data-nosnippet>151</a>    <span class="kw-2">&amp;mut </span>context.corpora,
+<a href=#152 id=152 data-nosnippet>152</a>    <span class="kw-2">&amp;mut </span>context.services,
+<a href=#153 id=153 data-nosnippet>153</a>    <span class="kw-2">&amp;mut </span>context.entries,
+<a href=#154 id=154 data-nosnippet>154</a>    <span class="kw-2">&amp;mut </span>context.categories,
+<a href=#155 id=155 data-nosnippet>155</a>    <span class="kw-2">&amp;mut </span>context.whats,
+<a href=#156 id=156 data-nosnippet>156</a>  ] {
+<a href=#157 id=157 data-nosnippet>157</a>    <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">ref mut </span>inner_vec_data) = <span class="kw-2">**</span>inner_vec {
+<a href=#158 id=158 data-nosnippet>158</a>      <span class="kw">for </span>subhash <span class="kw">in </span>inner_vec_data {
+<a href=#159 id=159 data-nosnippet>159</a>        <span class="kw">let </span><span class="kw-2">mut </span>uri_decorations = <span class="macro">vec!</span>[];
+<a href=#160 id=160 data-nosnippet>160</a>        <span class="kw">for </span>(subkey, subval) <span class="kw">in </span>subhash.iter() {
+<a href=#161 id=161 data-nosnippet>161</a>          uri_decorations.push((
+<a href=#162 id=162 data-nosnippet>162</a>            subkey.to_string() + <span class="string">"_uri"</span>,
+<a href=#163 id=163 data-nosnippet>163</a>            uri_escape(<span class="prelude-val">Some</span>(subval.to_string())).unwrap_or_default(),
+<a href=#164 id=164 data-nosnippet>164</a>          ));
+<a href=#165 id=165 data-nosnippet>165</a>        }
+<a href=#166 id=166 data-nosnippet>166</a>        <span class="kw">for </span>(decoration_key, decoration_val) <span class="kw">in </span>uri_decorations {
+<a href=#167 id=167 data-nosnippet>167</a>          subhash.insert(decoration_key, decoration_val);
+<a href=#168 id=168 data-nosnippet>168</a>        }
+<a href=#169 id=169 data-nosnippet>169</a>      }
+<a href=#170 id=170 data-nosnippet>170</a>    }
+<a href=#171 id=171 data-nosnippet>171</a>  }
+<a href=#172 id=172 data-nosnippet>172</a>  <span class="comment">// global is handled separately
+<a href=#173 id=173 data-nosnippet>173</a>  </span><span class="kw">let </span><span class="kw-2">mut </span>uri_decorations = <span class="macro">vec!</span>[];
+<a href=#174 id=174 data-nosnippet>174</a>  <span class="kw">for </span>(subkey, subval) <span class="kw">in </span><span class="kw-2">&amp;</span>context.global {
+<a href=#175 id=175 data-nosnippet>175</a>    uri_decorations.push((
+<a href=#176 id=176 data-nosnippet>176</a>      subkey.to_string() + <span class="string">"_uri"</span>,
+<a href=#177 id=177 data-nosnippet>177</a>      uri_escape(<span class="prelude-val">Some</span>(subval.to_string())).unwrap_or_default(),
+<a href=#178 id=178 data-nosnippet>178</a>    ));
+<a href=#179 id=179 data-nosnippet>179</a>  }
+<a href=#180 id=180 data-nosnippet>180</a>  <span class="kw">for </span>(decoration_key, decoration_val) <span class="kw">in </span>uri_decorations {
+<a href=#181 id=181 data-nosnippet>181</a>    context.global.insert(decoration_key, decoration_val);
+<a href=#182 id=182 data-nosnippet>182</a>  }
+<a href=#183 id=183 data-nosnippet>183</a>  <span class="kw">let </span><span class="kw-2">mut </span>current_link = String::new();
+<a href=#184 id=184 data-nosnippet>184</a>  {
+<a href=#185 id=185 data-nosnippet>185</a>    <span class="kw">if let </span><span class="prelude-val">Some</span>(corpus_name) = context.global.get(<span class="string">"corpus_name_uri"</span>)
+<a href=#186 id=186 data-nosnippet>186</a>      &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(service_name) = context.global.get(<span class="string">"service_name_uri"</span>)
+<a href=#187 id=187 data-nosnippet>187</a>    {
+<a href=#188 id=188 data-nosnippet>188</a>      current_link = <span class="macro">format!</span>(<span class="string">"/corpus/{corpus_name}/{service_name}/"</span>);
+<a href=#189 id=189 data-nosnippet>189</a>      <span class="kw">if let </span><span class="prelude-val">Some</span>(severity) = context.global.get(<span class="string">"severity_uri"</span>) {
+<a href=#190 id=190 data-nosnippet>190</a>        current_link.push_str(severity);
+<a href=#191 id=191 data-nosnippet>191</a>        current_link.push(<span class="string">'/'</span>);
+<a href=#192 id=192 data-nosnippet>192</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(category) = context.global.get(<span class="string">"category_uri"</span>) {
+<a href=#193 id=193 data-nosnippet>193</a>          current_link.push_str(category);
+<a href=#194 id=194 data-nosnippet>194</a>          current_link.push(<span class="string">'/'</span>);
+<a href=#195 id=195 data-nosnippet>195</a>          <span class="kw">if let </span><span class="prelude-val">Some</span>(what) = context.global.get(<span class="string">"what_uri"</span>) {
+<a href=#196 id=196 data-nosnippet>196</a>            current_link.push_str(what);
+<a href=#197 id=197 data-nosnippet>197</a>          }
+<a href=#198 id=198 data-nosnippet>198</a>        }
+<a href=#199 id=199 data-nosnippet>199</a>      }
+<a href=#200 id=200 data-nosnippet>200</a>    }
+<a href=#201 id=201 data-nosnippet>201</a>  }
+<a href=#202 id=202 data-nosnippet>202</a>  <span class="kw">if </span>!current_link.is_empty() {
+<a href=#203 id=203 data-nosnippet>203</a>    context
+<a href=#204 id=204 data-nosnippet>204</a>      .global
+<a href=#205 id=205 data-nosnippet>205</a>      .insert(<span class="string">"current_link_uri"</span>.to_string(), current_link);
+<a href=#206 id=206 data-nosnippet>206</a>  }
+<a href=#207 id=207 data-nosnippet>207</a>}
+<a href=#208 id=208 data-nosnippet>208</a>
+<a href=#209 id=209 data-nosnippet>209</a><span class="attr">#[cfg(test)]
+<a href=#210 id=210 data-nosnippet>210</a></span><span class="kw">mod </span>tests {
+<a href=#211 id=211 data-nosnippet>211</a>  <span class="kw">use </span><span class="kw">super</span>::group_thousands;
+<a href=#212 id=212 data-nosnippet>212</a>
+<a href=#213 id=213 data-nosnippet>213</a>  <span class="attr">#[test]
+<a href=#214 id=214 data-nosnippet>214</a>  </span><span class="kw">fn </span>group_thousands_inserts_separators() {
+<a href=#215 id=215 data-nosnippet>215</a>    <span class="macro">assert_eq!</span>(group_thousands(<span class="number">0</span>), <span class="string">"0"</span>);
+<a href=#216 id=216 data-nosnippet>216</a>    <span class="macro">assert_eq!</span>(group_thousands(<span class="number">7</span>), <span class="string">"7"</span>);
+<a href=#217 id=217 data-nosnippet>217</a>    <span class="macro">assert_eq!</span>(group_thousands(<span class="number">999</span>), <span class="string">"999"</span>);
+<a href=#218 id=218 data-nosnippet>218</a>    <span class="macro">assert_eq!</span>(group_thousands(<span class="number">1000</span>), <span class="string">"1,000"</span>);
+<a href=#219 id=219 data-nosnippet>219</a>    <span class="macro">assert_eq!</span>(group_thousands(<span class="number">12345</span>), <span class="string">"12,345"</span>);
+<a href=#220 id=220 data-nosnippet>220</a>    <span class="macro">assert_eq!</span>(group_thousands(<span class="number">2_820_484</span>), <span class="string">"2,820,484"</span>);
+<a href=#221 id=221 data-nosnippet>221</a>    <span class="macro">assert_eq!</span>(group_thousands(-<span class="number">1234</span>), <span class="string">"-1,234"</span>);
+<a href=#222 id=222 data-nosnippet>222</a>  }
+<a href=#223 id=223 data-nosnippet>223</a>}
+</code></pre></div></section></main></body></html>
