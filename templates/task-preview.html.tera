@@ -202,9 +202,16 @@
         var simple_css = '<link media="all" rel="stylesheet" href="//latexml.mathweb.org/css/external/LaTeXML.css">' + "\n" + '<link media="all" rel="stylesheet" href="//latexml.mathweb.org/css/external/ltx-' + style + '.css">';
         main_content = main_content.replace(/<\/head>/, simple_css + "\n</head>");
         main_content = main_content.replace(/<\/body>/, "\n" + maybe_mathjax_js + "\n" + fire_loaded + "\n</body>");
-      } else { // load ar5iv.css by default
+      } else if (style == "ar5iv-0.8.5") { // the previous pinned release, kept for side-by-side comparison
         var simple_css = '<link media="all" rel="stylesheet" href="//cdn.jsdelivr.net/gh/dginev/ar5iv-css@0.8.5/css/ar5iv-fonts.min.css">'+"\n"+
           '<link media="all" rel="stylesheet" href="//cdn.jsdelivr.net/gh/dginev/ar5iv-css@0.8.5/css/ar5iv.min.css">';
+        main_content = main_content.replace(/<\/head>/, simple_css + "\n</head>");
+        main_content = main_content.replace(/<\/body>/, "\n" + maybe_mathjax_js + "\n" + fire_loaded + "\n</body>");
+      } else { // default: the ar5iv-css `glowup` release candidate, served locally so a
+        // `git pull && cp dist/*.min.css public/css/` iterates instantly (no CDN cache).
+        // Compare against the previous release with `?style=ar5iv-0.8.5`.
+        var simple_css = '<link media="all" rel="stylesheet" href="/public/css/ar5iv-fonts.min.css">'+"\n"+
+          '<link media="all" rel="stylesheet" href="/public/css/ar5iv.min.css">';
         main_content = main_content.replace(/<\/head>/, simple_css + "\n</head>");
         main_content = main_content.replace(/<\/body>/, "\n" + maybe_mathjax_js + "\n" + fire_loaded + "\n</body>");
       }
