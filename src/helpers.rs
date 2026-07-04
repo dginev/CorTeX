@@ -495,9 +495,14 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
         // Special case is a "Loading..." info messages
         let mut filepath = cap.get(1).map_or("", |m| m.as_str()).to_string();
         let mut filename = cap.get(2).map_or("", |m| m.as_str()).to_string();
+        // `what` (the filename) is a groupable key — keep the 50 cap. The
+        // full path goes to `details`, which is 2000 elsewhere in this
+        // parser; the old 50 cap cut real texmf paths mid-directory
+        // ("/usr/share/texlive/texmf-dist/tex/latex/tcolorbox" for
+        // tcolorbox.sty), making the recorded source path useless.
         utf_truncate(&mut filename, 50);
         filepath += &filename;
-        utf_truncate(&mut filepath, 50);
+        utf_truncate(&mut filepath, 2000);
         messages.push(NewTaskMessage::new(
           task_id,
           "info",
