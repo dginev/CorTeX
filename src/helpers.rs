@@ -460,7 +460,7 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
         .to_lowercase();
       utf_truncate(&mut truncated_severity, 50);
       let mut truncated_category = cap.get(2).map_or("", |m| m.as_str()).to_string();
-      utf_truncate(&mut truncated_category, 50);
+      utf_truncate(&mut truncated_category, 100);
       let mut truncated_what = cap.get(3).map_or("", |m| m.as_str()).to_string();
       // `what` is varchar(200) (widened from 50 so math-parser footprints — `ambiguous_math` /
       // `unparsed_math` token-type signatures — fit as the groupable key; the full stream stays in
@@ -473,9 +473,9 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
         truncated_severity = "invalid".to_string();
         truncated_category = truncated_what;
         truncated_what = "all".to_string();
-        // The swap just moved a (now up-to-200-char) `what` into `category`, which is still
-        // varchar(50) — re-clamp so the insert can't overflow it.
-        utf_truncate(&mut truncated_category, 50);
+        // The swap just moved a (now up-to-200-char) `what` into `category`, which is
+        // varchar(100) — re-clamp so the insert can't overflow it.
+        utf_truncate(&mut truncated_category, 100);
       }
 
       let message = NewTaskMessage::new(
@@ -500,7 +500,7 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
         // parser; the old 50 cap cut real texmf paths mid-directory
         // ("/usr/share/texlive/texmf-dist/tex/latex/tcolorbox" for
         // tcolorbox.sty), making the recorded source path useless.
-        utf_truncate(&mut filename, 50);
+        utf_truncate(&mut filename, 100);
         filepath += &filename;
         utf_truncate(&mut filepath, 2000);
         messages.push(NewTaskMessage::new(
