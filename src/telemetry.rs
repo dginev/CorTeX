@@ -19,6 +19,7 @@
 //! `#[serde(default)]`, because the worker's failure path emits only `paper_id`/`category`/
 //! `exit_code`; a missing numeric or array field is simply zero / empty, never a parse error.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::thread::available_parallelism;
 
@@ -92,6 +93,13 @@ pub struct TelemetryRecord {
   /// Number of parsed formulae.
   #[serde(default)]
   pub formulae: u64,
+  /// Number of math-parse invocations (≈ one per formula parsed).
+  #[serde(default)]
+  pub math_parse_attempts: u64,
+  /// Total candidate parses produced across all invocations — `>= attempts` under
+  /// grammar ambiguity; `count / attempts` is the over-parse (ambiguity) multiplier.
+  #[serde(default)]
+  pub math_parse_count: u64,
   /// Number of graphics assets emitted.
   #[serde(default)]
   pub graphics_assets: u64,
@@ -158,6 +166,65 @@ pub fn percentiles(values: &[u64]) -> Percentiles {
   }
 }
 
+/// Wall-time tail concentration: how top-heavy the run is, and how close the slowest papers get to
+/// the conversion timeout. `topN_pct_wall_share` is the fraction (%) of *all* wall time held by the
+/// slowest N% of papers; the `over_*s` counts are papers at/above that wall threshold.
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct TailStats {
+  /// % of all wall time held by the slowest 1% of papers.
+  pub top1pct_wall_share: f64,
+  /// % of all wall time held by the slowest 5% of papers.
+  pub top5pct_wall_share: f64,
+  /// Papers with wall time ≥ 30s.
+  pub over_30s: u64,
+  /// Papers with wall time ≥ 60s.
+  pub over_60s: u64,
+  /// Papers with wall time ≥ 120s.
+  pub over_120s: u64,
+  /// Papers with wall time ≥ 180s (the conversion timeout).
+  pub over_180s: u64,
+}
+
+/// Peak-RSS bucket counts — how many papers cross each memory line (the 4 GiB alloc wall being the
+/// release concern).
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct RssBuckets {
+  /// Papers with peak RSS ≥ 2 GiB.
+  pub over_2gib: u64,
+  /// Papers with peak RSS ≥ 3 GiB.
+  pub over_3gib: u64,
+  /// Papers with peak RSS ≥ 4 GiB (the alloc wall).
+  pub over_4gib: u64,
+}
+
+/// Math-parsing rollup. `parses_per_formula` = `parse_count / attempts` — the corpus-wide grammar
+/// ambiguity (over-parse) multiplier that semantics-pruning then collapses.
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct MathStats {
+  /// Total formulae parsed across the run.
+  pub formulae: u64,
+  /// Total math-parse invocations (≈ one per formula).
+  pub parse_invocations: u64,
+  /// Total candidate parses produced (≥ invocations under ambiguity).
+  pub parse_count: u64,
+  /// `parse_count / invocations` — the over-parse (ambiguity) multiplier.
+  pub parses_per_formula: f64,
+}
+
+/// Wall-time profile of one outcome bucket — used to show that `fatal` papers are bimodal (most
+/// fail fast; a slow-runaway subset burns ~timeout before dying).
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct OutcomeWall {
+  /// Number of papers in this outcome bucket.
+  pub n: usize,
+  /// Median wall time (ms).
+  pub median_ms: u64,
+  /// Mean wall time (ms).
+  pub mean_ms: u64,
+  /// P99 wall time (ms).
+  pub p99_ms: u64,
+}
+
 /// The rolled-up telemetry of a completed `(corpus, service)` run — the shared read model for both
 /// the telemetry dashboard screen and its agent JSON twin.
 #[derive(Debug, Clone, Serialize)]
@@ -178,6 +245,22 @@ pub struct TelemetrySummary {
   pub rss_mib: Percentiles,
   /// Per-phase P99 wall time in milliseconds, one entry per [`PHASES`] label (17 entries).
   pub phase_p99_ms: Vec<(String, u64)>,
+  /// Per-phase share (%) of *total* wall time — the run's time budget, one entry per [`PHASES`]
+  /// label, ordered by descending share. "Where the wall goes."
+  pub phase_wall_pct: Vec<(String, f64)>,
+  /// Wall-time tail concentration + near-timeout counts.
+  pub tail: TailStats,
+  /// Peak-RSS bucket counts.
+  pub rss_buckets: RssBuckets,
+  /// Math parsing rollup (over-parse multiplier).
+  pub math: MathStats,
+  /// Dominant phase among the slowest 50 papers (which phase drives the tail), highest count
+  /// first.
+  pub slow_tail_dominant: Vec<(String, u64)>,
+  /// Wall profile of the `fatal` bucket.
+  pub fatal_profile: OutcomeWall,
+  /// Wall profile of the `no_problem` bucket (baseline to contrast fatals against).
+  pub no_problem_profile: OutcomeWall,
   /// The slowest paper by wall time — `(paper_id, wall_ms)` — or `None` for an empty sample.
   pub slowest: Option<(String, u64)>,
   /// The highest peak-RSS paper — `(paper_id, rss_mib)` — or `None` for an empty sample.
@@ -197,18 +280,26 @@ pub struct TelemetrySummary {
 /// percentiles, per-phase P99, witnesses, and totals. `skipped` is left `0` — [`aggregate`] fills
 /// it from the read pass.
 pub fn summarize(corpus: &str, service: &str, records: &[TelemetryRecord]) -> TelemetrySummary {
-  // Outcome buckets — a record lands in exactly one, most-severe-first (a fatal record with
-  // warnings is a fatal, not a warning).
+  // Outcome bucket — a record lands in exactly one, most-severe-first (a fatal record with
+  // warnings is a fatal, not a warning). Shared by the mix count and the per-bucket wall profiles.
+  let bucket = |r: &TelemetryRecord| -> &'static str {
+    if r.fatal_errors > 0 || r.category.contains("fatal") || r.exit_code >= 3 {
+      "fatal"
+    } else if r.errors > 0 || r.category == "conversion_error" || r.exit_code == 2 {
+      "error"
+    } else if r.warnings > 0 {
+      "warning"
+    } else {
+      "no_problem"
+    }
+  };
   let (mut no_problem, mut warning, mut error, mut fatal) = (0u64, 0u64, 0u64, 0u64);
   for record in records {
-    if record.fatal_errors > 0 || record.category.contains("fatal") || record.exit_code >= 3 {
-      fatal += 1;
-    } else if record.errors > 0 || record.category == "conversion_error" || record.exit_code == 2 {
-      error += 1;
-    } else if record.warnings > 0 {
-      warning += 1;
-    } else {
-      no_problem += 1;
+    match bucket(record) {
+      "fatal" => fatal += 1,
+      "error" => error += 1,
+      "warning" => warning += 1,
+      _ => no_problem += 1,
     }
   }
   let outcome_counts = vec![
@@ -263,6 +354,129 @@ pub fn summarize(corpus: &str, service: &str, records: &[TelemetryRecord]) -> Te
     .iter()
     .fold(0u64, |acc, record| acc.saturating_add(record.output_bytes));
 
+  // --- Phase budget: each phase's share (%) of total wall, ordered by descending share. ---
+  let total_wall: u64 = records
+    .iter()
+    .map(|r| r.wall_us)
+    .fold(0, u64::saturating_add);
+  let mut phase_tot = [0u128; 17];
+  for r in records {
+    for (i, &us) in r.phase_us.iter().take(17).enumerate() {
+      phase_tot[i] += us as u128;
+    }
+  }
+  let mut phase_wall_pct: Vec<(String, f64)> = PHASES
+    .iter()
+    .enumerate()
+    .map(|(i, &name)| {
+      let pct = if total_wall > 0 {
+        100.0 * phase_tot[i] as f64 / total_wall as f64
+      } else {
+        0.0
+      };
+      (name.to_string(), pct)
+    })
+    .collect();
+  phase_wall_pct.sort_by(|a, b| b.1.total_cmp(&a.1));
+
+  // --- Wall tail concentration + near-timeout counts. ---
+  let mut walls_us: Vec<u64> = records.iter().map(|r| r.wall_us).collect();
+  walls_us.sort_unstable();
+  let tot_wall_f = total_wall as f64;
+  let top_share = |frac: f64| -> f64 {
+    let k = ((walls_us.len() as f64) * frac).floor() as usize;
+    if k == 0 || tot_wall_f == 0.0 {
+      return 0.0;
+    }
+    let s: u128 = walls_us[walls_us.len() - k..]
+      .iter()
+      .map(|&w| w as u128)
+      .sum();
+    100.0 * s as f64 / tot_wall_f
+  };
+  let count_over = |secs: u64| walls_us.iter().filter(|&&w| w >= secs * 1_000_000).count() as u64;
+  let tail = TailStats {
+    top1pct_wall_share: top_share(0.01),
+    top5pct_wall_share: top_share(0.05),
+    over_30s: count_over(30),
+    over_60s: count_over(60),
+    over_120s: count_over(120),
+    over_180s: count_over(180),
+  };
+
+  // --- Peak-RSS buckets. ---
+  let rss_over = |gib: u64| {
+    records
+      .iter()
+      .filter(|r| r.max_rss_kb >= gib * 1024 * 1024)
+      .count() as u64
+  };
+  let rss_buckets = RssBuckets {
+    over_2gib: rss_over(2),
+    over_3gib: rss_over(3),
+    over_4gib: rss_over(4),
+  };
+
+  // --- Math over-parse multiplier (parses produced per parse invocation). ---
+  let m_inv = records
+    .iter()
+    .fold(0u64, |a, r| a.saturating_add(r.math_parse_attempts));
+  let m_cnt = records
+    .iter()
+    .fold(0u64, |a, r| a.saturating_add(r.math_parse_count));
+  let math = MathStats {
+    formulae: total_formulae,
+    parse_invocations: m_inv,
+    parse_count: m_cnt,
+    parses_per_formula: if m_inv > 0 {
+      m_cnt as f64 / m_inv as f64
+    } else {
+      0.0
+    },
+  };
+
+  // --- Slow-tail driver: dominant phase among the slowest 50 papers. ---
+  let mut by_wall: Vec<&TelemetryRecord> = records.iter().collect();
+  by_wall.sort_by_key(|r| std::cmp::Reverse(r.wall_us));
+  let mut dom: HashMap<&'static str, u64> = HashMap::new();
+  for r in by_wall.iter().take(50) {
+    if let Some((i, _)) = r
+      .phase_us
+      .iter()
+      .take(17)
+      .enumerate()
+      .max_by_key(|&(_, us)| *us)
+    {
+      *dom.entry(PHASES[i]).or_insert(0) += 1;
+    }
+  }
+  let mut slow_tail_dominant: Vec<(String, u64)> =
+    dom.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+  slow_tail_dominant.sort_by_key(|d| std::cmp::Reverse(d.1));
+
+  // --- Wall profile per outcome bucket (fatal bimodality: fast-fail vs slow-runaway). ---
+  let profile = |name: &str| -> OutcomeWall {
+    let mut ms: Vec<u64> = records
+      .iter()
+      .filter(|r| bucket(r) == name)
+      .map(|r| r.wall_us / 1000)
+      .collect();
+    if ms.is_empty() {
+      return OutcomeWall::default();
+    }
+    ms.sort_unstable();
+    let sum: u128 = ms.iter().map(|&x| x as u128).sum();
+    let p = percentiles(&ms);
+    OutcomeWall {
+      n: ms.len(),
+      median_ms: p.p50,
+      mean_ms: (sum / ms.len() as u128) as u64,
+      p99_ms: p.p99,
+    }
+  };
+  let fatal_profile = profile("fatal");
+  let no_problem_profile = profile("no_problem");
+
   let generated_unix = std::time::SystemTime::now()
     .duration_since(std::time::UNIX_EPOCH)
     .map(|elapsed| elapsed.as_secs() as i64)
@@ -277,6 +491,13 @@ pub fn summarize(corpus: &str, service: &str, records: &[TelemetryRecord]) -> Te
     wall_ms,
     rss_mib,
     phase_p99_ms,
+    phase_wall_pct,
+    tail,
+    rss_buckets,
+    math,
+    slow_tail_dominant,
+    fatal_profile,
+    no_problem_profile,
     slowest,
     highest_rss,
     total_formulae,
@@ -442,6 +663,64 @@ mod tests {
     assert_eq!(summary.slowest, Some(("fataled".to_string(), 4000)));
     assert_eq!(summary.sample_count, 4);
     assert_eq!(summary.skipped, 0);
+  }
+
+  #[test]
+  fn summarize_budget_tail_math_and_profiles() {
+    let mut records = Vec::new();
+    // 8 fast no_problem papers: 1s, digest 0.7s + math 0.2s, 10 formulae / 13 parses each.
+    for i in 0..8 {
+      let mut r = record(&format!("ok{i}"));
+      r.wall_us = 1_000_000;
+      r.phase_us[1] = 700_000; // digest
+      r.phase_us[4] = 200_000; // math_parse
+      r.formulae = 10;
+      r.math_parse_attempts = 10;
+      r.math_parse_count = 13;
+      records.push(r);
+    }
+    // 1 slow fatal: 40s, all in digest, 0 formulae (the runaway signature).
+    let mut slow_fatal = record("slowfatal");
+    slow_fatal.wall_us = 40_000_000;
+    slow_fatal.phase_us[1] = 39_000_000;
+    slow_fatal.fatal_errors = 1;
+    records.push(slow_fatal);
+    // 1 slow warning: 65s, math-dominated (over the 60s line).
+    let mut slow_warn = record("slowwarn");
+    slow_warn.wall_us = 65_000_000;
+    slow_warn.phase_us[4] = 60_000_000;
+    slow_warn.warnings = 1;
+    records.push(slow_warn);
+
+    let s = summarize("c", "s", &records);
+
+    // Phase budget: 17 entries, sorted descending, math_parse (61.6s) tops digest (44.6s).
+    assert_eq!(s.phase_wall_pct.len(), 17);
+    assert_eq!(s.phase_wall_pct[0].0, "math_parse");
+    assert!(s.phase_wall_pct.windows(2).all(|w| w[0].1 >= w[1].1));
+    let budget_sum: f64 = s.phase_wall_pct.iter().map(|(_, p)| p).sum();
+    assert!(
+      (90.0..=100.0).contains(&budget_sum),
+      "instrumented phases ≈ total wall"
+    );
+
+    // Tail: the 40s + 65s papers are ≥30s; only the 65s is ≥60s; none hit the timeout.
+    assert_eq!(s.tail.over_30s, 2);
+    assert_eq!(s.tail.over_60s, 1);
+    assert_eq!(s.tail.over_180s, 0);
+
+    // Math over-parse: 8×13 parses / 8×10 invocations = 1.3.
+    assert_eq!(s.math.formulae, 80);
+    assert!((s.math.parses_per_formula - 1.3).abs() < 1e-9);
+
+    // Outcome profiles: one fatal (40s), eight clean (1s each).
+    assert_eq!(s.fatal_profile.n, 1);
+    assert_eq!(s.fatal_profile.median_ms, 40_000);
+    assert_eq!(s.no_problem_profile.n, 8);
+    assert_eq!(s.no_problem_profile.median_ms, 1_000);
+
+    // Slow-tail driver present (digest dominates the two slow papers... math dominates the warn).
+    assert!(!s.slow_tail_dominant.is_empty());
   }
 
   #[test]

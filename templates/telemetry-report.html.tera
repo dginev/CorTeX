@@ -81,6 +81,56 @@
     </div>
   </div>
 
+  {# --- Wall tail concentration + memory pressure ----------------------------------------- #}
+  <div class="telemetry-percentiles">
+    <div class="telemetry-pct-block">
+      <h3>Wall tail</h3>
+      <ul class="telemetry-witnesses">
+        <li>Slowest 1% hold <strong>{{ summary.tail.top1pct_wall_share | round }}%</strong> of all wall
+          <span class="muted">(slowest 5% hold {{ summary.tail.top5pct_wall_share | round }}%)</span></li>
+        <li>≥30s: {{ summary.tail.over_30s | group_thousands }} <span class="report-sep">·</span>
+          ≥60s: {{ summary.tail.over_60s | group_thousands }} <span class="report-sep">·</span>
+          ≥120s: {{ summary.tail.over_120s | group_thousands }} <span class="report-sep">·</span>
+          ≥180s (timeout): {{ summary.tail.over_180s | group_thousands }}</li>
+      </ul>
+    </div>
+    <div class="telemetry-pct-block">
+      <h3>Memory pressure</h3>
+      <ul class="telemetry-witnesses">
+        <li>≥2 GiB: {{ summary.rss_buckets.over_2gib | group_thousands }} <span class="report-sep">·</span>
+          ≥3 GiB: {{ summary.rss_buckets.over_3gib | group_thousands }} <span class="report-sep">·</span>
+          ≥4 GiB (alloc wall): {{ summary.rss_buckets.over_4gib | group_thousands }}</li>
+      </ul>
+    </div>
+  </div>
+
+  {# --- Where wall time goes: phase budget (% of total wall) ------------------------------- #}
+  {% set_global budget_max = 0 %}
+  {% for p in summary.phase_wall_pct %}{% if p.1 > budget_max %}{% set_global budget_max = p.1 %}{% endif %}{% endfor %}
+  {% if budget_max == 0 %}{% set_global budget_max = 1 %}{% endif %}
+  <h3>Where wall time goes <span class="muted">(% of total)</span></h3>
+  <table class="table report-table">
+    <colgroup>
+      <col style="width:22%"><col style="width:63%"><col style="width:15%">
+    </colgroup>
+    <thead>
+      <tr>
+        <th scope="col" class="left">Phase</th>
+        <th scope="col" class="left bar-col">Share of total wall</th>
+        <th scope="col" class="right">%</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in summary.phase_wall_pct %}{% if p.1 >= 0.1 %}
+      <tr>
+        <td class="left">{{ p.0 }}</td>
+        <td class="bar-cell"><span class="bar-track"><span class="bar" style="--bar-width: {{ p.1 * 100 / budget_max }}%"></span></span></td>
+        <td class="right">{{ p.1 | round(precision=1) }}%</td>
+      </tr>
+      {% endif %}{% endfor %}
+    </tbody>
+  </table>
+
   {# --- Per-phase P99 profile -------------------------------------------------------------- #}
   {# Scale each phase bar to the slowest phase P99. Find the max in-template (no extra DTO field),
      guarding against a zero max so the bar width divides cleanly. #}
@@ -110,6 +160,30 @@
     </tbody>
   </table>
 
+  {# --- Wall by outcome (fatal bimodality: fast-fail vs slow-runaway) --------------------- #}
+  <h3>Wall by outcome <span class="muted">(ms)</span></h3>
+  <table class="table report-table">
+    <thead>
+      <tr><th class="left">Outcome</th><th class="right">n</th><th class="right">median</th><th class="right">mean</th><th class="right">P99</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="left"><span class="status-ok">no problem</span></td>
+        <td class="right">{{ summary.no_problem_profile.n | group_thousands }}</td>
+        <td class="right">{{ summary.no_problem_profile.median_ms | group_thousands }}</td>
+        <td class="right">{{ summary.no_problem_profile.mean_ms | group_thousands }}</td>
+        <td class="right">{{ summary.no_problem_profile.p99_ms | group_thousands }}</td>
+      </tr>
+      <tr>
+        <td class="left"><span class="status-bad">fatal</span></td>
+        <td class="right">{{ summary.fatal_profile.n | group_thousands }}</td>
+        <td class="right">{{ summary.fatal_profile.median_ms | group_thousands }}</td>
+        <td class="right">{{ summary.fatal_profile.mean_ms | group_thousands }}</td>
+        <td class="right">{{ summary.fatal_profile.p99_ms | group_thousands }}</td>
+      </tr>
+    </tbody>
+  </table>
+
   {# --- Witness papers + run totals -------------------------------------------------------- #}
   <h3>Witnesses</h3>
   <ul class="telemetry-witnesses">
@@ -121,10 +195,14 @@
     <li>Highest RSS: <a href="/document/{{ summary.corpus }}/{{ summary.service }}/{{ summary.highest_rss.0 }}">{{ summary.highest_rss.0 }}</a>
       <span class="muted">— {{ summary.highest_rss.1 | group_thousands }} MiB peak</span></li>
     {% endif %}
+    {% if summary.slow_tail_dominant | length > 0 %}
+    <li>Slowest-50 dominated by: <span class="muted">{% for d in summary.slow_tail_dominant %}{{ d.0 }} ({{ d.1 }}){% if not loop.last %} · {% endif %}{% endfor %}</span></li>
+    {% endif %}
   </ul>
 
   <p class="muted telemetry-totals">
     {{ summary.total_formulae | group_thousands }} formulae
+    <span class="report-sep">·</span> {{ summary.math.parses_per_formula | round(precision=2) }}× candidate parses/formula
     <span class="report-sep">·</span> {{ summary.total_graphics_assets | group_thousands }} graphics assets
     <span class="report-sep">·</span> {{ summary.total_output_bytes | group_thousands }} output bytes
   </p>

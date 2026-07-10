@@ -149,7 +149,9 @@ pub fn routes() -> Vec<Route> { routes![api_telemetry, telemetry_report_page] }
 
 #[cfg(test)]
 mod tests {
-  use crate::telemetry::{PHASES, Percentiles, TelemetrySummary};
+  use crate::telemetry::{
+    MathStats, OutcomeWall, PHASES, Percentiles, RssBuckets, TailStats, TelemetrySummary,
+  };
   use rocket_dyn_templates::tera::{Context, Tera, Value};
   use std::collections::HashMap;
 
@@ -201,6 +203,42 @@ mod tests {
         max: 40,
       },
       phase_p99_ms: PHASES.iter().map(|phase| (phase.to_string(), 5)).collect(),
+      phase_wall_pct: PHASES
+        .iter()
+        .map(|phase| (phase.to_string(), 100.0 / 17.0))
+        .collect(),
+      tail: TailStats {
+        top1pct_wall_share: 10.0,
+        top5pct_wall_share: 27.0,
+        over_30s: 5,
+        over_60s: 1,
+        over_120s: 0,
+        over_180s: 0,
+      },
+      rss_buckets: RssBuckets {
+        over_2gib: 3,
+        over_3gib: 1,
+        over_4gib: 0,
+      },
+      math: MathStats {
+        formulae: 100,
+        parse_invocations: 90,
+        parse_count: 120,
+        parses_per_formula: 1.33,
+      },
+      slow_tail_dominant: vec![("math_parse".to_string(), 22), ("digest".to_string(), 17)],
+      fatal_profile: OutcomeWall {
+        n: 1,
+        median_ms: 3000,
+        mean_ms: 13000,
+        p99_ms: 98000,
+      },
+      no_problem_profile: OutcomeWall {
+        n: 2,
+        median_ms: 100,
+        mean_ms: 150,
+        p99_ms: 300,
+      },
       slowest: Some(("1234.5678".to_string(), 400)),
       highest_rss: Some(("2345.6789".to_string(), 40)),
       total_formulae: 100,
@@ -234,6 +272,26 @@ mod tests {
     assert!(
       html.contains("2345.6789"),
       "renders the highest-RSS witness"
+    );
+    assert!(
+      html.contains("Where wall time goes"),
+      "renders the phase budget"
+    );
+    assert!(
+      html.contains("Wall by outcome"),
+      "renders the outcome wall profiles"
+    );
+    assert!(
+      html.contains("candidate parses/formula"),
+      "renders the math over-parse multiplier"
+    );
+    assert!(
+      html.contains("Slowest-50 dominated by"),
+      "renders the slow-tail driver"
+    );
+    assert!(
+      html.contains("alloc wall"),
+      "renders the RSS pressure buckets"
     );
   }
 }
