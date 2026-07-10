@@ -79,10 +79,14 @@ pub fn mount_api_with(
     // Bounds concurrent expensive live (`?all=true`) report aggregations so a burst can't exhaust
     // the connection pool and 503 other requests (KNOWN_ISSUES P-2).
     .manage(crate::frontend::concerns::LiveReportLimiter::default())
+    // In-memory TTL cache backing the telemetry dashboard (retroactive per-run result-archive
+    // rollup); see `frontend::telemetry`.
+    .manage(crate::frontend::telemetry::TelemetryCache::default())
     .mount("/", management::routes())
     .mount("/", corpora::routes())
     .mount("/", reports::routes())
     .mount("/", runs::routes())
+    .mount("/", crate::frontend::telemetry::routes())
     .mount("/", jobs::routes())
     .mount("/", services::routes())
     .mount("/", crate::frontend::concerns::routes())

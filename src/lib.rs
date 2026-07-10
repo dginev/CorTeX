@@ -34,4 +34,5 @@ pub mod observability;
 pub mod reports;
 /// Auto-generated diesel schema for the backend DB
 pub mod schema;
+pub mod telemetry;
 pub mod worker;
