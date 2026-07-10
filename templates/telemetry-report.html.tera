@@ -1,0 +1,133 @@
+{% extends "layout" %} {% block content %}
+<div class="report telemetry-report">
+  <header class="report-header">
+    <h1 class="report-title">Telemetry <span class="report-sep">·</span> {{ summary.service }}</h1>
+    <p class="report-sub">
+      <a href="/corpus/{{ summary.corpus }}/{{ summary.service }}">{{ summary.corpus }}</a>
+      <span class="report-sep">/</span> {{ summary.service }}
+      <span class="report-sep">·</span> {{ summary.sample_count | group_thousands }} sampled
+      {% if summary.skipped > 0 %}<span class="report-sep">·</span> <span class="muted">{{ summary.skipped | group_thousands }} skipped (no telemetry)</span>{% endif %}
+    </p>
+  </header>
+
+  {% if summary.sample_count == 0 %}
+  <p class="muted">No telemetry records were found for this run — the result archives may not carry a
+    <code>telemetry.json</code> (an older worker), or the run has not completed. Nothing to aggregate.</p>
+  {% else %}
+
+  {# --- Outcome mix ------------------------------------------------------------------------ #}
+  <h3>Outcome mix</h3>
+  <table class="table report-table">
+    <colgroup>
+      <col style="width:18%"><col style="width:52%"><col style="width:15%"><col style="width:15%">
+    </colgroup>
+    <thead>
+      <tr>
+        <th scope="col" class="left">Outcome</th>
+        <th scope="col" class="left bar-col">Share</th>
+        <th scope="col" class="right">%</th>
+        <th scope="col" class="right">Tasks</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for oc in summary.outcome_counts %}
+      <tr>
+        <td class="left">
+          {% if oc.0 == "no_problem" %}<span class="status-ok">no problem</span>
+          {% elif oc.0 == "warning" %}<span class="status-warn">warning</span>
+          {% else %}<span class="status-bad">{{ oc.0 }}</span>{% endif %}
+        </td>
+        <td class="bar-cell"><span class="bar-track"><span class="bar {% if oc.0 == 'no_problem' %}ok{% elif oc.0 == 'warning' %}warn{% elif oc.0 == 'error' %}error{% else %}fatal{% endif %}" style="--bar-width: {{ oc.1 * 100 / summary.sample_count }}%"></span></span></td>
+        <td class="right">{{ (oc.1 * 100 / summary.sample_count) | round }}%</td>
+        <td class="right">{{ oc.1 | group_thousands }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {# --- Latency + memory percentiles ------------------------------------------------------- #}
+  <div class="telemetry-percentiles">
+    <div class="telemetry-pct-block">
+      <h3>Wall time <span class="muted">(ms)</span></h3>
+      <table class="table report-table">
+        <thead>
+          <tr><th class="left">P50</th><th class="left">P90</th><th class="left">P99</th><th class="left">Max</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>{{ summary.wall_ms.p50 | group_thousands }}</td>
+            <td>{{ summary.wall_ms.p90 | group_thousands }}</td>
+            <td>{{ summary.wall_ms.p99 | group_thousands }}</td>
+            <td>{{ summary.wall_ms.max | group_thousands }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="telemetry-pct-block">
+      <h3>Peak RSS <span class="muted">(MiB)</span></h3>
+      <table class="table report-table">
+        <thead>
+          <tr><th class="left">P50</th><th class="left">P90</th><th class="left">P99</th><th class="left">Max</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>{{ summary.rss_mib.p50 | group_thousands }}</td>
+            <td>{{ summary.rss_mib.p90 | group_thousands }}</td>
+            <td>{{ summary.rss_mib.p99 | group_thousands }}</td>
+            <td>{{ summary.rss_mib.max | group_thousands }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# --- Per-phase P99 profile -------------------------------------------------------------- #}
+  {# Scale each phase bar to the slowest phase P99. Find the max in-template (no extra DTO field),
+     guarding against a zero max so the bar width divides cleanly. #}
+  {% set_global phase_max = 0 %}
+  {% for p in summary.phase_p99_ms %}{% if p.1 > phase_max %}{% set_global phase_max = p.1 %}{% endif %}{% endfor %}
+  {% if phase_max == 0 %}{% set_global phase_max = 1 %}{% endif %}
+  <h3>Per-phase profile <span class="muted">(P99 ms)</span></h3>
+  <table class="table report-table">
+    <colgroup>
+      <col style="width:22%"><col style="width:63%"><col style="width:15%">
+    </colgroup>
+    <thead>
+      <tr>
+        <th scope="col" class="left">Phase</th>
+        <th scope="col" class="left bar-col">P99 share of slowest phase</th>
+        <th scope="col" class="right">P99 ms</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in summary.phase_p99_ms %}
+      <tr>
+        <td class="left">{{ p.0 }}</td>
+        <td class="bar-cell"><span class="bar-track"><span class="bar" style="--bar-width: {{ p.1 * 100 / phase_max }}%"></span></span></td>
+        <td class="right">{{ p.1 | group_thousands }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {# --- Witness papers + run totals -------------------------------------------------------- #}
+  <h3>Witnesses</h3>
+  <ul class="telemetry-witnesses">
+    {% if summary.slowest %}
+    <li>Slowest: <a href="/document/{{ summary.corpus }}/{{ summary.service }}/{{ summary.slowest.0 }}">{{ summary.slowest.0 }}</a>
+      <span class="muted">— {{ summary.slowest.1 | group_thousands }} ms wall</span></li>
+    {% endif %}
+    {% if summary.highest_rss %}
+    <li>Highest RSS: <a href="/document/{{ summary.corpus }}/{{ summary.service }}/{{ summary.highest_rss.0 }}">{{ summary.highest_rss.0 }}</a>
+      <span class="muted">— {{ summary.highest_rss.1 | group_thousands }} MiB peak</span></li>
+    {% endif %}
+  </ul>
+
+  <p class="muted telemetry-totals">
+    {{ summary.total_formulae | group_thousands }} formulae
+    <span class="report-sep">·</span> {{ summary.total_graphics_assets | group_thousands }} graphics assets
+    <span class="report-sep">·</span> {{ summary.total_output_bytes | group_thousands }} output bytes
+  </p>
+  {% endif %}
+</div>
+{% endblock content %}

@@ -111,6 +111,25 @@ impl Task {
       .first(connection)
   }
 
+  /// Every task `entry` of a **completed** `(corpus, service)` run — the source archives the
+  /// retroactive telemetry aggregation reads back off disk (see [`crate::telemetry::aggregate`]).
+  /// "Completed" means `status != TODO`: a finished run has each task finalized to a
+  /// NoProblem/Warning/Error/Fatal/Invalid status. In-flight `Queued`/`Blocked` marks are also
+  /// `!= TODO`, so a mid-run scope simply contributes whatever result archives already exist and
+  /// the aggregation skips the rest.
+  pub fn completed_entries(
+    corpus_id: i32,
+    service_id: i32,
+    connection: &mut PgConnection,
+  ) -> Result<Vec<String>, Error> {
+    tasks::table
+      .filter(tasks::corpus_id.eq(corpus_id))
+      .filter(tasks::service_id.eq(service_id))
+      .filter(tasks::status.ne(TaskStatus::TODO.raw()))
+      .select(tasks::entry)
+      .load(connection)
+  }
+
   /// Find task by name-suffix of an entry, error if none
   pub fn find_by_name(
     name: &str,
