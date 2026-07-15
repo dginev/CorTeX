@@ -22,9 +22,6 @@ ignore = []
 [licenses]
 version = 2
 confidence-threshold = 0.9
-# Known benign warning: `pericortex` (our own git dep) ships no `license` field, so
-# cargo-deny emits `no-license-field` for it. It's a warning (CI stays green); the
-# real fix is to add `license = "MIT"` upstream in cortex-peripherals.
 # Permissive set. A dependency whose license is NOT listed here fails the check,
 # forcing an explicit review before it enters the shipped binary.
 allow = [
@@ -36,7 +33,9 @@ allow = [
   "ISC",
   "Zlib",
   "Unicode-3.0",
-  "CC0-1.0",
+  "CC0-1.0",         # public-domain dedication; `pericortex` (our own worker git dep) relicensed
+                     # MIT -> CC0-1.0 in cortex-peripherals@3229748, which also added the `license`
+                     # field that previously tripped cargo-deny's `no-license-field` warning.
   "Unlicense",      # public-domain dedication; only `win_uds` (Windows-only dep of zeromq) uses it
   "MPL-2.0",        # weak (per-file) copyleft — safe to depend on
   "bzip2-1.0.6",    # permissive BSD-style bzip2/libbzip2 license; pulled by `zip` 8.x's bzip2 feature
