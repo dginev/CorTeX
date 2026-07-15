@@ -71,8 +71,23 @@ sudo apparmor_parser -r /etc/apparmor.d/gs
 
 Also ensure `ghostscript imagemagick poppler-utils mupdf-tools` are installed
 (the converter chain) and that ImageMagick's `policy.xml` permits PS/EPS/PDF.
-The Docker worker image (`docker/cortex-worker.dockerfile`) bakes all of this in
-and is unaffected by the host `gs` profile (it runs under `docker-default`).
+
+The **containerized worker** avoids all of the above — it bakes the
+gs/ImageMagick setup in and runs under `docker-default`, unaffected by the host
+`gs` profile. latexml-oxide publishes it to GHCR, built from its unified
+`Dockerfile --target worker`:
+
+```bash
+docker run --network host -v /opt/cortex-scratch:/opt/cortex-scratch \
+  --hostname="$(hostname)" ghcr.io/dginev/latexml-oxide/cortex-worker <dispatcher-host>
+```
+
+Published from latexml-oxide **0.7.4** onward — the unified `Dockerfile` postdates 0.7.3,
+which has no `worker` target. Each published release pushes `:<tag>` and `:latest`.
+
+See latexml-oxide's `docker/README.md` for the full turnkey run reference
+(`PROFILE`/`WORKERS` env, standalone mode). The systemd units below run the
+bare-binary fleet instead (`WORKER_BIN` from a local `maxperf-cortex` build).
 
 ### Services
 

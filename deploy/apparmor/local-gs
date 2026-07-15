@@ -23,7 +23,8 @@
 #
 # (Docker deployments do NOT need this: the container runs under Docker's
 # `docker-default` AppArmor profile, not the host per-binary `gs` profile, and
-# the image now installs ghostscript explicitly — see docker/cortex-worker.dockerfile
+# the image installs ghostscript explicitly — see the unified `Dockerfile`
+# (`--target worker`, published as ghcr.io/dginev/latexml-oxide/cortex-worker)
 # in the latexml-oxide repo.)
 
   owner file rw /opt/cortex-scratch/**,
