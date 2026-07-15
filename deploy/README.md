@@ -82,6 +82,9 @@ docker run --network host -v /opt/cortex-scratch:/opt/cortex-scratch \
   --hostname="$(hostname)" ghcr.io/dginev/latexml-oxide/cortex-worker <dispatcher-host>
 ```
 
+Published from latexml-oxide **0.7.4** onward — the unified `Dockerfile` postdates 0.7.3,
+which has no `worker` target. Each published release pushes `:<tag>` and `:latest`.
+
 See latexml-oxide's `docker/README.md` for the full turnkey run reference
 (`PROFILE`/`WORKERS` env, standalone mode). The systemd units below run the
 bare-binary fleet instead (`WORKER_BIN` from a local `maxperf-cortex` build).
