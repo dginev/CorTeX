@@ -495,11 +495,11 @@ pub fn parse_log(task_id: i64, log: &str) -> Vec<NewTaskMessage> {
         // Special case is a "Loading..." info messages
         let mut filepath = cap.get(1).map_or("", |m| m.as_str()).to_string();
         let mut filename = cap.get(2).map_or("", |m| m.as_str()).to_string();
-        // `what` (the filename) is a groupable key — keep the 50 cap. The
-        // full path goes to `details`, which is 2000 elsewhere in this
-        // parser; the old 50 cap cut real texmf paths mid-directory
-        // ("/usr/share/texlive/texmf-dist/tex/latex/tcolorbox" for
-        // tcolorbox.sty), making the recorded source path useless.
+        // `what` (the filename) is a groupable key, capped at 100 — its column is
+        // varchar(200). The full path goes to `details` (varchar(2000)); the old 50
+        // cap cut real texmf paths mid-directory — for tcolorbox.sty the directory
+        // alone is exactly 50 chars, so the filename was dropped outright, leaving
+        // an unusable source path.
         utf_truncate(&mut filename, 100);
         filepath += &filename;
         utf_truncate(&mut filepath, 2000);
@@ -908,6 +908,28 @@ mod log_decode_tests {
       messages.len(),
       1,
       "the orphan line is ignored; the real message survives"
+    );
+  }
+
+  #[test]
+  fn loaded_file_details_keep_the_full_source_path() {
+    use super::NewTaskMessage;
+    // The `(Loading ...` special case: `what` is the groupable filename, `details` the full path.
+    // tcolorbox's texmf directory is exactly 50 chars, so the old 50-char cap on the joined path
+    // dropped the filename outright and recorded a bare, unusable directory.
+    let messages = parse_log(
+      7,
+      "(Loading /usr/share/texlive/texmf-dist/tex/latex/tcolorbox/tcolorbox.sty...\n",
+    );
+    assert_eq!(messages.len(), 1, "the Loading line parses to one message");
+    let m = &messages[0];
+    assert!(matches!(m, NewTaskMessage::Info(_)));
+    assert_eq!(m.category(), "loaded_file");
+    assert_eq!(m.what(), "tcolorbox.sty", "the filename stays groupable");
+    assert_eq!(
+      m.details(),
+      "/usr/share/texlive/texmf-dist/tex/latex/tcolorbox/tcolorbox.sty",
+      "details keeps the whole path, filename included"
     );
   }
 
