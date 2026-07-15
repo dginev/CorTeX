@@ -112,11 +112,31 @@ pub fn build_pool(database_url: &str, max_size: u32) -> DbPool {
 /// connection against the same database as the request pool (notably the test database in
 /// integration tests).
 pub struct DatabaseUrl(pub String);
-/// Constructs the default Backend struct for testing
+/// Constructs the default Backend struct for testing, with the test database's schema brought
+/// current.
+///
+/// The test DB self-migrates from the **embedded** migrations (once per test process) — the same
+/// source `cortex init` applies to production — so keeping it current needs no `diesel_cli`. A
+/// stale test DB otherwise surfaces as `relation "..." does not exist` deep inside an unrelated
+/// assertion, which reads like a code bug rather than an un-migrated database. Only
+/// `database.test_url` is ever reached, never `database.url`.
 pub fn testdb() -> Backend {
-  Backend {
+  static MIGRATED: std::sync::Once = std::sync::Once::new();
+  let mut backend = Backend {
     connection: connection_at(test_db_address()),
-  }
+  };
+  // `Once` parks sibling test threads until the schema is current, so none observes a half-applied
+  // migration. Panicking (rather than returning a Result) is deliberate: this is test setup, not a
+  // request/dispatch path — a half-migrated schema would make every downstream failure a lie.
+  MIGRATED.call_once(|| {
+    if let Err(e) = crate::migrations::run_pending_migrations(&mut backend.connection) {
+      panic!(
+        "test DB at {} could not be migrated: {e}",
+        test_db_address()
+      );
+    }
+  });
+  backend
 }
 /// Constructs a Backend at a given address
 pub fn from_address(address: &str) -> Backend {
