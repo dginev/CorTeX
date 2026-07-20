@@ -42,6 +42,15 @@ best-effort (drops under saturation), so its counts would flake.
 | 5000 tasks · 4 workers · 256 KB | ~3,500 | **~1,770** | ✓ pass |
 | 20000 tasks · 8 workers · 8 KB | ~9,800 | ~155 | ✓ pass (18/18 after the D-10 fix) |
 
+> ⚠️ **The worker-count axis of the table above is not trustworthy (D-21, found 2026-07-20).**
+> Until 2026-07-20 the bench spawned its N workers as threads of one process and let
+> `Worker::start()` overwrite each `identity` with `<host>:<service>:<pid>` — identical for all of
+> them. So every "4 workers" / "8 workers" / "16 workers" run actually presented **one** ZMQ identity
+> to the ventilator's `router_handover` ROUTER, i.e. a single peer. Throughput *magnitudes* are still
+> indicative, but any conclusion drawn from *scaling across worker counts* needs re-measuring on the
+> fixed harness. The same collision also silently dropped the occasional dispatch, stranding a task
+> until the lease reaper — see KNOWN_ISSUES **D-21** / **D-22**.
+
 These are loopback/in-process numbers (worker + dispatcher + DB on one box) — they bound *relative*
 regressions, not absolute production throughput (which is network + `/data` disk bound). The headline
 metric to watch over time is **tasks/s at the 4-worker baseline** and **MB/s at the fat-payload

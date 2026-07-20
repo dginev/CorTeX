@@ -336,6 +336,13 @@ impl Ventilator {
           // finishes; if the task were recorded only *after* the send (as it was), the sink's
           // `pop_progress_task` could miss it and discard the result, stranding the task `Queued`
           // until the ≥1h visibility-timeout reaper — the single-task-loss race that surfaced under
+          // NOTE (D-21, 2026-07-20): two caveats on the citation above. (1) DISPATCHER_BENCH.md
+          // attributes that 8-worker loss to **D-10**, not D-4 — this reference is stale. (2) The
+          // bench harness that produced it gave all N worker threads ONE shared ZMQ identity
+          // (D-21), which was never controlled for. The ordering fix below is not in doubt — it
+          // held for 18 consecutive clean runs at the previously-failing concurrencies — but the
+          // two defects coexisted, so read that bench number as D-10 plus an uncontrolled D-21
+          // component, not as clean proof of this race alone.
           // higher worker concurrency (KNOWN_ISSUES D-4 / docs/DISPATCHER_BENCH.md 8-worker loss).
           // Recording first also leaves a mid-stream send failure correctly in-flight for the
           // reaper.

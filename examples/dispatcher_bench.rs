@@ -284,17 +284,23 @@ fn main() {
       .join()
       .expect("saboteur thread");
   }
+  // D-21: `start()` would overwrite `identity` with `<host>:<service>:<pid>` — identical across
+  // every thread of this process — collapsing the fleet onto ONE ZMQ identity under the
+  // ventilator's `router_handover`. This bench is the source of the "8-worker loss" cited as
+  // motivation for D-4, so its fleet must really be `n_workers` distinct peers. `start_single()`
+  // is what `start()` calls after setting the identity, so it keeps the distinct one built here.
+  let fleet_pid = std::process::id();
   for w in 0..n_workers {
     thread::spawn(move || {
-      let mut worker = EchoWorker {
+      let worker = EchoWorker {
         service: SERVICE_NAME.to_string(),
         version: 0.1,
         message_size: 100_000,
         source: format!("tcp://127.0.0.1:{SOURCE_PORT}"),
         sink: format!("tcp://127.0.0.1:{RESULT_PORT}"),
-        identity: format!("bench-q-worker-{w}"),
+        identity: format!("bench-fleet:{SERVICE_NAME}:{fleet_pid}-{w:02}"),
       };
-      worker.start(None).ok();
+      worker.start_single(None).ok();
     });
   }
 

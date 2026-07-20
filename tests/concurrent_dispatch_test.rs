@@ -169,7 +169,22 @@ fn main() {
     .expect("manager start");
   });
 
-  // A fleet of concurrent echo workers, each with a distinct ROUTER identity.
+  // A fleet of concurrent echo workers, each with a distinct ROUTER identity (D-21).
+  //
+  // `Worker::start()` OVERWRITES `identity` with `<host>:<service>:<pid>` (EchoWorker leaves
+  // `pool_size()` at its default 1), and every worker here is a thread of the *same* process — so
+  // `start()` would collapse the whole fleet onto ONE ZMQ identity. Under the ventilator's
+  // `router_handover(true)` that makes them a single peer: each new connection hijacks the
+  // identity, and a dispatch racing a handover is dropped, leaving its task leased-but-never-
+  // finalized until the 240 s lease reaper — far past this test's deadline (~2.4 % of CI runs).
+  // pericortex documents the contract: the identity MUST be globally unique, which for
+  // single-worker *processes* the PID provides but for pooled *threads* it does not.
+  //
+  // `start_single()` is exactly what `start()` calls after setting the identity (see the
+  // `pool_size() == 1` arm upstream), so calling it directly loses nothing and keeps the distinct
+  // per-thread identity built below. The `<host>:<service>:<suffix>` shape is preserved because
+  // `worker_metadata` records this string verbatim.
+  let fleet_pid = std::process::id();
   for w in 0..n_workers {
     thread::spawn(move || {
       EchoWorker {
@@ -178,9 +193,9 @@ fn main() {
         message_size: 100_000,
         source: format!("tcp://127.0.0.1:{SOURCE_PORT}"),
         sink: format!("tcp://127.0.0.1:{RESULT_PORT}"),
-        identity: format!("concurrent-echo-worker-{w}"),
+        identity: format!("test-fleet:{SERVICE_NAME}:{fleet_pid}-{w:02}"),
       }
-      .start(None)
+      .start_single(None)
       .ok();
     });
   }
