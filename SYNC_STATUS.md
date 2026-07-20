@@ -1,92 +1,95 @@
-# SYNC_STATUS — CI red on `main` (2026-07-20)
+# SYNC_STATUS — CI red on `main` + dispatcher silent-drop gap (2026-07-20)
 
-Handoff note. Branch: **`fix/worker-identity-collision`** (commit `4b9a5b3`, branched off
-`1c28424` = current `origin/main`). Not pushed — awaiting your say.
+Handoff note. Branch: **`fix/worker-identity-collision`** (branched off `1c28424` = current
+`origin/main`; now **two commits** — D-21 harness fix, then the D-22 dispatcher fix). Not pushed —
+awaiting your say.
 
 ---
 
 ## TL;DR
 
-CI going red on the serde bump was **not** the serde bump. `concurrent_dispatch_test` has a
-**~2.4% flake dating to 2026-06-17** (7 failures over 5 weeks, on 5+ unrelated branches). Root
-cause found, fixed, and verified. **Re-running the failed CI job will go green.**
-
-Production was **never** affected — the defect only manifests in test/bench harnesses.
+1. **CI flake — fixed (D-21).** CI going red on the serde bump was **not** the serde bump.
+   `concurrent_dispatch_test` had a **~2.4% flake dating to 2026-06-17** (7 failures over 5 weeks, on
+   5+ unrelated branches). Root-caused and fixed. **Re-running the failed CI job will go green.**
+2. **The production gap behind it — now also fixed (D-22).** The delivery mechanism under the flake
+   was a genuine **production** robustness hole: the ventilator's ROUTER *silently dropped* any
+   dispatch to a worker that had vanished, stranding the task for a full 240 s+ lease timeout with
+   zero observability. That is now closed — an unroutable dispatch is caught, logged, counted, and
+   the task stays queued for the next worker (no strand). Both defects are 🟢 in
+   `docs/KNOWN_ISSUES.md`.
 
 ---
 
-## Root cause
+## Root cause (both defects)
 
-Two distinct defects, both now recorded in `docs/KNOWN_ISSUES.md`:
-
-**D-21 — every multi-worker harness collapsed onto ONE ZMQ identity.**
+**D-21 — every multi-worker harness collapsed onto ONE ZMQ identity.** *(fixed, commit 1)*
 `tests/concurrent_dispatch_test.rs` and both benches spawn N `EchoWorker`s as *threads of one
 process* and set a distinct `identity` field. But `Worker::start()` **overwrites** it with
 `<host>:<service>:<pid>` (EchoWorker leaves `pool_size()` at 1), and one process has one PID.
 Measured in a reproduced failure: **`217 worker=…:concurrent_echo:163878` — 1 identity, 8 workers.**
-Under the ventilator's `router_handover(true)` they are one peer, so a dispatch racing a handover is
-dropped; the task is already leased + in-flight, so it strands `Queued` until the **240 s** lease
-reaper — past the test's 90 s deadline. pericortex documents this exact contract and consequence.
+Under `router_handover(true)` they are one peer, so a dispatch racing a handover is dropped; the task
+is already leased + in-flight, so it strands `Queued` until the **240 s** reaper — past the test's
+90 s deadline. Fix: each harness worker now gets a process- *and* thread-unique identity
+(`<host>:<service>:<pid>-<NN>`) + `start_single()`. **Production was never affected** —
+`scripts/run_worker.sh` runs one *process* per slot with a distinct `stable_identity_suffix`.
 
-**D-22 — the ventilator's ROUTER drops unroutable dispatches silently.** ⚠️ **NOT FIXED — see below.**
-A ZMQ ROUTER discards messages to an unroutable identity *without error* unless
-`ZMQ_ROUTER_MANDATORY` is set; only `router_handover` was set. Any worker dying between its request
-and our reply swallowed the whole dispatch with no log, metric, or counter. This is the delivery
-mechanism behind D-21's symptom but is independent of it — it hits production paths too (worker
-death, network drop, restart).
-
-**Smoking-gun trace** (task 20888): `ventilator: streamed task payload to worker` … then *never
-seen again* by sink, worker, or finalize.
+**D-22 — the ventilator's ROUTER dropped unroutable dispatches silently.** *(fixed, commit 2)*
+A ZMQ ROUTER discards a message to an unroutable identity *without error* unless
+`ZMQ_ROUTER_MANDATORY` is set; only `router_handover` was. Any worker dying between its request and
+our reply swallowed the whole dispatch with no log, metric, or counter, then the (already-leased)
+task sat unheld until the reaper — **in production** (worker death, network drop, restart), not just
+the harness. **Smoking-gun trace** (task 20888): `ventilator: streamed task payload to worker` …
+then never seen again by sink, worker, or finalize.
 
 ---
 
-## What changed (`4b9a5b3`, 6 files, +82/−10)
+## What changed
+
+**Commit 1 (D-21, harness):** `tests/concurrent_dispatch_test.rs`, `examples/dispatcher_bench.rs`,
+`examples/bench_pipeline.rs` (unique identity + `start_single()`); `docs/DISPATCHER_BENCH.md` (caveat
+on the untrustworthy worker-count axis); a comment fix in `ventilator.rs`.
+
+**Commit 2 (D-22, dispatcher):**
 
 | File | Change |
 |---|---|
-| `tests/concurrent_dispatch_test.rs` | process+thread-unique identity, `start_single()` |
-| `examples/dispatcher_bench.rs` | same |
-| `examples/bench_pipeline.rs` | same |
-| `src/dispatcher/ventilator.rs` | comment-only: corrects the stale "D-4" citation (the bench loss was D-10) |
-| `docs/KNOWN_ISSUES.md` | D-21 (🟢 resolved), D-22 (🔴 open) |
-| `docs/DISPATCHER_BENCH.md` | caveat on the worker-count axis |
+| `src/dispatcher/ventilator.rs` | `set_router_mandatory(true)` + a `route_worker_frame` helper guarding the routing frame at all **three** send sites (unknown-service mock-reply, backpressure mock-reply, real dispatch): `EHOSTUNREACH` → rate-limited `warn!` + count + `continue`. |
+| `docs/KNOWN_ISSUES.md` | D-22 → 🟢 resolved, with the empirical correction (below). |
+| `SYNC_STATUS.md` | this update. |
 
-`start_single()` is exactly what `start()` calls after setting the identity (upstream's
-`pool_size() == 1` arm), so nothing is bypassed.
+### How D-22 was done right (the reverted attempt's trap, corrected)
 
-### ⚠️ D-22 was attempted, then REVERTED
+The first attempt set `set_router_mandatory(true)` but guarded only the real-dispatch identity frame,
+so `dispatcher_torture_test` aborted with `Failed in ventilator thread: Host unreachable`. The old
+ledger blamed "body frames still using `?`" and prescribed "handle *every* send." **An empirical
+libzmq-4.3.5 probe corrected that:**
 
-I implemented `set_router_mandatory(true)` and it **broke `dispatcher_torture_test`**:
-`Failed in ventilator thread: Host unreachable` (panic at `manager.rs:171`). Cause: I guarded only
-the **identity frame**, but the task-id frame, every payload chunk, and the two-frame mock-reply
-path all still used `?`, so an `EHOSTUNREACH` on any of those propagated out and killed the
-ventilator thread.
+- Under `ROUTER_MANDATORY`, **only the routing (first) frame** ever returns `EHOSTUNREACH`.
+- A rejected routing frame is **never started as a multipart**, so the socket stays cleanly at
+  message-start — a fresh reply to a live peer routes correctly on the very next send. **No desync.**
+- So the revert didn't fail from desync; it crashed by letting `EHOSTUNREACH` **propagate via `?`**
+  on the *unguarded* routing sends — the two mock-reply paths, plus each following `SNDMORE` frame
+  (after a failed routing frame, libzmq re-interprets the next frame as a new, also-unroutable
+  routing frame).
 
-**Reverted.** The branch now contains only the D-21 fix (which is what actually cures the CI
-flake) plus docs. D-22 is recorded 🔴 **open** in `KNOWN_ISSUES.md`, including the trap and the
-per-stage recovery a correct fix needs (skip-before-lease vs. abandon-stream-and-let-the-reaper-
-recover). Don't retry it without handling *every* send in the dispatch loop.
+**Therefore guarding the routing frame at every site and `continue`-ing before the body frames is
+necessary and sufficient.** The body frames keep `?` (after a *successful* route they can't surface
+`EHOSTUNREACH`, and the blocking socket can't return `EAGAIN`). Bonus: the real dispatch's routing
+frame is sent **before** the `pop()` lease, so an unroutable worker there is caught having leased
+nothing → the task stays queued for the next worker (better than the reaper fallback the ledger
+planned). Only a worker dying *mid-payload-stream* (routing frame already sent) still falls to the
+reaper — and the task is recorded in-flight before streaming, so it's recovered.
 
 ---
 
 ## Verification
 
-- **A/B soak** under `taskset -c 0,1` (2-core, CI-like contention), matched conditions:
-  **2 failures / 60 runs before → 0 / 210 after.** p ≈ 2e-4 against the ~4% base rate measured
-  over 148 unfixed runs.
+- **D-21:** A/B soak under `taskset -c 0,1`: **2 fails / 60 before → 0 / 210 after** (p ≈ 2e-4).
+- **D-22:** `dispatcher_torture_test` (the `vent_flood` trap-exposer) passes with **255
+  `EHOSTUNREACH` events caught + handled** from the disconnecting `torture-flood-peer` — the reverted
+  attempt aborted on the first. `echo_roundtrip_test` / `dispatcher_job_limit_test` /
+  `concurrent_dispatch_test` all green; a fresh **2-core `concurrent_dispatch_test` soak: 60/60**.
 - `cargo fmt --check` clean; `cargo clippy --all-targets -- -D warnings` clean.
-- Dispatcher suite on the final branch build: `echo_roundtrip_test` ✅, `dispatcher_job_limit_test`
-  ✅, `concurrent_dispatch_test` ✅.
-
-### ⚠️ Still pending when I stopped
-
-A revalidation of the **reverted** branch (4 dispatcher tests + an 80-run 2-core soak) was still
-running when I wrote this. Before trusting the branch, confirm:
-
-```bash
-cargo test --test echo_roundtrip_test --test dispatcher_job_limit_test \
-           --test concurrent_dispatch_test --test dispatcher_torture_test
-```
 
 Full `cargo test` has **not** been run (and must not be, on this box — see Gotchas).
 
@@ -94,16 +97,14 @@ Full `cargo test` has **not** been run (and must not be, on this box — see Got
 
 ## Gotchas
 
-1. **Do NOT run a bare `cargo test` on this box.** `latexmlc` *is* installed
-   (`/home/deyan/perl5/bin/latexmlc`), so `tex_to_html_test` can hang the suite for 30+ min —
-   that's the open **W-6**. Run dispatcher tests by name.
-2. **Your working tree still has an unresolved `Cargo.lock` conflict** (`UU`, from
-   `stash@{1}` "wip: full cargo update sweep" vs upstream) — two hunks: pericortex
-   `a4eaf05` vs `340f728`, and `syn 3.0.2` vs `2.0.119`. **I deliberately did not touch it.**
-   You can't build in `/home/deyan/git/cortex` until it's resolved.
-3. The work lives in a scratch **git worktree** under `/tmp/...`, which may be cleared. The
-   **commit is safe** — it's in your repo's object store. Read the handoff without switching
-   branches: `git show fix/worker-identity-collision:SYNC_STATUS.md`
+1. **Do NOT run a bare `cargo test` on this box.** `latexmlc` *is* installed, so `tex_to_html_test`
+   can hang the suite for 30+ min — the open **W-6**. Run dispatcher tests by name.
+2. **The main working tree (`/home/deyan/git/cortex`) still has an unresolved `Cargo.lock` conflict**
+   (`UU`, pericortex `a4eaf05` vs `340f728`, `syn 3.0.2` vs `2.0.119`). **Untouched — you can't build
+   there until it's resolved.** All work here was done in a scratch worktree under `/tmp/...` on the
+   branch, which builds cleanly (the branch's `Cargo.lock` is the clean one off `main`).
+3. The scratch worktree may be cleared; the **commits are safe** in the object store. Read this
+   without switching branches: `git show fix/worker-identity-collision:SYNC_STATUS.md`
 4. **CI on `main` stays red** until someone re-runs the job. It will pass.
 
 ---
@@ -111,17 +112,15 @@ Full `cargo test` has **not** been run (and must not be, on this box — see Got
 ## Open decisions for you
 
 1. **Push the branch?** Not pushed. Per CLAUDE.md the preference is branch + push, no PR.
-2. **Finish D-22?** It's a genuine production robustness gap (silent work-dropping), just larger
-   than it looked. The ledger entry has the full fix direction and the regression trap.
-3. **`DISPATCHER_BENCH.md` numbers.** Every "N workers" figure it ever produced measured *one* ZMQ
-   peer, so the concurrency axis needs re-measuring on the fixed harness. I only annotated it.
-4. **Should the test exercise the reaper?** Its 90 s deadline is shorter than the 240 s
-   `lease_timeout_seconds`, so it can never observe the safety net that makes a lost dispatch
-   survivable in production — any single loss is an automatic failure. `config.rs` itself notes
-   that lowering `lease_timeout_seconds` + `reap_interval_seconds` is "what lets a fast chaos test
-   exercise reaper-based recovery in seconds". Worth doing; not done here.
-5. **D-10 / D-4 nuance.** `ventilator.rs` cited "D-4" for the historical bench loss while
-   `DISPATCHER_BENCH.md` attributes it to **D-10**; I corrected the stale reference. I initially
-   suspected D-21 invalidated that finding, but the D-10 fix held for 18 consecutive clean runs
-   (p ≈ 0.006 at a 25% rate), so it is real. The honest reading — recorded in D-21 — is that both
-   defects coexisted: D-10 for the bulk, D-21 for the residual few percent that outlived it.
+   *(D-22 is a production dispatcher change — you may want it on its own branch off `main` rather than
+   riding on the harness branch; say the word and I'll split them.)*
+2. **`DISPATCHER_BENCH.md` numbers.** Every "N workers" figure it ever produced measured *one* ZMQ
+   peer, so the concurrency axis needs re-measuring on the fixed harness. Only annotated so far.
+3. **Should the test exercise the reaper?** `concurrent_dispatch_test`'s 90 s deadline is shorter
+   than the 240 s `lease_timeout_seconds`, so it can never observe the safety net. Lowering
+   `lease_timeout_seconds` + `reap_interval_seconds` (config.rs notes this is "what lets a fast chaos
+   test exercise reaper-based recovery in seconds") would let a chaos test prove the mid-stream →
+   reaper recovery that D-22 now leans on. Worth doing; not done here.
+4. **D-10 / D-4 nuance** (unchanged from before). `ventilator.rs`'s stale "D-4" citation was
+   corrected to D-10; the D-10 fix held for 18 consecutive clean runs (p ≈ 0.006), so it's real. Both
+   defects coexisted: D-10 for the bulk of the historical bench loss, D-21 for the residual.

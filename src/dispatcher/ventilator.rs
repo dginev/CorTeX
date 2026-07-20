@@ -67,6 +67,22 @@ impl Ventilator {
     let context = zmq::Context::new();
     let ventilator = context.socket(zmq::ROUTER)?;
     ventilator.set_router_handover(true)?;
+    // Fail LOUD, not silent, when a reply can't be routed (KNOWN_ISSUES D-22). A ZMQ `ROUTER`
+    // *silently discards* a message addressed to an identity it can't route unless
+    // `ZMQ_ROUTER_MANDATORY` is set — so a worker that vanished between its request and our reply
+    // used to swallow the whole dispatch with no error, stranding the (already-leased) task until
+    // the lease reaper reclaimed it 240s+ later, with zero observability (exactly what
+    // DESIGN_PRINCIPLES forbids). With mandatory set, an unroutable send returns `EHOSTUNREACH`
+    // instead, which every routing-frame send below catches → logs, counts, and skips. Note the
+    // libzmq contract this relies on (verified empirically 2026-07-20): only the *routing*
+    // (first) frame reports `EHOSTUNREACH`; a rejected routing frame is NOT started as a
+    // multipart, so skipping the reply's remaining frames leaves the socket cleanly at
+    // message-start (no desync). Body frames after a *successful* routing frame never surface it
+    // (a peer dying mid-stream drops silently, and the task is already recorded in-flight for the
+    // reaper — see the ordering note further down). The reverted first attempt (D-22 history)
+    // crashed not from desync but from letting `EHOSTUNREACH` propagate via `?` on the *unguarded*
+    // mock-reply routing sends; guarding all three sites below is the fix.
+    ventilator.set_router_mandatory(true)?;
     // Keep idle remote-worker connections alive across NAT/firewall idle-timeouts (set before bind
     // so accepted connections inherit it). Correctness is the reaper's job, not keepalive's.
     server::apply_tcp_keepalive(
@@ -141,6 +157,10 @@ impl Ventilator {
     // sustained malformed-request flood must not turn per-message `stderr` writes into a
     // throughput-DoS (KNOWN_ISSUES D-11) — count, don't narrate.
     let mut discard_log = server::RateLimitedLog::new(Duration::from_secs(5));
+    // Rate-limited logging for dispatches/replies dropped because the worker was unroutable at send
+    // time (D-22). A dying-worker or restart storm can make this fire per-request, so aggregate it
+    // (like `discard_log`) — count, don't narrate — so it can never become a throughput-DoS (D-11).
+    let mut unroutable_log = server::RateLimitedLog::new(Duration::from_secs(5));
 
     // Input-archive prefetcher (D-20): warm each fetched batch's archives into the OS page cache
     // ahead of dispatch, so the inline `/data` read below is served from RAM (~0.02 ms) instead of
@@ -267,7 +287,9 @@ impl Ventilator {
               "ventilator: discarded {n} request(s) [latest: unknown service {service_name:?} from {identity_str:?}, mock-replied] (rate-limited)"
             );
           }
-          ventilator.send(identity, SNDMORE)?;
+          if !route_worker_frame(&ventilator, identity, &identity_str, &mut unroutable_log)? {
+            continue;
+          }
           ventilator.send("0", SNDMORE)?;
           ventilator.send(Vec::new(), 0)?;
           continue;
@@ -284,7 +306,9 @@ impl Ventilator {
             worker = %identity_str,
             "BACKPRESSURE: in-flight set at capacity; mock-replying to worker"
           );
-          ventilator.send(identity, SNDMORE)?;
+          if !route_worker_frame(&ventilator, identity, &identity_str, &mut unroutable_log)? {
+            continue;
+          }
           ventilator.send("0", SNDMORE)?;
           ventilator.send(Vec::new(), 0)?;
           continue;
@@ -321,7 +345,12 @@ impl Ventilator {
           }));
         }
 
-        ventilator.send(identity, SNDMORE)?;
+        // Routing frame under ROUTER_MANDATORY, sent BEFORE the lease (the `pop()` below): if the
+        // worker vanished between its request and now, `EHOSTUNREACH` is caught here having leased
+        // nothing, so the task stays queued for the next worker — no strand, no reaper wait (D-22).
+        if !route_worker_frame(&ventilator, identity, &identity_str, &mut unroutable_log)? {
+          continue;
+        }
         if let Some(current_task_progress) = task_queue.pop() {
           dispatched_this_iter = true;
           // A `retries == 0` task is entering the pipeline for the first time; a re-leased task
@@ -459,5 +488,36 @@ impl Ventilator {
         }
       }
     }
+  }
+}
+
+/// Send the ROUTER routing (identity) frame for a worker reply under `ZMQ_ROUTER_MANDATORY`
+/// (KNOWN_ISSUES D-22). Returns `Ok(true)` when the worker routed and the caller may stream the
+/// rest of the reply; `Ok(false)` when the worker was unroutable (`EHOSTUNREACH`) — the caller MUST
+/// emit nothing further for this reply and `continue`. A rejected routing frame is never *started*
+/// as a multipart (verified empirically against libzmq 4.3.5), so skipping the reply's remaining
+/// frames leaves the socket cleanly aligned at message-start — no desync. The drop is counted and
+/// rate-limit-logged here so it is never silent (the D-22 gap DESIGN_PRINCIPLES forbids) and never
+/// a per-request log-DoS (D-11). Any *other* send error is a genuine fault and propagates
+/// (fail-fast → manager aborts the thread → external restart), consistent with the rest of the
+/// dispatch loop.
+fn route_worker_frame(
+  sock: &zmq::Socket,
+  identity: zmq::Message,
+  identity_str: &str,
+  unroutable_log: &mut server::RateLimitedLog,
+) -> Result<bool, zmq::Error> {
+  match sock.send(identity, SNDMORE) {
+    Ok(()) => Ok(true),
+    Err(zmq::Error::EHOSTUNREACH) => {
+      if let Some(n) = unroutable_log.record() {
+        warn!(
+          "ventilator: {n} reply/dispatch(es) dropped — worker unroutable at send time \
+           (EHOSTUNREACH) [latest: {identity_str:?}]; no work lost, task stays queued (rate-limited)"
+        );
+      }
+      Ok(false)
+    },
+    Err(e) => Err(e),
   }
 }
