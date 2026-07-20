@@ -30,6 +30,9 @@ docs/CorTeX-productizing-HANDOFF.md
 # Temp files
 *.rdb
 
+# Run/import logs (e.g. extend_corpora → extend.log), regenerated on each run
+*.log
+
 # Local UI screenshots (visual verification, not committed)
 .shots/
 
