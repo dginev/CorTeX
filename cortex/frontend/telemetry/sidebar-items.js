@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["api_telemetry","routes","telemetry_report_page"],"struct":["TelemetryCache"]};

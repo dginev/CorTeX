@@ -1,0 +1,4529 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "CorTeX agent API",
+    "description": "CorTeX is a distributed corpus-conversion framework for scholarly documents. This is its **agent API** — the machine twin of the human admin screens: every endpoint returns the *same* structured DTO a screen renders, so an agent and an operator always see identical live and historical state.\n\n## Authenticating\n\nRead-only report endpoints are public; **management and write** endpoints (and `/metrics`) are **token-gated**. Supply your token either way:\n\n- query string — `?token=<TOKEN>`\n- header — `X-Cortex-Token: <TOKEN>`\n\nA missing or invalid token returns `401`. Every write is attributed to an actor and recorded in the operational journal.\n\n## Where to start\n\n- `GET /api/status` — at-a-glance system snapshot (corpora, the active worker fleet, the pending-conversion backlog, the latest run).\n- `GET /api/health` — deep health check (connection pool, dispatcher ports, corpus storage).\n- `GET /api/corpora` and `GET /api/reports/<corpus>/<service>/<severity>` — the conversion report hierarchy (paginated).\n- `GET /api/runs` and `GET /api/runs/<corpus>/<service>/diff` — live and historical run state.\n- `GET /metrics` — Prometheus gauges.\n\nConversion history (`/api/runs…`) is **append-only over the API** — never deletable or mutable via `/api` (pruning is a human-admin action). See `MANUAL.md` for the full operator and agent guide.",
+    "contact": {
+      "name": "Repository",
+      "url": "https://github.com/dginev/cortex"
+    },
+    "version": "0.6.0"
+  },
+  "paths": {
+    "/api/corpora": {
+      "get": {
+        "tags": [
+          "Corpora"
+        ],
+        "summary": "Lists all registered corpora (the agent twin of the overview screen)",
+        "description": "Lists all registered corpora (the agent twin of the overview screen).",
+        "operationId": "api_corpora",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CorpusDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Corpora"
+        ],
+        "summary": "Registers a corpus and starts an in-process import job",
+        "description": "Registers a corpus and starts an in-process import job; returns `202 Accepted` + the job handle. Agents and humans poll `GET /api/jobs/<uuid>` (or the progress page) for completion. **Token-gated** via the [`Actor`] guard (creating a corpus + a filesystem import job is a consequential write); `401` without a valid token, `409` if the corpus name already exists, `422` if the `path` is not a readable directory on the server.",
+        "operationId": "import_corpus",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/corpora/{name}": {
+      "get": {
+        "tags": [
+          "Corpora"
+        ],
+        "summary": "Inspects a single corpus",
+        "description": "Inspects a single corpus: its activated services and per-service status counts.",
+        "operationId": "api_corpus",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorpusDetailDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Corpora"
+        ],
+        "summary": "Deletes a corpus and all of its tasks and log messages",
+        "description": "Deletes a corpus and all of its tasks and log messages. **Token-gated** via the [`Actor`] guard (an unauthenticated wipe of a corpus must not be possible — `401` without a valid token) and double-guarded: the caller must also echo the corpus name via `?confirm=<name>` to proceed (prevents accidental wipes; the UI confirms the same way). Returns 204 on success, 400 if the confirmation does not match, 404 if unknown.",
+        "operationId": "delete_corpus",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "confirm",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/services": {
+      "get": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "The service registry (agent twin of the registry screen)",
+        "description": "The service registry (agent twin of the registry screen): every registered service. `503` if the pool is exhausted.",
+        "operationId": "api_services",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Registers (defines) a new service in the registry",
+        "description": "Registers (defines) a new service in the registry — the agent twin of the \"Add a service\" screen (`/services/new`, `create_service_human`). **Token-gated** via the [`Actor`] guard; `401` without a valid token, `409` if the service name already exists, `201` with the service on success. (This *defines* a service; activating it on a corpus — creating tasks — is `POST /api/corpora/<c>/services/<s>`.)",
+        "operationId": "register_service",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/services/{service}/workers": {
+      "get": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "The worker-fleet status for a service (agent twin of the workers screen)",
+        "description": "The worker-fleet status for a service (agent twin of the workers screen): per-worker dispatch/ return tallies and in-flight backlog. `404` if the service is unknown.",
+        "operationId": "api_service_workers",
+        "parameters": [
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkerDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/jobs": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Lists recent jobs across every background-task capability (import / extend / activate / …)",
+        "description": "Lists recent jobs across every background-task capability (import / extend / activate / …) — the fleet-wide **pending check** the observability mandate requires. `?active=true` narrows to the non-terminal (queued/running) jobs; `?limit=` caps the page (default 50, max 200). Most-recent first; each carries `health` + `duration_seconds`.",
+        "operationId": "api_jobs",
+        "parameters": [
+          {
+            "name": "active",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "nullable": true
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/JobDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/jobs/{uuid}": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Polls a job by its uuid (the agent twin of the progress page)",
+        "description": "Polls a job by its uuid (the agent twin of the progress page). **Token-gated** ([`Actor`]): jobs carry admin attribution (`actor`) + operational params, so — like the human `/jobs/<uuid>` (`require_admin`) and `/api/audit` — they are not public (X-10's sibling read-twin gap).",
+        "operationId": "api_job",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/runs": {
+      "get": {
+        "tags": [
+          "Runs"
+        ],
+        "summary": "The system-wide run history (agent twin of the /admin/runs screen)",
+        "description": "The system-wide run history (agent twin of the `/admin/runs` screen): the most recent runs, newest first, optionally filtered by `corpus`/`service`/`owner`, capped at `limit` (default 100, max 500). `503` if the pool is exhausted.",
+        "operationId": "api_all_runs",
+        "parameters": [
+          {
+            "name": "corpus",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "service",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "owner",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RunOverviewDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/runs/{corpus}/{service}": {
+      "get": {
+        "tags": [
+          "Runs"
+        ],
+        "summary": "Lists the run history of a (corpus, service), most-recent first (the agent twin of the history scre…",
+        "description": "Lists the run history of a `(corpus, service)`, most-recent first (the agent twin of the history screen). `404` if the corpus or service is unknown.",
+        "operationId": "api_runs",
+        "parameters": [
+          {
+            "name": "corpus",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RunDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/runs/{corpus}/{service}/current": {
+      "get": {
+        "tags": [
+          "Runs"
+        ],
+        "summary": "Returns the currently open run of a (corpus, service), or null if none is in progress",
+        "description": "Returns the currently open run of a `(corpus, service)`, or `null` if none is in progress. `404` if the corpus or service is unknown.",
+        "operationId": "api_run_current",
+        "parameters": [
+          {
+            "name": "corpus",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDto",
+                  "nullable": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/runs/{corpus}/{service}/diff": {
+      "get": {
+        "tags": [
+          "Runs"
+        ],
+        "summary": "Compares two task-status snapshots of a (corpus, service) (the agent twin of the diff-summary scree…",
+        "description": "Compares two task-status snapshots of a `(corpus, service)` (the agent twin of the diff-summary screen). `previous`/`current` are snapshot timestamps from `available_dates`; omit them to use the most recent saved pair. `400` on a malformed date, `404` if the corpus/service is unknown.",
+        "operationId": "api_run_diff",
+        "parameters": [
+          {
+            "name": "corpus",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "previous",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "current",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDiffDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/runs/{corpus}/{service}/tasks": {
+      "get": {
+        "tags": [
+          "Runs"
+        ],
+        "summary": "Lists the individual tasks whose status changed between two snapshots of a (corpus, service)",
+        "description": "Lists the individual tasks whose status changed between two snapshots of a `(corpus, service)` — the drill-down behind the comparison matrix (which documents regressed/improved). Optionally filtered to a `previous_status`/`current_status` transition and paginated (`offset`/`page_size`, default 100). `400` on a malformed date or status, `404` if the corpus/service is unknown.",
+        "operationId": "api_run_task_diffs",
+        "parameters": [
+          {
+            "name": "corpus",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "previous",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "current",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "previous_status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "current_status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0.0,
+              "nullable": true
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0.0,
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskDiffDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reports/{corpus}/{service}": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "The service-overview hub (agent twin of the top report screen)",
+        "description": "The service-overview hub (agent twin of the top report screen): the `(corpus, service)` conversion-status breakdown — total + per-status counts/percentages — the macro entry point an agent reads before drilling into a severity. Shares `backend::progress_report` with the HTML top screen, so the numbers match. `404` on an unknown corpus/service.",
+        "operationId": "api_service_overview",
+        "parameters": [
+          {
+            "name": "corpus",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceOverviewDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reports/{corpus}/{service}/{severity}": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "The category report (agent twin of the severity screen)",
+        "description": "The category report (agent twin of the severity screen): one row per category, descending by task count, paginated. `400` on an unknown severity, `404` on an unknown corpus/service.",
+        "operationId": "api_category_report",
+        "parameters": [
+          {
+            "name": "corpus",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryReportDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reports/{corpus}/{service}/{severity}/{category}": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "The what drill-down (agent twin of the category screen)",
+        "description": "The `what` drill-down (agent twin of the category screen): one row per `what` within a category, descending by task count, paginated. `400` on an unknown severity, `404` on an unknown corpus/service.",
+        "operationId": "api_what_report",
+        "parameters": [
+          {
+            "name": "corpus",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhatReportDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reports/{corpus}/{service}/{severity}/{category}/{what}": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Lists the documents affected by a (corpus, service, severity, category, what)",
+        "description": "Lists the documents affected by a `(corpus, service, severity, category, what)` — the agent twin of the deepest report screen (the entry list). Paginated (`offset`/`page_size`, default 100, max `MAX_REPORT_PAGE_SIZE`); `offset` is capped at `MAX_REPORT_OFFSET` (a `400` beyond it — see P-4). `400` on an unknown severity, `404` on an unknown corpus/service.",
+        "operationId": "api_entry_list",
+        "parameters": [
+          {
+            "name": "corpus",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "what",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryListDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/corpus/{corpus}/{service}/document/{name}": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "The per-article forensic report (agent micro-drill-down)",
+        "description": "The per-article forensic report (agent micro-drill-down): a single document's status for a service plus every worker-log message behind it — \"what are the errors of this article?\". `<name>` is the document's short name as it appears in reports (e.g. `0801.1234`). `404` on an unknown corpus / service / document.",
+        "operationId": "api_document",
+        "parameters": [
+          {
+            "name": "corpus",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentReportDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api": {
+      "get": {
+        "tags": [
+          "Meta"
+        ],
+        "summary": "the agent-API discovery index (see [ApiIndexDto])",
+        "description": "`GET /api` — the agent-API discovery index (see [`ApiIndexDto`]).",
+        "operationId": "api_index",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiIndexDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config": {
+      "get": {
+        "tags": [
+          "Management"
+        ],
+        "summary": "The effective configuration, masked for safe exposure (the agent twin of the Settings screen)",
+        "description": "The effective configuration, masked for safe exposure (the agent twin of the Settings screen). **Token-gated** via the [`Actor`] guard (clean `401` without a token), matching the human `/settings` (`require_admin`) and the write twin `PUT /api/config` — config is admin-only on every surface. Secrets are masked regardless (DB password → `***`, only the token *count* is shown), but the operational config (DB host/user/name, ports, pool/queue tuning) is not for anonymous eyes.",
+        "operationId": "api_config",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Management"
+        ],
+        "summary": "Agent write path",
+        "description": "Agent write path: deep-merge a partial config patch, persist it, and return the masked result. **Token-gated** via the [`Actor`] guard — rewriting the running configuration (dispatcher ports, queue/result sizes, asset dirs, the job stall threshold) is a consequential mutation, so it requires a valid `X-Cortex-Token` exactly like every other agent write (the human twin `post_settings` is `AdminSession`-gated). `401` without a token.",
+        "operationId": "put_config",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "tags": [
+          "Management"
+        ],
+        "summary": "Public liveness probe",
+        "description": "Public liveness probe — minimal by design (KNOWN_ISSUES X-1): `{status, database.reachable}` only, safe to expose unauthenticated at the edge for load balancers and agents. The *detailed* report (pool, dispatcher ports, corpus storage, remediations) is admin-only: the `/health` screen and its token-gated agent twin [`api_health`] (`GET /api/health`).",
+        "operationId": "healthz",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LivenessDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "tags": [
+          "Management"
+        ],
+        "summary": "Detailed health report for agents",
+        "description": "Detailed health report for agents — the **token-gated** JSON twin of the admin [`health_page`] screen (sharing [`HealthDto`]). Gated by the [`Actor`] guard (clean `401` without a token) so the internal topology it exposes (corpus paths, pool sizing, dispatcher ports) isn't world-readable like the open `/healthz` once was (KNOWN_ISSUES X-1).",
+        "operationId": "api_health",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/services/{service}": {
+      "delete": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Permanently deletes a service and all of its tasks + log messages across every corpus",
+        "description": "Permanently deletes a service **and all of its tasks + log messages across every corpus** — the destructive twin of [`register_service`], closing the R-6 orphan hazard at the data layer ([`Service::destroy`]). **Token-gated** via the [`Actor`] guard (an unauthenticated wipe must not be possible — `401` without a valid token) and double-guarded: the caller must echo the service name via `?confirm=<service>`. The magic `init`/`import` services are infrastructure and can never be deleted (`403`). Returns `204` on success, `400` if the confirmation doesn't match, `403` for a protected service, `404` if unknown.",
+        "operationId": "delete_service",
+        "parameters": [
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "confirm",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/services/{service}/lease": {
+      "put": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Sets (or clears) a service's per-service lease / visibility timeout",
+        "description": "Sets (or clears) a service's per-service lease / visibility timeout — the agent twin of the registry screen's inline \"lease\" form (D-17). **Token-gated** via the [`Actor`] guard (`401` without a valid token); `400` if `seconds` is non-positive, `404` if the service is unknown, `200` with the updated [`ServiceDto`] on success. `null` clears the override (the service falls back to the global dispatcher lease). Takes effect on the next dispatch — an already-leased task keeps the timeout captured when it was leased.",
+        "operationId": "set_service_lease",
+        "parameters": [
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaseUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/services/{service}/runtimes": {
+      "get": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Conversion-runtime report for a service (agent twin of the runtime screen)",
+        "description": "Conversion-runtime report for a service (agent twin of the runtime screen): distribution summary + histogram + paginated slowest conversions, from the worker's `runtime_ms` log lines. **Token-gated** via the [`Actor`] guard (`401` without a token). Paginated (`offset`/`page_size`, default 100, max `MAX_REPORT_PAGE_SIZE`; `offset` capped at `MAX_REPORT_OFFSET`); `404` if the service is unknown.",
+        "operationId": "api_service_runtimes",
+        "parameters": [
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceRuntimeDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/corpora/{name}/extend": {
+      "post": {
+        "tags": [
+          "Corpora"
+        ],
+        "summary": "Extends an existing corpus with newly-arrived entries",
+        "description": "Extends an existing corpus with newly-arrived entries; starts an in-process job and returns `202 Accepted` + the job handle. **Token-gated** via the [`Actor`] guard; `401` without a valid token, `404` if the corpus is unknown.",
+        "operationId": "extend_corpus",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/corpora/{corpus}/services/{service}/export-dataset": {
+      "post": {
+        "tags": [
+          "Corpora"
+        ],
+        "summary": "Exports a corpus/service's already-converted HTML into ZIP archives off the shared filesystem as an…",
+        "description": "Exports a corpus/service's already-converted HTML into ZIP archives off the shared filesystem as an in-process **background job** (no conversion is run); returns `202 Accepted` + the job handle, which agents and humans poll via `GET /api/jobs/<uuid>`. The agent twin of `cortex export-dataset` (and the future web form), over the same [`export_html_dataset`] core. **Token-gated** via the [`Actor`] guard (it reads `/data` and writes archives server-side); `401` without a valid token, `404` if the corpus or service is unknown, `422` for an invalid `group_by` or severity key (pre-flighted so a doomed export never starts).",
+        "operationId": "export_dataset",
+        "parameters": [
+          {
+            "name": "corpus",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/corpora/{parent}/sandbox": {
+      "post": {
+        "tags": [
+          "Corpora"
+        ],
+        "summary": "Carves a sandbox corpus from <parent> by a message-condition filter and starts the job that populat…",
+        "description": "Carves a **sandbox corpus** from `<parent>` by a message-condition filter and starts the job that populates it; returns `202 Accepted` + the job handle to poll. **Token-gated** via the [`Actor`] guard; `401` without a valid token, `404` if the parent is unknown, `409` if the sandbox name is taken. The sandbox is a first-class corpus an agent can then run/rerun to iterate a campaign.",
+        "operationId": "create_sandbox_corpus",
+        "parameters": [
+          {
+            "name": "parent",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SandboxRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/corpora/{corpus}/services/{service}": {
+      "post": {
+        "tags": [
+          "Corpora"
+        ],
+        "summary": "Activates a registered service on a corpus",
+        "description": "Activates a registered `service` on a `corpus`: creates a TODO task per imported document so the workers begin converting it. **Token-gated** via the [`Actor`] guard (the run is attributed to the authenticated actor); the work runs as a background job — poll `GET /api/jobs/<uuid>` for the pending/done status. `401` without a valid token, `404` on an unknown corpus/service, `409` if the service is **already registered** on the corpus (registration is idempotent-neutral — no re-activation wipes existing results; use *extend*/*rerun* instead), `202` with the job handle on success.",
+        "operationId": "activate_service",
+        "parameters": [
+          {
+            "name": "corpus",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Corpora"
+        ],
+        "summary": "Deactivates (retires) a service from a corpus",
+        "description": "Deactivates (retires) a `service` from a `corpus`: deletes that pair's tasks + log messages (the service definition and its work on other corpora are untouched — the symmetric counterpart of [`activate_service`]). **Token-gated** via the [`Actor`] guard and confirmation-gated (`?confirm=<service>`, echoing the service name). Returns `204` on success, `400` if the confirmation doesn't match, `404` if the corpus or service is unknown.",
+        "operationId": "deactivate_service",
+        "parameters": [
+          {
+            "name": "corpus",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "confirm",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/corpora/{corpus}/services/{service}/snapshot": {
+      "post": {
+        "tags": [
+          "Management"
+        ],
+        "summary": "Freezes the current per-task statuses of a (corpus, service) into historicaltasks",
+        "description": "Freezes the current per-task statuses of a `(corpus, service)` into `historical_tasks` — the agent twin of the report screen's \"save snapshot\" action (`POST /savetasks/...`), so an agent can capture a baseline before a rerun campaign and later diff against it (`GET /api/runs/.../tasks`). **Token-gated** via the [`Actor`] guard; the snapshot is **append-only** (history stays immutable over the API — there is deliberately no snapshot delete/modify endpoint; pruning is a human-admin operation, see [`crate::frontend::retention`]). `401` without a valid token, `404` on an unknown corpus/service, `202` with the appended-row count on success. Uses a fresh connection (not the request pool) since the snapshot is a single bulk `INSERT … SELECT` over every task and shouldn't pin a pooled slot.",
+        "operationId": "snapshot_tasks",
+        "parameters": [
+          {
+            "name": "corpus",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotAckDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/reports/{corpus}/{service}/rerun": {
+      "post": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Marks the selected (corpus, service[, severity, category, what]) scope for reprocessing",
+        "description": "Marks the selected `(corpus, service[, severity, category, what])` scope for reprocessing — the agent twin of the report screen's rerun action, and a new historical run. **Token-gated** via the [`Actor`] guard (`X-Cortex-Token` header or `?token=`); `401` without a valid token, so results can't be wiped by an unauthenticated caller. `400` on an unknown severity, `404` on an unknown corpus/service. Returns `202 Accepted`.",
+        "operationId": "rerun_report",
+        "parameters": [
+          {
+            "name": "corpus",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "what",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "description",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RerunAckDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/reports/{corpus}/{service}/pause": {
+      "post": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Pause a run",
+        "description": "**Pause a run** — block every in-progress task (`status >= 0`) of a `(corpus, service)` so the dispatcher stops leasing them. The agent twin of the report screen's \"Pause run\" button. **Token-gated** via the [`Actor`] guard; `404` on an unknown corpus/service. Returns the count blocked. Reversible with the resume twin.",
+        "operationId": "pause_run_api",
+        "parameters": [
+          {
+            "name": "corpus",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunControlDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/reports/{corpus}/{service}/resume": {
+      "post": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Resume a run",
+        "description": "**Resume a run** — return every Blocked task (`status < -5`) of a `(corpus, service)` to TODO so the dispatcher picks them up again. The agent twin of the report screen's \"Resume run\" button. **Token-gated** via the [`Actor`] guard; `404` on an unknown corpus/service. Returns the count resumed.",
+        "operationId": "resume_run_api",
+        "parameters": [
+          {
+            "name": "corpus",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunControlDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/conversions/pause": {
+      "post": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Pause all conversions",
+        "description": "**Pause all conversions** — block every in-progress task fleet-wide so the dispatcher stops leasing new work everywhere. The agent twin of the dashboard's \"Pause all conversions\". **Token-gated**; returns the count blocked. Reversible with the resume twin.",
+        "operationId": "pause_all_api",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GlobalRunControlDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/conversions/resume": {
+      "post": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Resume all conversions",
+        "description": "**Resume all conversions** — return every Blocked task fleet-wide to TODO. The agent twin of the dashboard's \"Resume all conversions\". **Token-gated**; returns the count resumed.",
+        "operationId": "resume_all_api",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GlobalRunControlDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/reports/refresh": {
+      "post": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Forces a rebuild of the reportsummary rollup that backs every report page, as a background job",
+        "description": "Forces a rebuild of the `report_summary` rollup that backs **every** report page, as a background job — the rebuild is multi-minute at production scale, so it must not block the request (see `docs/archive/REPORT_FRESHNESS.md`). Returns the job handle immediately (`202 Accepted`); poll `GET /api/jobs/<job>` for status/health. **Debounced:** a refresh already in flight is reused rather than piled on. **Token-gated** via the [`Actor`] guard (`X-Cortex-Token` / `?token=`); `401` without a valid token.",
+        "operationId": "refresh_reports",
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshAckDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/reports/{corpus}/{service}/refresh": {
+      "post": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Busts this (corpus, service)'s cached report grains",
+        "description": "Busts *this* `(corpus, service)`'s cached report grains — the **agent twin** of the report footer's \"Refresh this report\" action ([`refresh_report_scope`]) — so its reports recompute from current data on the next view (a heavy slice recomputes off the request path; see [`crate::frontend::concerns::serve_report`]). Scoped, unlike the global bust [`refresh_reports`] does. The bust is an instant keyed `DELETE`, so this returns `200 OK` immediately — there is no background job to poll. **Token-gated** via the [`Actor`] guard (`X-Cortex-Token` header or `?token=`); `401` without a valid token, `404` on an unknown corpus/service.",
+        "operationId": "refresh_report_scope_api",
+        "parameters": [
+          {
+            "name": "corpus",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopeRefreshAckDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/maintenance/reindex": {
+      "post": {
+        "tags": [
+          "Management"
+        ],
+        "summary": "Triggers an online index rebuild (REINDEX (CONCURRENTLY) over the high-churn tables) as a backgroun…",
+        "description": "Triggers an **online** index rebuild (`REINDEX (CONCURRENTLY)` over the high-churn tables) as a background job — index bloat slows scans over time, and this rebuilds without an exclusive lock (DB ongoing-maintenance; `docs/DB_TUNING.md`). **Token-gated**; returns `202` + the job handle, poll `GET /api/jobs/<job>` for per-table progress. Debounced.",
+        "operationId": "reindex",
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceAckDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/maintenance/analyze": {
+      "post": {
+        "tags": [
+          "Management"
+        ],
+        "summary": "Triggers a planner-statistics refresh (ANALYZE over the high-churn tables) as a background job",
+        "description": "Triggers a planner-statistics refresh (`ANALYZE` over the high-churn tables) as a background job — keeps the planner's row estimates current after bulk imports/reruns so it keeps choosing the right indexes (e.g. the TODO leasing index) instead of waiting for autovacuum (DB ongoing-maintenance; `docs/DB_TUNING.md`). **Token-gated**; returns `202` + the job handle, poll `GET /api/jobs/<job>` for per-table progress. Debounced.",
+        "operationId": "analyze",
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceAckDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/status": {
+      "get": {
+        "tags": [
+          "Management"
+        ],
+        "summary": "the agent twin of the dashboard's /admin/status",
+        "description": "`GET /api/status` — the **agent twin** of the dashboard's `/admin/status.json` feed: the [`AdminStatusDto`] system snapshot (corpus count, the worker fleet, background-job activity, the pending-conversion backlog, and the latest run) as one structured JSON call a monitoring agent can poll. Complements the Prometheus `/metrics` gauges — it carries the structured `last_run` detail (owner / description / timing) the gauges can't, and matches `cortex status --json`. **Token-gated** via the [`Actor`] guard (`401` without a valid token).",
+        "operationId": "api_status",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminStatusDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/logs": {
+      "get": {
+        "tags": [
+          "Management"
+        ],
+        "summary": "the agent twin of the dashboard's /admin/logs",
+        "description": "`GET /api/logs` — the **agent twin** of the dashboard's `/admin/logs.json` feed: the live fleet activity plus the most recent fatal/error conversion messages as one structured JSON call a monitoring agent can poll. **Token-gated** via the [`Actor`] guard.",
+        "operationId": "api_logs",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveActivityDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/audit": {
+      "get": {
+        "tags": [
+          "Management"
+        ],
+        "summary": "The audit log (agent twin of the /admin/audit screen)",
+        "description": "The audit log (agent twin of the `/admin/audit` screen): admin actions, most-recent first, optionally filtered to one `actor`, **paginated** — [`AUDIT_PAGE_SIZE`] rows per `page` (0-based; `has_next` flags more history). **Token-gated** — reading who-did-what is sensitive, so it takes an [`Actor`] like the writes it records. `503` if the pool is exhausted.",
+        "operationId": "api_audit",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/sessions": {
+      "get": {
+        "tags": [
+          "Management"
+        ],
+        "summary": "The active sessions (agent twin of the /admin/sessions screen)",
+        "description": "The active sessions (agent twin of the `/admin/sessions` screen): who is currently signed in. **Token-gated** (the active-identity list is sensitive). `503` if the pool is exhausted.",
+        "operationId": "api_sessions",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SessionDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/sessions/revoke": {
+      "post": {
+        "tags": [
+          "Management"
+        ],
+        "summary": "Revokes all of an identity's sessions (agent twin of the screen's revoke)",
+        "description": "Revokes **all** of an identity's sessions (agent twin of the screen's revoke). **Token-gated** (the [`Actor`] guard) and audited — for automated security response (kick out a compromised account everywhere). Referenced by the non-secret owner name, never a session id. Idempotent: an identity with no sessions revokes `0`. Sessions are ephemeral auth state, not historical record, so this mutation is exposed to agents (unlike the immutable history tables).",
+        "operationId": "api_revoke_sessions",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeAckDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    },
+    "/api/historical/stats": {
+      "get": {
+        "tags": [
+          "Management"
+        ],
+        "summary": "The per-task snapshot retention stats (agent twin of the /admin/retention screen)",
+        "description": "The per-task snapshot retention stats (agent twin of the `/admin/retention` screen). **Token- gated.** `503` if the pool is exhausted.",
+        "operationId": "api_historical_stats",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoricalStatsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "CortexToken": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CorpusDto": {
+        "description": "A corpus as exposed over the API/UI. `name` is the stable external handle used by every route.",
+        "type": "object",
+        "required": [
+          "complex",
+          "description",
+          "document_count",
+          "name",
+          "path",
+          "public_id"
+        ],
+        "properties": {
+          "public_id": {
+            "description": "Stable external handle (UUIDv7) — survives a rename, unlike `name`. Use for durable references.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Human-readable corpus name (its external handle).",
+            "type": "string"
+          },
+          "path": {
+            "description": "Filesystem path to the corpus root.",
+            "type": "string"
+          },
+          "description": {
+            "description": "Human-readable description.",
+            "type": "string"
+          },
+          "complex": {
+            "description": "Whether documents are multi-file (complex) rather than a single TeX file.",
+            "type": "boolean"
+          },
+          "document_count": {
+            "description": "Number of ingested documents (import-service tasks) — the corpus's scale at a glance.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "parent": {
+            "description": "Name of the parent corpus if this is a **sandbox** (a carved subset), else `null`. Lets a caller tell sandboxes from ordinary corpora — and find their parent — from the list alone, without a per-corpus detail fetch.",
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "CorpusDetailDto": {
+        "description": "A corpus with its activated services and their status counts.",
+        "type": "object",
+        "required": [
+          "complex",
+          "description",
+          "name",
+          "path",
+          "services"
+        ],
+        "properties": {
+          "name": {
+            "description": "Corpus name (external handle).",
+            "type": "string"
+          },
+          "path": {
+            "description": "Filesystem path to the corpus root.",
+            "type": "string"
+          },
+          "description": {
+            "description": "Human-readable description.",
+            "type": "string"
+          },
+          "complex": {
+            "description": "Whether documents are multi-file.",
+            "type": "boolean"
+          },
+          "sandbox": {
+            "description": "Sandbox provenance (parent + carve filter), or `null` if this is an ordinary corpus.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SandboxProvenanceDto"
+              }
+            ],
+            "nullable": true
+          },
+          "services": {
+            "description": "Services activated on this corpus, with status counts.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceStatusDto"
+            }
+          }
+        }
+      },
+      "SandboxProvenanceDto": {
+        "description": "Provenance of a **sandbox** corpus: the parent it was carved from and the carve predicate. Only present on sandbox corpora (`null` for ordinary corpora).",
+        "type": "object",
+        "required": [
+          "filter",
+          "parent"
+        ],
+        "properties": {
+          "parent": {
+            "description": "Name of the parent corpus this sandbox was carved from.",
+            "type": "string"
+          },
+          "filter": {
+            "description": "Compact human-readable summary of the carve filter (e.g. `severity=warning, entry~2506.`).",
+            "type": "string"
+          },
+          "selection": {
+            "description": "The structured selection predicate (`service_id`, `severity`, `category`, `what`, `entry`, `max_entries`) — the same JSON stored on the corpus.",
+            "nullable": true
+          }
+        }
+      },
+      "ServiceStatusDto": {
+        "description": "Per-service status counts within a corpus (mirrors the progress report).",
+        "type": "object",
+        "required": [
+          "error",
+          "fatal",
+          "invalid",
+          "name",
+          "no_problem",
+          "todo",
+          "total",
+          "version",
+          "warning"
+        ],
+        "properties": {
+          "name": {
+            "description": "Service name.",
+            "type": "string"
+          },
+          "version": {
+            "description": "Service version.",
+            "type": "number",
+            "format": "float"
+          },
+          "total": {
+            "description": "Total valid tasks (excludes invalids).",
+            "type": "integer",
+            "format": "int64"
+          },
+          "no_problem": {
+            "description": "Completed with no notable problems.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "warning": {
+            "description": "Completed with warnings.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "error": {
+            "description": "Completed with errors.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "fatal": {
+            "description": "Fatal failures.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "invalid": {
+            "description": "Invalid tasks (excluded from totals).",
+            "type": "integer",
+            "format": "int64"
+          },
+          "todo": {
+            "description": "Queued / not-yet-processed tasks.",
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ServiceDto": {
+        "description": "A registered service as exposed over the API/UI — the service-registry view. `name` is the stable external handle used by every service route.",
+        "type": "object",
+        "required": [
+          "complex",
+          "description",
+          "inputformat",
+          "name",
+          "outputformat",
+          "public_id",
+          "version"
+        ],
+        "properties": {
+          "public_id": {
+            "description": "Stable external handle (UUIDv7) — survives a rename, unlike `name`. Use for durable references.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Service name (its external handle); `init`/`import` are the magic internal services.",
+            "type": "string"
+          },
+          "version": {
+            "description": "Service version.",
+            "type": "number",
+            "format": "float"
+          },
+          "inputformat": {
+            "description": "Expected input format (e.g. `tex`).",
+            "type": "string"
+          },
+          "outputformat": {
+            "description": "Produced output format (e.g. `html`).",
+            "type": "string"
+          },
+          "inputconverter": {
+            "description": "Prerequisite input-conversion service, if any.",
+            "type": "string",
+            "nullable": true
+          },
+          "complex": {
+            "description": "Whether the service needs more than a document's main textual content.",
+            "type": "boolean"
+          },
+          "description": {
+            "description": "Human-readable description.",
+            "type": "string"
+          },
+          "lease_timeout_seconds": {
+            "description": "Per-service lease / visibility-timeout override in seconds (D-17), or `null` to use the global `dispatcher.lease_timeout_seconds`. Set via `PUT /api/services/<service>/lease`.",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        }
+      },
+      "WorkerDto": {
+        "description": "A worker's dispatch/return tallies for a service — the machine-readable fleet-health view.",
+        "type": "object",
+        "required": [
+          "fresh",
+          "in_flight",
+          "last_dispatched_task_id",
+          "name",
+          "seconds_since_last_active",
+          "total_dispatched",
+          "total_returned"
+        ],
+        "properties": {
+          "name": {
+            "description": "Worker identity (usually `hostname:pid`).",
+            "type": "string"
+          },
+          "total_dispatched": {
+            "description": "Tasks ever dispatched to this worker.",
+            "type": "integer",
+            "format": "int32"
+          },
+          "total_returned": {
+            "description": "Tasks ever returned by this worker.",
+            "type": "integer",
+            "format": "int32"
+          },
+          "in_flight": {
+            "description": "Dispatched-but-not-yet-returned tasks (`dispatched - returned`); a large or growing value flags a stuck or struggling worker.",
+            "type": "integer",
+            "format": "int32"
+          },
+          "last_dispatched_task_id": {
+            "description": "The id of the most recent task dispatched to this worker.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "last_returned_task_id": {
+            "description": "The id of the most recent task this worker returned (`None` if it never has).",
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "seconds_since_last_active": {
+            "description": "Seconds since this worker was last active (the more recent of its last dispatch / last return) — its **liveness age**. Across a large fleet, a value that keeps climbing flags a worker gone silent (crashed / disconnected); this is the agent-twin parity of the human screen's \"N ago\" + fresh/stale display. `0` if the timestamp is in the future (clock skew), never negative.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "fresh": {
+            "description": "Whether the worker has been active within the last minute — the at-a-glance liveness flag (matches the human screen's `fresh`/`stale` threshold).",
+            "type": "boolean"
+          }
+        }
+      },
+      "JobDto": {
+        "description": "A job as exposed over the API/UI (uuid handle, no internal serial id).",
+        "type": "object",
+        "required": [
+          "actor",
+          "created_at",
+          "duration_seconds",
+          "health",
+          "kind",
+          "message",
+          "progress_current",
+          "seconds_since_update",
+          "status",
+          "updated_at",
+          "uuid"
+        ],
+        "properties": {
+          "uuid": {
+            "description": "External handle.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Operation kind.",
+            "type": "string"
+          },
+          "status": {
+            "description": "Lifecycle status.",
+            "type": "string"
+          },
+          "progress_current": {
+            "description": "Units of work completed.",
+            "type": "integer",
+            "format": "int32"
+          },
+          "progress_total": {
+            "description": "Total units, when known.",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "message": {
+            "description": "Current step, or the error on failure.",
+            "type": "string"
+          },
+          "actor": {
+            "description": "Who started it.",
+            "type": "string"
+          },
+          "result": {
+            "description": "Terminal result payload.",
+            "nullable": true
+          },
+          "created_at": {
+            "description": "Created timestamp.",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "Last-updated timestamp.",
+            "type": "string"
+          },
+          "duration_seconds": {
+            "description": "Seconds of activity (`updated_at - created_at`): a finished job's total runtime, or a running one's time from start to its last progress update — observability on duration.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "seconds_since_update": {
+            "description": "Seconds since the last progress update (`now - updated_at`), measured against the DB clock. For a *running* job this is its **heartbeat age**: it keeps climbing while the job makes no progress, so a large value flags a stalled job (the W-4 residual — a hung body Rust cannot force-cancel — surfaced transparently rather than auto-killed). Terminal jobs report their age-since-completion. `0` when the DB clock is unavailable (degrade to \"no age\", never bogus).",
+            "type": "integer",
+            "format": "int64"
+          },
+          "health": {
+            "description": "Normalized health derived from `status`: `ok` (succeeded), `failed`, `interrupted`, `pending` (queued), or `running` — the at-a-glance state for the fleet-wide pending check.",
+            "type": "string"
+          }
+        }
+      },
+      "RunOverviewDto": {
+        "description": "A historical run as exposed in the **system-wide** overview: the per-`(corpus, service)` [`RunDto`] fields plus the corpus + service names (the overview spans every pair, so the names are part of the row). The read model for `GET /api/runs` and the `/admin/runs` management screen.",
+        "type": "object",
+        "required": [
+          "completed",
+          "corpus",
+          "description",
+          "error",
+          "fatal",
+          "in_progress",
+          "invalid",
+          "no_problem",
+          "owner",
+          "public_id",
+          "service",
+          "start_time",
+          "total",
+          "warning"
+        ],
+        "properties": {
+          "public_id": {
+            "description": "Stable external handle (UUIDv7) for this run — the durable token for referencing it.",
+            "type": "string"
+          },
+          "corpus": {
+            "description": "The corpus the run targeted.",
+            "type": "string"
+          },
+          "service": {
+            "description": "The service the run targeted.",
+            "type": "string"
+          },
+          "owner": {
+            "description": "Who initiated the run.",
+            "type": "string"
+          },
+          "description": {
+            "description": "Why the run was initiated.",
+            "type": "string"
+          },
+          "start_time": {
+            "description": "Run start, ISO-8601.",
+            "type": "string"
+          },
+          "end_time": {
+            "description": "Run end, ISO-8601; `None` while still open.",
+            "type": "string",
+            "nullable": true
+          },
+          "completed": {
+            "description": "Whether the run has completed.",
+            "type": "boolean"
+          },
+          "total": {
+            "description": "Total tasks in the run.",
+            "type": "integer",
+            "format": "int32"
+          },
+          "no_problem": {
+            "description": "Tasks with no notable problems.",
+            "type": "integer",
+            "format": "int32"
+          },
+          "warning": {
+            "description": "Tasks with warnings.",
+            "type": "integer",
+            "format": "int32"
+          },
+          "error": {
+            "description": "Tasks with errors.",
+            "type": "integer",
+            "format": "int32"
+          },
+          "fatal": {
+            "description": "Fatally-failed tasks.",
+            "type": "integer",
+            "format": "int32"
+          },
+          "invalid": {
+            "description": "Invalid tasks.",
+            "type": "integer",
+            "format": "int32"
+          },
+          "in_progress": {
+            "description": "Tasks still in progress when the run closed.",
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "RunDto": {
+        "description": "A historical `(corpus, service)` run as exposed over the API: a stable `id` handle, who/why/when, whether it has completed, and the per-severity task tallies. For a **completed** run these are the snapshot frozen at completion; for an **open** run they are overlaid with **live** progress (`HistoricalRun::with_live_tallies`), since stored tallies are only frozen at completion — so an in-progress run reports its real state, not zeros.",
+        "type": "object",
+        "required": [
+          "completed",
+          "description",
+          "error",
+          "fatal",
+          "id",
+          "in_progress",
+          "invalid",
+          "no_problem",
+          "owner",
+          "public_id",
+          "start_time",
+          "total",
+          "warning"
+        ],
+        "properties": {
+          "public_id": {
+            "description": "Stable external handle (UUIDv7) for this run — the durable token for referencing it.",
+            "type": "string"
+          },
+          "id": {
+            "description": "Internal serial run id.",
+            "type": "integer",
+            "format": "int32"
+          },
+          "owner": {
+            "description": "Who initiated the run.",
+            "type": "string"
+          },
+          "description": {
+            "description": "Why the run was initiated (free-text description / rerun filter summary).",
+            "type": "string"
+          },
+          "start_time": {
+            "description": "Run start, ISO-8601 (`YYYY-MM-DDThh:mm:ss`, naive/local).",
+            "type": "string"
+          },
+          "end_time": {
+            "description": "Run end, ISO-8601; `None` while the run is still open (it closes when the next run starts).",
+            "type": "string",
+            "nullable": true
+          },
+          "completed": {
+            "description": "Whether the run has completed (`end_time` is set).",
+            "type": "boolean"
+          },
+          "total": {
+            "description": "Total tasks in the run (excludes invalids from the denominator elsewhere).",
+            "type": "integer",
+            "format": "int32"
+          },
+          "no_problem": {
+            "description": "Tasks that completed with no notable problems.",
+            "type": "integer",
+            "format": "int32"
+          },
+          "warning": {
+            "description": "Tasks that completed with warnings.",
+            "type": "integer",
+            "format": "int32"
+          },
+          "error": {
+            "description": "Tasks that completed with errors.",
+            "type": "integer",
+            "format": "int32"
+          },
+          "fatal": {
+            "description": "Tasks that failed fatally.",
+            "type": "integer",
+            "format": "int32"
+          },
+          "invalid": {
+            "description": "Invalid tasks (excluded from totals).",
+            "type": "integer",
+            "format": "int32"
+          },
+          "in_progress": {
+            "description": "Tasks still in progress when the run closed.",
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "RunDiffDto": {
+        "description": "A comparison of two saved task-status snapshots of a `(corpus, service)`: the status-transition matrix (what improved / regressed between runs) plus the snapshot dates available to compare.",
+        "type": "object",
+        "required": [
+          "available_dates",
+          "transitions"
+        ],
+        "properties": {
+          "available_dates": {
+            "description": "Snapshot dates available for comparison.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "transitions": {
+            "description": "The full previous→current status-transition matrix, with task counts.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunDiffTransitionDto"
+            }
+          }
+        }
+      },
+      "RunDiffTransitionDto": {
+        "description": "One cell of the run-comparison matrix: how many tasks moved from `previous_status` to `current_status` between the two snapshots.",
+        "type": "object",
+        "required": [
+          "current_status",
+          "previous_status",
+          "task_count"
+        ],
+        "properties": {
+          "previous_status": {
+            "description": "Severity key in the earlier snapshot (`no_problem`, `warning`, `error`, `fatal`).",
+            "type": "string"
+          },
+          "current_status": {
+            "description": "Severity key in the later snapshot.",
+            "type": "string"
+          },
+          "task_count": {
+            "description": "Number of tasks that made this transition.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          }
+        }
+      },
+      "TaskDiffDto": {
+        "description": "A single task's status transition between two snapshots — which document regressed or improved, and when each snapshot was taken.",
+        "type": "object",
+        "required": [
+          "current_saved_at",
+          "current_status",
+          "entry",
+          "previous_saved_at",
+          "previous_status",
+          "task_id"
+        ],
+        "properties": {
+          "task_id": {
+            "description": "Task identifier.",
+            "type": "string"
+          },
+          "entry": {
+            "description": "Document entry name (trimmed).",
+            "type": "string"
+          },
+          "previous_status": {
+            "description": "Severity key in the earlier snapshot.",
+            "type": "string"
+          },
+          "current_status": {
+            "description": "Severity key in the later snapshot.",
+            "type": "string"
+          },
+          "previous_saved_at": {
+            "description": "When the earlier snapshot was saved (`YYYY-MM-DD`).",
+            "type": "string"
+          },
+          "current_saved_at": {
+            "description": "When the later snapshot was saved (`YYYY-MM-DD`).",
+            "type": "string"
+          }
+        }
+      },
+      "ServiceOverviewDto": {
+        "description": "The service-overview hub (the macro top rung of the report ladder): the `(corpus, service)` conversion-status breakdown an agent reads first, before drilling into a severity. The `status` keys double as the `<severity>` path segment for the category report (`GET /api/reports/<corpus>/<service>/<severity>`).",
+        "type": "object",
+        "required": [
+          "corpus",
+          "service",
+          "statuses",
+          "total"
+        ],
+        "properties": {
+          "corpus": {
+            "description": "Corpus name.",
+            "type": "string"
+          },
+          "service": {
+            "description": "Service name.",
+            "type": "string"
+          },
+          "total": {
+            "description": "Valid-task total (invalids excluded), the percentage denominator.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "statuses": {
+            "description": "One bucket per conversion status, in canonical severity order.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StatusCountDto"
+            }
+          }
+        }
+      },
+      "StatusCountDto": {
+        "description": "One status bucket in the service overview: a conversion-status key with its task count and its share of the valid-task total.",
+        "type": "object",
+        "required": [
+          "percent",
+          "status",
+          "tasks"
+        ],
+        "properties": {
+          "status": {
+            "description": "Status key: `no_problem` | `warning` | `error` | `fatal` | `invalid` | `todo` | `blocked` | `queued`.",
+            "type": "string"
+          },
+          "tasks": {
+            "description": "Tasks currently in this status.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "percent": {
+            "description": "Percentage of the valid-task total (invalids excluded from the denominator), 2-dp.",
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "CategoryReportDto": {
+        "description": "The category report for a `(corpus, service, severity)`: one row per category (a page of them), plus the severity grand totals to compute shares against.",
+        "type": "object",
+        "required": [
+          "categories",
+          "severity",
+          "total_messages",
+          "total_tasks"
+        ],
+        "properties": {
+          "severity": {
+            "description": "The severity reported on.",
+            "type": "string"
+          },
+          "total_tasks": {
+            "description": "Distinct tasks carrying at least one message of this severity.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "total_messages": {
+            "description": "Total messages of this severity.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "categories": {
+            "description": "The category rows for the requested page.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportRowDto"
+            }
+          }
+        }
+      },
+      "ReportRowDto": {
+        "description": "One report row: a category (in the category report) or a `what` class (in the drill-down), with its distinct-task and message counts.",
+        "type": "object",
+        "required": [
+          "messages",
+          "name",
+          "tasks"
+        ],
+        "properties": {
+          "name": {
+            "description": "Category or `what` name (the empty string for uncategorized messages).",
+            "type": "string"
+          },
+          "tasks": {
+            "description": "Distinct tasks contributing to this row.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "messages": {
+            "description": "Total messages for this row.",
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "WhatReportDto": {
+        "description": "The `what` drill-down for a `(corpus, service, severity, category)`: one row per `what` (a page), plus the category totals.",
+        "type": "object",
+        "required": [
+          "category",
+          "severity",
+          "total_messages",
+          "total_tasks",
+          "whats"
+        ],
+        "properties": {
+          "severity": {
+            "description": "The severity reported on.",
+            "type": "string"
+          },
+          "category": {
+            "description": "The category drilled into.",
+            "type": "string"
+          },
+          "total_tasks": {
+            "description": "Distinct tasks in this category.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "total_messages": {
+            "description": "Total messages in this category.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "whats": {
+            "description": "The `what` rows for the requested page.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportRowDto"
+            }
+          }
+        }
+      },
+      "EntryListDto": {
+        "description": "The deepest report rung: the **paginated list of documents** (paper ids) affected by a specific `(severity, category, what)`. The agent twin of the entry-list screen and the bridge from the macro `what`-breakdown counts to per-article forensics — \"*which* papers have this issue?\", so an agent can enumerate and then drill into each via the document endpoint. Page with `offset`/`page_size` (default 100, max 1000).",
+        "type": "object",
+        "required": [
+          "category",
+          "corpus",
+          "entries",
+          "offset",
+          "page_size",
+          "service",
+          "severity",
+          "what"
+        ],
+        "properties": {
+          "corpus": {
+            "description": "Corpus name.",
+            "type": "string"
+          },
+          "service": {
+            "description": "Service name.",
+            "type": "string"
+          },
+          "severity": {
+            "description": "The severity reported on.",
+            "type": "string"
+          },
+          "category": {
+            "description": "The category drilled into.",
+            "type": "string"
+          },
+          "what": {
+            "description": "The `what` drilled into.",
+            "type": "string"
+          },
+          "offset": {
+            "description": "Pagination offset echoed back.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "page_size": {
+            "description": "Page size echoed back (the cap actually applied).",
+            "type": "integer",
+            "format": "int64"
+          },
+          "entries": {
+            "description": "The affected documents for this page.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EntryRowDto"
+            }
+          }
+        }
+      },
+      "EntryRowDto": {
+        "description": "One affected document in the entry list: its short name (paper id), task id, and the message detail that placed it under the queried `(severity, category, what)`.",
+        "type": "object",
+        "required": [
+          "details",
+          "name",
+          "task_id"
+        ],
+        "properties": {
+          "name": {
+            "description": "The document's short name (e.g. `0801.1234`) — feed it to `GET /api/corpus/<c>/<svc>/document/<name>` for per-article forensics.",
+            "type": "string"
+          },
+          "task_id": {
+            "description": "The task id for this document under this service.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "details": {
+            "description": "Technical detail of this entry's message for the queried `what` (e.g. localization context).",
+            "type": "string"
+          }
+        }
+      },
+      "DocumentReportDto": {
+        "description": "The per-article forensic report (the micro magnification): one document's conversion outcome for a service, plus the messages behind it — the answer to \"what are the errors of this article?\".",
+        "type": "object",
+        "required": [
+          "corpus",
+          "entry",
+          "message_counts",
+          "messages",
+          "messages_truncated",
+          "name",
+          "preview_url",
+          "result_url",
+          "service",
+          "status",
+          "status_code",
+          "task_id"
+        ],
+        "properties": {
+          "corpus": {
+            "description": "Corpus name.",
+            "type": "string"
+          },
+          "service": {
+            "description": "Service name.",
+            "type": "string"
+          },
+          "name": {
+            "description": "The document's short name as queried (e.g. `0801.1234`).",
+            "type": "string"
+          },
+          "entry": {
+            "description": "The document's source archive path (`tasks.entry`).",
+            "type": "string"
+          },
+          "task_id": {
+            "description": "The task id for this `(corpus, service, document)`.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "description": "Conversion status key: `no_problem` | `warning` | `error` | `fatal` | `invalid` | `todo` | …",
+            "type": "string"
+          },
+          "status_code": {
+            "description": "The raw signed status code (see `helpers::TaskStatus`).",
+            "type": "integer",
+            "format": "int32"
+          },
+          "messages": {
+            "description": "The document's messages, info → invalid — **sampled**: at most `backend::DOCUMENT_MESSAGE_CAP` per severity, so a pathological document (millions of messages) can't blow up the response. Use `message_counts` for the real magnitude and `messages_truncated` to know it was capped.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MessageDto"
+            }
+          },
+          "message_counts": {
+            "description": "The true per-severity message totals (before the sampling cap on `messages`).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MessageCountsDto"
+              }
+            ]
+          },
+          "messages_truncated": {
+            "description": "`true` when `messages` was capped (the document has more messages than are listed).",
+            "type": "boolean"
+          },
+          "result_url": {
+            "description": "Path to download the converted result archive.",
+            "type": "string"
+          },
+          "preview_url": {
+            "description": "Path to the human preview page.",
+            "type": "string"
+          }
+        }
+      },
+      "MessageDto": {
+        "description": "One worker-log message behind a document's status: its severity and the `category`/`what`/ `details` triple parsed from the worker's `cortex.log`.",
+        "type": "object",
+        "required": [
+          "category",
+          "details",
+          "severity",
+          "what"
+        ],
+        "properties": {
+          "severity": {
+            "description": "`info` | `warning` | `error` | `fatal` | `invalid`.",
+            "type": "string"
+          },
+          "category": {
+            "description": "Mid-level description (open set).",
+            "type": "string"
+          },
+          "what": {
+            "description": "Low-level description (open set).",
+            "type": "string"
+          },
+          "details": {
+            "description": "Technical details (e.g. localization info).",
+            "type": "string"
+          }
+        }
+      },
+      "MessageCountsDto": {
+        "description": "True per-severity message totals for a document (the real counts behind a possibly-sampled `messages` list — see [`DocumentReportDto::messages`]).",
+        "type": "object",
+        "required": [
+          "error",
+          "fatal",
+          "info",
+          "invalid",
+          "total",
+          "warning"
+        ],
+        "properties": {
+          "info": {
+            "description": "info-level messages",
+            "type": "integer",
+            "format": "int64"
+          },
+          "warning": {
+            "description": "warning-level messages",
+            "type": "integer",
+            "format": "int64"
+          },
+          "error": {
+            "description": "error-level messages",
+            "type": "integer",
+            "format": "int64"
+          },
+          "fatal": {
+            "description": "fatal-level messages",
+            "type": "integer",
+            "format": "int64"
+          },
+          "invalid": {
+            "description": "invalid-level messages",
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "description": "total across all severities",
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ApiIndexDto": {
+        "description": "Discovery index of the **agent API**: every mounted `/api/*` endpoint (method, path, handler name) in a single call, so an agent can enumerate CorTeX's machine surface without out-of-band docs. Self-describing — built by introspecting the live route table, so it never drifts.",
+        "type": "object",
+        "required": [
+          "count",
+          "description",
+          "docs",
+          "endpoints",
+          "openapi"
+        ],
+        "properties": {
+          "description": {
+            "description": "One-line orientation for an agent landing on the API root.",
+            "type": "string"
+          },
+          "openapi": {
+            "description": "Path to the full machine-readable OpenAPI 3 specification (typed request/response schemas for every endpoint) — the authoritative contract behind this lightweight index.",
+            "type": "string"
+          },
+          "docs": {
+            "description": "Path to the human-browsable API reference (RapiDoc, rendered from the same OpenAPI spec).",
+            "type": "string"
+          },
+          "count": {
+            "description": "Number of agent endpoints.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "endpoints": {
+            "description": "The agent endpoints, sorted by path then method.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteInfo"
+            }
+          }
+        }
+      },
+      "RouteInfo": {
+        "description": "One row of the mounted route surface — an endpoint's method, URI pattern, and handler name.",
+        "type": "object",
+        "required": [
+          "method",
+          "uri"
+        ],
+        "properties": {
+          "method": {
+            "description": "HTTP method (`GET`, `POST`, …).",
+            "type": "string"
+          },
+          "uri": {
+            "description": "URI pattern, with `<param>` placeholders and any `?<query>` parameters.",
+            "type": "string"
+          },
+          "name": {
+            "description": "The handler's name (the Rust fn) — a hint at the operation.",
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ConfigDto": {
+        "description": "A masked, serializable view of [`CortexConfig`] safe to expose over the API and UI.",
+        "type": "object",
+        "required": [
+          "assets",
+          "auth",
+          "database",
+          "dispatcher",
+          "jobs",
+          "webauthn"
+        ],
+        "properties": {
+          "database": {
+            "description": "Database settings (password masked).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DatabaseDto"
+              }
+            ]
+          },
+          "dispatcher": {
+            "description": "ZeroMQ dispatcher settings.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DispatcherConfig"
+              }
+            ]
+          },
+          "assets": {
+            "description": "On-disk asset locations.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetsConfig"
+              }
+            ]
+          },
+          "jobs": {
+            "description": "Background-job lifecycle settings (the stall-reap threshold).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JobsConfig"
+              }
+            ]
+          },
+          "auth": {
+            "description": "Auth settings (secrets masked).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AuthDto"
+              }
+            ]
+          },
+          "webauthn": {
+            "description": "Passkey (WebAuthn) sign-in settings (non-secret: enabled flag + relying-party id/origin).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WebauthnConfig"
+              }
+            ]
+          }
+        }
+      },
+      "DatabaseDto": {
+        "description": "Masked view of the database settings — the password is never exposed.",
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "description": "Connection URL with any password component replaced by `***`.",
+            "type": "string"
+          }
+        }
+      },
+      "DispatcherConfig": {
+        "description": "ZeroMQ dispatcher settings.",
+        "type": "object",
+        "required": [
+          "finalize_batch_size",
+          "finalize_flush_ms",
+          "input_prefetchers",
+          "lease_timeout_seconds",
+          "max_in_flight",
+          "max_result_bytes",
+          "message_size",
+          "prefetch_budget_mb",
+          "prefetch_max_entry_mb",
+          "queue_size",
+          "reap_interval_seconds",
+          "report_refresh_interval_seconds",
+          "result_port",
+          "sink_writers",
+          "source_port",
+          "tcp_keepalive_idle_seconds"
+        ],
+        "properties": {
+          "source_port": {
+            "description": "Port the ventilator listens on for worker task requests.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "result_port": {
+            "description": "Port the sink listens on for worker results.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "queue_size": {
+            "description": "Batch size for task-store queue requests (also the in-memory dispatch queue size).\n\nMust never exceed PostgreSQL's `max_locks_per_transaction` setting.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "message_size": {
+            "description": "Size of an individual ZeroMQ message chunk, in bytes.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "max_in_flight": {
+            "description": "Backpressure threshold: the maximum number of in-flight (dispatched-but-unfinished) tasks the ventilator tolerates before it stops leasing new work and mock-replies to requesting workers (which back off and retry). This bounds the in-flight set so it drains via the sink as results return, instead of growing toward the hard panic bound [`crate::dispatcher::server::PROGRESS_QUEUE_HARD_LIMIT`] — graceful degradation under overload rather than a crash (KNOWN_ISSUES D-6). Keep it well below that hard bound to leave recovery headroom. In steady state the in-flight set is ~the worker count (~200), so the default leaves a wide margin.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "report_refresh_interval_seconds": {
+            "description": "How often (seconds) the finalize thread refreshes the `report_summary` rollup *regardless of drain*, bounding report staleness while a long run is in flight (a conversion run can take weeks, so drain-only refresh is not enough). This is the automatic freshness guarantee; with `REFRESH ... CONCURRENTLY` the rebuild no longer blocks readers, so it is cheap to run often. The cost is one rebuild's DB load per interval (a few minutes at production scale). Default 1h.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "max_result_bytes": {
+            "description": "**Hard cap** on the byte size of a single worker result the sink will write to `/data`. A reply that exceeds it is **rejected** (the partial file is removed, the rest of the multipart message is drained frame-by-frame to keep the socket in sync, and the task is marked `Invalid`) rather than allowed to fill the disk — protecting the shared filesystem from a runaway worker. We accept genuinely large jobs but draw the line here. Default 2 GiB.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "sink_writers": {
+            "description": "**Sink archive-writer pool size.** Number of background threads the sink fans the blocking `/data` result-archive writes out to (dispatcher rationalization phase 3, closes D-7). The sink's single ZMQ-PULL receive loop reads each result's frames and hands them — task, then streamed chunks, then a commit — to one of these writers, so *receiving* the next result is no longer hostage to the current one's slow QLC-RAID6 write + `cortex.log` parse. Per-task ordering is preserved (a task's frames go contiguously to one writer); fan-out is across *different* tasks. Memory stays O(chunk) per writer (chunks are streamed and dropped, never the whole archive resident) bounded by a small per-writer channel. Default **4** — a modest decoupling that suits a box co-resident with ~200 workers; raise toward host cores if the disk can absorb more concurrent writes. (1 is the floor; a single writer ≈ the legacy inline behavior but still off the receive loop.)",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "finalize_batch_size": {
+            "description": "**Finalize batch coalescing — size threshold (N).** The finalize thread accumulates returned task reports and persists them to Postgres in **one** transaction per batch ([`crate::backend::Backend::mark_done`]), flushing when the batch reaches this many reports — or `finalize_flush_ms` elapses, whichever fires first. Larger N amortizes the DB round-trip harder under load (fewer, bigger writes) at the cost of more rows per transaction. It is a *ceiling* that mainly bites under burst/saturation; at steady-state load the time window usually flushes first. Unlike `queue_size`, N is **not** bound by `max_locks_per_transaction` (that limits *object* locks; `mark_done` takes only row locks), so it can be large. Default **1024** — the empirical throughput knee from `examples/dispatcher_bench.rs` (tasks/s rises to ~1024 then plateaus, and *regresses* by ~4096 where a single transaction holds row locks long enough to stall the pipeline; see `docs/DISPATCHER_BENCH.md`). 1024 also bounds worst-case crash re-work to ~1024 tasks. (Dispatcher rationalization phase 2, `docs/archive/DISPATCHER_RATIONALIZATION.md`.)",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "finalize_flush_ms": {
+            "description": "**Finalize batch coalescing — time threshold (T), milliseconds.** The maximum time a report waits in an accumulating batch before it is flushed, bounding both report staleness and worst-case crash **re-work**. An unflushed in-memory batch is never *lost* — its tasks stay `Queued` and are recovered on restart — so T trades a little latency for far fewer DB writes, not safety. At steady-state load this is usually the threshold that fires. Default 300 ms (at ~200 tasks/s it coalesces ~60 tasks per write instead of one write per task, for a few hundred ms of staleness).",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "lease_timeout_seconds": {
+            "description": "**Lease / visibility timeout (seconds).** Base deadline for a dispatched (in-flight) task to return a result before the reaper re-leases it. The effective per-task deadline backs off with retries — `(retries + 1) × lease_timeout_seconds` from dispatch — so a task that keeps timing out waits progressively longer rather than re-leasing ever-faster ([`crate::helpers::TaskProgress::expected_at`]). This is the correctness net for a *silently dead / half-open* worker (no ZMTP heartbeat needed): its task is recovered once the lease lapses. Default **240** — just above the worker's hard per-document timeout (the CorTeX `latexml` fleet caps each conversion at 180 s and *hard-kills* the process on overrun), with a 60 s margin, which bounds any single conversion's runtime. With that cap, a lease expiry reliably means the worker **died** (timeout / OOM kill) on an unprocessable paper, so prompt re-lease — and, after `MAX_DISPATCH_RETRIES`, dead-letter to `Fatal` — recovers the task *within the run* instead of stranding it for an hour (orphaned-lease tail observed at scale). Raise it only for a service whose workers have **unbounded** runtime (no per-task timeout). Paired with `reap_interval_seconds` (how often the sweep runs).",
+            "type": "integer",
+            "format": "int64"
+          },
+          "reap_interval_seconds": {
+            "description": "**Reaper sweep interval (seconds).** How often the ventilator scans the in-flight set for tasks past their `lease_timeout_seconds` deadline and re-leases / dead-letters them. Decoupled from the request path so the in-flight set drains even under sustained backpressure (KNOWN_ISSUES D-6). Kept well below the lease timeout so an expired task is recovered promptly without scanning the set on every request. Default **60** s. (Lowering both this and `lease_timeout_seconds` is what lets a fast chaos test exercise reaper-based recovery in seconds instead of the hour-scale production timing.)",
+            "type": "integer",
+            "format": "int64"
+          },
+          "tcp_keepalive_idle_seconds": {
+            "description": "**TCP keepalive idle (seconds) on the worker-facing ZMQ sockets** (ventilator + sink). After this many idle seconds the OS begins probing the peer; this both keeps idle worker connections alive across NAT/firewall idle-timeouts — essential when the ~200 remote workers reach the dispatcher over an overlay/VPN or any NAT'd path, where an idle mapping is otherwise silently dropped and the worker falls out of the fleet until it reconnects — and lets the OS reap a genuinely dead peer so the ROUTER doesn't accumulate stale routes. Task-recovery *correctness* does **not** depend on this (the lease reaper is that net, see `lease_timeout_seconds`); it keeps the *fleet connected*. `<= 0` leaves the OS keepalive default (effectively off). Default **120**, well under the common 5-minute NAT idle window. (Probe interval/count are fixed sane values in [`crate::dispatcher::server::apply_tcp_keepalive`].)",
+            "type": "integer",
+            "format": "int32"
+          },
+          "input_prefetchers": {
+            "description": "**Input-archive prefetcher pool size (D-20).** Number of background threads that warm the next batch of task input archives into the OS page cache **ahead of dispatch**, so the ventilator's inline `/data` read is served from RAM (~0.02 ms) instead of the cold QLC-RAID6 platter (~10 ms median — the single-thread dispatch ceiling at full-arXiv scale where the working set ≫ RAM). The warmers `open + read → discard`; the warmed bytes are **reclaimable page cache**, not dispatcher RSS, so this cannot OOM (the kernel drops the cache before the workers' anon memory). Graceful: a warm that lags or fails just leaves a cold read, exactly as before. Default **8** (the warmers outpace dispatch ~8×, keeping the window warm); **0 disables** (the ventilator reads inline, the pre-D-20 behavior).",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "prefetch_max_entry_mb": {
+            "description": "**Per-entry prefetch cap (MiB).** Input archives larger than this are **not** prefetched — they fall through to the ventilator's existing chunk-streaming read (O(chunk) resident, never the whole file), so the rare 50–100 MB monster streams cold instead of doubling its bytes in cache. Default **50**.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "prefetch_budget_mb": {
+            "description": "**Total prefetch warm budget per batch (MiB).** The warmers stop warming a fetch batch once their cumulative warmed bytes reach this, so a batch that clusters large entries can't dump tens of GiB into page cache and churn out Postgres's working set; the batch's tail streams cold. The typical batch (~`queue_size` × mean-entry ≈ a few hundred MiB) warms fully well under this. Default **8192** (8 GiB).",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          }
+        }
+      },
+      "AssetsConfig": {
+        "description": "On-disk asset locations, so the binary is not bound to its working directory.",
+        "type": "object",
+        "required": [
+          "public_dir",
+          "template_dir"
+        ],
+        "properties": {
+          "template_dir": {
+            "description": "Directory holding the Tera templates.",
+            "type": "string"
+          },
+          "public_dir": {
+            "description": "Directory holding the static public assets (css/js/images, favicon, robots.txt).",
+            "type": "string"
+          }
+        }
+      },
+      "JobsConfig": {
+        "description": "Background-job lifecycle settings (W-4 stall handling).",
+        "type": "object",
+        "required": [
+          "stale_timeout_seconds"
+        ],
+        "properties": {
+          "stale_timeout_seconds": {
+            "description": "A non-terminal job whose progress heartbeat (`updated_at`) has been silent this long is presumed hung and reaped (marked `interrupted`) the next time the jobs surface is read. Generous by default (2 h): a *progressing* job freshens its heartbeat each `step`, so only a genuinely stuck body trips it. Raise it if you run long **single-statement** jobs that don't heartbeat between steps (e.g. a multi-hour `REINDEX` of one huge table).",
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "AuthDto": {
+        "description": "Masked view of the auth settings — secrets are summarized, never exposed.",
+        "type": "object",
+        "required": [
+          "rerun_token_count"
+        ],
+        "properties": {
+          "rerun_token_count": {
+            "description": "How many rerun/admin tokens are configured.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          }
+        }
+      },
+      "WebauthnConfig": {
+        "description": "Passkey (**WebAuthn**) sign-in settings for the human admin UI (`docs/archive/WEBAUTHN_DESIGN.md`). The relying party is the CorTeX server itself — no external IdP, no per-deploy app registration. The admin token (see [`AuthConfig`]) remains the bootstrap / break-glass path; passkeys are the convenient day-to-day human sign-in once enrolled.",
+        "type": "object",
+        "required": [
+          "enabled",
+          "rp_id",
+          "rp_origin"
+        ],
+        "properties": {
+          "enabled": {
+            "description": "Whether passkey sign-in is offered. Off until a deployment configures `rp_id`/`rp_origin` and an admin enrolls a passkey (the token path keeps working regardless).",
+            "type": "boolean"
+          },
+          "rp_id": {
+            "description": "The relying-party id: the registrable domain passkeys are scoped to (host only, no scheme or port), e.g. `localhost` for development or `corpora.latexml.rs` for the preview deployment.",
+            "type": "string"
+          },
+          "rp_origin": {
+            "description": "The full origin the app is served from (scheme + host + optional port), e.g. `http://localhost:8000` or `https://corpora.latexml.rs`. WebAuthn requires a secure context (https) in production; `localhost` is exempt for development.",
+            "type": "string"
+          }
+        }
+      },
+      "LivenessDto": {
+        "description": "Minimal, **public** liveness projection — the open `GET /healthz`. Just whether the service is up and its database reachable; deliberately omits the internal topology (corpus paths, pool sizing, dispatcher ports, remediations) that [`HealthDto`] exposes. The detailed report is admin-only: the `/health` screen and its token-gated agent twin `GET /api/health` (KNOWN_ISSUES X-1).",
+        "type": "object",
+        "required": [
+          "database",
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "description": "`\"ok\"` when the database is reachable, else `\"degraded\"`.",
+            "type": "string"
+          },
+          "database": {
+            "description": "Database dependency health.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DbHealth"
+              }
+            ]
+          }
+        }
+      },
+      "DbHealth": {
+        "description": "Health of the database dependency.",
+        "type": "object",
+        "required": [
+          "reachable"
+        ],
+        "properties": {
+          "reachable": {
+            "description": "Whether the configured database accepts a connection and a trivial query.",
+            "type": "boolean"
+          }
+        }
+      },
+      "HealthDto": {
+        "description": "Structured health report, identical for agents and human supervisors.",
+        "type": "object",
+        "required": [
+          "database",
+          "dispatcher",
+          "migrations",
+          "pool",
+          "remediations",
+          "status",
+          "storage"
+        ],
+        "properties": {
+          "status": {
+            "description": "Overall status: `\"ok\"` when every *frontend* dependency (DB + migrations) is healthy, else `\"degraded\"`. Pool/dispatcher/storage fields are informational and do not flip this.",
+            "type": "string"
+          },
+          "database": {
+            "description": "Database dependency health.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DbHealth"
+              }
+            ]
+          },
+          "migrations": {
+            "description": "Schema-migration health.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationsHealth"
+              }
+            ]
+          },
+          "pool": {
+            "description": "Connection-pool utilization.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PoolHealth"
+              }
+            ]
+          },
+          "dispatcher": {
+            "description": "Co-located dispatcher reachability (informational).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DispatcherHealth"
+              }
+            ]
+          },
+          "storage": {
+            "description": "Shared document-storage reachability per corpus (informational).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageHealth"
+              }
+            ]
+          },
+          "remediations": {
+            "description": "Actionable operator guidance for every degraded or warning signal above, in fix-this-first order (empty when all-clear). The runtime twin of `cortex doctor`'s remediation hints — so an operator (or agent) polling health is told *how* to fix a red/amber signal, not just that it is one. Computed from the fields above by [`HealthDto::remediations`].",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MigrationsHealth": {
+        "description": "Health of the schema migrations.",
+        "type": "object",
+        "required": [
+          "current"
+        ],
+        "properties": {
+          "current": {
+            "description": "Whether the database schema is at the latest embedded migration.",
+            "type": "boolean"
+          }
+        }
+      },
+      "PoolHealth": {
+        "description": "Utilization of the web frontend's database connection pool — a key load / saturation signal (when `in_use` approaches `max`, requests start waiting on `pool.get()` and may `503`).",
+        "type": "object",
+        "required": [
+          "connections",
+          "idle",
+          "in_use",
+          "max"
+        ],
+        "properties": {
+          "max": {
+            "description": "Configured maximum pool size (`database.pool_size`).",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "connections": {
+            "description": "Connections currently established (idle + in-use).",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "idle": {
+            "description": "Idle, immediately-available connections.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "in_use": {
+            "description": "Connections currently checked out (in use).",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "DispatcherHealth": {
+        "description": "Reachability of the ZeroMQ dispatcher, probed by a short TCP connect to its bound ports. The frontend doesn't otherwise speak to the dispatcher (workers do), so this is a pure liveness probe of the **co-located** dispatcher (localhost) — informational, it does not flip the overall `status` (a read-only/report-only frontend deployment legitimately runs without a dispatcher).",
+        "type": "object",
+        "required": [
+          "reachable",
+          "result_port",
+          "source_port"
+        ],
+        "properties": {
+          "reachable": {
+            "description": "Whether both the ventilator and sink ports accept a TCP connection on localhost.",
+            "type": "boolean"
+          },
+          "source_port": {
+            "description": "Ventilator (worker task-request) port.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "result_port": {
+            "description": "Sink (worker result) port.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          }
+        }
+      },
+      "StorageHealth": {
+        "description": "Health of the shared document storage: every corpus's `path` is stat-checked on disk. Document bytes live on a shared filesystem (`tasks.entry` are absolute paths under each `corpus.path`), so a moved/unmounted data mount makes the whole conversion pipeline fail — surfaced here instead of only as mysterious cascading task failures. **Informational** (the frontend still serves reports from the DB), so it does not flip the overall `status`. Corpora with an empty path are skipped.",
+        "type": "object",
+        "required": [
+          "corpora_checked",
+          "unreadable"
+        ],
+        "properties": {
+          "corpora_checked": {
+            "description": "Number of corpora whose source path was checked (non-empty paths).",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "unreadable": {
+            "description": "Corpora whose source directory is missing or unreadable (empty = all good).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnreadableCorpus"
+            }
+          }
+        }
+      },
+      "UnreadableCorpus": {
+        "description": "A corpus whose configured source directory could not be read on disk (missing / unmounted / wrong permissions). Its conversions and re-imports will fail until the path is restored.",
+        "type": "object",
+        "required": [
+          "name",
+          "path"
+        ],
+        "properties": {
+          "name": {
+            "description": "Corpus name (its external handle).",
+            "type": "string"
+          },
+          "path": {
+            "description": "The configured source path that is missing or unreadable.",
+            "type": "string"
+          }
+        }
+      },
+      "ServiceRegisterRequest": {
+        "description": "Request body for registering (defining) a new service.",
+        "type": "object",
+        "required": [
+          "complex",
+          "inputformat",
+          "name",
+          "outputformat",
+          "version"
+        ],
+        "properties": {
+          "name": {
+            "description": "Service name (external handle).",
+            "type": "string"
+          },
+          "version": {
+            "description": "Service version (e.g. `0.1`).",
+            "type": "number",
+            "format": "float"
+          },
+          "inputformat": {
+            "description": "Expected input format (e.g. `tex`).",
+            "type": "string"
+          },
+          "outputformat": {
+            "description": "Produced output format (e.g. `html`).",
+            "type": "string"
+          },
+          "inputconverter": {
+            "description": "Prerequisite input-conversion service, if any (empty = none).",
+            "type": "string",
+            "nullable": true
+          },
+          "complex": {
+            "description": "Whether the service needs more than a document's main textual content.",
+            "type": "boolean"
+          },
+          "description": {
+            "description": "Optional human-readable description.",
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "LeaseUpdateRequest": {
+        "description": "Request body for setting a service's per-service lease timeout (D-17).",
+        "type": "object",
+        "properties": {
+          "seconds": {
+            "description": "New lease / visibility-timeout in seconds (must be positive), or `null` to clear the override and fall back to the global `dispatcher.lease_timeout_seconds`.",
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        }
+      },
+      "ServiceRuntimeDto": {
+        "description": "The per-service conversion-runtime report: a distribution summary, an aggregate histogram (the bar chart), and the paginated slowest conversions. Sourced from the worker's `Info:runtime_ms:<N>` log lines, so it only populates after a run with a runtime-emitting worker. Heavier than the other service views (it scans `log_infos`), hence its own page.",
+        "type": "object",
+        "required": [
+          "avg_ms",
+          "histogram",
+          "max_ms",
+          "offset",
+          "p50_ms",
+          "p90_ms",
+          "p99_ms",
+          "page_size",
+          "service",
+          "slowest",
+          "total"
+        ],
+        "properties": {
+          "service": {
+            "description": "Service name.",
+            "type": "string"
+          },
+          "total": {
+            "description": "Conversions that recorded a runtime.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "avg_ms": {
+            "description": "Mean runtime (ms).",
+            "type": "integer",
+            "format": "int32"
+          },
+          "p50_ms": {
+            "description": "Median (p50) runtime (ms).",
+            "type": "integer",
+            "format": "int32"
+          },
+          "p90_ms": {
+            "description": "p90 runtime (ms).",
+            "type": "integer",
+            "format": "int32"
+          },
+          "p99_ms": {
+            "description": "p99 runtime (ms).",
+            "type": "integer",
+            "format": "int32"
+          },
+          "max_ms": {
+            "description": "Slowest single runtime (ms).",
+            "type": "integer",
+            "format": "int32"
+          },
+          "histogram": {
+            "description": "Distribution histogram across fixed ms buckets — the aggregate bar chart.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeBucketDto"
+            }
+          },
+          "offset": {
+            "description": "Pagination offset echoed back.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "page_size": {
+            "description": "Page size echoed back (the cap actually applied).",
+            "type": "integer",
+            "format": "int64"
+          },
+          "slowest": {
+            "description": "The slowest conversions on this page (descending runtime).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeRowDto"
+            }
+          }
+        }
+      },
+      "RuntimeBucketDto": {
+        "description": "One bar of the runtime-distribution histogram: a millisecond range and how many conversions fell in it.",
+        "type": "object",
+        "required": [
+          "count",
+          "label"
+        ],
+        "properties": {
+          "label": {
+            "description": "Human label for the range (e.g. `1–2s`).",
+            "type": "string"
+          },
+          "count": {
+            "description": "Number of conversions whose runtime fell in this range.",
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "RuntimeRowDto": {
+        "description": "One conversion's recorded wall-time (from the worker's `Info:runtime_ms:<N>` log line), for the slowest-conversions table.",
+        "type": "object",
+        "required": [
+          "corpus",
+          "paper",
+          "runtime_ms",
+          "task_id"
+        ],
+        "properties": {
+          "corpus": {
+            "description": "Corpus the document belongs to (a service may run on several).",
+            "type": "string"
+          },
+          "paper": {
+            "description": "Document short name (paper id) — feed to the document view for forensics.",
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Task id.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "runtime_ms": {
+            "description": "Recorded conversion wall-time in milliseconds.",
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ImportRequest": {
+        "description": "Request body for registering and importing a corpus.",
+        "type": "object",
+        "required": [
+          "complex",
+          "name",
+          "path"
+        ],
+        "properties": {
+          "name": {
+            "description": "Corpus name (external handle).",
+            "type": "string"
+          },
+          "path": {
+            "description": "Filesystem path to the corpus root.",
+            "type": "string"
+          },
+          "complex": {
+            "description": "Whether documents are multi-file (complex).",
+            "type": "boolean"
+          },
+          "description": {
+            "description": "Optional human-readable description.",
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ExportRequest": {
+        "description": "Request body for exporting a corpus/service's converted HTML into ZIP archives ([`export_dataset`]). Mirrors the `cortex export-dataset` CLI flags.",
+        "type": "object",
+        "required": [
+          "out"
+        ],
+        "properties": {
+          "out": {
+            "description": "Server-side output directory for the archives + the `<corpus>-manifest.json` sidecar (created if missing).",
+            "type": "string"
+          },
+          "group_by": {
+            "description": "Bucketing: `month` (one archive per year-month) or `severity` (one per severity). Defaults to `month`.",
+            "default": null,
+            "type": "string",
+            "nullable": true
+          },
+          "severities": {
+            "description": "Severity keys to include (canonical: `no_problem` | `warning` | `error` | `fatal` | `invalid`). Defaults to `no_problem,warning,error` (matching the CLI).",
+            "default": null,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "max_archive_mb": {
+            "description": "Optional per-archive size cap in **MB**: when set, each month/severity bucket is split into numbered chunks `<corpus>-<key>-NNN.zip` once it exceeds this many MB of (uncompressed) HTML — the published `.zip` is smaller. Omit for one archive per bucket (no size limit).",
+            "default": null,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0,
+            "nullable": true
+          }
+        }
+      },
+      "SandboxRequest": {
+        "description": "Request body for carving a **sandbox** corpus out of a parent by a filter (Arm 5). Task-status and message-severity are independent, intersecting dimensions (Model C); `category`/`what` narrow the message filter, mirroring the report drill-down.",
+        "type": "object",
+        "required": [
+          "name",
+          "service_id"
+        ],
+        "properties": {
+          "name": {
+            "description": "Name for the new sandbox corpus (its external handle; must be unique).",
+            "type": "string"
+          },
+          "service_id": {
+            "description": "The service whose conversion results are filtered.",
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "description": "Optional **task-status** filter (`todo` | `no_problem` | `warning` | `error` | `fatal` | `invalid`).",
+            "default": null,
+            "type": "string",
+            "nullable": true
+          },
+          "message_severity": {
+            "description": "Optional **message-severity** filter (`info` | `warning` | `error` | `fatal` | `invalid`) — matches tasks that emitted such a message, at any status. `category`/`what` narrow within it.",
+            "default": null,
+            "type": "string",
+            "nullable": true
+          },
+          "category": {
+            "description": "Optional message-category narrowing (needs `message_severity`).",
+            "default": null,
+            "type": "string",
+            "nullable": true
+          },
+          "what": {
+            "description": "Optional `what` narrowing within the category (needs `category`).",
+            "default": null,
+            "type": "string",
+            "nullable": true
+          },
+          "entry": {
+            "description": "Optional substring the parent `entry` path must contain (`entry LIKE '%…%'`, e.g. `/2506/` for one arXiv month). Empty/absent = no narrowing.",
+            "default": null,
+            "type": "string",
+            "nullable": true
+          },
+          "max_entries": {
+            "description": "Optional hard cap on the number of entries captured (the first `n` by `entry` order). Absent or non-positive = no cap.",
+            "default": null,
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        }
+      },
+      "SnapshotAckDto": {
+        "description": "Acknowledgement for a save-snapshot: the `(corpus, service)` frozen and how many per-task status rows were appended to `historical_tasks`.",
+        "type": "object",
+        "required": [
+          "actor",
+          "corpus",
+          "saved",
+          "service"
+        ],
+        "properties": {
+          "corpus": {
+            "description": "Corpus the snapshot froze.",
+            "type": "string"
+          },
+          "service": {
+            "description": "Service the snapshot froze.",
+            "type": "string"
+          },
+          "actor": {
+            "description": "The authenticated initiator the snapshot is attributed to.",
+            "type": "string"
+          },
+          "saved": {
+            "description": "Per-task status rows appended to `historical_tasks` (the size of the frozen snapshot).",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          }
+        }
+      },
+      "RerunAckDto": {
+        "description": "Acknowledgement of a rerun: the scope that was marked and who marked it.",
+        "type": "object",
+        "required": [
+          "actor",
+          "corpus",
+          "description",
+          "service"
+        ],
+        "properties": {
+          "corpus": {
+            "description": "Corpus the rerun targeted.",
+            "type": "string"
+          },
+          "service": {
+            "description": "Service the rerun targeted.",
+            "type": "string"
+          },
+          "actor": {
+            "description": "The authenticated initiator (the run's `owner`).",
+            "type": "string"
+          },
+          "description": {
+            "description": "The recorded run description.",
+            "type": "string"
+          }
+        }
+      },
+      "RunControlDto": {
+        "description": "Result of a pause/resume run-control action (the agent twin of the report screen's Pause/Resume buttons).",
+        "type": "object",
+        "required": [
+          "action",
+          "actor",
+          "affected",
+          "corpus",
+          "service"
+        ],
+        "properties": {
+          "corpus": {
+            "description": "The corpus acted on.",
+            "type": "string"
+          },
+          "service": {
+            "description": "The service acted on.",
+            "type": "string"
+          },
+          "action": {
+            "description": "`pause` or `resume`.",
+            "type": "string"
+          },
+          "affected": {
+            "description": "Tasks transitioned — blocked (on pause) or returned to TODO (on resume).",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "actor": {
+            "description": "The token-resolved actor recorded as the initiator.",
+            "type": "string"
+          }
+        }
+      },
+      "GlobalRunControlDto": {
+        "description": "Acknowledgement for a global pause/resume-all conversion control.",
+        "type": "object",
+        "required": [
+          "action",
+          "actor",
+          "affected"
+        ],
+        "properties": {
+          "action": {
+            "description": "`pause` or `resume`.",
+            "type": "string"
+          },
+          "affected": {
+            "description": "Number of tasks moved (blocked, or returned to TODO).",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "actor": {
+            "description": "The token-resolved actor recorded as the initiator.",
+            "type": "string"
+          }
+        }
+      },
+      "RefreshAckDto": {
+        "description": "Acknowledgement for a forced report-rollup refresh: the background [`crate::jobs`] handle to poll.",
+        "type": "object",
+        "required": [
+          "actor",
+          "job",
+          "poll"
+        ],
+        "properties": {
+          "job": {
+            "description": "The spawned (or already-running, if debounced) refresh job's external uuid.",
+            "type": "string"
+          },
+          "poll": {
+            "description": "Where to poll the job's status / health / duration.",
+            "type": "string"
+          },
+          "actor": {
+            "description": "The token-resolved actor recorded as the job's initiator.",
+            "type": "string"
+          }
+        }
+      },
+      "ScopeRefreshAckDto": {
+        "description": "Acknowledgement of a scoped report-cache refresh: the scope that was busted and who busted it.",
+        "type": "object",
+        "required": [
+          "actor",
+          "corpus",
+          "service"
+        ],
+        "properties": {
+          "corpus": {
+            "description": "Corpus whose cached report grains were dropped.",
+            "type": "string"
+          },
+          "service": {
+            "description": "Service whose cached report grains were dropped.",
+            "type": "string"
+          },
+          "actor": {
+            "description": "The token-resolved actor recorded as the initiator.",
+            "type": "string"
+          }
+        }
+      },
+      "MaintenanceAckDto": {
+        "description": "Acknowledgement for a maintenance job: the background [`crate::jobs`] handle to poll.",
+        "type": "object",
+        "required": [
+          "actor",
+          "job",
+          "poll"
+        ],
+        "properties": {
+          "job": {
+            "description": "The spawned (or already-running, if debounced) maintenance job's external uuid.",
+            "type": "string"
+          },
+          "poll": {
+            "description": "Where to poll the job's status / health / per-table progress.",
+            "type": "string"
+          },
+          "actor": {
+            "description": "The token-resolved actor recorded as the job's initiator.",
+            "type": "string"
+          }
+        }
+      },
+      "AdminStatusDto": {
+        "description": "At-a-glance operational snapshot for the admin **live ops console** — the small-table signals (plus the one pending-task backlog count) the dashboard polls every few seconds and renders server-side on first paint. Every field is best-effort: a database hiccup degrades it to `0`/`None` rather than failing the screen. Deliberately excludes the dispatcher-port / corpus-storage probes (those are the System Health screen's job — and too slow to poll). Agents get this same snapshot from the token-gated `GET /api/status` ([`api_status`]) or the Prometheus gauges at `/metrics`.",
+        "type": "object",
+        "required": [
+          "active_jobs",
+          "active_sessions",
+          "corpus_count",
+          "jobs_failed_recent",
+          "pool_in_use",
+          "pool_max",
+          "tasks_todo",
+          "workers_in_flight",
+          "workers_total"
+        ],
+        "properties": {
+          "corpus_count": {
+            "description": "Registered corpora.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "active_jobs": {
+            "description": "Background jobs currently queued or running.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "active_sessions": {
+            "description": "Active (unexpired) admin sessions.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "workers_total": {
+            "description": "Workers **active in the last ~10 minutes** (dispatched or returned a task) — the actively-converting fleet, not all registered rows. `0` when no dispatcher is running.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "workers_in_flight": {
+            "description": "Tasks in-flight (dispatched, not yet returned) at those **active** workers — real current in-flight work, `0` on an idle deployment (no longer a cumulative-lifetime tally; KNOWN_ISSUES P-3).",
+            "type": "integer",
+            "format": "int64"
+          },
+          "tasks_todo": {
+            "description": "Tasks awaiting conversion (status TODO, not yet dispatched) — the pending-work backlog, the human twin of the `cortex_tasks_todo` `/metrics` gauge.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "jobs_failed_recent": {
+            "description": "Background jobs that ended `failed` within the last 24h (rolling window).",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "pool_in_use": {
+            "description": "Pooled connections currently checked out (saturation signal).",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "pool_max": {
+            "description": "Maximum size of the frontend connection pool.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "last_run": {
+            "description": "The most recent conversion run (live tallies overlaid while it is still open), if any.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LastRunDto"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
+      "LastRunDto": {
+        "description": "The latest run's headline, with live task tallies overlaid while it is still open (so the card shows real progress, not a frozen-at-completion zero).",
+        "type": "object",
+        "required": [
+          "description",
+          "in_progress",
+          "open",
+          "owner",
+          "total",
+          "when"
+        ],
+        "properties": {
+          "when": {
+            "description": "Run start time, ISO-8601 UTC.",
+            "type": "string"
+          },
+          "owner": {
+            "description": "The actor who launched the run.",
+            "type": "string"
+          },
+          "description": {
+            "description": "The run's description.",
+            "type": "string"
+          },
+          "total": {
+            "description": "Total tasks in the run.",
+            "type": "integer",
+            "format": "int32"
+          },
+          "in_progress": {
+            "description": "Tasks still in progress (live).",
+            "type": "integer",
+            "format": "int32"
+          },
+          "open": {
+            "description": "Whether the run is still open (tallies not yet frozen).",
+            "type": "boolean"
+          }
+        }
+      },
+      "LiveActivityDto": {
+        "description": "The admin **live activity** feed: the actively-converting fleet plus the most recent conversion problems. Every field is read-only over data the dispatcher already writes to Postgres as its normal work — the frontend polls it and the **dispatcher is never in the request loop**, so a slow or absent UI can never back-pressure or endanger the conversion hot path.",
+        "type": "object",
+        "required": [
+          "fleet",
+          "recent"
+        ],
+        "properties": {
+          "fleet": {
+            "description": "Recently-active workers, newest dispatch first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FleetWorkerDto"
+            }
+          },
+          "recent": {
+            "description": "The most recent conversion messages — fatals, errors, and warnings **intermeshed and sorted newest-first by `recorded_at`** (a live streaming-log tail), capped at ~100.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityMessageDto"
+            }
+          }
+        }
+      },
+      "FleetWorkerDto": {
+        "description": "One worker's live activity row for the [`LiveActivityDto`] fleet feed — the \"what the fleet is doing now\" signal, read straight from the `worker_metadata` rows the dispatcher already keeps.",
+        "type": "object",
+        "required": [
+          "name",
+          "service_id",
+          "time_last_dispatch",
+          "total_returned"
+        ],
+        "properties": {
+          "name": {
+            "description": "Worker identity (usually `hostname:pid`).",
+            "type": "string"
+          },
+          "service_id": {
+            "description": "The service this worker serves.",
+            "type": "integer",
+            "format": "int32"
+          },
+          "total_returned": {
+            "description": "Lifetime results this worker has returned.",
+            "type": "integer",
+            "format": "int32"
+          },
+          "last_returned_task_id": {
+            "description": "The most recent task id this worker returned a result for (`None` if it never has).",
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "time_last_dispatch": {
+            "description": "When this worker was last dispatched a task (RFC 3339 UTC).",
+            "type": "string"
+          },
+          "time_last_return": {
+            "description": "When this worker last returned a result (RFC 3339 UTC), if ever.",
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ActivityMessageDto": {
+        "description": "One recent conversion message (fatal/error/warning) for the [`LiveActivityDto`] stream — read from the `log_*` rows the dispatcher's finalize thread already persists, joined to the task's entry/corpus/service. The live signal of a run's health.",
+        "type": "object",
+        "required": [
+          "corpus",
+          "entry",
+          "service",
+          "severity"
+        ],
+        "properties": {
+          "severity": {
+            "description": "`\"fatal\"`, `\"error\"`, or `\"warning\"`.",
+            "type": "string"
+          },
+          "corpus": {
+            "description": "The corpus the converting task belongs to.",
+            "type": "string"
+          },
+          "service": {
+            "description": "The service that produced the message.",
+            "type": "string"
+          },
+          "entry": {
+            "description": "The document entry (source path) that errored.",
+            "type": "string"
+          },
+          "category": {
+            "description": "The message category (e.g. `undefined`), if any.",
+            "type": "string",
+            "nullable": true
+          },
+          "what": {
+            "description": "The message subject (`what`), if any.",
+            "type": "string",
+            "nullable": true
+          },
+          "details": {
+            "description": "The message detail, truncated for the feed.",
+            "type": "string",
+            "nullable": true
+          },
+          "when": {
+            "description": "When the message was recorded (RFC 3339 UTC); `None` for rows written before the `recorded_at` column existed (they sort last in the stream).",
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "AuditPage": {
+        "description": "One page of the audit log — the shared shape for the agent endpoint and the human screen.",
+        "type": "object",
+        "required": [
+          "entries",
+          "has_next",
+          "page",
+          "page_size"
+        ],
+        "properties": {
+          "entries": {
+            "description": "The audit rows for this page, most-recent first (at most [`AUDIT_PAGE_SIZE`]).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditDto"
+            }
+          },
+          "page": {
+            "description": "The 0-based page index this response covers.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "page_size": {
+            "description": "Rows per page (the cap).",
+            "type": "integer",
+            "format": "int64"
+          },
+          "has_next": {
+            "description": "Whether an older page exists (more history beyond this one).",
+            "type": "boolean"
+          }
+        }
+      },
+      "AuditDto": {
+        "description": "A recorded admin action as exposed over the API/UI — the read view of the `audit_log`. The timestamp is a formatted string (the model's `at` is a chrono `NaiveDateTime`, not serialized directly — see `models::audit`).",
+        "type": "object",
+        "required": [
+          "action",
+          "actor",
+          "at",
+          "details",
+          "id",
+          "outcome",
+          "target"
+        ],
+        "properties": {
+          "id": {
+            "description": "Auto-incremented id (monotonic; usable as a cursor).",
+            "type": "integer",
+            "format": "int64"
+          },
+          "actor": {
+            "description": "The identity that acted (empty if the action was unauthenticated).",
+            "type": "string"
+          },
+          "action": {
+            "description": "The action verb (the matched route name, e.g. `delete_corpus`).",
+            "type": "string"
+          },
+          "target": {
+            "description": "The resource acted on (the request path).",
+            "type": "string"
+          },
+          "outcome": {
+            "description": "The outcome (an HTTP status code).",
+            "type": "string"
+          },
+          "details": {
+            "description": "Optional short context.",
+            "type": "string"
+          },
+          "at": {
+            "description": "When it happened, formatted `YYYY-MM-DD HH:MM:SS` (server clock).",
+            "type": "string"
+          }
+        }
+      },
+      "SessionDto": {
+        "description": "An active admin session as exposed over the API/UI. **No session id** (it is the credential): owner + how they signed in + when, and whether it is the viewer's current browser session.",
+        "type": "object",
+        "required": [
+          "created_at",
+          "current",
+          "expires_at",
+          "method",
+          "owner"
+        ],
+        "properties": {
+          "owner": {
+            "description": "The signed-in identity (the audit-log actor / token owner).",
+            "type": "string"
+          },
+          "method": {
+            "description": "How the session was established: `token` or `passkey`.",
+            "type": "string"
+          },
+          "created_at": {
+            "description": "When the session was opened, as an RFC 3339 UTC timestamp (localized to the viewer's zone in the UI; directly parseable over the agent API).",
+            "type": "string"
+          },
+          "expires_at": {
+            "description": "When the session expires, as an RFC 3339 UTC timestamp (localized to the viewer's zone in the UI; directly parseable over the agent API).",
+            "type": "string"
+          },
+          "current": {
+            "description": "Whether this row is the requesting browser's own current session (UI only; always `false` over the agent API, which has no browser cookie).",
+            "type": "boolean"
+          }
+        }
+      },
+      "RevokeAckDto": {
+        "description": "Acknowledgement of a session revoke: the identity and how many of its sessions were ended.",
+        "type": "object",
+        "required": [
+          "actor",
+          "owner",
+          "revoked"
+        ],
+        "properties": {
+          "owner": {
+            "description": "The identity whose sessions were revoked.",
+            "type": "string"
+          },
+          "revoked": {
+            "description": "How many active sessions were ended (0 if the identity had none).",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "actor": {
+            "description": "The actor who performed the revoke (audit identity).",
+            "type": "string"
+          }
+        }
+      },
+      "HistoricalStatsDto": {
+        "description": "Per-task snapshot retention stats, as exposed over the API/UI.",
+        "type": "object",
+        "required": [
+          "oldest",
+          "snapshot_rows"
+        ],
+        "properties": {
+          "snapshot_rows": {
+            "description": "Total per-task snapshot rows (`historical_tasks`) — the unbounded-growth table.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "oldest": {
+            "description": "The oldest snapshot's timestamp, formatted (`none` if there are no snapshots).",
+            "type": "string"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "CortexToken": {
+        "description": "A CorTeX rerun token, sent in the `X-Cortex-Token` request header (a `?token=` query parameter is also accepted). It maps to an owner in `auth.rerun_tokens`; a missing or unknown token is rejected with `401`.",
+        "type": "apiKey",
+        "name": "X-Cortex-Token",
+        "in": "header"
+      }
+    }
+  }
+}

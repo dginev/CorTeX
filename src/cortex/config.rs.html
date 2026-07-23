@@ -1,0 +1,401 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/config.rs`."><title>config.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-ddecd707.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="cortex" data-themes="" data-resource-suffix="" data-rustdoc-version="1.99.0-nightly (6f72b5dd5 2026-07-22)" data-channel="nightly" data-search-js="search-cf4fc35e.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js" ><script src="../../static.files/storage-41dd4d93.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-417ebf0a.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-f7c3ffd8.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><h1><div class="sub-heading">cortex/</div>config.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="comment">// Copyright 2015-2025 Deyan Ginev. See the LICENSE
+<a href=#2 id=2 data-nosnippet>2</a>// file at the top-level directory of this distribution.
+<a href=#3 id=3 data-nosnippet>3</a>//
+<a href=#4 id=4 data-nosnippet>4</a>// Licensed under the MIT license &lt;LICENSE-MIT or http://opensource.org/licenses/MIT&gt;.
+<a href=#5 id=5 data-nosnippet>5</a>// This file may not be copied, modified, or distributed
+<a href=#6 id=6 data-nosnippet>6</a>// except according to those terms.
+<a href=#7 id=7 data-nosnippet>7</a>
+<a href=#8 id=8 data-nosnippet>8</a></span><span class="doccomment">//! Layered, runtime configuration for `CorTeX`.
+<a href=#9 id=9 data-nosnippet>9</a>//!
+<a href=#10 id=10 data-nosnippet>10</a>//! This replaces two prototype-era patterns: the **compile-time** `dotenv!` baking of the database
+<a href=#11 id=11 data-nosnippet>11</a>//! URL into the binary (so the deployment target could not change without a rebuild), and ad-hoc
+<a href=#12 id=12 data-nosnippet>12</a>//! hard-coded constants for the dispatcher ports.
+<a href=#13 id=13 data-nosnippet>13</a>//!
+<a href=#14 id=14 data-nosnippet>14</a>//! Values are resolved with the following precedence (lowest to highest):
+<a href=#15 id=15 data-nosnippet>15</a>//! 1. built-in [`Default`] values,
+<a href=#16 id=16 data-nosnippet>16</a>//! 2. an optional `cortex.toml` file in the working directory,
+<a href=#17 id=17 data-nosnippet>17</a>//! 3. `CORTEX_`-prefixed environment variables (nested with `__`, e.g.
+<a href=#18 id=18 data-nosnippet>18</a>//!    `CORTEX_DISPATCHER__SOURCE_PORT`),
+<a href=#19 id=19 data-nosnippet>19</a>//! 4. the legacy `DATABASE_URL` / `TEST_DATABASE_URL` variables (also read from a local `.env`),
+<a href=#20 id=20 data-nosnippet>20</a>//!    which take final precedence so existing deployments keep working unchanged.
+<a href=#21 id=21 data-nosnippet>21</a>//!
+<a href=#22 id=22 data-nosnippet>22</a>//! Access the process-wide configuration through [`config()`].
+<a href=#23 id=23 data-nosnippet>23</a>
+<a href=#24 id=24 data-nosnippet>24</a></span><span class="kw">use </span>figment::{
+<a href=#25 id=25 data-nosnippet>25</a>  Figment,
+<a href=#26 id=26 data-nosnippet>26</a>  providers::{Env, Format, Serialized, Toml},
+<a href=#27 id=27 data-nosnippet>27</a>};
+<a href=#28 id=28 data-nosnippet>28</a><span class="kw">use </span>serde::{Deserialize, Serialize};
+<a href=#29 id=29 data-nosnippet>29</a><span class="kw">use </span>std::collections::HashMap;
+<a href=#30 id=30 data-nosnippet>30</a><span class="kw">use </span>std::sync::LazyLock;
+<a href=#31 id=31 data-nosnippet>31</a>
+<a href=#32 id=32 data-nosnippet>32</a><span class="doccomment">/// Database connection settings.
+<a href=#33 id=33 data-nosnippet>33</a></span><span class="attr">#[derive(Debug, Clone, Serialize, Deserialize)]
+<a href=#34 id=34 data-nosnippet>34</a></span><span class="kw">pub struct </span>DatabaseConfig {
+<a href=#35 id=35 data-nosnippet>35</a>  <span class="doccomment">/// Connection URL for the production database.
+<a href=#36 id=36 data-nosnippet>36</a>  </span><span class="kw">pub </span>url: String,
+<a href=#37 id=37 data-nosnippet>37</a>  <span class="doccomment">/// Connection URL for the test database (used by the integration test-suite).
+<a href=#38 id=38 data-nosnippet>38</a>  </span><span class="kw">pub </span>test_url: String,
+<a href=#39 id=39 data-nosnippet>39</a>  <span class="doccomment">/// Maximum size of the web frontend connection pool. Sized for the expected load (~2 admins +
+<a href=#40 id=40 data-nosnippet>40</a>  /// 20 users; the ~200 workers speak ZeroMQ to the dispatcher, not Postgres) within PostgreSQL's
+<a href=#41 id=41 data-nosnippet>41</a>  /// default `max_connections` of 100, which is shared with the dispatcher.
+<a href=#42 id=42 data-nosnippet>42</a>  </span><span class="kw">pub </span>pool_size: u32,
+<a href=#43 id=43 data-nosnippet>43</a>}
+<a href=#44 id=44 data-nosnippet>44</a><span class="kw">impl </span>Default <span class="kw">for </span>DatabaseConfig {
+<a href=#45 id=45 data-nosnippet>45</a>  <span class="kw">fn </span>default() -&gt; <span class="self">Self </span>{
+<a href=#46 id=46 data-nosnippet>46</a>    DatabaseConfig {
+<a href=#47 id=47 data-nosnippet>47</a>      url: <span class="string">"postgres://cortex:cortex@localhost/cortex"</span>.to_string(),
+<a href=#48 id=48 data-nosnippet>48</a>      test_url: <span class="string">"postgres://cortex_tester:cortex_tester@localhost/cortex_tester"</span>.to_string(),
+<a href=#49 id=49 data-nosnippet>49</a>      pool_size: <span class="number">32</span>,
+<a href=#50 id=50 data-nosnippet>50</a>    }
+<a href=#51 id=51 data-nosnippet>51</a>  }
+<a href=#52 id=52 data-nosnippet>52</a>}
+<a href=#53 id=53 data-nosnippet>53</a>
+<a href=#54 id=54 data-nosnippet>54</a><span class="doccomment">/// ZeroMQ dispatcher settings.
+<a href=#55 id=55 data-nosnippet>55</a></span><span class="attr">#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+<a href=#56 id=56 data-nosnippet>56</a></span><span class="kw">pub struct </span>DispatcherConfig {
+<a href=#57 id=57 data-nosnippet>57</a>  <span class="doccomment">/// Port the ventilator listens on for worker task requests.
+<a href=#58 id=58 data-nosnippet>58</a>  </span><span class="kw">pub </span>source_port: usize,
+<a href=#59 id=59 data-nosnippet>59</a>  <span class="doccomment">/// Port the sink listens on for worker results.
+<a href=#60 id=60 data-nosnippet>60</a>  </span><span class="kw">pub </span>result_port: usize,
+<a href=#61 id=61 data-nosnippet>61</a>  <span class="doccomment">/// Batch size for task-store queue requests (also the in-memory dispatch queue size).
+<a href=#62 id=62 data-nosnippet>62</a>  ///
+<a href=#63 id=63 data-nosnippet>63</a>  /// Must never exceed PostgreSQL's `max_locks_per_transaction` setting.
+<a href=#64 id=64 data-nosnippet>64</a>  </span><span class="kw">pub </span>queue_size: usize,
+<a href=#65 id=65 data-nosnippet>65</a>  <span class="doccomment">/// Size of an individual ZeroMQ message chunk, in bytes.
+<a href=#66 id=66 data-nosnippet>66</a>  </span><span class="kw">pub </span>message_size: usize,
+<a href=#67 id=67 data-nosnippet>67</a>  <span class="doccomment">/// Backpressure threshold: the maximum number of in-flight (dispatched-but-unfinished) tasks the
+<a href=#68 id=68 data-nosnippet>68</a>  /// ventilator tolerates before it stops leasing new work and mock-replies to requesting workers
+<a href=#69 id=69 data-nosnippet>69</a>  /// (which back off and retry). This bounds the in-flight set so it drains via the sink as
+<a href=#70 id=70 data-nosnippet>70</a>  /// results return, instead of growing toward the hard panic bound
+<a href=#71 id=71 data-nosnippet>71</a>  /// [`crate::dispatcher::server::PROGRESS_QUEUE_HARD_LIMIT`] — graceful degradation under
+<a href=#72 id=72 data-nosnippet>72</a>  /// overload rather than a crash (KNOWN_ISSUES D-6). Keep it well below that hard bound to
+<a href=#73 id=73 data-nosnippet>73</a>  /// leave recovery headroom. In steady state the in-flight set is ~the worker count (~200), so
+<a href=#74 id=74 data-nosnippet>74</a>  /// the default leaves a wide margin.
+<a href=#75 id=75 data-nosnippet>75</a>  </span><span class="kw">pub </span>max_in_flight: usize,
+<a href=#76 id=76 data-nosnippet>76</a>  <span class="doccomment">/// How often (seconds) the finalize thread refreshes the `report_summary` rollup *regardless of
+<a href=#77 id=77 data-nosnippet>77</a>  /// drain*, bounding report staleness while a long run is in flight (a conversion run can take
+<a href=#78 id=78 data-nosnippet>78</a>  /// weeks, so drain-only refresh is not enough). This is the automatic freshness guarantee; with
+<a href=#79 id=79 data-nosnippet>79</a>  /// `REFRESH ... CONCURRENTLY` the rebuild no longer blocks readers, so it is cheap to run often.
+<a href=#80 id=80 data-nosnippet>80</a>  /// The cost is one rebuild's DB load per interval (a few minutes at production scale). Default
+<a href=#81 id=81 data-nosnippet>81</a>  /// 1h.
+<a href=#82 id=82 data-nosnippet>82</a>  </span><span class="kw">pub </span>report_refresh_interval_seconds: u64,
+<a href=#83 id=83 data-nosnippet>83</a>  <span class="doccomment">/// **Hard cap** on the byte size of a single worker result the sink will write to `/data`. A
+<a href=#84 id=84 data-nosnippet>84</a>  /// reply that exceeds it is **rejected** (the partial file is removed, the rest of the
+<a href=#85 id=85 data-nosnippet>85</a>  /// multipart message is drained frame-by-frame to keep the socket in sync, and the task is
+<a href=#86 id=86 data-nosnippet>86</a>  /// marked `Invalid`) rather than allowed to fill the disk — protecting the shared filesystem
+<a href=#87 id=87 data-nosnippet>87</a>  /// from a runaway worker. We accept genuinely large jobs but draw the line here. Default 2
+<a href=#88 id=88 data-nosnippet>88</a>  /// GiB.
+<a href=#89 id=89 data-nosnippet>89</a>  </span><span class="kw">pub </span>max_result_bytes: usize,
+<a href=#90 id=90 data-nosnippet>90</a>  <span class="doccomment">/// **Sink archive-writer pool size.** Number of background threads the sink fans the blocking
+<a href=#91 id=91 data-nosnippet>91</a>  /// `/data` result-archive writes out to (dispatcher rationalization phase 3, closes D-7). The
+<a href=#92 id=92 data-nosnippet>92</a>  /// sink's single ZMQ-PULL receive loop reads each result's frames and hands them — task, then
+<a href=#93 id=93 data-nosnippet>93</a>  /// streamed chunks, then a commit — to one of these writers, so *receiving* the next result is
+<a href=#94 id=94 data-nosnippet>94</a>  /// no longer hostage to the current one's slow QLC-RAID6 write + `cortex.log` parse. Per-task
+<a href=#95 id=95 data-nosnippet>95</a>  /// ordering is preserved (a task's frames go contiguously to one writer); fan-out is across
+<a href=#96 id=96 data-nosnippet>96</a>  /// *different* tasks. Memory stays O(chunk) per writer (chunks are streamed and dropped, never
+<a href=#97 id=97 data-nosnippet>97</a>  /// the whole archive resident) bounded by a small per-writer channel. Default **4** — a modest
+<a href=#98 id=98 data-nosnippet>98</a>  /// decoupling that suits a box co-resident with ~200 workers; raise toward host cores if the
+<a href=#99 id=99 data-nosnippet>99</a>  /// disk can absorb more concurrent writes. (1 is the floor; a single writer ≈ the legacy
+<a href=#100 id=100 data-nosnippet>100</a>  /// inline behavior but still off the receive loop.)
+<a href=#101 id=101 data-nosnippet>101</a>  </span><span class="kw">pub </span>sink_writers: usize,
+<a href=#102 id=102 data-nosnippet>102</a>  <span class="doccomment">/// **Finalize batch coalescing — size threshold (N).** The finalize thread accumulates returned
+<a href=#103 id=103 data-nosnippet>103</a>  /// task reports and persists them to Postgres in **one** transaction per batch
+<a href=#104 id=104 data-nosnippet>104</a>  /// ([`crate::backend::Backend::mark_done`]), flushing when the batch reaches this many reports —
+<a href=#105 id=105 data-nosnippet>105</a>  /// or `finalize_flush_ms` elapses, whichever fires first. Larger N amortizes the DB round-trip
+<a href=#106 id=106 data-nosnippet>106</a>  /// harder under load (fewer, bigger writes) at the cost of more rows per transaction. It is a
+<a href=#107 id=107 data-nosnippet>107</a>  /// *ceiling* that mainly bites under burst/saturation; at steady-state load the time window
+<a href=#108 id=108 data-nosnippet>108</a>  /// usually flushes first. Unlike `queue_size`, N is **not** bound by
+<a href=#109 id=109 data-nosnippet>109</a>  /// `max_locks_per_transaction` (that limits *object* locks; `mark_done` takes only row locks),
+<a href=#110 id=110 data-nosnippet>110</a>  /// so it can be large. Default **1024** — the empirical throughput knee from
+<a href=#111 id=111 data-nosnippet>111</a>  /// `examples/dispatcher_bench.rs` (tasks/s rises to ~1024 then plateaus, and *regresses* by
+<a href=#112 id=112 data-nosnippet>112</a>  /// ~4096 where a single transaction holds row locks long enough to stall the pipeline; see
+<a href=#113 id=113 data-nosnippet>113</a>  /// `docs/DISPATCHER_BENCH.md`). 1024 also bounds worst-case crash re-work to ~1024 tasks.
+<a href=#114 id=114 data-nosnippet>114</a>  /// (Dispatcher rationalization phase 2, `docs/archive/DISPATCHER_RATIONALIZATION.md`.)
+<a href=#115 id=115 data-nosnippet>115</a>  </span><span class="kw">pub </span>finalize_batch_size: usize,
+<a href=#116 id=116 data-nosnippet>116</a>  <span class="doccomment">/// **Finalize batch coalescing — time threshold (T), milliseconds.** The maximum time a report
+<a href=#117 id=117 data-nosnippet>117</a>  /// waits in an accumulating batch before it is flushed, bounding both report staleness and
+<a href=#118 id=118 data-nosnippet>118</a>  /// worst-case crash **re-work**. An unflushed in-memory batch is never *lost* — its tasks stay
+<a href=#119 id=119 data-nosnippet>119</a>  /// `Queued` and are recovered on restart — so T trades a little latency for far fewer DB writes,
+<a href=#120 id=120 data-nosnippet>120</a>  /// not safety. At steady-state load this is usually the threshold that fires. Default 300 ms (at
+<a href=#121 id=121 data-nosnippet>121</a>  /// ~200 tasks/s it coalesces ~60 tasks per write instead of one write per task, for a few
+<a href=#122 id=122 data-nosnippet>122</a>  /// hundred ms of staleness).
+<a href=#123 id=123 data-nosnippet>123</a>  </span><span class="kw">pub </span>finalize_flush_ms: u64,
+<a href=#124 id=124 data-nosnippet>124</a>  <span class="doccomment">/// **Lease / visibility timeout (seconds).** Base deadline for a dispatched (in-flight) task to
+<a href=#125 id=125 data-nosnippet>125</a>  /// return a result before the reaper re-leases it. The effective per-task deadline backs off
+<a href=#126 id=126 data-nosnippet>126</a>  /// with retries — `(retries + 1) × lease_timeout_seconds` from dispatch — so a task that keeps
+<a href=#127 id=127 data-nosnippet>127</a>  /// timing out waits progressively longer rather than re-leasing ever-faster
+<a href=#128 id=128 data-nosnippet>128</a>  /// ([`crate::helpers::TaskProgress::expected_at`]). This is the correctness net for a *silently
+<a href=#129 id=129 data-nosnippet>129</a>  /// dead / half-open* worker (no ZMTP heartbeat needed): its task is recovered once the lease
+<a href=#130 id=130 data-nosnippet>130</a>  /// lapses. Default **240** — just above the worker's hard per-document timeout (the CorTeX
+<a href=#131 id=131 data-nosnippet>131</a>  /// `latexml` fleet caps each conversion at 180 s and *hard-kills* the process on overrun), with
+<a href=#132 id=132 data-nosnippet>132</a>  /// a 60 s margin, which bounds any single conversion's runtime. With that cap, a lease expiry
+<a href=#133 id=133 data-nosnippet>133</a>  /// reliably means the
+<a href=#134 id=134 data-nosnippet>134</a>  /// worker **died** (timeout / OOM kill) on an unprocessable paper, so prompt re-lease — and,
+<a href=#135 id=135 data-nosnippet>135</a>  /// after `MAX_DISPATCH_RETRIES`, dead-letter to `Fatal` — recovers the task *within the run*
+<a href=#136 id=136 data-nosnippet>136</a>  /// instead of stranding it for an hour (orphaned-lease tail observed at scale). Raise it only
+<a href=#137 id=137 data-nosnippet>137</a>  /// for a service whose workers have **unbounded** runtime (no per-task timeout). Paired with
+<a href=#138 id=138 data-nosnippet>138</a>  /// `reap_interval_seconds` (how often the sweep runs).
+<a href=#139 id=139 data-nosnippet>139</a>  </span><span class="kw">pub </span>lease_timeout_seconds: i64,
+<a href=#140 id=140 data-nosnippet>140</a>  <span class="doccomment">/// **Reaper sweep interval (seconds).** How often the ventilator scans the in-flight set for
+<a href=#141 id=141 data-nosnippet>141</a>  /// tasks past their `lease_timeout_seconds` deadline and re-leases / dead-letters them.
+<a href=#142 id=142 data-nosnippet>142</a>  /// Decoupled from the request path so the in-flight set drains even under sustained
+<a href=#143 id=143 data-nosnippet>143</a>  /// backpressure (KNOWN_ISSUES D-6). Kept well below the lease timeout so an expired task is
+<a href=#144 id=144 data-nosnippet>144</a>  /// recovered promptly without scanning the set on every request. Default **60** s. (Lowering
+<a href=#145 id=145 data-nosnippet>145</a>  /// both this and `lease_timeout_seconds` is what lets a fast chaos test exercise reaper-based
+<a href=#146 id=146 data-nosnippet>146</a>  /// recovery in seconds instead of the hour-scale production timing.)
+<a href=#147 id=147 data-nosnippet>147</a>  </span><span class="kw">pub </span>reap_interval_seconds: i64,
+<a href=#148 id=148 data-nosnippet>148</a>  <span class="doccomment">/// **TCP keepalive idle (seconds) on the worker-facing ZMQ sockets** (ventilator + sink). After
+<a href=#149 id=149 data-nosnippet>149</a>  /// this many idle seconds the OS begins probing the peer; this both keeps idle worker
+<a href=#150 id=150 data-nosnippet>150</a>  /// connections alive across NAT/firewall idle-timeouts — essential when the ~200 remote
+<a href=#151 id=151 data-nosnippet>151</a>  /// workers reach the dispatcher over an overlay/VPN or any NAT'd path, where an idle mapping
+<a href=#152 id=152 data-nosnippet>152</a>  /// is otherwise silently dropped and the worker falls out of the fleet until it reconnects —
+<a href=#153 id=153 data-nosnippet>153</a>  /// and lets the OS reap a genuinely dead peer so the ROUTER doesn't accumulate stale routes.
+<a href=#154 id=154 data-nosnippet>154</a>  /// Task-recovery *correctness* does **not** depend on this (the lease reaper is that net, see
+<a href=#155 id=155 data-nosnippet>155</a>  /// `lease_timeout_seconds`); it keeps the *fleet connected*. `&lt;= 0` leaves the OS keepalive
+<a href=#156 id=156 data-nosnippet>156</a>  /// default (effectively off). Default **120**, well under the common 5-minute NAT idle window.
+<a href=#157 id=157 data-nosnippet>157</a>  /// (Probe interval/count are fixed sane
+<a href=#158 id=158 data-nosnippet>158</a>  /// values in [`crate::dispatcher::server::apply_tcp_keepalive`].)
+<a href=#159 id=159 data-nosnippet>159</a>  </span><span class="kw">pub </span>tcp_keepalive_idle_seconds: i32,
+<a href=#160 id=160 data-nosnippet>160</a>  <span class="doccomment">/// **Input-archive prefetcher pool size (D-20).** Number of background threads that warm the
+<a href=#161 id=161 data-nosnippet>161</a>  /// next batch of task input archives into the OS page cache **ahead of dispatch**, so the
+<a href=#162 id=162 data-nosnippet>162</a>  /// ventilator's inline `/data` read is served from RAM (~0.02 ms) instead of the cold
+<a href=#163 id=163 data-nosnippet>163</a>  /// QLC-RAID6 platter (~10 ms median — the single-thread dispatch ceiling at full-arXiv scale
+<a href=#164 id=164 data-nosnippet>164</a>  /// where the working set ≫ RAM). The warmers `open + read → discard`; the warmed bytes are
+<a href=#165 id=165 data-nosnippet>165</a>  /// **reclaimable page cache**, not dispatcher RSS, so this cannot OOM (the kernel drops the
+<a href=#166 id=166 data-nosnippet>166</a>  /// cache before the workers' anon memory). Graceful: a warm that lags or fails just leaves a
+<a href=#167 id=167 data-nosnippet>167</a>  /// cold read, exactly as before. Default **8** (the warmers outpace dispatch ~8×, keeping the
+<a href=#168 id=168 data-nosnippet>168</a>  /// window warm); **0 disables** (the ventilator reads inline, the pre-D-20 behavior).
+<a href=#169 id=169 data-nosnippet>169</a>  </span><span class="kw">pub </span>input_prefetchers: usize,
+<a href=#170 id=170 data-nosnippet>170</a>  <span class="doccomment">/// **Per-entry prefetch cap (MiB).** Input archives larger than this are **not** prefetched —
+<a href=#171 id=171 data-nosnippet>171</a>  /// they fall through to the ventilator's existing chunk-streaming read (O(chunk) resident, never
+<a href=#172 id=172 data-nosnippet>172</a>  /// the whole file), so the rare 50–100 MB monster streams cold instead of doubling its bytes in
+<a href=#173 id=173 data-nosnippet>173</a>  /// cache. Default **50**.
+<a href=#174 id=174 data-nosnippet>174</a>  </span><span class="kw">pub </span>prefetch_max_entry_mb: usize,
+<a href=#175 id=175 data-nosnippet>175</a>  <span class="doccomment">/// **Total prefetch warm budget per batch (MiB).** The warmers stop warming a fetch batch once
+<a href=#176 id=176 data-nosnippet>176</a>  /// their cumulative warmed bytes reach this, so a batch that clusters large entries can't dump
+<a href=#177 id=177 data-nosnippet>177</a>  /// tens of GiB into page cache and churn out Postgres's working set; the batch's tail streams
+<a href=#178 id=178 data-nosnippet>178</a>  /// cold. The typical batch (~`queue_size` × mean-entry ≈ a few hundred MiB) warms fully well
+<a href=#179 id=179 data-nosnippet>179</a>  /// under this. Default **8192** (8 GiB).
+<a href=#180 id=180 data-nosnippet>180</a>  </span><span class="kw">pub </span>prefetch_budget_mb: usize,
+<a href=#181 id=181 data-nosnippet>181</a>}
+<a href=#182 id=182 data-nosnippet>182</a><span class="kw">impl </span>Default <span class="kw">for </span>DispatcherConfig {
+<a href=#183 id=183 data-nosnippet>183</a>  <span class="kw">fn </span>default() -&gt; <span class="self">Self </span>{
+<a href=#184 id=184 data-nosnippet>184</a>    DispatcherConfig {
+<a href=#185 id=185 data-nosnippet>185</a>      source_port: <span class="number">51695</span>,
+<a href=#186 id=186 data-nosnippet>186</a>      result_port: <span class="number">51696</span>,
+<a href=#187 id=187 data-nosnippet>187</a>      queue_size: <span class="number">800</span>,
+<a href=#188 id=188 data-nosnippet>188</a>      message_size: <span class="number">100_000</span>,
+<a href=#189 id=189 data-nosnippet>189</a>      max_in_flight: <span class="number">5000</span>,
+<a href=#190 id=190 data-nosnippet>190</a>      report_refresh_interval_seconds: <span class="number">3600</span>,
+<a href=#191 id=191 data-nosnippet>191</a>      max_result_bytes: <span class="number">2 </span>* <span class="number">1024 </span>* <span class="number">1024 </span>* <span class="number">1024</span>, <span class="comment">// 2 GiB
+<a href=#192 id=192 data-nosnippet>192</a>      </span>sink_writers: <span class="number">4</span>,
+<a href=#193 id=193 data-nosnippet>193</a>      finalize_batch_size: <span class="number">1024</span>,
+<a href=#194 id=194 data-nosnippet>194</a>      finalize_flush_ms: <span class="number">300</span>,
+<a href=#195 id=195 data-nosnippet>195</a>      lease_timeout_seconds: <span class="number">240</span>,
+<a href=#196 id=196 data-nosnippet>196</a>      reap_interval_seconds: <span class="number">60</span>,
+<a href=#197 id=197 data-nosnippet>197</a>      tcp_keepalive_idle_seconds: <span class="number">120</span>,
+<a href=#198 id=198 data-nosnippet>198</a>      input_prefetchers: <span class="number">8</span>,
+<a href=#199 id=199 data-nosnippet>199</a>      prefetch_max_entry_mb: <span class="number">50</span>,
+<a href=#200 id=200 data-nosnippet>200</a>      prefetch_budget_mb: <span class="number">8192</span>,
+<a href=#201 id=201 data-nosnippet>201</a>    }
+<a href=#202 id=202 data-nosnippet>202</a>  }
+<a href=#203 id=203 data-nosnippet>203</a>}
+<a href=#204 id=204 data-nosnippet>204</a>
+<a href=#205 id=205 data-nosnippet>205</a><span class="doccomment">/// Frontend authentication / secrets. The **only** source is the JSON token file
+<a href=#206 id=206 data-nosnippet>206</a>/// ([`auth_file_path`] — `config.json` / `CORTEX_AUTH_FILE`); this is never read from or written to
+<a href=#207 id=207 data-nosnippet>207</a>/// `cortex.toml` (the [`CortexConfig::auth`] field is `#[serde(skip)]`).
+<a href=#208 id=208 data-nosnippet>208</a></span><span class="attr">#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+<a href=#209 id=209 data-nosnippet>209</a></span><span class="kw">pub struct </span>AuthConfig {
+<a href=#210 id=210 data-nosnippet>210</a>  <span class="doccomment">/// Password-like tokens mapped to a human-readable owner. The bootstrap / break-glass + agent
+<a href=#211 id=211 data-nosnippet>211</a>  /// credential that gates every write action and the `/admin` sign-in, alongside passkeys (see
+<a href=#212 id=212 data-nosnippet>212</a>  /// [`WebauthnConfig`] and `docs/archive/AAA_DESIGN.md`). Set via `cortex set-admin-token`.
+<a href=#213 id=213 data-nosnippet>213</a>  </span><span class="kw">pub </span>rerun_tokens: HashMap&lt;String, String&gt;,
+<a href=#214 id=214 data-nosnippet>214</a>}
+<a href=#215 id=215 data-nosnippet>215</a>
+<a href=#216 id=216 data-nosnippet>216</a><span class="doccomment">/// Passkey (**WebAuthn**) sign-in settings for the human admin UI
+<a href=#217 id=217 data-nosnippet>217</a>/// (`docs/archive/WEBAUTHN_DESIGN.md`). The relying party is the CorTeX server itself — no external
+<a href=#218 id=218 data-nosnippet>218</a>/// IdP, no per-deploy app registration. The admin token (see [`AuthConfig`]) remains the bootstrap
+<a href=#219 id=219 data-nosnippet>219</a>/// / break-glass path; passkeys are the convenient day-to-day human sign-in once enrolled.
+<a href=#220 id=220 data-nosnippet>220</a></span><span class="attr">#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+<a href=#221 id=221 data-nosnippet>221</a></span><span class="kw">pub struct </span>WebauthnConfig {
+<a href=#222 id=222 data-nosnippet>222</a>  <span class="doccomment">/// Whether passkey sign-in is offered. Off until a deployment configures `rp_id`/`rp_origin` and
+<a href=#223 id=223 data-nosnippet>223</a>  /// an admin enrolls a passkey (the token path keeps working regardless).
+<a href=#224 id=224 data-nosnippet>224</a>  </span><span class="kw">pub </span>enabled: bool,
+<a href=#225 id=225 data-nosnippet>225</a>  <span class="doccomment">/// The relying-party id: the registrable domain passkeys are scoped to (host only, no scheme or
+<a href=#226 id=226 data-nosnippet>226</a>  /// port), e.g. `localhost` for development or `corpora.latexml.rs` for the preview deployment.
+<a href=#227 id=227 data-nosnippet>227</a>  </span><span class="kw">pub </span>rp_id: String,
+<a href=#228 id=228 data-nosnippet>228</a>  <span class="doccomment">/// The full origin the app is served from (scheme + host + optional port), e.g.
+<a href=#229 id=229 data-nosnippet>229</a>  /// `http://localhost:8000` or `https://corpora.latexml.rs`. WebAuthn requires a secure context
+<a href=#230 id=230 data-nosnippet>230</a>  /// (https) in production; `localhost` is exempt for development.
+<a href=#231 id=231 data-nosnippet>231</a>  </span><span class="kw">pub </span>rp_origin: String,
+<a href=#232 id=232 data-nosnippet>232</a>}
+<a href=#233 id=233 data-nosnippet>233</a><span class="kw">impl </span>Default <span class="kw">for </span>WebauthnConfig {
+<a href=#234 id=234 data-nosnippet>234</a>  <span class="kw">fn </span>default() -&gt; <span class="self">Self </span>{
+<a href=#235 id=235 data-nosnippet>235</a>    WebauthnConfig {
+<a href=#236 id=236 data-nosnippet>236</a>      enabled: <span class="bool-val">false</span>,
+<a href=#237 id=237 data-nosnippet>237</a>      rp_id: <span class="string">"localhost"</span>.to_string(),
+<a href=#238 id=238 data-nosnippet>238</a>      rp_origin: <span class="string">"http://localhost:8000"</span>.to_string(),
+<a href=#239 id=239 data-nosnippet>239</a>    }
+<a href=#240 id=240 data-nosnippet>240</a>  }
+<a href=#241 id=241 data-nosnippet>241</a>}
+<a href=#242 id=242 data-nosnippet>242</a>
+<a href=#243 id=243 data-nosnippet>243</a><span class="doccomment">/// On-disk asset locations, so the binary is not bound to its working directory.
+<a href=#244 id=244 data-nosnippet>244</a></span><span class="attr">#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+<a href=#245 id=245 data-nosnippet>245</a></span><span class="kw">pub struct </span>AssetsConfig {
+<a href=#246 id=246 data-nosnippet>246</a>  <span class="doccomment">/// Directory holding the Tera templates.
+<a href=#247 id=247 data-nosnippet>247</a>  </span><span class="kw">pub </span>template_dir: String,
+<a href=#248 id=248 data-nosnippet>248</a>  <span class="doccomment">/// Directory holding the static public assets (css/js/images, favicon, robots.txt).
+<a href=#249 id=249 data-nosnippet>249</a>  </span><span class="kw">pub </span>public_dir: String,
+<a href=#250 id=250 data-nosnippet>250</a>}
+<a href=#251 id=251 data-nosnippet>251</a><span class="kw">impl </span>Default <span class="kw">for </span>AssetsConfig {
+<a href=#252 id=252 data-nosnippet>252</a>  <span class="kw">fn </span>default() -&gt; <span class="self">Self </span>{
+<a href=#253 id=253 data-nosnippet>253</a>    AssetsConfig {
+<a href=#254 id=254 data-nosnippet>254</a>      template_dir: <span class="string">"templates"</span>.to_string(),
+<a href=#255 id=255 data-nosnippet>255</a>      public_dir: <span class="string">"public"</span>.to_string(),
+<a href=#256 id=256 data-nosnippet>256</a>    }
+<a href=#257 id=257 data-nosnippet>257</a>  }
+<a href=#258 id=258 data-nosnippet>258</a>}
+<a href=#259 id=259 data-nosnippet>259</a>
+<a href=#260 id=260 data-nosnippet>260</a><span class="doccomment">/// Background-job lifecycle settings (W-4 stall handling).
+<a href=#261 id=261 data-nosnippet>261</a></span><span class="attr">#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+<a href=#262 id=262 data-nosnippet>262</a></span><span class="kw">pub struct </span>JobsConfig {
+<a href=#263 id=263 data-nosnippet>263</a>  <span class="doccomment">/// A non-terminal job whose progress heartbeat (`updated_at`) has been silent this long is
+<a href=#264 id=264 data-nosnippet>264</a>  /// presumed hung and reaped (marked `interrupted`) the next time the jobs surface is read.
+<a href=#265 id=265 data-nosnippet>265</a>  /// Generous by default (2 h): a *progressing* job freshens its heartbeat each `step`, so only a
+<a href=#266 id=266 data-nosnippet>266</a>  /// genuinely stuck body trips it. Raise it if you run long **single-statement** jobs that don't
+<a href=#267 id=267 data-nosnippet>267</a>  /// heartbeat between steps (e.g. a multi-hour `REINDEX` of one huge table).
+<a href=#268 id=268 data-nosnippet>268</a>  </span><span class="kw">pub </span>stale_timeout_seconds: i64,
+<a href=#269 id=269 data-nosnippet>269</a>}
+<a href=#270 id=270 data-nosnippet>270</a><span class="kw">impl </span>Default <span class="kw">for </span>JobsConfig {
+<a href=#271 id=271 data-nosnippet>271</a>  <span class="kw">fn </span>default() -&gt; <span class="self">Self </span>{
+<a href=#272 id=272 data-nosnippet>272</a>    JobsConfig {
+<a href=#273 id=273 data-nosnippet>273</a>      stale_timeout_seconds: <span class="number">7200</span>, <span class="comment">// 2 h
+<a href=#274 id=274 data-nosnippet>274</a>    </span>}
+<a href=#275 id=275 data-nosnippet>275</a>  }
+<a href=#276 id=276 data-nosnippet>276</a>}
+<a href=#277 id=277 data-nosnippet>277</a>
+<a href=#278 id=278 data-nosnippet>278</a><span class="doccomment">/// Top-level `CorTeX` runtime configuration.
+<a href=#279 id=279 data-nosnippet>279</a></span><span class="attr">#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+<a href=#280 id=280 data-nosnippet>280</a></span><span class="kw">pub struct </span>CortexConfig {
+<a href=#281 id=281 data-nosnippet>281</a>  <span class="doccomment">/// Database connection settings.
+<a href=#282 id=282 data-nosnippet>282</a>  </span><span class="kw">pub </span>database: DatabaseConfig,
+<a href=#283 id=283 data-nosnippet>283</a>  <span class="doccomment">/// ZeroMQ dispatcher settings.
+<a href=#284 id=284 data-nosnippet>284</a>  </span><span class="kw">pub </span>dispatcher: DispatcherConfig,
+<a href=#285 id=285 data-nosnippet>285</a>  <span class="doccomment">/// Frontend authentication / secrets. **Loaded solely from the JSON token file** (`config.json`
+<a href=#286 id=286 data-nosnippet>286</a>  /// / `CORTEX_AUTH_FILE`), never from `cortex.toml` — `#[serde(skip)]` keeps figment from
+<a href=#287 id=287 data-nosnippet>287</a>  /// parsing an `[auth]` section, so tokens have one source of truth and there is no
+<a href=#288 id=288 data-nosnippet>288</a>  /// file-vs-file override.
+<a href=#289 id=289 data-nosnippet>289</a>  </span><span class="attr">#[serde(skip)]
+<a href=#290 id=290 data-nosnippet>290</a>  </span><span class="kw">pub </span>auth: AuthConfig,
+<a href=#291 id=291 data-nosnippet>291</a>  <span class="doccomment">/// On-disk asset locations.
+<a href=#292 id=292 data-nosnippet>292</a>  </span><span class="kw">pub </span>assets: AssetsConfig,
+<a href=#293 id=293 data-nosnippet>293</a>  <span class="doccomment">/// Passkey (WebAuthn) sign-in settings.
+<a href=#294 id=294 data-nosnippet>294</a>  </span><span class="kw">pub </span>webauthn: WebauthnConfig,
+<a href=#295 id=295 data-nosnippet>295</a>  <span class="doccomment">/// Background-job lifecycle settings.
+<a href=#296 id=296 data-nosnippet>296</a>  </span><span class="kw">pub </span>jobs: JobsConfig,
+<a href=#297 id=297 data-nosnippet>297</a>}
+<a href=#298 id=298 data-nosnippet>298</a>
+<a href=#299 id=299 data-nosnippet>299</a><span class="kw">impl </span>CortexConfig {
+<a href=#300 id=300 data-nosnippet>300</a>  <span class="doccomment">/// Builds the layered configuration figment (defaults → `cortex.toml` → `CORTEX_` env).
+<a href=#301 id=301 data-nosnippet>301</a>  /// Does not apply the legacy `DATABASE_URL` overrides; see [`CortexConfig::load`].
+<a href=#302 id=302 data-nosnippet>302</a>  </span><span class="kw">pub fn </span>figment() -&gt; Figment {
+<a href=#303 id=303 data-nosnippet>303</a>    Figment::from(Serialized::defaults(CortexConfig::default()))
+<a href=#304 id=304 data-nosnippet>304</a>      .merge(Toml::file(config_file_path()))
+<a href=#305 id=305 data-nosnippet>305</a>      .merge(Env::prefixed(<span class="string">"CORTEX_"</span>).split(<span class="string">"__"</span>))
+<a href=#306 id=306 data-nosnippet>306</a>  }
+<a href=#307 id=307 data-nosnippet>307</a>
+<a href=#308 id=308 data-nosnippet>308</a>  <span class="doccomment">/// Loads and validates the configuration, applying legacy environment overrides last.
+<a href=#309 id=309 data-nosnippet>309</a>  /// Panics with a clear message if the configuration is malformed.
+<a href=#310 id=310 data-nosnippet>310</a>  </span><span class="kw">pub fn </span>load() -&gt; CortexConfig {
+<a href=#311 id=311 data-nosnippet>311</a>    <span class="comment">// Load a local `.env` into the process environment for backwards compatibility.
+<a href=#312 id=312 data-nosnippet>312</a>    </span>dotenvy::dotenv().ok();
+<a href=#313 id=313 data-nosnippet>313</a>    <span class="kw">let </span><span class="kw-2">mut </span>config: CortexConfig = CortexConfig::figment()
+<a href=#314 id=314 data-nosnippet>314</a>      .extract()
+<a href=#315 id=315 data-nosnippet>315</a>      .unwrap_or_else(|e| <span class="macro">panic!</span>(<span class="string">"invalid CorTeX configuration: {e}"</span>));
+<a href=#316 id=316 data-nosnippet>316</a>    <span class="comment">// The historic `DATABASE_URL` / `TEST_DATABASE_URL` variables remain authoritative when set,
+<a href=#317 id=317 data-nosnippet>317</a>    // so existing `.env`-based deployments behave exactly as before.
+<a href=#318 id=318 data-nosnippet>318</a>    </span><span class="kw">if let </span><span class="prelude-val">Ok</span>(url) = std::env::var(<span class="string">"DATABASE_URL"</span>) {
+<a href=#319 id=319 data-nosnippet>319</a>      config.database.url = url;
+<a href=#320 id=320 data-nosnippet>320</a>    }
+<a href=#321 id=321 data-nosnippet>321</a>    <span class="kw">if let </span><span class="prelude-val">Ok</span>(url) = std::env::var(<span class="string">"TEST_DATABASE_URL"</span>) {
+<a href=#322 id=322 data-nosnippet>322</a>      config.database.test_url = url;
+<a href=#323 id=323 data-nosnippet>323</a>    }
+<a href=#324 id=324 data-nosnippet>324</a>    <span class="comment">// Tokens have ONE source of truth: the JSON token file (`config.json`, overridable via
+<a href=#325 id=325 data-nosnippet>325</a>    // `CORTEX_AUTH_FILE` — so a deployment keeps its live token *outside the repo* at e.g.
+<a href=#326 id=326 data-nosnippet>326</a>    // `/etc/cortex/config.json`, root-owned, while the repo `config.json` stays the demo/test
+<a href=#327 id=327 data-nosnippet>327</a>    // fixture and the real token is never checked into git). It is **not** layered with a
+<a href=#328 id=328 data-nosnippet>328</a>    // `cortex.toml [auth]` section: `auth` is `#[serde(skip)]`, so figment never parses one and
+<a href=#329 id=329 data-nosnippet>329</a>    // there is no file-vs-file override to reason about. Read fresh here; `cortex set-admin-token`
+<a href=#330 id=330 data-nosnippet>330</a>    // / `revoke-token` write this same file. (The prototype's `captcha_secret` is gone — bot
+<a href=#331 id=331 data-nosnippet>331</a>    // protection is a deployment concern, an Anubis reverse proxy, not framework code; see
+<a href=#332 id=332 data-nosnippet>332</a>    // docs/DEPLOYMENT.md.)
+<a href=#333 id=333 data-nosnippet>333</a>    </span><span class="kw">let </span>auth_file = auth_file_path();
+<a href=#334 id=334 data-nosnippet>334</a>    <span class="kw">if let </span><span class="prelude-val">Ok</span>(text) = std::fs::read_to_string(<span class="kw-2">&amp;</span>auth_file) {
+<a href=#335 id=335 data-nosnippet>335</a>      <span class="kw">match </span>serde_json::from_str::&lt;TokenFile&gt;(<span class="kw-2">&amp;</span>text) {
+<a href=#336 id=336 data-nosnippet>336</a>        <span class="prelude-val">Ok</span>(parsed) =&gt; config.auth.rerun_tokens = parsed.rerun_tokens,
+<a href=#337 id=337 data-nosnippet>337</a>        <span class="prelude-val">Err</span>(e) =&gt; <span class="macro">eprintln!</span>(<span class="string">"-- ignoring malformed {}: {e}"</span>, auth_file.display()),
+<a href=#338 id=338 data-nosnippet>338</a>      }
+<a href=#339 id=339 data-nosnippet>339</a>    }
+<a href=#340 id=340 data-nosnippet>340</a>    config
+<a href=#341 id=341 data-nosnippet>341</a>  }
+<a href=#342 id=342 data-nosnippet>342</a>}
+<a href=#343 id=343 data-nosnippet>343</a>
+<a href=#344 id=344 data-nosnippet>344</a><span class="doccomment">/// On-disk shape of the JSON token file (`config.json` / `CORTEX_AUTH_FILE`) — the **single source
+<a href=#345 id=345 data-nosnippet>345</a>/// of truth** for `rerun_tokens`. Read by the config loader and read/modified/written by
+<a href=#346 id=346 data-nosnippet>346</a>/// `cortex set-admin-token` / `revoke-token`. Extra fields (e.g. the removed `captcha_secret`) are
+<a href=#347 id=347 data-nosnippet>347</a>/// ignored.
+<a href=#348 id=348 data-nosnippet>348</a></span><span class="attr">#[derive(Deserialize, Serialize, Default)]
+<a href=#349 id=349 data-nosnippet>349</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>TokenFile {
+<a href=#350 id=350 data-nosnippet>350</a>  <span class="doccomment">/// `token → owner` map; the bearer credentials the frontend resolves on every gated request.
+<a href=#351 id=351 data-nosnippet>351</a>  </span><span class="attr">#[serde(default)]
+<a href=#352 id=352 data-nosnippet>352</a>  </span><span class="kw">pub</span>(<span class="kw">crate</span>) rerun_tokens: HashMap&lt;String, String&gt;,
+<a href=#353 id=353 data-nosnippet>353</a>}
+<a href=#354 id=354 data-nosnippet>354</a>
+<a href=#355 id=355 data-nosnippet>355</a><span class="doccomment">/// Serializes the non-secret configuration sections (everything except the `auth` secrets) to TOML.
+<a href=#356 id=356 data-nosnippet>356</a>/// Shared by `cortex init`'s config scaffold and the Settings write path so the on-disk shape is
+<a href=#357 id=357 data-nosnippet>357</a>/// identical.
+<a href=#358 id=358 data-nosnippet>358</a></span><span class="kw">pub fn </span>to_persisted_toml(config: <span class="kw-2">&amp;</span>CortexConfig) -&gt; <span class="prelude-ty">Result</span>&lt;String, toml::ser::Error&gt; {
+<a href=#359 id=359 data-nosnippet>359</a>  <span class="attr">#[derive(Serialize)]
+<a href=#360 id=360 data-nosnippet>360</a>  </span><span class="kw">struct </span>Persisted&lt;<span class="lifetime">'a</span>&gt; {
+<a href=#361 id=361 data-nosnippet>361</a>    database: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>DatabaseConfig,
+<a href=#362 id=362 data-nosnippet>362</a>    dispatcher: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>DispatcherConfig,
+<a href=#363 id=363 data-nosnippet>363</a>    assets: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>AssetsConfig,
+<a href=#364 id=364 data-nosnippet>364</a>    webauthn: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>WebauthnConfig,
+<a href=#365 id=365 data-nosnippet>365</a>    jobs: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>JobsConfig,
+<a href=#366 id=366 data-nosnippet>366</a>  }
+<a href=#367 id=367 data-nosnippet>367</a>  toml::to_string_pretty(<span class="kw-2">&amp;</span>Persisted {
+<a href=#368 id=368 data-nosnippet>368</a>    database: <span class="kw-2">&amp;</span>config.database,
+<a href=#369 id=369 data-nosnippet>369</a>    dispatcher: <span class="kw-2">&amp;</span>config.dispatcher,
+<a href=#370 id=370 data-nosnippet>370</a>    assets: <span class="kw-2">&amp;</span>config.assets,
+<a href=#371 id=371 data-nosnippet>371</a>    webauthn: <span class="kw-2">&amp;</span>config.webauthn,
+<a href=#372 id=372 data-nosnippet>372</a>    jobs: <span class="kw-2">&amp;</span>config.jobs,
+<a href=#373 id=373 data-nosnippet>373</a>  })
+<a href=#374 id=374 data-nosnippet>374</a>}
+<a href=#375 id=375 data-nosnippet>375</a>
+<a href=#376 id=376 data-nosnippet>376</a><span class="doccomment">/// The path of the optional `cortex.toml` configuration file, read and written by both the loader
+<a href=#377 id=377 data-nosnippet>377</a>/// and the Settings write path. Overridable via the `CORTEX_CONFIG_FILE` environment variable.
+<a href=#378 id=378 data-nosnippet>378</a></span><span class="kw">pub fn </span>config_file_path() -&gt; std::path::PathBuf {
+<a href=#379 id=379 data-nosnippet>379</a>  std::env::var(<span class="string">"CORTEX_CONFIG_FILE"</span>)
+<a href=#380 id=380 data-nosnippet>380</a>    .map(std::path::PathBuf::from)
+<a href=#381 id=381 data-nosnippet>381</a>    .unwrap_or_else(|<span class="kw">_</span>| std::path::PathBuf::from(<span class="string">"cortex.toml"</span>))
+<a href=#382 id=382 data-nosnippet>382</a>}
+<a href=#383 id=383 data-nosnippet>383</a>
+<a href=#384 id=384 data-nosnippet>384</a><span class="doccomment">/// The path of the **token file** — the JSON holding `rerun_tokens` (admin/agent credentials). It
+<a href=#385 id=385 data-nosnippet>385</a>/// is **gitignored** and scaffolded by `cortex init`; the tracked `config.example.json` is only a
+<a href=#386 id=386 data-nosnippet>386</a>/// template. Defaults to `config.json` in the working directory, **overridable via
+<a href=#387 id=387 data-nosnippet>387</a>/// `CORTEX_AUTH_FILE`** so a deployment keeps its live token *outside the repo* (e.g.
+<a href=#388 id=388 data-nosnippet>388</a>/// `/etc/cortex/config.json`, root-owned) and the repo copy stays the demo/test fixture — the live
+<a href=#389 id=389 data-nosnippet>389</a>/// secret is never checked in.
+<a href=#390 id=390 data-nosnippet>390</a></span><span class="kw">pub fn </span>auth_file_path() -&gt; std::path::PathBuf {
+<a href=#391 id=391 data-nosnippet>391</a>  std::env::var(<span class="string">"CORTEX_AUTH_FILE"</span>)
+<a href=#392 id=392 data-nosnippet>392</a>    .map(std::path::PathBuf::from)
+<a href=#393 id=393 data-nosnippet>393</a>    .unwrap_or_else(|<span class="kw">_</span>| std::path::PathBuf::from(<span class="string">"config.json"</span>))
+<a href=#394 id=394 data-nosnippet>394</a>}
+<a href=#395 id=395 data-nosnippet>395</a>
+<a href=#396 id=396 data-nosnippet>396</a><span class="doccomment">/// Returns the process-wide, lazily-loaded configuration.
+<a href=#397 id=397 data-nosnippet>397</a></span><span class="kw">pub fn </span>config() -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'static </span>CortexConfig {
+<a href=#398 id=398 data-nosnippet>398</a>  <span class="kw">static </span>CONFIG: LazyLock&lt;CortexConfig&gt; = LazyLock::new(CortexConfig::load);
+<a href=#399 id=399 data-nosnippet>399</a>  <span class="kw-2">&amp;</span>CONFIG
+<a href=#400 id=400 data-nosnippet>400</a>}
+</code></pre></div></section></main></body></html>

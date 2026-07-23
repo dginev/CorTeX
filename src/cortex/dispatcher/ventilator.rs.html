@@ -1,0 +1,524 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/dispatcher/ventilator.rs`."><title>ventilator.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-ddecd707.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="cortex" data-themes="" data-resource-suffix="" data-rustdoc-version="1.99.0-nightly (6f72b5dd5 2026-07-22)" data-channel="nightly" data-search-js="search-cf4fc35e.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js" ><script src="../../../static.files/storage-41dd4d93.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-417ebf0a.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-f7c3ffd8.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><h1><div class="sub-heading">cortex/dispatcher/</div>ventilator.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span>std::collections::HashMap;
+<a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span>std::io::Read;
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>std::sync::Arc;
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span>std::sync::atomic::{AtomicBool, Ordering};
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span>std::sync::mpsc::SyncSender;
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span>std::time::Duration;
+<a href=#7 id=7 data-nosnippet>7</a>
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span><span class="kw">crate</span>::backend;
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><span class="kw">crate</span>::dispatcher::prefetch::Prefetcher;
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span><span class="kw">crate</span>::dispatcher::server;
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span><span class="kw">crate</span>::helpers;
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span><span class="kw">crate</span>::helpers::{TaskProgress, TaskReport};
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span><span class="kw">crate</span>::models::WorkerMetadataSender;
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span>std::error::Error;
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span>tracing::{debug, info, trace, warn};
+<a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span>zmq::SNDMORE;
+<a href=#17 id=17 data-nosnippet>17</a>
+<a href=#18 id=18 data-nosnippet>18</a><span class="doccomment">/// Specifies the binding and operation parameters for a ZMQ ventilator component
+<a href=#19 id=19 data-nosnippet>19</a></span><span class="kw">pub struct </span>Ventilator {
+<a href=#20 id=20 data-nosnippet>20</a>  <span class="doccomment">/// port to listen on
+<a href=#21 id=21 data-nosnippet>21</a>  </span><span class="kw">pub </span>port: usize,
+<a href=#22 id=22 data-nosnippet>22</a>  <span class="doccomment">/// the size of the dispatch queue
+<a href=#23 id=23 data-nosnippet>23</a>  /// (also the batch size for Task store queue requests)
+<a href=#24 id=24 data-nosnippet>24</a>  </span><span class="kw">pub </span>queue_size: usize,
+<a href=#25 id=25 data-nosnippet>25</a>  <span class="doccomment">/// size of an individual message chunk sent via zeromq
+<a href=#26 id=26 data-nosnippet>26</a>  /// (keep this small to avoid large RAM use, increase to reduce network bandwidth)
+<a href=#27 id=27 data-nosnippet>27</a>  </span><span class="kw">pub </span>message_size: usize,
+<a href=#28 id=28 data-nosnippet>28</a>  <span class="doccomment">/// address for the Task store postgres endpoint
+<a href=#29 id=29 data-nosnippet>29</a>  </span><span class="kw">pub </span>backend_address: String,
+<a href=#30 id=30 data-nosnippet>30</a>  <span class="doccomment">/// backpressure threshold: stop leasing new work once this many tasks are in-flight
+<a href=#31 id=31 data-nosnippet>31</a>  /// (dispatched-but-unfinished), so the in-flight set drains via the sink instead of growing
+<a href=#32 id=32 data-nosnippet>32</a>  /// toward the hard panic bound (KNOWN_ISSUES D-6)
+<a href=#33 id=33 data-nosnippet>33</a>  </span><span class="kw">pub </span>max_in_flight: usize,
+<a href=#34 id=34 data-nosnippet>34</a>  <span class="doccomment">/// non-blocking handle to the background worker-metadata writer
+<a href=#35 id=35 data-nosnippet>35</a>  </span><span class="kw">pub </span>metadata: WorkerMetadataSender,
+<a href=#36 id=36 data-nosnippet>36</a>}
+<a href=#37 id=37 data-nosnippet>37</a>
+<a href=#38 id=38 data-nosnippet>38</a><span class="kw">impl </span>Ventilator {
+<a href=#39 id=39 data-nosnippet>39</a>  <span class="doccomment">/// Starts a new dispatch `Server` (ZMQ Ventilator), to serve tasks to processing workers.
+<a href=#40 id=40 data-nosnippet>40</a>  /// The ventilator shares state with other manager threads via queues for tasks in progress,
+<a href=#41 id=41 data-nosnippet>41</a>  /// as well as a queue for completed tasks pending persisting to disk.
+<a href=#42 id=42 data-nosnippet>42</a>  /// A job limit can be provided as a termination condition for the sink server.
+<a href=#43 id=43 data-nosnippet>43</a>  ///
+<a href=#44 id=44 data-nosnippet>44</a>  /// Upon premature termination, returns the number of tasks processed.
+<a href=#45 id=45 data-nosnippet>45</a>  </span><span class="kw">pub fn </span>start(
+<a href=#46 id=46 data-nosnippet>46</a>    <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#47 id=47 data-nosnippet>47</a>    services_arc: <span class="kw-2">&amp;</span>Arc&lt;server::ServiceCache&gt;,
+<a href=#48 id=48 data-nosnippet>48</a>    sandboxes_arc: <span class="kw-2">&amp;</span>Arc&lt;server::SandboxCache&gt;,
+<a href=#49 id=49 data-nosnippet>49</a>    progress_queue_arc: <span class="kw-2">&amp;</span>Arc&lt;server::InFlightSet&gt;,
+<a href=#50 id=50 data-nosnippet>50</a>    done_tx: <span class="kw-2">&amp;</span>SyncSender&lt;TaskReport&gt;,
+<a href=#51 id=51 data-nosnippet>51</a>    job_limit: <span class="prelude-ty">Option</span>&lt;usize&gt;,
+<a href=#52 id=52 data-nosnippet>52</a>    dispatch_complete: <span class="kw-2">&amp;</span>Arc&lt;AtomicBool&gt;,
+<a href=#53 id=53 data-nosnippet>53</a>  ) -&gt; <span class="prelude-ty">Result</span>&lt;usize, Box&lt;<span class="kw">dyn </span>Error&gt;&gt; {
+<a href=#54 id=54 data-nosnippet>54</a>    <span class="comment">// We have a Ventilator-exclusive "queues" stack of tasks to be dispatched, keyed by service id
+<a href=#55 id=55 data-nosnippet>55</a>    // so a reaped task is always re-queued to its own service (not whichever service is
+<a href=#56 id=56 data-nosnippet>56</a>    // requesting).
+<a href=#57 id=57 data-nosnippet>57</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>queues: HashMap&lt;i32, Vec&lt;TaskProgress&gt;&gt; = HashMap::new();
+<a href=#58 id=58 data-nosnippet>58</a>    <span class="comment">// Recover leftover Queued tasks from a previously-crashed run — but NOT the ones currently in
+<a href=#59 id=59 data-nosnippet>59</a>    // flight. On a ventilator *restart* (KNOWN_ISSUES D-4) the sink is still processing dispatched
+<a href=#60 id=60 data-nosnippet>60</a>    // tasks held in `progress_queue`; resetting those to TODO would re-lease them while their
+<a href=#61 id=61 data-nosnippet>61</a>    // original results are still pending (a double-dispatch). On first start `progress_queue` is
+<a href=#62 id=62 data-nosnippet>62</a>    // empty, so this recovers all leftover Queued tasks exactly as before.
+<a href=#63 id=63 data-nosnippet>63</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>backend = backend::from_address(<span class="kw-2">&amp;</span><span class="self">self</span>.backend_address);
+<a href=#64 id=64 data-nosnippet>64</a>    <span class="kw">let </span>in_flight_ids: Vec&lt;i64&gt; = progress_queue_arc.ids();
+<a href=#65 id=65 data-nosnippet>65</a>    backend.clear_limbo_tasks_except(<span class="kw-2">&amp;</span>in_flight_ids)<span class="question-mark">?</span>;
+<a href=#66 id=66 data-nosnippet>66</a>    <span class="comment">// Ok, let's bind to a port and start broadcasting
+<a href=#67 id=67 data-nosnippet>67</a>    </span><span class="kw">let </span>context = zmq::Context::new();
+<a href=#68 id=68 data-nosnippet>68</a>    <span class="kw">let </span>ventilator = context.socket(zmq::ROUTER)<span class="question-mark">?</span>;
+<a href=#69 id=69 data-nosnippet>69</a>    ventilator.set_router_handover(<span class="bool-val">true</span>)<span class="question-mark">?</span>;
+<a href=#70 id=70 data-nosnippet>70</a>    <span class="comment">// Fail LOUD, not silent, when a reply can't be routed (KNOWN_ISSUES D-22). A ZMQ `ROUTER`
+<a href=#71 id=71 data-nosnippet>71</a>    // *silently discards* a message addressed to an identity it can't route unless
+<a href=#72 id=72 data-nosnippet>72</a>    // `ZMQ_ROUTER_MANDATORY` is set — so a worker that vanished between its request and our reply
+<a href=#73 id=73 data-nosnippet>73</a>    // used to swallow the whole dispatch with no error, stranding the (already-leased) task until
+<a href=#74 id=74 data-nosnippet>74</a>    // the lease reaper reclaimed it 240s+ later, with zero observability (exactly what
+<a href=#75 id=75 data-nosnippet>75</a>    // DESIGN_PRINCIPLES forbids). With mandatory set, an unroutable send returns `EHOSTUNREACH`
+<a href=#76 id=76 data-nosnippet>76</a>    // instead, which every routing-frame send below catches → logs, counts, and skips. Note the
+<a href=#77 id=77 data-nosnippet>77</a>    // libzmq contract this relies on (verified empirically 2026-07-20): only the *routing*
+<a href=#78 id=78 data-nosnippet>78</a>    // (first) frame reports `EHOSTUNREACH`; a rejected routing frame is NOT started as a
+<a href=#79 id=79 data-nosnippet>79</a>    // multipart, so skipping the reply's remaining frames leaves the socket cleanly at
+<a href=#80 id=80 data-nosnippet>80</a>    // message-start (no desync). Body frames after a *successful* routing frame never surface it
+<a href=#81 id=81 data-nosnippet>81</a>    // (a peer dying mid-stream drops silently, and the task is already recorded in-flight for the
+<a href=#82 id=82 data-nosnippet>82</a>    // reaper — see the ordering note further down). The reverted first attempt (D-22 history)
+<a href=#83 id=83 data-nosnippet>83</a>    // crashed not from desync but from letting `EHOSTUNREACH` propagate via `?` on the *unguarded*
+<a href=#84 id=84 data-nosnippet>84</a>    // mock-reply routing sends; guarding all three sites below is the fix.
+<a href=#85 id=85 data-nosnippet>85</a>    </span>ventilator.set_router_mandatory(<span class="bool-val">true</span>)<span class="question-mark">?</span>;
+<a href=#86 id=86 data-nosnippet>86</a>    <span class="comment">// Keep idle remote-worker connections alive across NAT/firewall idle-timeouts (set before bind
+<a href=#87 id=87 data-nosnippet>87</a>    // so accepted connections inherit it). Correctness is the reaper's job, not keepalive's.
+<a href=#88 id=88 data-nosnippet>88</a>    </span>server::apply_tcp_keepalive(
+<a href=#89 id=89 data-nosnippet>89</a>      <span class="kw-2">&amp;</span>ventilator,
+<a href=#90 id=90 data-nosnippet>90</a>      <span class="kw">crate</span>::config::config()
+<a href=#91 id=91 data-nosnippet>91</a>        .dispatcher
+<a href=#92 id=92 data-nosnippet>92</a>        .tcp_keepalive_idle_seconds,
+<a href=#93 id=93 data-nosnippet>93</a>    )<span class="question-mark">?</span>;
+<a href=#94 id=94 data-nosnippet>94</a>
+<a href=#95 id=95 data-nosnippet>95</a>    <span class="kw">let </span>address = <span class="macro">format!</span>(<span class="string">"tcp://*:{}"</span>, <span class="self">self</span>.port);
+<a href=#96 id=96 data-nosnippet>96</a>    <span class="comment">// Propagate a bind failure (e.g. `EADDRINUSE` when the port is still held by a just-restarted
+<a href=#97 id=97 data-nosnippet>97</a>    // dispatcher in TIME_WAIT, or a second instance) instead of an opaque `.unwrap()` panic — same
+<a href=#98 id=98 data-nosnippet>98</a>    // fail-fast (the manager aborts the thread → external restart), but with a diagnosable cause
+<a href=#99 id=99 data-nosnippet>99</a>    // and consistent with every other fallible call here + the sink's bind (KNOWN_ISSUES
+<a href=#100 id=100 data-nosnippet>100</a>    // robustness: no bare `unwrap` on the dispatch path).
+<a href=#101 id=101 data-nosnippet>101</a>    // Retry the bind: on a restart the port can sit in TCP TIME_WAIT held by the
+<a href=#102 id=102 data-nosnippet>102</a>    // previous dispatcher's closed connections. That lasts ~`tcp_fin_timeout` (60s on
+<a href=#103 id=103 data-nosnippet>103</a>    // Linux by default), NOT "a second or two" — so a short retry window crash-loops the
+<a href=#104 id=104 data-nosnippet>104</a>    // new process on EADDRINUSE the whole time TIME_WAIT persists (observed 2026-07-01: a
+<a href=#105 id=105 data-nosnippet>105</a>    // 7.5s / 15-attempt window kept failing on the sink port through the full 60s TIME_WAIT,
+<a href=#106 id=106 data-nosnippet>106</a>    // systemd hit its start-limit and gave up). Size the window to comfortably OUTLAST
+<a href=#107 id=107 data-nosnippet>107</a>    // TIME_WAIT (75s &gt; 60s + margin) so a normal restart self-heals without operator action;
+<a href=#108 id=108 data-nosnippet>108</a>    // a genuinely-occupied port still fails (with a diagnosable cause → manager aborts →
+<a href=#109 id=109 data-nosnippet>109</a>    // external restart), just after the full window.
+<a href=#110 id=110 data-nosnippet>110</a>    </span>{
+<a href=#111 id=111 data-nosnippet>111</a>      <span class="comment">// 150 * 500ms = 75s &gt; tcp_fin_timeout (60s) TIME_WAIT, with margin.
+<a href=#112 id=112 data-nosnippet>112</a>      </span><span class="kw">const </span>BIND_ATTEMPTS: u32 = <span class="number">150</span>;
+<a href=#113 id=113 data-nosnippet>113</a>      <span class="kw">let </span><span class="kw-2">mut </span>attempt = <span class="number">1u32</span>;
+<a href=#114 id=114 data-nosnippet>114</a>      <span class="kw">loop </span>{
+<a href=#115 id=115 data-nosnippet>115</a>        <span class="kw">match </span>ventilator.bind(<span class="kw-2">&amp;</span>address) {
+<a href=#116 id=116 data-nosnippet>116</a>          <span class="prelude-val">Ok</span>(()) =&gt; <span class="kw">break</span>,
+<a href=#117 id=117 data-nosnippet>117</a>          <span class="prelude-val">Err</span>(e) <span class="kw">if </span>attempt &lt; BIND_ATTEMPTS =&gt; {
+<a href=#118 id=118 data-nosnippet>118</a>            <span class="macro">warn!</span>(
+<a href=#119 id=119 data-nosnippet>119</a>              <span class="string">"ventilator: bind {address} attempt {attempt}/{BIND_ATTEMPTS} failed ({e}); \
+<a href=#120 id=120 data-nosnippet>120</a>               retrying in 500ms (port handover from a restarting dispatcher?)"
+<a href=#121 id=121 data-nosnippet>121</a>            </span>);
+<a href=#122 id=122 data-nosnippet>122</a>            std::thread::sleep(Duration::from_millis(<span class="number">500</span>));
+<a href=#123 id=123 data-nosnippet>123</a>            attempt += <span class="number">1</span>;
+<a href=#124 id=124 data-nosnippet>124</a>          },
+<a href=#125 id=125 data-nosnippet>125</a>          <span class="prelude-val">Err</span>(e) =&gt; {
+<a href=#126 id=126 data-nosnippet>126</a>            <span class="kw">return </span><span class="prelude-val">Err</span>(
+<a href=#127 id=127 data-nosnippet>127</a>              std::io::Error::other(<span class="macro">format!</span>(
+<a href=#128 id=128 data-nosnippet>128</a>                <span class="string">"ventilator: zeromq bind {address} failed after {BIND_ATTEMPTS} attempts: {e}"
+<a href=#129 id=129 data-nosnippet>129</a>              </span>))
+<a href=#130 id=130 data-nosnippet>130</a>              .into(),
+<a href=#131 id=131 data-nosnippet>131</a>            );
+<a href=#132 id=132 data-nosnippet>132</a>          },
+<a href=#133 id=133 data-nosnippet>133</a>        }
+<a href=#134 id=134 data-nosnippet>134</a>      }
+<a href=#135 id=135 data-nosnippet>135</a>    }
+<a href=#136 id=136 data-nosnippet>136</a>    <span class="comment">// Wake the blocking `recv` periodically instead of blocking forever when idle, so the
+<a href=#137 id=137 data-nosnippet>137</a>    // graceful-shutdown flag (checked at the top of the loop) is observed promptly even with no
+<a href=#138 id=138 data-nosnippet>138</a>    // worker traffic. Without this an idle ventilator blocks in `recv` until the supervisor's
+<a href=#139 id=139 data-nosnippet>139</a>    // stop-timeout SIGKILL — the ~120s `systemctl restart` hang (KNOWN_ISSUES D-15). 250ms matches
+<a href=#140 id=140 data-nosnippet>140</a>    // the sink's termination poll; the only cost is one no-op wakeup per quarter-second while idle.
+<a href=#141 id=141 data-nosnippet>141</a>    </span>ventilator.set_rcvtimeo(<span class="number">250</span>)<span class="question-mark">?</span>;
+<a href=#142 id=142 data-nosnippet>142</a>    <span class="kw">let </span><span class="kw-2">mut </span>source_job_count: usize = <span class="number">0</span>;
+<a href=#143 id=143 data-nosnippet>143</a>    <span class="comment">// Count of *fresh* tasks actually leased to a worker (a `retries == 0` lease), as distinct from
+<a href=#144 id=144 data-nosnippet>144</a>    // `source_job_count` which counts every request — including the mock-replies (unknown service,
+<a href=#145 id=145 data-nosnippet>145</a>    // backpressure, momentary-empty-queue). A bounded run (`job_limit = Some(N)`) terminates on N
+<a href=#146 id=146 data-nosnippet>146</a>    // **real dispatches**, not N requests: the unit mismatch — three threads counting `job_limit`
+<a href=#147 id=147 data-nosnippet>147</a>    // in three incompatible units — was the KNOWN_ISSUES D-5 lockstep-termination hang.
+<a href=#148 id=148 data-nosnippet>148</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>real_dispatched: usize = <span class="number">0</span>;
+<a href=#149 id=149 data-nosnippet>149</a>    <span class="comment">// Reap timed-out in-flight tasks on a cadence rather than only on refetch (KNOWN_ISSUES D-6),
+<a href=#150 id=150 data-nosnippet>150</a>    // so the in-flight set drains even under sustained backpressure (when refetch never runs). The
+<a href=#151 id=151 data-nosnippet>151</a>    // cadence is runtime-configurable (`dispatcher.reap_interval_seconds`, default 60s — well below
+<a href=#152 id=152 data-nosnippet>152</a>    // the lease timeout, so an expired task is recovered promptly without scanning on every
+<a href=#153 id=153 data-nosnippet>153</a>    // request).
+<a href=#154 id=154 data-nosnippet>154</a>    </span><span class="kw">let </span>reap_interval_secs = <span class="kw">crate</span>::config::config().dispatcher.reap_interval_seconds;
+<a href=#155 id=155 data-nosnippet>155</a>    <span class="kw">let </span><span class="kw-2">mut </span>last_reap_sec = chrono::Utc::now().timestamp();
+<a href=#156 id=156 data-nosnippet>156</a>    <span class="comment">// Rate-limited logging for discarded requests (malformed framing, unknown service names). A
+<a href=#157 id=157 data-nosnippet>157</a>    // sustained malformed-request flood must not turn per-message `stderr` writes into a
+<a href=#158 id=158 data-nosnippet>158</a>    // throughput-DoS (KNOWN_ISSUES D-11) — count, don't narrate.
+<a href=#159 id=159 data-nosnippet>159</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>discard_log = server::RateLimitedLog::new(Duration::from_secs(<span class="number">5</span>));
+<a href=#160 id=160 data-nosnippet>160</a>    <span class="comment">// Rate-limited logging for dispatches/replies dropped because the worker was unroutable at send
+<a href=#161 id=161 data-nosnippet>161</a>    // time (D-22). A dying-worker or restart storm can make this fire per-request, so aggregate it
+<a href=#162 id=162 data-nosnippet>162</a>    // (like `discard_log`) — count, don't narrate — so it can never become a throughput-DoS (D-11).
+<a href=#163 id=163 data-nosnippet>163</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>unroutable_log = server::RateLimitedLog::new(Duration::from_secs(<span class="number">5</span>));
+<a href=#164 id=164 data-nosnippet>164</a>
+<a href=#165 id=165 data-nosnippet>165</a>    <span class="comment">// Input-archive prefetcher (D-20): warm each fetched batch's archives into the OS page cache
+<a href=#166 id=166 data-nosnippet>166</a>    // ahead of dispatch, so the inline `/data` read below is served from RAM (~0.02 ms) instead of
+<a href=#167 id=167 data-nosnippet>167</a>    // the cold QLC-RAID6 platter (~10 ms — the single-thread dispatch ceiling at full-arXiv scale).
+<a href=#168 id=168 data-nosnippet>168</a>    // A no-op when `input_prefetchers = 0`; the read path stays byte-for-byte unchanged. Each
+<a href=#169 id=169 data-nosnippet>169</a>    // warmer's channel is sized to a full batch so the round-robin feed never drops within one.
+<a href=#170 id=170 data-nosnippet>170</a>    </span><span class="kw">let </span>dispatcher_cfg = <span class="kw-2">&amp;</span><span class="kw">crate</span>::config::config().dispatcher;
+<a href=#171 id=171 data-nosnippet>171</a>    <span class="kw">let </span>prefetcher = Prefetcher::new(
+<a href=#172 id=172 data-nosnippet>172</a>      dispatcher_cfg.input_prefetchers,
+<a href=#173 id=173 data-nosnippet>173</a>      <span class="self">self</span>.queue_size,
+<a href=#174 id=174 data-nosnippet>174</a>      dispatcher_cfg.prefetch_max_entry_mb * <span class="number">1024 </span>* <span class="number">1024</span>,
+<a href=#175 id=175 data-nosnippet>175</a>      dispatcher_cfg.prefetch_budget_mb * <span class="number">1024 </span>* <span class="number">1024</span>,
+<a href=#176 id=176 data-nosnippet>176</a>    );
+<a href=#177 id=177 data-nosnippet>177</a>
+<a href=#178 id=178 data-nosnippet>178</a>    <span class="kw">loop </span>{
+<a href=#179 id=179 data-nosnippet>179</a>      <span class="comment">// Graceful shutdown (O-1): a SIGTERM/SIGINT set the flag. Stop leasing new work, signal
+<a href=#180 id=180 data-nosnippet>180</a>      // completion (so the sink drains the in-flight set and finalize flushes its last batch), and
+<a href=#181 id=181 data-nosnippet>181</a>      // return cleanly — the manager then takes the drain path instead of restarting us. Reached on
+<a href=#182 id=182 data-nosnippet>182</a>      // the next loop iteration; the recv below polls on a 250ms `RCVTIMEO`, so even a *fully idle*
+<a href=#183 id=183 data-nosnippet>183</a>      // dispatcher (no worker requests to cycle the loop) observes the flag within ~250ms and stops
+<a href=#184 id=184 data-nosnippet>184</a>      // promptly — no waiting out the supervisor's stop timeout (KNOWN_ISSUES D-15).
+<a href=#185 id=185 data-nosnippet>185</a>      </span><span class="kw">if </span>server::shutdown_requested() {
+<a href=#186 id=186 data-nosnippet>186</a>        <span class="macro">info!</span>(
+<a href=#187 id=187 data-nosnippet>187</a>          <span class="string">"ventilator: graceful shutdown requested — ceasing to lease; the sink will drain in-flight work"
+<a href=#188 id=188 data-nosnippet>188</a>        </span>);
+<a href=#189 id=189 data-nosnippet>189</a>        dispatch_complete.store(<span class="bool-val">true</span>, Ordering::SeqCst);
+<a href=#190 id=190 data-nosnippet>190</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(real_dispatched);
+<a href=#191 id=191 data-nosnippet>191</a>      }
+<a href=#192 id=192 data-nosnippet>192</a>      <span class="comment">// Reap timed-out in-flight tasks on a **wall-clock** cadence, decoupled from worker request
+<a href=#193 id=193 data-nosnippet>193</a>      // traffic (D-19). Runs at the top of every loop iteration — including the idle ~250ms
+<a href=#194 id=194 data-nosnippet>194</a>      // RCVTIMEO ticks below — so an expired task is requeued/dead-lettered within
+<a href=#195 id=195 data-nosnippet>195</a>      // ~`reap_interval` even at a fully idle tail (e.g. D-18-deferred empty results awaiting
+<a href=#196 id=196 data-nosnippet>196</a>      // retry after the fleet drained), not just when a worker next happens to ask for work.
+<a href=#197 id=197 data-nosnippet>197</a>      // The `reap_interval` gate keeps the actual scan to its cadence; the per-iteration
+<a href=#198 id=198 data-nosnippet>198</a>      // timestamp compare is cheap. Routes each expired task back to its own service's queue
+<a href=#199 id=199 data-nosnippet>199</a>      // or reports it Fatal, so the in-flight set drains even while saturated (backpressure)
+<a href=#200 id=200 data-nosnippet>200</a>      // — closes the D-6 reaping-coupling residual.
+<a href=#201 id=201 data-nosnippet>201</a>      </span><span class="kw">let </span>now_sec = chrono::Utc::now().timestamp();
+<a href=#202 id=202 data-nosnippet>202</a>      <span class="kw">if </span>now_sec - last_reap_sec &gt;= reap_interval_secs {
+<a href=#203 id=203 data-nosnippet>203</a>        last_reap_sec = now_sec;
+<a href=#204 id=204 data-nosnippet>204</a>        <span class="kw">let </span>reaped = server::reap_expired_into(<span class="kw-2">&amp;mut </span>queues, progress_queue_arc, done_tx);
+<a href=#205 id=205 data-nosnippet>205</a>        <span class="comment">// Health signal (Arm 8 observability; transport-independent): the in-flight gauge plus the
+<a href=#206 id=206 data-nosnippet>206</a>        // re-lease / dead-letter counts for this reaping pass. Only logged when something actually
+<a href=#207 id=207 data-nosnippet>207</a>        // timed out (the cadence is otherwise quiet), at `info` because a dead-letter is a task we
+<a href=#208 id=208 data-nosnippet>208</a>        // gave up on — an operator-relevant event.
+<a href=#209 id=209 data-nosnippet>209</a>        </span><span class="kw">if </span>reaped.requeued + reaped.dead_lettered &gt; <span class="number">0 </span>{
+<a href=#210 id=210 data-nosnippet>210</a>          <span class="macro">info!</span>(
+<a href=#211 id=211 data-nosnippet>211</a>            in_flight = progress_queue_arc.len(),
+<a href=#212 id=212 data-nosnippet>212</a>            requeued = reaped.requeued,
+<a href=#213 id=213 data-nosnippet>213</a>            dead_lettered = reaped.dead_lettered,
+<a href=#214 id=214 data-nosnippet>214</a>            <span class="string">"dispatcher: reaped timed-out in-flight tasks"
+<a href=#215 id=215 data-nosnippet>215</a>          </span>);
+<a href=#216 id=216 data-nosnippet>216</a>        }
+<a href=#217 id=217 data-nosnippet>217</a>      }
+<a href=#218 id=218 data-nosnippet>218</a>      <span class="kw">let </span><span class="kw-2">mut </span>identity = zmq::Message::new();
+<a href=#219 id=219 data-nosnippet>219</a>      <span class="kw">let </span><span class="kw-2">mut </span>msg = zmq::Message::new();
+<a href=#220 id=220 data-nosnippet>220</a>      <span class="comment">// A worker request is exactly `[identity, service_name]` on the ROUTER: the DEALER worker
+<a href=#221 id=221 data-nosnippet>221</a>      // sends a single service-name frame and ROUTER prepends its identity. Read with strict
+<a href=#222 id=222 data-nosnippet>222</a>      // multipart-framing discipline so a malformed / empty / over-long request cannot desync the
+<a href=#223 id=223 data-nosnippet>223</a>      // message boundary and *permanently shuffle* every later request — the rare "3 adjacent empty
+<a href=#224 id=224 data-nosnippet>224</a>      // messages" failure seen in 08.2025 sandbox testing (KNOWN_ISSUES D-4). The previous code
+<a href=#225 id=225 data-nosnippet>225</a>      // read a second frame unconditionally, so a truncated `[identity]`-only message made it
+<a href=#226 id=226 data-nosnippet>226</a>      // read the *next* request's identity as this request's service (the shuffle), and
+<a href=#227 id=227 data-nosnippet>227</a>      // bailed the whole ventilator on the both-empty case (a restart band-aid). Instead:
+<a href=#228 id=228 data-nosnippet>228</a>      // require the service frame via `RCVMORE` before reading it (never read across a
+<a href=#229 id=229 data-nosnippet>229</a>      // message boundary), drain any unexpected trailing frames to stay aligned, and *skip* a
+<a href=#230 id=230 data-nosnippet>230</a>      // malformed request rather than restarting. This mirrors the sink's `[identity,
+<a href=#231 id=231 data-nosnippet>231</a>      // service, taskid, …]` envelope hardening.
+<a href=#232 id=232 data-nosnippet>232</a>      </span><span class="kw">match </span>ventilator.recv(<span class="kw-2">&amp;mut </span>identity, <span class="number">0</span>) {
+<a href=#233 id=233 data-nosnippet>233</a>        <span class="prelude-val">Ok</span>(()) =&gt; {},
+<a href=#234 id=234 data-nosnippet>234</a>        <span class="comment">// RCVTIMEO elapsed with no request — loop back to re-check the shutdown flag and run the
+<a href=#235 id=235 data-nosnippet>235</a>        // wall-clock reap at the top of the loop (D-15 + D-19: an idle ventilator both stops within
+<a href=#236 id=236 data-nosnippet>236</a>        // ~250ms of SIGTERM and keeps reaping expired in-flight tasks).
+<a href=#237 id=237 data-nosnippet>237</a>        </span><span class="prelude-val">Err</span>(zmq::Error::EAGAIN) =&gt; <span class="kw">continue</span>,
+<a href=#238 id=238 data-nosnippet>238</a>        <span class="prelude-val">Err</span>(e) =&gt; <span class="kw">return </span><span class="prelude-val">Err</span>(e.into()),
+<a href=#239 id=239 data-nosnippet>239</a>      }
+<a href=#240 id=240 data-nosnippet>240</a>      <span class="kw">if </span>!ventilator.get_rcvmore().unwrap_or(<span class="bool-val">false</span>) {
+<a href=#241 id=241 data-nosnippet>241</a>        <span class="comment">// `[identity]` with no service frame — truncated. Skipping consumes nothing further, so the
+<a href=#242 id=242 data-nosnippet>242</a>        // next request's frames are left intact (no desync).
+<a href=#243 id=243 data-nosnippet>243</a>        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(n) = discard_log.record() {
+<a href=#244 id=244 data-nosnippet>244</a>          <span class="macro">warn!</span>(
+<a href=#245 id=245 data-nosnippet>245</a>            <span class="string">"ventilator: discarded {n} malformed request(s) [latest: truncated, no service frame] (rate-limited)"
+<a href=#246 id=246 data-nosnippet>246</a>          </span>);
+<a href=#247 id=247 data-nosnippet>247</a>        }
+<a href=#248 id=248 data-nosnippet>248</a>        <span class="kw">continue</span>;
+<a href=#249 id=249 data-nosnippet>249</a>      }
+<a href=#250 id=250 data-nosnippet>250</a>      ventilator.recv(<span class="kw-2">&amp;mut </span>msg, <span class="number">0</span>)<span class="question-mark">?</span>;
+<a href=#251 id=251 data-nosnippet>251</a>      <span class="comment">// A well-formed request ends at the service frame; drain anything beyond it (an over-long /
+<a href=#252 id=252 data-nosnippet>252</a>      // malformed request) so it can't bleed into the next request — frame-alignment is exactly
+<a href=#253 id=253 data-nosnippet>253</a>      // what D-4 lost.
+<a href=#254 id=254 data-nosnippet>254</a>      </span><span class="kw">while </span>ventilator.get_rcvmore().unwrap_or(<span class="bool-val">false</span>) {
+<a href=#255 id=255 data-nosnippet>255</a>        <span class="kw">let </span><span class="kw-2">mut </span>extra = zmq::Message::new();
+<a href=#256 id=256 data-nosnippet>256</a>        <span class="kw">if </span>ventilator.recv(<span class="kw-2">&amp;mut </span>extra, <span class="number">0</span>).is_err() {
+<a href=#257 id=257 data-nosnippet>257</a>          <span class="kw">break</span>;
+<a href=#258 id=258 data-nosnippet>258</a>        }
+<a href=#259 id=259 data-nosnippet>259</a>      }
+<a href=#260 id=260 data-nosnippet>260</a>      <span class="kw">let </span>identity_str = identity.as_str().unwrap_or_default().to_string();
+<a href=#261 id=261 data-nosnippet>261</a>      <span class="kw">let </span>service_name = msg.as_str().unwrap_or_default().to_string();
+<a href=#262 id=262 data-nosnippet>262</a>      <span class="kw">if </span>service_name.is_empty() {
+<a href=#263 id=263 data-nosnippet>263</a>        <span class="comment">// Empty service request (e.g. the "3 adjacent empty messages") — skip without desyncing.
+<a href=#264 id=264 data-nosnippet>264</a>        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(n) = discard_log.record() {
+<a href=#265 id=265 data-nosnippet>265</a>          <span class="macro">warn!</span>(
+<a href=#266 id=266 data-nosnippet>266</a>            <span class="string">"ventilator: discarded {n} malformed request(s) [latest: empty service from {identity_str:?}] (rate-limited)"
+<a href=#267 id=267 data-nosnippet>267</a>          </span>);
+<a href=#268 id=268 data-nosnippet>268</a>        }
+<a href=#269 id=269 data-nosnippet>269</a>        <span class="kw">continue</span>;
+<a href=#270 id=270 data-nosnippet>270</a>      }
+<a href=#271 id=271 data-nosnippet>271</a>
+<a href=#272 id=272 data-nosnippet>272</a>      <span class="kw">let </span>request_time = chrono::Utc::now();
+<a href=#273 id=273 data-nosnippet>273</a>      source_job_count += <span class="number">1</span>;
+<a href=#274 id=274 data-nosnippet>274</a>      <span class="comment">// Whether this iteration actually leased a task to the worker (vs. a mock-reply). Drives the
+<a href=#275 id=275 data-nosnippet>275</a>      // bounded-run source-drain check at the bottom of the loop.
+<a href=#276 id=276 data-nosnippet>276</a>      </span><span class="kw">let </span><span class="kw-2">mut </span>dispatched_this_iter = <span class="bool-val">false</span>;
+<a href=#277 id=277 data-nosnippet>277</a>      <span class="comment">// (Reaping happens at the loop top now, on a wall-clock cadence — see D-19 above.)
+<a href=#278 id=278 data-nosnippet>278</a>      // Requests for unknown service names will be silently ignored.
+<a href=#279 id=279 data-nosnippet>279</a>      </span><span class="kw">let </span>service_opt = <span class="kw">match </span>server::get_sync_service(<span class="kw-2">&amp;</span>service_name, services_arc, <span class="kw-2">&amp;mut </span>backend) {
+<a href=#280 id=280 data-nosnippet>280</a>        <span class="prelude-val">Some</span>(s) =&gt; <span class="prelude-val">Some</span>(s),
+<a href=#281 id=281 data-nosnippet>281</a>        <span class="prelude-val">None </span>=&gt; {
+<a href=#282 id=282 data-nosnippet>282</a>          <span class="comment">// An unknown service name is now handled gracefully — mock-reply so the (mis)configured
+<a href=#283 id=283 data-nosnippet>283</a>          // worker backs off — rather than the old fatal desync (the request framing is robust now,
+<a href=#284 id=284 data-nosnippet>284</a>          // D-4). Rate-limit the log so a flood of bad-service requests can't DoS us (D-11).
+<a href=#285 id=285 data-nosnippet>285</a>          </span><span class="kw">if let </span><span class="prelude-val">Some</span>(n) = discard_log.record() {
+<a href=#286 id=286 data-nosnippet>286</a>            <span class="macro">warn!</span>(
+<a href=#287 id=287 data-nosnippet>287</a>              <span class="string">"ventilator: discarded {n} request(s) [latest: unknown service {service_name:?} from {identity_str:?}, mock-replied] (rate-limited)"
+<a href=#288 id=288 data-nosnippet>288</a>            </span>);
+<a href=#289 id=289 data-nosnippet>289</a>          }
+<a href=#290 id=290 data-nosnippet>290</a>          <span class="kw">if </span>!route_worker_frame(<span class="kw-2">&amp;</span>ventilator, identity, <span class="kw-2">&amp;</span>identity_str, <span class="kw-2">&amp;mut </span>unroutable_log)<span class="question-mark">? </span>{
+<a href=#291 id=291 data-nosnippet>291</a>            <span class="kw">continue</span>;
+<a href=#292 id=292 data-nosnippet>292</a>          }
+<a href=#293 id=293 data-nosnippet>293</a>          ventilator.send(<span class="string">"0"</span>, SNDMORE)<span class="question-mark">?</span>;
+<a href=#294 id=294 data-nosnippet>294</a>          ventilator.send(Vec::new(), <span class="number">0</span>)<span class="question-mark">?</span>;
+<a href=#295 id=295 data-nosnippet>295</a>          <span class="kw">continue</span>;
+<a href=#296 id=296 data-nosnippet>296</a>        },
+<a href=#297 id=297 data-nosnippet>297</a>      };
+<a href=#298 id=298 data-nosnippet>298</a>      <span class="kw">if let </span><span class="prelude-val">Some</span>(service) = service_opt {
+<a href=#299 id=299 data-nosnippet>299</a>        <span class="comment">// Backpressure (KNOWN_ISSUES D-6, principle #4): if the in-flight set is saturated, don't
+<a href=#300 id=300 data-nosnippet>300</a>        // lease more work — mock-reply so the worker backs off and retries. The set then drains as
+<a href=#301 id=301 data-nosnippet>301</a>        // the sink receives results, instead of growing toward the hard panic bound. Degrade
+<a href=#302 id=302 data-nosnippet>302</a>        // gracefully under overload rather than crash.
+<a href=#303 id=303 data-nosnippet>303</a>        </span><span class="kw">if </span>server::in_flight_saturated(progress_queue_arc.len(), <span class="self">self</span>.max_in_flight) {
+<a href=#304 id=304 data-nosnippet>304</a>          <span class="macro">debug!</span>(
+<a href=#305 id=305 data-nosnippet>305</a>            in_flight_cap = <span class="self">self</span>.max_in_flight,
+<a href=#306 id=306 data-nosnippet>306</a>            worker = %identity_str,
+<a href=#307 id=307 data-nosnippet>307</a>            <span class="string">"BACKPRESSURE: in-flight set at capacity; mock-replying to worker"
+<a href=#308 id=308 data-nosnippet>308</a>          </span>);
+<a href=#309 id=309 data-nosnippet>309</a>          <span class="kw">if </span>!route_worker_frame(<span class="kw-2">&amp;</span>ventilator, identity, <span class="kw-2">&amp;</span>identity_str, <span class="kw-2">&amp;mut </span>unroutable_log)<span class="question-mark">? </span>{
+<a href=#310 id=310 data-nosnippet>310</a>            <span class="kw">continue</span>;
+<a href=#311 id=311 data-nosnippet>311</a>          }
+<a href=#312 id=312 data-nosnippet>312</a>          ventilator.send(<span class="string">"0"</span>, SNDMORE)<span class="question-mark">?</span>;
+<a href=#313 id=313 data-nosnippet>313</a>          ventilator.send(Vec::new(), <span class="number">0</span>)<span class="question-mark">?</span>;
+<a href=#314 id=314 data-nosnippet>314</a>          <span class="kw">continue</span>;
+<a href=#315 id=315 data-nosnippet>315</a>        }
+<a href=#316 id=316 data-nosnippet>316</a>        <span class="kw">let </span>task_queue: <span class="kw-2">&amp;mut </span>Vec&lt;TaskProgress&gt; = queues.entry(service.id).or_default();
+<a href=#317 id=317 data-nosnippet>317</a>        <span class="kw">if </span>task_queue.is_empty() {
+<a href=#318 id=318 data-nosnippet>318</a>          <span class="macro">debug!</span>(
+<a href=#319 id=319 data-nosnippet>319</a>            <span class="string">"No tasks in task queue for service {:?}, fetching up to {:?} more from backend..."</span>,
+<a href=#320 id=320 data-nosnippet>320</a>            service_name, <span class="self">self</span>.queue_size
+<a href=#321 id=321 data-nosnippet>321</a>          );
+<a href=#322 id=322 data-nosnippet>322</a>          <span class="comment">// Refetch a new batch of tasks
+<a href=#323 id=323 data-nosnippet>323</a>          </span><span class="kw">let </span>now = chrono::Utc::now().timestamp();
+<a href=#324 id=324 data-nosnippet>324</a>          <span class="kw">let </span>fetched_tasks = backend
+<a href=#325 id=325 data-nosnippet>325</a>            .fetch_tasks(<span class="kw-2">&amp;</span>service, <span class="self">self</span>.queue_size)
+<a href=#326 id=326 data-nosnippet>326</a>            .unwrap_or_default();
+<a href=#327 id=327 data-nosnippet>327</a>          <span class="comment">// D-20: warm this batch's input archives into page cache in DISPATCH order. `task_queue`
+<a href=#328 id=328 data-nosnippet>328</a>          // is popped LIFO (from the end after the `extend` below), so the batch is dispatched in
+<a href=#329 id=329 data-nosnippet>329</a>          // reverse of fetch order — feed reversed so the next-to-dispatch archives warm first.
+<a href=#330 id=330 data-nosnippet>330</a>          // No-op when prefetching is disabled.
+<a href=#331 id=331 data-nosnippet>331</a>          </span>prefetcher.warm_batch(fetched_tasks.iter().rev().map(|task| task.entry.clone()));
+<a href=#332 id=332 data-nosnippet>332</a>          <span class="comment">// D-17: capture the effective lease for THIS service — its `lease_timeout_seconds`
+<a href=#333 id=333 data-nosnippet>333</a>          // override, else the global dispatcher default — at dispatch time. `expected_at` uses the
+<a href=#334 id=334 data-nosnippet>334</a>          // captured value, so one dispatcher serves fast (latexml-oxide) and slow (Perl) services
+<a href=#335 id=335 data-nosnippet>335</a>          // with the right lease each, and a later config change never re-times an in-flight task.
+<a href=#336 id=336 data-nosnippet>336</a>          </span><span class="kw">let </span>lease = service
+<a href=#337 id=337 data-nosnippet>337</a>            .lease_timeout_seconds
+<a href=#338 id=338 data-nosnippet>338</a>            .map(i64::from)
+<a href=#339 id=339 data-nosnippet>339</a>            .unwrap_or_else(|| <span class="kw">crate</span>::config::config().dispatcher.lease_timeout_seconds);
+<a href=#340 id=340 data-nosnippet>340</a>          task_queue.extend(fetched_tasks.into_iter().map(|task| TaskProgress {
+<a href=#341 id=341 data-nosnippet>341</a>            task,
+<a href=#342 id=342 data-nosnippet>342</a>            created_at: now,
+<a href=#343 id=343 data-nosnippet>343</a>            retries: <span class="number">0</span>,
+<a href=#344 id=344 data-nosnippet>344</a>            lease_timeout_seconds: lease,
+<a href=#345 id=345 data-nosnippet>345</a>          }));
+<a href=#346 id=346 data-nosnippet>346</a>        }
+<a href=#347 id=347 data-nosnippet>347</a>
+<a href=#348 id=348 data-nosnippet>348</a>        <span class="comment">// Routing frame under ROUTER_MANDATORY, sent BEFORE the lease (the `pop()` below): if the
+<a href=#349 id=349 data-nosnippet>349</a>        // worker vanished between its request and now, `EHOSTUNREACH` is caught here having leased
+<a href=#350 id=350 data-nosnippet>350</a>        // nothing, so the task stays queued for the next worker — no strand, no reaper wait (D-22).
+<a href=#351 id=351 data-nosnippet>351</a>        </span><span class="kw">if </span>!route_worker_frame(<span class="kw-2">&amp;</span>ventilator, identity, <span class="kw-2">&amp;</span>identity_str, <span class="kw-2">&amp;mut </span>unroutable_log)<span class="question-mark">? </span>{
+<a href=#352 id=352 data-nosnippet>352</a>          <span class="kw">continue</span>;
+<a href=#353 id=353 data-nosnippet>353</a>        }
+<a href=#354 id=354 data-nosnippet>354</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(current_task_progress) = task_queue.pop() {
+<a href=#355 id=355 data-nosnippet>355</a>          dispatched_this_iter = <span class="bool-val">true</span>;
+<a href=#356 id=356 data-nosnippet>356</a>          <span class="comment">// A `retries == 0` task is entering the pipeline for the first time; a re-leased task
+<a href=#357 id=357 data-nosnippet>357</a>          // (retries &gt; 0, from the reaper requeue) was already counted on its first dispatch, so
+<a href=#358 id=358 data-nosnippet>358</a>          // only fresh leases advance the bounded-run target — keeping `real_dispatched` a true
+<a href=#359 id=359 data-nosnippet>359</a>          // unique-task count that finalize can eventually match.
+<a href=#360 id=360 data-nosnippet>360</a>          </span><span class="kw">if </span>current_task_progress.retries == <span class="number">0 </span>{
+<a href=#361 id=361 data-nosnippet>361</a>            real_dispatched += <span class="number">1</span>;
+<a href=#362 id=362 data-nosnippet>362</a>          }
+<a href=#363 id=363 data-nosnippet>363</a>          <span class="comment">// Record the dispatch in the in-flight set BEFORE streaming the payload to the worker. A
+<a href=#364 id=364 data-nosnippet>364</a>          // fast worker (e.g. echo) can return its result to the sink before this iteration even
+<a href=#365 id=365 data-nosnippet>365</a>          // finishes; if the task were recorded only *after* the send (as it was), the sink's
+<a href=#366 id=366 data-nosnippet>366</a>          // `pop_progress_task` could miss it and discard the result, stranding the task `Queued`
+<a href=#367 id=367 data-nosnippet>367</a>          // until the ≥1h visibility-timeout reaper — the single-task-loss race that surfaced under
+<a href=#368 id=368 data-nosnippet>368</a>          // NOTE (D-21, 2026-07-20): two caveats on the citation above. (1) DISPATCHER_BENCH.md
+<a href=#369 id=369 data-nosnippet>369</a>          // attributes that 8-worker loss to **D-10**, not D-4 — this reference is stale. (2) The
+<a href=#370 id=370 data-nosnippet>370</a>          // bench harness that produced it gave all N worker threads ONE shared ZMQ identity
+<a href=#371 id=371 data-nosnippet>371</a>          // (D-21), which was never controlled for. The ordering fix below is not in doubt — it
+<a href=#372 id=372 data-nosnippet>372</a>          // held for 18 consecutive clean runs at the previously-failing concurrencies — but the
+<a href=#373 id=373 data-nosnippet>373</a>          // two defects coexisted, so read that bench number as D-10 plus an uncontrolled D-21
+<a href=#374 id=374 data-nosnippet>374</a>          // component, not as clean proof of this race alone.
+<a href=#375 id=375 data-nosnippet>375</a>          // higher worker concurrency (KNOWN_ISSUES D-4 / docs/DISPATCHER_BENCH.md 8-worker loss).
+<a href=#376 id=376 data-nosnippet>376</a>          // Recording first also leaves a mid-stream send failure correctly in-flight for the
+<a href=#377 id=377 data-nosnippet>377</a>          // reaper.
+<a href=#378 id=378 data-nosnippet>378</a>          </span>progress_queue_arc.insert(current_task_progress.clone());
+<a href=#379 id=379 data-nosnippet>379</a>
+<a href=#380 id=380 data-nosnippet>380</a>          <span class="kw">let </span>current_task = current_task_progress.task;
+<a href=#381 id=381 data-nosnippet>381</a>          <span class="kw">let </span><span class="kw-2">mut </span>taskid = current_task.id;
+<a href=#382 id=382 data-nosnippet>382</a>          <span class="kw">let </span>serviceid = current_task.service_id;
+<a href=#383 id=383 data-nosnippet>383</a>          <span class="comment">// Memoise this task's corpus → sandbox id now, before the payload is sent (so before the
+<a href=#384 id=384 data-nosnippet>384</a>          // result can return), so the sink scopes the result archive without its own DB hit (F-6).
+<a href=#385 id=385 data-nosnippet>385</a>          </span>server::get_sync_sandbox_id(current_task.corpus_id, sandboxes_arc, <span class="kw-2">&amp;mut </span>backend);
+<a href=#386 id=386 data-nosnippet>386</a>          <span class="macro">trace!</span>(
+<a href=#387 id=387 data-nosnippet>387</a>            job = source_job_count,
+<a href=#388 id=388 data-nosnippet>388</a>            worker = %identity_str,
+<a href=#389 id=389 data-nosnippet>389</a>            task_id = taskid,
+<a href=#390 id=390 data-nosnippet>390</a>            <span class="string">"ventilator: worker received task"
+<a href=#391 id=391 data-nosnippet>391</a>          </span>);
+<a href=#392 id=392 data-nosnippet>392</a>          ventilator.send(<span class="kw-2">&amp;</span>taskid.to_string(), SNDMORE)<span class="question-mark">?</span>;
+<a href=#393 id=393 data-nosnippet>393</a>          <span class="kw">if </span>serviceid == <span class="number">1 </span>{
+<a href=#394 id=394 data-nosnippet>394</a>            <span class="comment">// No payload needed for init
+<a href=#395 id=395 data-nosnippet>395</a>            </span>ventilator.send(Vec::new(), <span class="number">0</span>)<span class="question-mark">?</span>;
+<a href=#396 id=396 data-nosnippet>396</a>          } <span class="kw">else </span>{
+<a href=#397 id=397 data-nosnippet>397</a>            <span class="comment">// Regular services fetch the task payload and transfer it to the worker
+<a href=#398 id=398 data-nosnippet>398</a>            </span><span class="kw">let </span>file_opt = helpers::prepare_input_stream(<span class="kw-2">&amp;</span>current_task);
+<a href=#399 id=399 data-nosnippet>399</a>            <span class="kw">if </span>file_opt.is_ok() {
+<a href=#400 id=400 data-nosnippet>400</a>              <span class="kw">let </span><span class="kw-2">mut </span>file = file_opt<span class="question-mark">?</span>;
+<a href=#401 id=401 data-nosnippet>401</a>              <span class="kw">let </span><span class="kw-2">mut </span>total_outgoing: usize = <span class="number">0</span>;
+<a href=#402 id=402 data-nosnippet>402</a>              <span class="kw">loop </span>{
+<a href=#403 id=403 data-nosnippet>403</a>                <span class="comment">// Stream input data via zmq
+<a href=#404 id=404 data-nosnippet>404</a>                </span><span class="kw">let </span><span class="kw-2">mut </span>data = <span class="macro">vec!</span>[<span class="number">0</span>; <span class="self">self</span>.message_size];
+<a href=#405 id=405 data-nosnippet>405</a>                <span class="kw">let </span>size = file.read(<span class="kw-2">&amp;mut </span>data)<span class="question-mark">?</span>;
+<a href=#406 id=406 data-nosnippet>406</a>                total_outgoing += size;
+<a href=#407 id=407 data-nosnippet>407</a>                data.truncate(size);
+<a href=#408 id=408 data-nosnippet>408</a>
+<a href=#409 id=409 data-nosnippet>409</a>                <span class="kw">if </span>size &lt; <span class="self">self</span>.message_size {
+<a href=#410 id=410 data-nosnippet>410</a>                  <span class="comment">// If exhausted, send the last frame
+<a href=#411 id=411 data-nosnippet>411</a>                  </span>ventilator.send(<span class="kw-2">&amp;</span>data, <span class="number">0</span>)<span class="question-mark">?</span>;
+<a href=#412 id=412 data-nosnippet>412</a>                  <span class="comment">// And terminate
+<a href=#413 id=413 data-nosnippet>413</a>                  </span><span class="kw">break</span>;
+<a href=#414 id=414 data-nosnippet>414</a>                } <span class="kw">else </span>{
+<a href=#415 id=415 data-nosnippet>415</a>                  <span class="comment">// If more to go, send the frame and indicate there's more to come
+<a href=#416 id=416 data-nosnippet>416</a>                  </span>ventilator.send(<span class="kw-2">&amp;</span>data, SNDMORE)<span class="question-mark">?</span>;
+<a href=#417 id=417 data-nosnippet>417</a>                }
+<a href=#418 id=418 data-nosnippet>418</a>              }
+<a href=#419 id=419 data-nosnippet>419</a>              <span class="kw">let </span>responded_time = chrono::Utc::now();
+<a href=#420 id=420 data-nosnippet>420</a>              <span class="kw">let </span>request_duration = (responded_time - request_time).num_milliseconds();
+<a href=#421 id=421 data-nosnippet>421</a>              <span class="macro">trace!</span>(
+<a href=#422 id=422 data-nosnippet>422</a>                job = source_job_count,
+<a href=#423 id=423 data-nosnippet>423</a>                task_id = taskid,
+<a href=#424 id=424 data-nosnippet>424</a>                bytes = total_outgoing,
+<a href=#425 id=425 data-nosnippet>425</a>                took_ms = request_duration,
+<a href=#426 id=426 data-nosnippet>426</a>                <span class="string">"ventilator: streamed task payload to worker"
+<a href=#427 id=427 data-nosnippet>427</a>              </span>);
+<a href=#428 id=428 data-nosnippet>428</a>            } <span class="kw">else </span>{
+<a href=#429 id=429 data-nosnippet>429</a>              <span class="macro">warn!</span>(
+<a href=#430 id=430 data-nosnippet>430</a>                task_id = taskid,
+<a href=#431 id=431 data-nosnippet>431</a>                <span class="string">"ventilator: failed to prepare input stream for task"
+<a href=#432 id=432 data-nosnippet>432</a>              </span>);
+<a href=#433 id=433 data-nosnippet>433</a>              <span class="macro">debug!</span>(task_id = taskid, <span class="string">"task details: {current_task:?}"</span>);
+<a href=#434 id=434 data-nosnippet>434</a>              taskid = -<span class="number">1</span>;
+<a href=#435 id=435 data-nosnippet>435</a>              ventilator.send(Vec::new(), <span class="number">0</span>)<span class="question-mark">?</span>;
+<a href=#436 id=436 data-nosnippet>436</a>            }
+<a href=#437 id=437 data-nosnippet>437</a>          }
+<a href=#438 id=438 data-nosnippet>438</a>          <span class="comment">// A real task was leased — count it as a dispatch (drives total_dispatched /
+<a href=#439 id=439 data-nosnippet>439</a>          // outstanding).
+<a href=#440 id=440 data-nosnippet>440</a>          </span><span class="self">self</span>.metadata.dispatched(identity_str, service.id, taskid);
+<a href=#441 id=441 data-nosnippet>441</a>        } <span class="kw">else </span>{
+<a href=#442 id=442 data-nosnippet>442</a>          <span class="macro">trace!</span>(
+<a href=#443 id=443 data-nosnippet>443</a>            job = source_job_count,
+<a href=#444 id=444 data-nosnippet>444</a>            worker = %identity_str,
+<a href=#445 id=445 data-nosnippet>445</a>            <span class="string">"ventilator: worker received mock reply"
+<a href=#446 id=446 data-nosnippet>446</a>          </span>);
+<a href=#447 id=447 data-nosnippet>447</a>          ventilator.send(<span class="string">"0"</span>, SNDMORE)<span class="question-mark">?</span>;
+<a href=#448 id=448 data-nosnippet>448</a>          ventilator.send(Vec::new(), <span class="number">0</span>)<span class="question-mark">?</span>;
+<a href=#449 id=449 data-nosnippet>449</a>          <span class="comment">// An empty-queue ping leased no task: record a liveness heartbeat (refreshes the worker's
+<a href=#450 id=450 data-nosnippet>450</a>          // "last dispatch requested" time so an idle-but-alive poller still reads as fresh) but do
+<a href=#451 id=451 data-nosnippet>451</a>          // NOT bump the dispatch tally. Counting these is what made a fully-drained corpus's idle
+<a href=#452 id=452 data-nosnippet>452</a>          // pollers accrue phantom "outstanding" forever — total_dispatched meant "replies sent",
+<a href=#453 id=453 data-nosnippet>453</a>          // not "tasks leased" (the 17k-outstanding /workers confusion).
+<a href=#454 id=454 data-nosnippet>454</a>          </span><span class="self">self</span>.metadata.heartbeat(identity_str, service.id);
+<a href=#455 id=455 data-nosnippet>455</a>        }
+<a href=#456 id=456 data-nosnippet>456</a>      } <span class="kw">else </span>{
+<a href=#457 id=457 data-nosnippet>457</a>        <span class="macro">warn!</span>(
+<a href=#458 id=458 data-nosnippet>458</a>          service = %service_name,
+<a href=#459 id=459 data-nosnippet>459</a>          worker = %identity_str,
+<a href=#460 id=460 data-nosnippet>460</a>          <span class="string">"ventilator: request for unknown service"
+<a href=#461 id=461 data-nosnippet>461</a>        </span>);
+<a href=#462 id=462 data-nosnippet>462</a>      }
+<a href=#463 id=463 data-nosnippet>463</a>      <span class="kw">if let </span><span class="prelude-val">Some</span>(limit_number) = job_limit {
+<a href=#464 id=464 data-nosnippet>464</a>        <span class="comment">// Bounded run terminates on N *real* dispatches (not N requests). Publish the shared
+<a href=#465 id=465 data-nosnippet>465</a>        // completion signal so the sink (which then drains the in-flight set) and finalize (which
+<a href=#466 id=466 data-nosnippet>466</a>        // the manager disconnects) agree on "done" — one condition instead of the three
+<a href=#467 id=467 data-nosnippet>467</a>        // incompatible per-thread counters that used to deadlock (KNOWN_ISSUES D-5).
+<a href=#468 id=468 data-nosnippet>468</a>        </span><span class="kw">if </span>real_dispatched &gt;= limit_number {
+<a href=#469 id=469 data-nosnippet>469</a>          <span class="macro">info!</span>(
+<a href=#470 id=470 data-nosnippet>470</a>            <span class="string">"vent: bounded job limit ({limit_number}) reached after {real_dispatched} real dispatch(es); terminating ventilator"
+<a href=#471 id=471 data-nosnippet>471</a>          </span>);
+<a href=#472 id=472 data-nosnippet>472</a>          dispatch_complete.store(<span class="bool-val">true</span>, Ordering::Release);
+<a href=#473 id=473 data-nosnippet>473</a>          <span class="kw">return </span><span class="prelude-val">Ok</span>(real_dispatched);
+<a href=#474 id=474 data-nosnippet>474</a>        }
+<a href=#475 id=475 data-nosnippet>475</a>        <span class="comment">// Source-drain: this iteration leased nothing (the queue was empty after a refetch) and no
+<a href=#476 id=476 data-nosnippet>476</a>        // task is still in flight, so there is genuinely no more work to dispatch — stop rather
+<a href=#477 id=477 data-nosnippet>477</a>        // than mock-reply forever toward an unreachable limit (the owner-noted "empty-queue
+<a href=#478 id=478 data-nosnippet>478</a>        // mock-replies forever" gap). The in-flight-empty guard prevents terminating while
+<a href=#479 id=479 data-nosnippet>479</a>        // results are still pending; it is exact for the single-service bounded runs
+<a href=#480 id=480 data-nosnippet>480</a>        // `job_limit` is used for (a multi-service bounded run could drain one service
+<a href=#481 id=481 data-nosnippet>481</a>        // early — acceptable, benchmark-only).
+<a href=#482 id=482 data-nosnippet>482</a>        </span><span class="kw">if </span>!dispatched_this_iter &amp;&amp; progress_queue_arc.is_empty() {
+<a href=#483 id=483 data-nosnippet>483</a>          <span class="macro">info!</span>(
+<a href=#484 id=484 data-nosnippet>484</a>            <span class="string">"vent: source exhausted after {real_dispatched} dispatch(es) (&lt; limit {limit_number}); terminating ventilator"
+<a href=#485 id=485 data-nosnippet>485</a>          </span>);
+<a href=#486 id=486 data-nosnippet>486</a>          dispatch_complete.store(<span class="bool-val">true</span>, Ordering::Release);
+<a href=#487 id=487 data-nosnippet>487</a>          <span class="kw">return </span><span class="prelude-val">Ok</span>(real_dispatched);
+<a href=#488 id=488 data-nosnippet>488</a>        }
+<a href=#489 id=489 data-nosnippet>489</a>      }
+<a href=#490 id=490 data-nosnippet>490</a>    }
+<a href=#491 id=491 data-nosnippet>491</a>  }
+<a href=#492 id=492 data-nosnippet>492</a>}
+<a href=#493 id=493 data-nosnippet>493</a>
+<a href=#494 id=494 data-nosnippet>494</a><span class="doccomment">/// Send the ROUTER routing (identity) frame for a worker reply under `ZMQ_ROUTER_MANDATORY`
+<a href=#495 id=495 data-nosnippet>495</a>/// (KNOWN_ISSUES D-22). Returns `Ok(true)` when the worker routed and the caller may stream the
+<a href=#496 id=496 data-nosnippet>496</a>/// rest of the reply; `Ok(false)` when the worker was unroutable (`EHOSTUNREACH`) — the caller MUST
+<a href=#497 id=497 data-nosnippet>497</a>/// emit nothing further for this reply and `continue`. A rejected routing frame is never *started*
+<a href=#498 id=498 data-nosnippet>498</a>/// as a multipart (verified empirically against libzmq 4.3.5), so skipping the reply's remaining
+<a href=#499 id=499 data-nosnippet>499</a>/// frames leaves the socket cleanly aligned at message-start — no desync. The drop is counted and
+<a href=#500 id=500 data-nosnippet>500</a>/// rate-limit-logged here so it is never silent (the D-22 gap DESIGN_PRINCIPLES forbids) and never
+<a href=#501 id=501 data-nosnippet>501</a>/// a per-request log-DoS (D-11). Any *other* send error is a genuine fault and propagates
+<a href=#502 id=502 data-nosnippet>502</a>/// (fail-fast → manager aborts the thread → external restart), consistent with the rest of the
+<a href=#503 id=503 data-nosnippet>503</a>/// dispatch loop.
+<a href=#504 id=504 data-nosnippet>504</a></span><span class="kw">fn </span>route_worker_frame(
+<a href=#505 id=505 data-nosnippet>505</a>  sock: <span class="kw-2">&amp;</span>zmq::Socket,
+<a href=#506 id=506 data-nosnippet>506</a>  identity: zmq::Message,
+<a href=#507 id=507 data-nosnippet>507</a>  identity_str: <span class="kw-2">&amp;</span>str,
+<a href=#508 id=508 data-nosnippet>508</a>  unroutable_log: <span class="kw-2">&amp;mut </span>server::RateLimitedLog,
+<a href=#509 id=509 data-nosnippet>509</a>) -&gt; <span class="prelude-ty">Result</span>&lt;bool, zmq::Error&gt; {
+<a href=#510 id=510 data-nosnippet>510</a>  <span class="kw">match </span>sock.send(identity, SNDMORE) {
+<a href=#511 id=511 data-nosnippet>511</a>    <span class="prelude-val">Ok</span>(()) =&gt; <span class="prelude-val">Ok</span>(<span class="bool-val">true</span>),
+<a href=#512 id=512 data-nosnippet>512</a>    <span class="prelude-val">Err</span>(zmq::Error::EHOSTUNREACH) =&gt; {
+<a href=#513 id=513 data-nosnippet>513</a>      <span class="kw">if let </span><span class="prelude-val">Some</span>(n) = unroutable_log.record() {
+<a href=#514 id=514 data-nosnippet>514</a>        <span class="macro">warn!</span>(
+<a href=#515 id=515 data-nosnippet>515</a>          <span class="string">"ventilator: {n} reply/dispatch(es) dropped — worker unroutable at send time \
+<a href=#516 id=516 data-nosnippet>516</a>           (EHOSTUNREACH) [latest: {identity_str:?}]; no work lost, task stays queued (rate-limited)"
+<a href=#517 id=517 data-nosnippet>517</a>        </span>);
+<a href=#518 id=518 data-nosnippet>518</a>      }
+<a href=#519 id=519 data-nosnippet>519</a>      <span class="prelude-val">Ok</span>(<span class="bool-val">false</span>)
+<a href=#520 id=520 data-nosnippet>520</a>    },
+<a href=#521 id=521 data-nosnippet>521</a>    <span class="prelude-val">Err</span>(e) =&gt; <span class="prelude-val">Err</span>(e),
+<a href=#522 id=522 data-nosnippet>522</a>  }
+<a href=#523 id=523 data-nosnippet>523</a>}
+</code></pre></div></section></main></body></html>
