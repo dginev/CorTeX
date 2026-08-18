@@ -16,8 +16,16 @@ version = 2
 # crates are denied by default under advisories schema v2.
 yanked = "deny"
 # Add `"RUSTSEC-YYYY-NNNN"` here (with a comment justifying it) only when an
-# advisory is reviewed and accepted as not-applicable. Currently none.
-ignore = []
+# advisory is reviewed and accepted as not-applicable.
+ignore = [
+  # RUSTSEC-2026-0258 — h2 0.3.27 "unbounded empty DATA frames" (LOW severity).
+  # Transitive-only, and NOT fixable by a bump: the patch lives in h2 v0.4.16 (the
+  # hyper-1.x line), while our tree is h2 0.3.27 <- hyper 0.14.32 <- rocket_http 0.5.1
+  # <- rocket 0.5.1. Rocket 0.5.x pins hyper ^0.14 (=> h2 ^0.3), and 0.3.27 is already
+  # the terminal 0.3.x (no back-ported fix), so `cargo update -p h2` is a no-op. Clears
+  # itself when Rocket ships a hyper-1.x release — tracked as POSSIBLE_UPGRADES X-14.
+  "RUSTSEC-2026-0258",
+]
 
 [licenses]
 version = 2
