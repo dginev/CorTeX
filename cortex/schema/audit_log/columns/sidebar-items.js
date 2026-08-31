@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["action","actor","at","details","id","outcome","star","target"]};

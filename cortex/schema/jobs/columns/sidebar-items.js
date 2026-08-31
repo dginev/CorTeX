@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["actor","created_at","id","kind","message","params","progress_current","progress_total","result","star","status","updated_at","uuid"]};

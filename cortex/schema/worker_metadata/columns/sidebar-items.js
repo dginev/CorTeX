@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["first_seen","id","last_dispatched_task_id","last_returned_task_id","name","service_id","session_seen","star","time_last_dispatch","time_last_return","total_dispatched","total_returned"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["api_historical_stats","prune","retention_page","routes"],"struct":["HistoricalStatsDto","PruneForm"]};
