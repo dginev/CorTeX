@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["complex","description","id","inputconverter","inputformat","lease_timeout_seconds","name","outputformat","public_id","star","version"]};
