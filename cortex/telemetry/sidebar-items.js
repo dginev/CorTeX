@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PHASES"],"fn":["aggregate","percentiles","read_telemetry_json","summarize"],"struct":["MathStats","OutcomeWall","Percentiles","RssBuckets","TailStats","TelemetryRecord","TelemetrySummary"]};
