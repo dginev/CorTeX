@@ -78,6 +78,7 @@
     </form>
     {% endif %}
 
+    {% if not global.sandbox_parent %}{# a sandbox is a frozen snapshot: extend its parent instead #}
     <form method="post" action="/corpus/{{global.corpus_name_uri}}/extend">
       <span class="action-label action-title">Re-scan corpus path</span>
       <div class="action-control action-stack">
@@ -85,6 +86,7 @@
         <button type="submit" class="btn-primary">Extend</button>
       </div>
     </form>
+    {% endif %}
 
     {% if services and services | length > 0 %}
     <form method="post" action="/corpus/{{global.corpus_name_uri}}/sandbox" class="action-section">

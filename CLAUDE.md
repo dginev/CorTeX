@@ -57,6 +57,11 @@ Active branch: **`main`** (the `productize-2026` sprint branch was merged and de
   page (`concerns::defer_cold_slice`). The old `cached/worker.rs` cache daemon, the `redis` crate,
   and the dead `CacheConfig` are gone. **The frontend boots without Redis.** (The thin uncached proxy
   formerly at `src/frontend/cached/` was renamed to `src/frontend/render.rs`.)
+- **A path names ONE root corpus; sandboxes share it** (migration `…2026-10-05-120000`). A sandbox
+  (`parent_corpus_id` set) references its parent's `path` in place, so `path` is unique only among
+  roots (`corpora_root_path_key`) and `Corpus::find_by_path` returns the root, never a sandbox.
+  Sandboxes are frozen snapshots: extend refuses them (`409` / importer error). Never key a write or
+  delete on `entry`/`path` alone — scope it by `corpus_id` (KNOWN_ISSUES F-8..F-10).
 - **CWD-coupled:** `load_config()` reads `config.json` from the CWD (panics if missing), and
   `Rocket.toml`/`templates/`/`public/` are CWD-relative — **run binaries from the repo root.**
 - **The dispatcher panics on purpose** (mutex poisoning → process abort → external restart). Don't

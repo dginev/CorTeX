@@ -32,7 +32,7 @@ fn mock_round_trip() {
 
   let add_corpus_result = test_backend.add(&NewCorpus {
     name: corpus_name.to_string(),
-    path: "tests/data/".to_string(),
+    path: format!("/tmp/{corpus_name}/"),
     complex: true,
     description: String::new(),
   });

@@ -105,6 +105,11 @@ path = "tests/corpora_test.rs"
 harness = false
 
 [[test]]
+name = "sandbox_layout_test"
+path = "tests/sandbox_layout_test.rs"
+harness = false
+
+[[test]]
 name = "settings_test"
 path = "tests/settings_test.rs"
 harness = false

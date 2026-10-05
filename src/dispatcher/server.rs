@@ -414,27 +414,38 @@ pub fn get_service(service_name: &str, services: &ServiceCache) -> Option<Servic
 /// Memoised getter for a corpus's sandbox id, populating the shared [`SandboxCache`] from the
 /// backend on a miss (the ventilator's DB-holding counterpart to [`get_sandbox_id`]). One lookup
 /// per `corpus_id` ever dispatched — bounded by the corpus count, not the task count.
+///
+/// Fails closed: a failed lookup is **not** cached and yields `None` (unknown), so the sink derives
+/// no result path and leaves the task Queued for the reaper; the retry re-attempts the lookup.
+/// Memoising a failure as "ordinary" would route a sandbox's results over the parent's published
+/// archives for the dispatcher's lifetime.
 pub fn get_sync_sandbox_id(
   corpus_id: i32,
   sandboxes: &SandboxCache,
   backend: &mut Backend,
-) -> Option<i32> {
-  *sandboxes
-    .entry(corpus_id)
-    .or_insert_with(|| {
-      crate::models::Corpus::find_by_id(corpus_id, &mut backend.connection)
-        .ok()
-        .and_then(|corpus| corpus.sandbox_id())
-    })
-    .value()
+) -> Option<Option<i32>> {
+  if let Some(known) = get_sandbox_id(corpus_id, sandboxes) {
+    return Some(known);
+  }
+  match crate::models::Corpus::find_by_id(corpus_id, &mut backend.connection) {
+    Ok(corpus) => {
+      let sandbox_id = corpus.sandbox_id();
+      sandboxes.insert(corpus_id, sandbox_id);
+      Some(sandbox_id)
+    },
+    Err(error) => {
+      warn!(corpus_id, %error, "ventilator: corpus sandbox lookup failed; left unknown");
+      None
+    },
+  }
 }
 
 /// Getter for a corpus's sandbox id from the shared [`SandboxCache`], with no DB access — the
-/// sink's read on the result path. An absent entry yields `None` (treat as an ordinary corpus); the
-/// ventilator always memoises a task's corpus on dispatch, before its result can return, so the
-/// entry is present by the time the sink looks.
-pub fn get_sandbox_id(corpus_id: i32, sandboxes: &SandboxCache) -> Option<i32> {
-  sandboxes.get(&corpus_id).and_then(|entry| *entry.value())
+/// sink's read on the result path. `Some(None)` is an ordinary corpus, `Some(Some(id))` a sandbox,
+/// and `None` **unknown** (the lookup failed, or the result outlived a dispatcher restart): the
+/// sink then writes nothing and leaves the task Queued, never guessing the parent's archive name.
+pub fn get_sandbox_id(corpus_id: i32, sandboxes: &SandboxCache) -> Option<Option<i32>> {
+  sandboxes.get(&corpus_id).map(|entry| *entry.value())
 }
 
 #[cfg(test)]
@@ -679,5 +690,36 @@ mod tests {
     assert_eq!(reports[0].task.id, 2);
     // The in-flight set is fully drained.
     assert_eq!(progress.len(), 0);
+  }
+
+  #[test]
+  fn a_failed_sandbox_lookup_is_not_cached_as_an_ordinary_corpus() {
+    // A corpus id the DB can't resolve stands in for any lookup failure. Caching it as "ordinary"
+    // would route a sandbox's results to the parent's published `<service>.zip` for the
+    // dispatcher's lifetime.
+    let sandboxes = SandboxCache::new();
+    let mut backend = crate::backend::testdb();
+    let _ = get_sync_sandbox_id(i32::MAX, &sandboxes, &mut backend);
+    assert!(
+      !sandboxes.contains_key(&i32::MAX),
+      "an unresolved corpus must stay uncached (unknown), not be memoised as ordinary"
+    );
+  }
+
+  #[test]
+  fn the_sink_distinguishes_an_unknown_corpus_from_an_ordinary_one() {
+    // Unknown (e.g. a result that outlived a dispatcher restart) must not read as "ordinary": that
+    // would write a sandbox's result over the parent's published archive. `None` = unknown, so the
+    // sink derives no path and leaves the task Queued for the reaper.
+    let sandboxes = SandboxCache::new();
+    sandboxes.insert(1, None);
+    sandboxes.insert(2, Some(2));
+    assert_eq!(get_sandbox_id(1, &sandboxes), Some(None), "cached ordinary");
+    assert_eq!(
+      get_sandbox_id(2, &sandboxes),
+      Some(Some(2)),
+      "cached sandbox"
+    );
+    assert_eq!(get_sandbox_id(3, &sandboxes), None, "unknown");
   }
 }

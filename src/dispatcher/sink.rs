@@ -409,10 +409,12 @@ impl Sink {
                 } else {
                   // Derive the result path (cheap, no I/O): `<entry-dir>/<service>.zip`, or a
                   // sandbox-scoped name when this task's corpus is a sandbox (lock-free cache read,
-                  // memoised by the ventilator on dispatch — F-6).
-                  let sandbox_id = server::get_sandbox_id(task.corpus_id, sandboxes_arc);
-                  let recv_path_opt =
-                    helpers::result_archive_path(&task.entry, &service.name, sandbox_id);
+                  // memoised by the ventilator on dispatch — F-6). An unknown corpus yields no
+                  // path (fail closed): never guess the parent's published archive name.
+                  let recv_path_opt = server::get_sandbox_id(task.corpus_id, sandboxes_arc)
+                    .and_then(|sandbox_id| {
+                      helpers::result_archive_path(&task.entry, &service.name, sandbox_id)
+                    });
 
                   // Hard size cap (disk protection): sum the data frames; an over-cap result is
                   // rejected (Invalid) without being written. The whole multipart message is
@@ -470,7 +472,8 @@ impl Sink {
                       warn!(
                         task_id = task.id,
                         entry = ?task.entry,
-                        "sink: could not derive a result path; leaving Queued"
+                        "sink: could not derive a result path (bad entry or unknown corpus); \
+                         leaving Queued"
                       );
                     },
                   }

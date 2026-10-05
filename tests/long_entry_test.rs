@@ -20,7 +20,7 @@ fn long_entry_is_storable_without_truncation() {
   // Seed a real corpus + service so the task FKs (Arm 3) resolve (find-or-create, idempotent).
   NewCorpus {
     name: String::from("long_entry_corpus"),
-    path: String::new(),
+    path: String::from("/tmp/long_entry_corpus"),
     complex: false,
     description: String::new(),
   }

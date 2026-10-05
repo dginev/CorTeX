@@ -14,6 +14,7 @@
 use std::collections::{HashMap, HashSet};
 
 use diesel::pg::PgConnection;
+use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use rocket::form::Form;
 use rocket::http::Status;
 use rocket::response::Redirect;
@@ -234,8 +235,9 @@ pub struct ImportRequest {
 /// Registers a corpus and starts an in-process import job; returns `202 Accepted` + the job handle.
 /// Agents and humans poll `GET /api/jobs/<uuid>` (or the progress page) for completion.
 /// **Token-gated** via the [`Actor`] guard (creating a corpus + a filesystem import job is a
-/// consequential write); `401` without a valid token, `409` if the corpus name already exists,
-/// `422` if the `path` is not a readable directory on the server.
+/// consequential write); `401` without a valid token, `409` if the corpus name already exists or a
+/// root corpus already owns the `path`, `422` if the `path` is not a readable directory on the
+/// server.
 #[rocket_okapi::openapi(tag = "Corpora")]
 #[post("/api/corpora", format = "json", data = "<request>")]
 pub fn import_corpus(
@@ -260,7 +262,8 @@ pub fn import_corpus(
 }
 
 /// Registers a corpus and spawns its import job, returning the job uuid. The shared core of the
-/// agent endpoint and the human form. `409` if the name already exists; `422` if the `path` is not
+/// agent endpoint and the human form. `409` if the name already exists or a root corpus already
+/// owns the `path` (`corpora_root_path_key`); `422` if the `path` is not
 /// a readable directory on the server (pre-flighted so a doomed import is never started).
 #[allow(clippy::too_many_arguments)]
 fn start_import(
@@ -298,7 +301,11 @@ fn start_import(
     description,
   }
   .create(&mut connection)
-  .map_err(|_| Status::InternalServerError)?;
+  .map_err(|error| match error {
+    // A root corpus already owns this path (`corpora_root_path_key`): a `409`, like a name clash.
+    DieselError::DatabaseError(DatabaseErrorKind::UniqueViolation, _) => Status::Conflict,
+    _ => Status::InternalServerError,
+  })?;
   let corpus =
     Corpus::find_by_name(&name, &mut connection).map_err(|_| Status::InternalServerError)?;
   drop(connection);
@@ -331,7 +338,7 @@ pub struct ImportForm {
 /// The human twin of [`import_corpus`]: the admin dashboard's "Add a corpus" form. **Gated by the
 /// signed-in [`AdminSession`] cookie** (no token typed in the form — an anonymous browser is
 /// redirected to sign-in); registers + imports the corpus off the request path and redirects to
-/// `/jobs`. `409` if the name is taken.
+/// `/jobs`. `409` if the name or the root path is taken.
 // The Err variant is a re-rendered form `Template` (the friendly-error path), which is chunky —
 // fine for a one-shot request handler.
 #[allow(clippy::result_large_err)]
@@ -362,8 +369,9 @@ pub fn import_corpus_human(
     Err(status) => {
       let message = match status.code {
         409 => format!(
-          "A corpus named “{}” already exists — choose a different name.",
-          form.name
+          "A corpus named “{}” or a corpus at “{}” already exists — choose a different name or \
+           path.",
+          form.name, form.path
         ),
         422 => format!(
           "“{}” is not a readable directory on the server — check the path.",
@@ -920,7 +928,8 @@ fn run_sandbox(
 
 /// Extends an existing corpus with newly-arrived entries; starts an in-process job and returns
 /// `202 Accepted` + the job handle. **Token-gated** via the [`Actor`] guard; `401` without a valid
-/// token, `404` if the corpus is unknown.
+/// token, `404` if the corpus is unknown, `409` if it is a sandbox (a frozen snapshot — extend its
+/// parent), `422` if its source path is unreadable.
 #[rocket_okapi::openapi(tag = "Corpora")]
 #[post("/api/corpora/<name>/extend")]
 pub fn extend_corpus(
@@ -945,6 +954,11 @@ fn start_extend(
 ) -> Result<Uuid, Status> {
   let mut connection = pool.get().map_err(|_| Status::ServiceUnavailable)?;
   let corpus = Corpus::find_by_name(name, &mut connection).map_err(|_| Status::NotFound)?;
+  // A sandbox shares its parent's path: extending it would import the parent's whole tree into it.
+  // Refuse up front rather than spawn a job the importer would fail anyway.
+  if corpus.parent_corpus_id.is_some() {
+    return Err(Status::Conflict);
+  }
   // Pre-flight the corpus source path (extend re-scans it for new entries). If the data mount is
   // gone/unreadable, fail transparently with `422` instead of spawning a job that silently finds
   // nothing (`glob` over a missing dir yields an empty set, not an error) and reports "0 new" — the
@@ -970,7 +984,7 @@ fn start_extend(
 
 /// The human twin of [`extend_corpus`]: the corpus screen's "Re-scan for new entries" button.
 /// **Gated by the signed-in [`AdminSession`] cookie** (anonymous → sign-in); spawns the extend job
-/// and redirects to `/jobs`. `404` if the corpus is unknown.
+/// and redirects to `/jobs`. `404` if the corpus is unknown, `409` if it is a sandbox.
 #[post("/corpus/<name>/extend")]
 pub fn extend_corpus_human(
   name: &str,
