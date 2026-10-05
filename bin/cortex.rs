@@ -1831,6 +1831,15 @@ fn run_delete_corpus(name: String, yes: bool) {
       corpus.name
     );
     println!("  {task_count} tasks (historical run tallies are immutable and preserved).");
+    match corpus.sandboxes(&mut backend.connection) {
+      Ok(sandboxes) if sandboxes.is_empty() => {},
+      Ok(sandboxes) => println!(
+        "  and its {} sandbox(es), with all their tasks: {}",
+        sandboxes.len(),
+        sandboxes.join(", ")
+      ),
+      Err(error) => println!("  and its sandboxes, if any (could not list them: {error})"),
+    }
     println!("Pass --yes to delete.");
     return;
   }

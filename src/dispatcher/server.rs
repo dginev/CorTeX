@@ -416,7 +416,8 @@ pub fn get_service(service_name: &str, services: &ServiceCache) -> Option<Servic
 /// per `corpus_id` ever dispatched — bounded by the corpus count, not the task count.
 ///
 /// Fails closed: a failed lookup is **not** cached and yields `None` (unknown), so the sink derives
-/// no result path and leaves the task Queued for the reaper; the retry re-attempts the lookup.
+/// no result path and hands the task back to the in-flight set, where the reaper retries it
+/// (re-attempting this lookup) or dead-letters it.
 /// Memoising a failure as "ordinary" would route a sandbox's results over the parent's published
 /// archives for the dispatcher's lifetime.
 pub fn get_sync_sandbox_id(
@@ -442,8 +443,8 @@ pub fn get_sync_sandbox_id(
 
 /// Getter for a corpus's sandbox id from the shared [`SandboxCache`], with no DB access — the
 /// sink's read on the result path. `Some(None)` is an ordinary corpus, `Some(Some(id))` a sandbox,
-/// and `None` **unknown** (the lookup failed, or the result outlived a dispatcher restart): the
-/// sink then writes nothing and leaves the task Queued, never guessing the parent's archive name.
+/// and `None` **unknown** (the lookup failed): the sink then writes nothing and hands the task
+/// back to the reaper, never guessing the parent's archive name.
 pub fn get_sandbox_id(corpus_id: i32, sandboxes: &SandboxCache) -> Option<Option<i32>> {
   sandboxes.get(&corpus_id).map(|entry| *entry.value())
 }
@@ -708,9 +709,9 @@ mod tests {
 
   #[test]
   fn the_sink_distinguishes_an_unknown_corpus_from_an_ordinary_one() {
-    // Unknown (e.g. a result that outlived a dispatcher restart) must not read as "ordinary": that
-    // would write a sandbox's result over the parent's published archive. `None` = unknown, so the
-    // sink derives no path and leaves the task Queued for the reaper.
+    // Unknown (the ventilator's lookup failed) must not read as "ordinary": that would write a
+    // sandbox's result over the parent's published archive. `None` = unknown, so the sink derives
+    // no path and hands the task back to the reaper.
     let sandboxes = SandboxCache::new();
     sandboxes.insert(1, None);
     sandboxes.insert(2, Some(2));

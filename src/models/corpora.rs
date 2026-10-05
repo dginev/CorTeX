@@ -131,6 +131,15 @@ impl Corpus {
     Ok(services)
   }
 
+  /// Names of the sandboxes carved from this corpus — deleted with it (FK cascade).
+  pub fn sandboxes(&self, connection: &mut PgConnection) -> Result<Vec<String>, Error> {
+    corpora::table
+      .filter(corpora::parent_corpus_id.eq(self.id))
+      .select(corpora::name)
+      .order(corpora::name)
+      .load(connection)
+  }
+
   /// Deletes a corpus and **all** its dependent rows — the `log_*` messages, the tasks, and the
   /// corpus registration — consuming the object. Runs in a single transaction so a crash mid-delete
   /// can't leave a half-deleted corpus (crash-consistency, `docs/DESIGN_PRINCIPLES.md`).
@@ -140,9 +149,16 @@ impl Corpus {
   /// explicitly **before** the tasks or they orphan — this is why deletion lives in one complete
   /// primitive rather than a bare `DELETE FROM corpora` (the CLAUDE.md "deleting a corpus orphans
   /// log_* rows" hazard, now closed at the source so every caller is safe).
+  ///
+  /// Deleting a **root** also deletes its sandboxes (and their tasks and logs) via the
+  /// `parent_corpus_id` FK cascade — list them first with [`Corpus::sandboxes`].
   pub fn destroy(self, connection: &mut PgConnection) -> Result<usize, Error> {
     use crate::schema::{log_errors, log_fatals, log_infos, log_invalids, log_warnings};
     let corpus_id = self.id;
+    // A root's init task may sit under a placeholder corpus id (`examples/tex_to_html_import.rs`
+    // queues it before `InitWorker` registers the corpus), so roots also clear it by path — safe
+    // since a path names one root. Never for a sandbox: it shares its parent's path.
+    let root_path = self.parent_corpus_id.is_none().then_some(self.path);
     connection.transaction(|t_connection| {
       // The task ids of this corpus, rebuilt per delete (the subquery is consumed by `eq_any`).
       let task_ids = || {
@@ -160,9 +176,13 @@ impl Corpus {
         .execute(t_connection)?;
       delete(log_invalids::table.filter(log_invalids::task_id.eq_any(task_ids())))
         .execute(t_connection)?;
+      if let Some(path) = &root_path {
+        delete(tasks::table)
+          .filter(tasks::entry.eq(path))
+          .filter(tasks::service_id.eq(1))
+          .execute(t_connection)?;
+      }
       // all tasks of this corpus, its init task included (cascades to historical_tasks via its FK).
-      // Never delete by `entry`: a sandbox shares its parent's path, so an entry-keyed delete would
-      // also remove the parent's rows.
       delete(tasks::table)
         .filter(tasks::corpus_id.eq(corpus_id))
         .execute(t_connection)?;

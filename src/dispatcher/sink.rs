@@ -471,10 +471,18 @@ impl Sink {
                     None => {
                       warn!(
                         task_id = task.id,
+                        corpus_id = task.corpus_id,
                         entry = ?task.entry,
                         "sink: could not derive a result path (bad entry or unknown corpus); \
-                         leaving Queued"
+                         result dropped, task back in flight for the reaper"
                       );
+                      // Back into the in-flight set (popped above), so the reaper retries it —
+                      // re-dispatch re-runs the sandbox lookup — or dead-letters it as Fatal once
+                      // the retry budget is spent. Never stranded Queued until a restart.
+                      progress_queue_arc.insert(helpers::TaskProgress {
+                        task,
+                        ..task_progress
+                      });
                     },
                   }
                 }
