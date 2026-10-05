@@ -10,7 +10,9 @@ use cortex::models::{Corpus, NewCorpus};
 use cortex::schema::{corpora, tasks};
 use diesel::delete;
 use diesel::prelude::*;
+use std::collections::HashSet;
 use std::fs;
+use std::path::PathBuf;
 
 fn assert_files(files: &[&str]) -> Result<(), std::io::Error> {
   for file in files {
@@ -21,6 +23,22 @@ fn assert_files(files: &[&str]) -> Result<(), std::io::Error> {
     fs::remove_file(file)?;
   }
   Ok(())
+}
+
+/// A private copy of `tests/data` under `/tmp`, one per test: each corpus gets its own root path
+/// (`corpora_root_path_key`), and the complex import's unpacking never writes into the repo or
+/// races a sibling test.
+fn fixture_copy(tag: &str) -> PathBuf {
+  let root = PathBuf::from(format!("/tmp/cortex_importer_{tag}_{}", std::process::id()));
+  let _ = fs::remove_dir_all(&root);
+  let copied = std::process::Command::new("cp")
+    .arg("-r")
+    .arg("tests/data")
+    .arg(&root)
+    .status()
+    .expect("spawn cp");
+  assert!(copied.success(), "copy the tests/data fixture to {root:?}");
+  root
 }
 
 fn assert_dirs(dirs: &[&str]) -> Result<(), std::io::Error> {
@@ -43,9 +61,10 @@ fn can_import_simple() {
     .filter(corpora::name.eq(name))
     .execute(&mut test_backend.connection);
   assert!(clean_slate.is_ok());
+  let root = fixture_copy("simple");
   let new_corpus = NewCorpus {
     name: name.to_string(),
-    path: "tests/data/".to_string(),
+    path: format!("{}/", root.display()),
     complex: false,
     description: String::new(),
   };
@@ -61,7 +80,8 @@ fn can_import_simple() {
   let mut importer = Importer {
     corpus,
     backend: backend::testdb(),
-    ..Importer::default()
+    cwd: Importer::cwd(),
+    active_prefixes: HashSet::new(),
   };
 
   println!("-- Testing simple import");
@@ -73,6 +93,7 @@ fn can_import_simple() {
     .filter(tasks::corpus_id.eq(corpus_id))
     .execute(&mut test_backend.connection);
   assert!(clean_slate_post.is_ok());
+  let _ = fs::remove_dir_all(&root);
 }
 
 #[test]
@@ -110,7 +131,8 @@ fn import_skips_unreadable_paths_instead_of_aborting() {
   let mut importer = Importer {
     corpus,
     backend: backend::testdb(),
-    ..Importer::default()
+    cwd: Importer::cwd(),
+    active_prefixes: HashSet::new(),
   };
 
   let imported = importer
@@ -167,7 +189,8 @@ fn import_walk_terminates_on_a_symlink_loop() {
   let mut importer = Importer {
     corpus,
     backend: backend::testdb(),
-    ..Importer::default()
+    cwd: Importer::cwd(),
+    active_prefixes: HashSet::new(),
   };
 
   // The key property: this RETURNS (does not hang) — the depth bound terminates the loop.
@@ -209,7 +232,8 @@ fn import_does_not_panic_on_glob_metacharacter_path() {
   let mut importer = Importer {
     corpus,
     backend: backend::testdb(),
-    ..Importer::default()
+    cwd: Importer::cwd(),
+    active_prefixes: HashSet::new(),
   };
 
   let result = importer.process();
@@ -233,9 +257,10 @@ fn can_import_complex() {
     .execute(&mut test_backend.connection);
   assert!(clean_slate.is_ok());
 
+  let root = fixture_copy("complex");
   let new_corpus = NewCorpus {
     name: name.to_string(),
-    path: "tests/data/".to_string(),
+    path: format!("{}/", root.display()),
     complex: true,
     description: String::new(),
   };
@@ -248,7 +273,8 @@ fn can_import_complex() {
   let mut importer = Importer {
     corpus: corpus.clone(),
     backend: backend::testdb(),
-    ..Importer::default()
+    cwd: Importer::cwd(),
+    active_prefixes: HashSet::new(),
   };
 
   println!("-- Testing complex import");
@@ -257,22 +283,27 @@ fn can_import_complex() {
   let mut repeat_importer = Importer {
     corpus,
     backend: backend::testdb(),
-    ..Importer::default()
+    cwd: Importer::cwd(),
+    active_prefixes: HashSet::new(),
   };
 
   println!("-- Testing repeated complex import (successful and no-op)");
   assert!(repeat_importer.process().is_ok());
 
-  let files_removed_ok = assert_files(&[
-    "tests/data/9107/hep-lat9107001/hep-lat9107001.zip",
-    "tests/data/9107/hep-lat9107002/hep-lat9107002.zip",
+  let under_root = |rel: &[&str]| -> Vec<String> {
+    rel
+      .iter()
+      .map(|r| root.join(r).to_string_lossy().into_owned())
+      .collect()
+  };
+  let files = under_root(&[
+    "9107/hep-lat9107001/hep-lat9107001.zip",
+    "9107/hep-lat9107002/hep-lat9107002.zip",
   ]);
+  let files_removed_ok = assert_files(&files.iter().map(String::as_str).collect::<Vec<_>>());
   assert!(files_removed_ok.is_ok());
-  let dirs_removed_ok = assert_dirs(&[
-    "tests/data/9107/hep-lat9107001",
-    "tests/data/9107/hep-lat9107002",
-    "tests/data/9107",
-  ]);
+  let dirs = under_root(&["9107/hep-lat9107001", "9107/hep-lat9107002", "9107"]);
+  let dirs_removed_ok = assert_dirs(&dirs.iter().map(String::as_str).collect::<Vec<_>>());
   assert!(dirs_removed_ok.is_ok());
 
   // Clean slate
@@ -280,6 +311,7 @@ fn can_import_complex() {
     .filter(tasks::corpus_id.eq(corpus_id))
     .execute(&mut test_backend.connection);
   assert!(clean_slate_post.is_ok());
+  let _ = fs::remove_dir_all(&root);
 }
 
 #[test]
@@ -294,7 +326,7 @@ fn find_by_name_is_case_insensitive_and_preserves_stored_case() {
   test_backend
     .add(&NewCorpus {
       name: name.to_string(),
-      path: "tests/data/".to_string(),
+      path: "/tmp/cortex_importer_case_test/".to_string(),
       complex: false,
       description: String::new(),
     })

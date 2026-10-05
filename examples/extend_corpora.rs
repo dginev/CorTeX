@@ -49,7 +49,12 @@ fn main() {
       },
     }
   } else {
-    backend.corpora()
+    // Root corpora only: a sandbox is a frozen snapshot of its parent (the importer refuses it).
+    backend
+      .corpora()
+      .into_iter()
+      .filter(|corpus| corpus.parent_corpus_id.is_none())
+      .collect()
   };
 
   let mut failures = 0usize;

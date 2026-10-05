@@ -328,7 +328,7 @@ fn worker_fleet_api_and_screen() {
     // A real corpus for the task's FK (Arm 3 tasks -> corpora), seeded find-or-create.
     db.add(&NewCorpus {
       name: String::from("deletable_corpus_xyz"),
-      path: String::new(),
+      path: String::from("/tmp/deletable_corpus_xyz"),
       complex: false,
       description: String::from("to be deleted"),
     })

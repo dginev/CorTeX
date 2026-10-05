@@ -289,8 +289,18 @@ impl Importer {
   }
 
   /// Top-level corpus extension, performs a check for newly added documents and extracts+adds
-  /// them to the existing corpus tasks
+  /// them to the existing corpus tasks. Refuses a sandbox: it is a frozen snapshot that shares its
+  /// parent's path, so extending it would import the parent's whole tree into it.
   pub fn extend_corpus(&mut self) -> Result<(), Box<dyn Error>> {
+    if let Some(parent_id) = self.corpus.parent_corpus_id {
+      return Err(
+        format!(
+          "corpus {:?} is a sandbox of corpus id {parent_id}; extend its parent instead",
+          self.corpus.name
+        )
+        .into(),
+      );
+    }
     if self.corpus.complex {
       // Complex setup has an unpack step:
       self.unpack_extend()?;

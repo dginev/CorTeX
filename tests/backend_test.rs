@@ -24,7 +24,7 @@ fn seed_corpus_service(connection: &mut PgConnection) -> (Corpus, Service) {
   let service_name = format!("backend_test_svc_{tag}");
   NewCorpus {
     name: corpus_name.clone(),
-    path: String::new(),
+    path: format!("/tmp/{corpus_name}"),
     complex: false,
     description: String::from("backend_test fixture"),
   }

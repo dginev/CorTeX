@@ -75,10 +75,14 @@ impl Corpus {
       .count()
       .get_result(connection)
   }
-  /// ORM-like until diesel.rs introduces finders for more fields
+  /// Finds the **root** corpus registered at `path_query`. Sandboxes share their parent's path, so
+  /// they are excluded; the partial unique index `corpora_root_path_key` guarantees at most one
+  /// root per path, making the lookup deterministic.
   pub fn find_by_path(path_query: &str, connection: &mut PgConnection) -> Result<Self, Error> {
-    use crate::schema::corpora::path;
-    corpora::table.filter(path.eq(path_query)).first(connection)
+    corpora::table
+      .filter(corpora::path.eq(path_query))
+      .filter(corpora::parent_corpus_id.is_null())
+      .first(connection)
   }
   /// Returns all registered corpora, ordered by name.
   pub fn all(connection: &mut PgConnection) -> Result<Vec<Self>, Error> {
@@ -139,7 +143,6 @@ impl Corpus {
   pub fn destroy(self, connection: &mut PgConnection) -> Result<usize, Error> {
     use crate::schema::{log_errors, log_fatals, log_infos, log_invalids, log_warnings};
     let corpus_id = self.id;
-    let corpus_path = self.path;
     connection.transaction(|t_connection| {
       // The task ids of this corpus, rebuilt per delete (the subquery is consumed by `eq_any`).
       let task_ids = || {
@@ -157,14 +160,11 @@ impl Corpus {
         .execute(t_connection)?;
       delete(log_invalids::table.filter(log_invalids::task_id.eq_any(task_ids())))
         .execute(t_connection)?;
-      // all tasks for entries of this corpus (cascades to historical_tasks via its FK)
+      // all tasks of this corpus, its init task included (cascades to historical_tasks via its FK).
+      // Never delete by `entry`: a sandbox shares its parent's path, so an entry-keyed delete would
+      // also remove the parent's rows.
       delete(tasks::table)
         .filter(tasks::corpus_id.eq(corpus_id))
-        .execute(t_connection)?;
-      // the init task of this corpus
-      delete(tasks::table)
-        .filter(tasks::entry.eq(corpus_path))
-        .filter(tasks::service_id.eq(1))
         .execute(t_connection)?;
       // the corpus registration
       delete(corpora::table)
