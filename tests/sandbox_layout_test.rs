@@ -114,9 +114,11 @@ fn import_task_count(db: &mut Backend, corpus_id: i32) -> i64 {
 }
 
 /// The database itself enforces the layout: one ROOT corpus per path; a sandbox may share its
-/// parent's path but must point at a real parent, and goes away with it.
+/// parent's path but must point at a real parent, and goes away (with its tasks) when the parent is
+/// destroyed.
 fn root_paths_are_unique_and_sandboxes_hang_off_a_real_parent(_: &Client) {
   let names = [
+    "layout_unique_nested",
     "layout_unique_sandbox",
     "layout_unique_orphan",
     "layout_unique_twin",
@@ -134,24 +136,53 @@ fn root_paths_are_unique_and_sandboxes_hang_off_a_real_parent(_: &Client) {
     twin.is_err(),
     "a second ROOT corpus at an already-registered path must be refused by the database"
   );
-  add_sandbox(&mut db, "layout_unique_sandbox", path, parent.id)
+  let sandbox = add_sandbox(&mut db, "layout_unique_sandbox", path, parent.id)
     .expect("a sandbox may share its parent's path");
+  db.add(&NewTask {
+    service_id: 2,
+    corpus_id: sandbox.id,
+    status: 0,
+    entry: path.to_string(),
+  })
+  .expect("sandbox task");
+  // Carved from the sandbox, not the root: the cascade (and the delete preview) reach it too.
+  let nested =
+    add_sandbox(&mut db, "layout_unique_nested", path, sandbox.id).expect("a sandbox of a sandbox");
   let orphan = add_sandbox(&mut db, "layout_unique_orphan", path, i32::MAX);
   cleanup(&mut db, &["layout_unique_orphan"]);
   assert!(
     orphan.is_err(),
     "a sandbox must reference an existing parent corpus (FK)"
   );
-  diesel::delete(corpora::table.filter(corpora::id.eq(parent.id)))
-    .execute(&mut db.connection)
-    .expect("delete the parent");
+  let listed = parent
+    .sandboxes(&mut db.connection)
+    .expect("list sandboxes");
+  parent
+    .destroy(&mut db.connection)
+    .expect("destroy the parent");
   let survivor = Corpus::find_by_name("layout_unique_sandbox", &mut db.connection);
+  let nested_survivor = Corpus::find_by_name(&nested.name, &mut db.connection);
+  let sandbox_tasks: i64 = tasks::table
+    .filter(tasks::corpus_id.eq(sandbox.id))
+    .count()
+    .get_result(&mut db.connection)
+    .expect("count sandbox tasks");
   cleanup(&mut db, &names);
   let _ = std::fs::remove_dir_all(&root);
+  assert_eq!(
+    listed,
+    ["layout_unique_nested", "layout_unique_sandbox"],
+    "the delete preview lists the sandboxes that go with the parent"
+  );
   assert!(
     survivor.is_err(),
     "a sandbox is deleted with its parent, never left dangling"
   );
+  assert!(
+    nested_survivor.is_err(),
+    "a sandbox carved from a sandbox goes too"
+  );
+  assert_eq!(sandbox_tasks, 0, "the sandbox's tasks go with it");
 }
 
 /// Path lookup resolves the ROOT corpus, whatever the heap order of the rows sharing the path.
@@ -373,7 +404,12 @@ fn an_unplaceable_result_goes_back_to_the_reaper(_: &Client) {
   };
   let (unknown, ordinary) = (i64::from(i32::MAX) + 7, i64::from(i32::MAX) + 8);
   let in_flight = Arc::new(InFlightSet::new());
-  in_flight.insert(progress(unknown, i32::MAX - 1));
+  // Non-default lease bookkeeping, which the re-insert must keep (or the task never dead-letters).
+  in_flight.insert(TaskProgress {
+    retries: 1,
+    created_at: 1,
+    ..progress(unknown, i32::MAX - 1)
+  });
   in_flight.insert(progress(ordinary, i32::MAX - 2));
   let sandboxes = Arc::new(SandboxCache::new());
   sandboxes.insert(i32::MAX - 2, None);
@@ -433,7 +469,8 @@ fn an_unplaceable_result_goes_back_to_the_reaper(_: &Client) {
   let reported = done_rx
     .recv_timeout(Duration::from_secs(30))
     .map(|r| r.task.id);
-  let back_in_flight = in_flight.remove(unknown).is_some();
+  let still_in_flight = in_flight.len();
+  let back_in_flight = in_flight.remove(unknown).map(|p| (p.retries, p.created_at));
 
   let _ =
     diesel::delete(services::table.filter(services::name.eq(SERVICE))).execute(&mut db.connection);
@@ -443,9 +480,15 @@ fn an_unplaceable_result_goes_back_to_the_reaper(_: &Client) {
     Ok(ordinary),
     "only the placeable result is reported"
   );
-  assert!(
+  assert_eq!(
     back_in_flight,
-    "an unplaceable result's task must go back in flight for the reaper, not be stranded Queued"
+    Some((1, 1)),
+    "an unplaceable result's task must go back in flight for the reaper, retry count intact — \
+     not be stranded Queued"
+  );
+  assert_eq!(
+    still_in_flight, 1,
+    "a reported task must not go back in flight"
   );
 }
 

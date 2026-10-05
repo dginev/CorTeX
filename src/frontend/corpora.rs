@@ -1160,7 +1160,8 @@ fn run_activate(
 /// (an unauthenticated wipe of a corpus must not be possible — `401` without a valid token) and
 /// double-guarded: the caller must also echo the corpus name via `?confirm=<name>` to proceed
 /// (prevents accidental wipes; the UI confirms the same way). Returns 204 on success, 400 if the
-/// confirmation does not match, 404 if unknown.
+/// confirmation does not match, 404 if unknown. Every sandbox carved from the corpus (the corpora
+/// whose `parent` chain leads to it in `GET /api/corpora`) is deleted with it — FK cascade.
 #[rocket_okapi::openapi(tag = "Corpora")]
 #[delete("/api/corpora/<name>?<confirm>")]
 pub fn delete_corpus(
@@ -1365,8 +1366,7 @@ pub fn snapshot_tasks(
   ))
 }
 
-/// Removes a corpus's log messages (the `log_*` tables have no FK cascade), then its tasks and the
-/// corpus row itself.
+/// Deletes a corpus — its log messages, tasks, the corpus row, and every sandbox carved from it.
 fn delete_corpus_cascade(connection: &mut PgConnection, corpus: Corpus) -> Result<(), Status> {
   // `Corpus::destroy` is the complete, transactional deletion primitive (log_* + tasks + corpus,
   // atomic + orphan-free); the handler only maps its error to an HTTP status.
@@ -1495,6 +1495,11 @@ pub fn corpus_page(
   if let Some((parent, filter)) = sandbox_provenance(&corpus, &mut connection) {
     global.insert("sandbox_parent".to_string(), parent);
     global.insert("sandbox_filter".to_string(), filter);
+  }
+  // The sandboxes a delete takes with it (FK cascade), named in the delete form.
+  let sandboxes = corpus.sandboxes(&mut connection).unwrap_or_default();
+  if !sandboxes.is_empty() {
+    global.insert("corpus_sandboxes".to_string(), sandboxes.join(", "));
   }
   // Each activated service, enriched with its per-severity task counts (the same numbers the agent
   // `api_corpus` reports) so the corpus screen is a progress dashboard, not just a service list.

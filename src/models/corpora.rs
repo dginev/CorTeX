@@ -131,26 +131,37 @@ impl Corpus {
     Ok(services)
   }
 
-  /// Names of the sandboxes carved from this corpus — deleted with it (FK cascade).
+  /// Names of every sandbox carved from this corpus, directly or from one of its sandboxes — all
+  /// deleted with it (FK cascade).
   pub fn sandboxes(&self, connection: &mut PgConnection) -> Result<Vec<String>, Error> {
-    corpora::table
-      .filter(corpora::parent_corpus_id.eq(self.id))
-      .select(corpora::name)
-      .order(corpora::name)
-      .load(connection)
+    let (mut names, mut frontier) = (Vec::new(), vec![self.id]);
+    // ponytail: one query per carve depth; 32 levels cuts a parent cycle, which only a hand-edited
+    // `parent_corpus_id` could make.
+    for _ in 0..32 {
+      if frontier.is_empty() {
+        break;
+      }
+      let children: Vec<(i32, String)> = corpora::table
+        .filter(corpora::parent_corpus_id.eq_any(&frontier))
+        .select((corpora::id, corpora::name))
+        .load(connection)?;
+      frontier = children.iter().map(|(id, _)| *id).collect();
+      names.extend(children.into_iter().map(|(_, name)| name));
+    }
+    names.sort();
+    names.dedup();
+    Ok(names)
   }
 
   /// Deletes a corpus and **all** its dependent rows — the `log_*` messages, the tasks, and the
   /// corpus registration — consuming the object. Runs in a single transaction so a crash mid-delete
   /// can't leave a half-deleted corpus (crash-consistency, `docs/DESIGN_PRINCIPLES.md`).
   ///
-  /// The `log_*` tables have **no** foreign key to `tasks` (the only FK is
-  /// `historical_tasks.task_id → tasks ON DELETE CASCADE`), so their rows must be deleted
-  /// explicitly **before** the tasks or they orphan — this is why deletion lives in one complete
-  /// primitive rather than a bare `DELETE FROM corpora` (the CLAUDE.md "deleting a corpus orphans
-  /// log_* rows" hazard, now closed at the source so every caller is safe).
+  /// The database cascades `corpora → tasks → log_*` (FKs since migration `…140000`); this deletes
+  /// the logs and tasks explicitly anyway, in one audited transaction, rather than relying on a
+  /// bare `DELETE FROM corpora`.
   ///
-  /// Deleting a **root** also deletes its sandboxes (and their tasks and logs) via the
+  /// Deleting a corpus also deletes every sandbox carved from it (and their tasks and logs) via the
   /// `parent_corpus_id` FK cascade — list them first with [`Corpus::sandboxes`].
   pub fn destroy(self, connection: &mut PgConnection) -> Result<usize, Error> {
     use crate::schema::{log_errors, log_fatals, log_infos, log_invalids, log_warnings};

@@ -6,7 +6,7 @@
   </header>
 
   {% if global.deleted %}
-  <p class="flash-saved"><i class="fa fa-check-circle"></i>&nbsp;Corpus <strong>{{ global.deleted }}</strong> was deleted, along with all of its tasks and log messages.</p>
+  <p class="flash-saved"><i class="fa fa-check-circle"></i>&nbsp;Corpus <strong>{{ global.deleted }}</strong> was deleted, along with all of its tasks and log messages, and any sandboxes carved from it.</p>
   {% endif %}
 
   {% if corpora and corpora | length > 0 %}

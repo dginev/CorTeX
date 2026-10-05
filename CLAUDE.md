@@ -61,7 +61,9 @@ Active branch: **`main`** (the `productize-2026` sprint branch was merged and de
   (`parent_corpus_id` set) references its parent's `path` in place, so `path` is unique only among
   roots (`corpora_root_path_key`) and `Corpus::find_by_path` returns the root, never a sandbox.
   Sandboxes are frozen snapshots: extend refuses them (`409` / importer error). Never key a write or
-  delete on `entry`/`path` alone — scope it by `corpus_id` (KNOWN_ISSUES F-8..F-10).
+  delete on `entry`/`path` alone — scope it by `corpus_id` (KNOWN_ISSUES F-8..F-10). The one
+  exception: `Corpus::destroy` on a **root** clears the init task queued at its path (it may sit
+  under a placeholder corpus id); never for a sandbox.
 - **CWD-coupled:** `load_config()` reads `config.json` from the CWD (panics if missing), and
   `Rocket.toml`/`templates/`/`public/` are CWD-relative — **run binaries from the repo root.**
 - **The dispatcher panics on purpose** (mutex poisoning → process abort → external restart). Don't
