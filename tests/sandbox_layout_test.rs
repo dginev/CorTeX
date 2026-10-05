@@ -15,17 +15,29 @@
 //! cases and reports each PASS/FAIL (so a red run shows every gap at once), then `_exit`s non-zero
 //! on any failure (KNOWN_ISSUES L-1).
 
-use cortex::backend::{self, Backend, test_db_address};
+use cortex::backend::{self, Backend, build_pool, test_db_address};
+use cortex::dispatcher::server::{InFlightSet, SandboxCache, ServiceCache};
+use cortex::dispatcher::sink::Sink;
 use cortex::frontend::server::mount_api_with;
+use cortex::helpers::{TaskProgress, TaskReport};
 use cortex::importer::Importer;
-use cortex::models::{Corpus, NewCorpus, NewSandboxCorpus, NewTask};
-use cortex::schema::{corpora, tasks};
+use cortex::models::{
+  Corpus, NewCorpus, NewSandboxCorpus, NewService, NewTask, Service, Task, start_metadata_writer,
+};
+use cortex::schema::{corpora, services, tasks};
 use diesel::prelude::*;
 use rocket::http::{ContentType, Status};
 use rocket::local::blocking::Client;
 use std::collections::HashSet;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::mpsc::sync_channel;
+use std::time::Duration;
+
+/// Sink port for the dispatcher case (distinct from every other dispatcher test's ports).
+const SINK_PORT: usize = 57696;
 
 fn client() -> Client {
   let figment = rocket::Config::figment().merge(("template_dir", "templates"));
@@ -255,6 +267,45 @@ fn destroying_a_sandbox_keeps_the_parents_init_task(_: &Client) {
   );
 }
 
+/// Deleting a ROOT also clears an init task queued for its path under a placeholder corpus id (the
+/// `examples/tex_to_html_import.rs` flow), or a re-import trips the tasks unique key.
+fn destroying_a_root_clears_its_placeholder_init_task(_: &Client) {
+  let names = ["layout_placeholder_root", "layout_placeholder_other"];
+  let root = layout_root("placeholder");
+  let other = layout_root("placeholder_other");
+  let path = root.to_str().unwrap();
+  let mut db = backend::testdb();
+  cleanup(&mut db, &names);
+
+  let placeholder = add_root(&mut db, "layout_placeholder_other", other.to_str().unwrap())
+    .expect("placeholder corpus");
+  let corpus = add_root(&mut db, "layout_placeholder_root", path).expect("root");
+  db.add(&NewTask {
+    service_id: 1,
+    corpus_id: placeholder.id,
+    status: 0,
+    entry: path.to_string(),
+  })
+  .expect("placeholder init task");
+  corpus
+    .destroy(&mut db.connection)
+    .expect("destroy the root");
+  let stray: i64 = tasks::table
+    .filter(tasks::entry.eq(path))
+    .filter(tasks::service_id.eq(1))
+    .count()
+    .get_result(&mut db.connection)
+    .expect("count init tasks at the path");
+
+  cleanup(&mut db, &names);
+  let _ = std::fs::remove_dir_all(&root);
+  let _ = std::fs::remove_dir_all(&other);
+  assert_eq!(
+    stray, 0,
+    "destroying a root must clear the init task queued for its path"
+  );
+}
+
 /// Registering a second root corpus at an already-registered path is a `409` up front (the same
 /// courtesy as a name clash), not a 500 from the unique index or a duplicate import.
 fn import_at_a_registered_root_path_is_409(client: &Client) {
@@ -284,11 +335,125 @@ fn import_at_a_registered_root_path_is_409(client: &Client) {
   );
 }
 
+/// A result the sink cannot place — its corpus's sandbox status is unknown (the ventilator's lookup
+/// failed) — is dropped but its task goes **back in flight**, so the reaper retries it (re-running
+/// the lookup) or dead-letters it. It is never stranded `Queued` until a dispatcher restart.
+fn an_unplaceable_result_goes_back_to_the_reaper(_: &Client) {
+  const SERVICE: &str = "layout_sink_svc";
+  let root = layout_root("sink");
+  let mut db = backend::testdb();
+  let _ =
+    diesel::delete(services::table.filter(services::name.eq(SERVICE))).execute(&mut db.connection);
+  db.add(&NewService {
+    name: SERVICE.into(),
+    version: 0.1,
+    inputformat: "tex".into(),
+    outputformat: "html".into(),
+    inputconverter: Some("import".into()),
+    complex: true,
+    description: "sandbox layout sink case".into(),
+  })
+  .expect("add service");
+  let service = Service::find_by_name(SERVICE, &mut db.connection).expect("service");
+
+  // Two synthetic in-flight tasks (the sink never reads their rows): `unknown` on a corpus the
+  // sandbox cache has no answer for, `ordinary` on a corpus it knows is not a sandbox.
+  let entry = root.join("doc1/doc1.zip").to_string_lossy().into_owned();
+  let progress = |id: i64, corpus_id: i32| TaskProgress {
+    task: Task {
+      id,
+      service_id: service.id,
+      corpus_id,
+      status: 1,
+      entry: entry.clone(),
+    },
+    created_at: chrono::Utc::now().timestamp(),
+    retries: 0,
+    lease_timeout_seconds: 3600,
+  };
+  let (unknown, ordinary) = (i64::from(i32::MAX) + 7, i64::from(i32::MAX) + 8);
+  let in_flight = Arc::new(InFlightSet::new());
+  in_flight.insert(progress(unknown, i32::MAX - 1));
+  in_flight.insert(progress(ordinary, i32::MAX - 2));
+  let sandboxes = Arc::new(SandboxCache::new());
+  sandboxes.insert(i32::MAX - 2, None);
+  let services_cache = Arc::new(ServiceCache::new());
+  services_cache.insert(SERVICE.to_string(), Some(service));
+
+  let (done_tx, done_rx) = sync_channel::<TaskReport>(8);
+  let metadata = start_metadata_writer(build_pool(test_db_address(), 1));
+  let (sink_in_flight, sink_sandboxes) = (Arc::clone(&in_flight), Arc::clone(&sandboxes));
+  // Detached: with the task back in flight the sink never drains, and `_exit` ends the process.
+  std::thread::spawn(move || {
+    let _ = Sink {
+      port: SINK_PORT,
+      queue_size: 8,
+      message_size: 100_000,
+      backend_address: test_db_address().to_string(),
+      metadata,
+    }
+    .start(
+      &services_cache,
+      &sink_sandboxes,
+      &sink_in_flight,
+      &done_tx,
+      None,
+      &Arc::new(AtomicBool::new(false)),
+    );
+  });
+
+  let ctx = zmq::Context::new();
+  let push = ctx.socket(zmq::PUSH).expect("push socket");
+  push
+    .connect(&format!("tcp://127.0.0.1:{SINK_PORT}"))
+    .expect("connect to sink");
+  // A real result archive (a `cortex.log` → NoProblem), so the placeable result is reported.
+  let mut zipped = std::io::Cursor::new(Vec::new());
+  let mut zw = zip::ZipWriter::new(&mut zipped);
+  zw.start_file("cortex.log", zip::write::SimpleFileOptions::default())
+    .expect("zip entry");
+  std::io::Write::write_all(&mut zw, b"info:conversion:0\n").expect("zip write");
+  zw.finish().expect("zip finish");
+  let zipped = zipped.into_inner();
+  for id in [unknown, ordinary] {
+    let taskid = id.to_string();
+    push
+      .send_multipart(
+        [
+          b"layout-worker".as_ref(),
+          SERVICE.as_bytes(),
+          taskid.as_bytes(),
+          zipped.as_slice(),
+        ],
+        0,
+      )
+      .expect("send result");
+  }
+  // The sink handles results in order, so the `ordinary` report means `unknown` was handled too.
+  let reported = done_rx
+    .recv_timeout(Duration::from_secs(30))
+    .map(|r| r.task.id);
+  let back_in_flight = in_flight.remove(unknown).is_some();
+
+  let _ =
+    diesel::delete(services::table.filter(services::name.eq(SERVICE))).execute(&mut db.connection);
+  let _ = std::fs::remove_dir_all(&root);
+  assert_eq!(
+    reported,
+    Ok(ordinary),
+    "only the placeable result is reported"
+  );
+  assert!(
+    back_in_flight,
+    "an unplaceable result's task must go back in flight for the reaper, not be stranded Queued"
+  );
+}
+
 type Case = (&'static str, fn(&Client));
 
 fn main() {
   let client = client();
-  let cases: [Case; 5] = [
+  let cases: [Case; 7] = [
     (
       "root_paths_are_unique_and_sandboxes_hang_off_a_real_parent",
       root_paths_are_unique_and_sandboxes_hang_off_a_real_parent,
@@ -303,8 +468,16 @@ fn main() {
       destroying_a_sandbox_keeps_the_parents_init_task,
     ),
     (
+      "destroying_a_root_clears_its_placeholder_init_task",
+      destroying_a_root_clears_its_placeholder_init_task,
+    ),
+    (
       "import_at_a_registered_root_path_is_409",
       import_at_a_registered_root_path_is_409,
+    ),
+    (
+      "an_unplaceable_result_goes_back_to_the_reaper",
+      an_unplaceable_result_goes_back_to_the_reaper,
     ),
   ];
   let mut failed = 0;
@@ -313,6 +486,6 @@ fn main() {
     eprintln!("{} {name}", if ok { "PASS" } else { "FAIL" });
     failed += usize::from(!ok);
   }
-  eprintln!("sandbox_layout_test: {failed} of 5 failed");
+  eprintln!("sandbox_layout_test: {failed} of {} failed", cases.len());
   unsafe { libc::_exit(i32::from(failed > 0)) }
 }
