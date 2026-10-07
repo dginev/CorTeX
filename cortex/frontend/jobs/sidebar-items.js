@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["api_job","api_jobs","job_page","jobs_page","routes"],"struct":["JobDto"]};
