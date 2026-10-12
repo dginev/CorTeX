@@ -71,7 +71,11 @@ pub enum TaskStatus {
 pub struct TaskProgress {
   /// the `Task` struct being tracked
   pub task: Task,
-  /// time of entering the job queue / first dispatch
+  /// when the current attempt was **dispatched** to a worker (unix seconds) — stamped by the
+  /// ventilator at every lease, so the lease clock starts when a worker has the task. (It was
+  /// stamped when the task was *fetched* into the dispatch queue, which with an 800-task queue
+  /// started the clock minutes before dispatch: tasks were leased already past their deadline,
+  /// reaped while converting, and their results discarded — KNOWN_ISSUES D-27.)
   pub created_at: i64,
   /// number of dispatch retries
   pub retries: i64,
@@ -80,16 +84,35 @@ pub struct TaskProgress {
   /// (D-17). Stored per-task so a config change never re-times an already-leased task, and so one
   /// dispatcher can serve fast (latexml-oxide) and slow (Perl) services with different leases.
   pub lease_timeout_seconds: i64,
+  /// the worker identity each dispatch attempt went to, in lease order: entry `n` is the attempt
+  /// made at `retries == n`. The sink attributes a result to its attempt by the replying worker's
+  /// identity, so a late result of an older attempt never overwrites a newer attempt's finished
+  /// result (KNOWN_ISSUES D-26).
+  pub attempt_workers: Vec<String>,
+  /// the messages of the last **retryable** cause reported for the task (empty: none) — e.g. the
+  /// worker harness's `Fatal:timeout:wallclock` for a child the watchdog ended. Carried across
+  /// retries; if the retries run out, the dead-letter reports it instead of
+  /// `never_completed_with_retries`.
+  pub last_cause: Vec<NewTaskMessage>,
+  /// the index (in [`Self::attempt_workers`]) of the first attempt of the task's current **run**:
+  /// `0`, unless the dispatcher still held the task when it was fetched afresh (an operator's
+  /// rerun), when the earlier run's attempts stay on record before it — and their late results
+  /// never land in the new run (KNOWN_ISSUES D-28)
+  pub run_start: usize,
 }
 impl TaskProgress {
-  /// What is the latest admissible time for this task to be completed? The base deadline is this
-  /// task's captured lease / visibility timeout (`lease_timeout_seconds`); each retry extends it by
-  /// another full timeout (`(retries + 1) × timeout`), so a task that keeps timing out backs off
-  /// rather than re-leasing ever-faster.
+  /// What is the latest admissible time for this attempt to be completed? The base deadline is
+  /// this task's captured lease / visibility timeout (`lease_timeout_seconds`) from the attempt's
+  /// dispatch; each retry extends it by another full timeout (`(retries + 1) × timeout`), so a
+  /// task that keeps timing out backs off rather than re-leasing ever-faster.
   pub fn expected_at(&self) -> i64 {
     self.created_at + ((self.retries + 1) * self.lease_timeout_seconds)
   }
 }
+
+/// The `what` of the dispatcher's dead-letter: the `Fatal` (category `cortex`) the reaper reports
+/// for a task none of whose dispatch attempts returned a result in time.
+pub const NEVER_COMPLETED_WHAT: &str = "never_completed_with_retries";
 
 #[derive(Clone, Debug)]
 /// Completed task, with its processing status and report messages
@@ -100,6 +123,57 @@ pub struct TaskReport {
   pub status: TaskStatus,
   /// a vector of `TaskMessage` log entries
   pub messages: Vec<NewTaskMessage>,
+  /// a **stand-in** the dispatcher reports for a task with no result — the reaper's dead-letter,
+  /// or an archive it could not publish — rather than a worker's result: any attempt's result
+  /// replaces it, and it never replaces one (KNOWN_ISSUES D-26)
+  pub stand_in: bool,
+}
+
+/// The category/what of the tag a worker puts in its `cortex.log` (`Info:cortex:retryable …`) to
+/// mark a reported cause as retryable rather than a result: the worker harness tags a child's
+/// watchdog timeout, governor shed and unrecorded death.
+pub const RETRYABLE_TAG: (&str, &str) = ("cortex", "retryable");
+
+impl TaskReport {
+  /// Whether this report is a **retryable cause** (tagged [`RETRYABLE_TAG`]) rather than a result:
+  /// the dispatcher returns the task to its retry budget
+  /// ([`crate::dispatcher::server::InFlightSet::defer_retryable`]). Strict, so a document's own
+  /// `\message` cannot fake it: the status is `Fatal`, and the tag is directly followed by the
+  /// report's last `Fatal` message, whose `<category>:<what>` is the tag's text
+  /// (`Info:cortex:retryable timeout:wallclock` then `Fatal:timeout:wallclock …`).
+  pub fn is_retryable(&self) -> bool {
+    if self.status != TaskStatus::Fatal {
+      return false;
+    }
+    let Some(last_fatal) = self
+      .messages
+      .iter()
+      .rposition(|message| matches!(message, NewTaskMessage::Fatal(_)))
+    else {
+      return false;
+    };
+    let (Some(NewTaskMessage::Info(tag)), NewTaskMessage::Fatal(fatal)) = (
+      last_fatal.checked_sub(1).and_then(|i| self.messages.get(i)),
+      &self.messages[last_fatal],
+    ) else {
+      return false;
+    };
+    (tag.category.as_str(), tag.what.as_str()) == RETRYABLE_TAG
+      && tag.details.trim() == format!("{}:{}", fatal.category, fatal.what)
+  }
+
+  /// The messages of a retryable cause, without its tag: what the dead-letter reports if the
+  /// retries run out.
+  pub fn into_cause(self) -> Vec<NewTaskMessage> {
+    self
+      .messages
+      .into_iter()
+      .filter(|message| {
+        !matches!(message, NewTaskMessage::Info(info)
+          if (info.category.as_str(), info.what.as_str()) == RETRYABLE_TAG)
+      })
+      .collect()
+  }
 }
 
 #[derive(Clone, Debug)]
@@ -615,6 +689,7 @@ pub fn generate_report(task: Task, result: &Path) -> Option<TaskReport> {
   }
 
   Some(TaskReport {
+    stand_in: false,
     task,
     status,
     messages,
@@ -1000,5 +1075,72 @@ mod entry_name_tests {
     assert_eq!(entry_document_name("/d/bar.tex   "), "bar");
     // No `/name.ext` shape -> falls back to the trimmed entry rather than erroring.
     assert_eq!(entry_document_name("noslash"), "noslash");
+  }
+}
+
+#[cfg(test)]
+mod retryable_tag_tests {
+  use super::{TaskReport, TaskStatus, parse_log};
+  use crate::models::Task;
+
+  fn report(log: &str, status: TaskStatus) -> TaskReport {
+    TaskReport {
+      task: Task {
+        id: 1,
+        service_id: 3,
+        corpus_id: 1,
+        status: 7,
+        entry: String::new(),
+      },
+      status,
+      messages: parse_log(1, log),
+      stand_in: false,
+    }
+  }
+
+  #[test]
+  fn the_harness_tag_marks_a_retryable_cause() {
+    let log = "Warning:x:y z\nInfo:cortex:retryable timeout:wallclock\nFatal:timeout:wallclock \
+               the watchdog ended it\nStatus:conversion:3\n";
+    let cause = report(log, TaskStatus::Fatal);
+    assert!(cause.is_retryable());
+    let kept: Vec<String> = cause
+      .into_cause()
+      .iter()
+      .map(|m| {
+        use crate::models::LogRecord;
+        format!("{}:{}", m.category(), m.what())
+      })
+      .collect();
+    assert!(!kept.contains(&"cortex:retryable".to_string()), "{kept:?}");
+    assert!(kept.contains(&"timeout:wallclock".to_string()), "{kept:?}");
+  }
+
+  #[test]
+  fn a_documents_own_tag_line_is_not_a_retryable_cause() {
+    // `\message{Info:cortex:retryable timeout:wallclock}` lands in the log, but the report is no
+    // harness cause: not directly before the final Fatal, a Fatal of another kind, or no Fatal.
+    for (log, status) in [
+      (
+        "Info:cortex:retryable timeout:wallclock\nWarning:x:y z\nStatus:conversion:1\n",
+        TaskStatus::Warning,
+      ),
+      (
+        "Info:cortex:retryable timeout:wallclock\nError:a:b c\nFatal:Timeout:Recursion \
+         x\nStatus:conversion:3\n",
+        TaskStatus::Fatal,
+      ),
+      (
+        "Info:cortex:retryable timeout:wallclock\nFatal:Stomach:Recursion x\nStatus:conversion:3\n",
+        TaskStatus::Fatal,
+      ),
+      (
+        "Info:cortex:retryable timeout:wallclock\nFatal:timeout:wallclock x\nWarning:p:q \
+         r\nFatal:Mouth:EoF y\nStatus:conversion:3\n",
+        TaskStatus::Fatal,
+      ),
+    ] {
+      assert!(!report(log, status).is_retryable(), "{log}");
+    }
   }
 }

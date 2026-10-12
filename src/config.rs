@@ -145,6 +145,16 @@ pub struct DispatcherConfig {
   /// both this and `lease_timeout_seconds` is what lets a fast chaos test exercise reaper-based
   /// recovery in seconds instead of the hour-scale production timing.)
   pub reap_interval_seconds: i64,
+  /// **Late-result window (seconds)** (KNOWN_ISSUES D-26). A task the reaper re-leases or
+  /// dead-letters (`never_completed_with_retries`) can still get the result of an attempt whose
+  /// lease expired: a slow worker, a backed-up sink, or the worker harness reporting a child it
+  /// lost. For this long after the reaper releases it, the dispatcher remembers which worker each
+  /// attempt went to, and the sink accepts such a late result unless a newer attempt's result
+  /// already landed — so the real outcome replaces a `never_completed` Fatal and a requeued task
+  /// is not converted twice. The memory is per reaped task only (bounded, never the whole run);
+  /// a result past the window, or after a dispatcher restart, is discarded as before. `0` turns
+  /// late acceptance off. Default **3600** s.
+  pub late_result_window_seconds: i64,
   /// **TCP keepalive idle (seconds) on the worker-facing ZMQ sockets** (ventilator + sink). After
   /// this many idle seconds the OS begins probing the peer; this both keeps idle worker
   /// connections alive across NAT/firewall idle-timeouts — essential when the ~200 remote
@@ -194,6 +204,7 @@ impl Default for DispatcherConfig {
       finalize_flush_ms: 300,
       lease_timeout_seconds: 240,
       reap_interval_seconds: 60,
+      late_result_window_seconds: 3600,
       tcp_keepalive_idle_seconds: 120,
       input_prefetchers: 8,
       prefetch_max_entry_mb: 50,

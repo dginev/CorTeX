@@ -66,6 +66,19 @@ Active branch: **`main`** (the `productize-2026` sprint branch was merged and de
   under a placeholder corpus id); never for a sandbox.
 - **CWD-coupled:** `load_config()` reads `config.json` from the CWD (panics if missing), and
   `Rocket.toml`/`templates/`/`public/` are CWD-relative — **run binaries from the repo root.**
+- **The lease clock starts at dispatch, and a reaped task stays claimable** (KNOWN_ISSUES D-26,
+  D-27). `ventilator::lease_next` stamps each attempt's `created_at` and worker identity; the
+  `InFlightSet` keeps a re-queued or dead-lettered task for `late_result_window_seconds`, and the
+  sink accepts a late result unless a newer attempt's already landed. The sink writer claims a
+  result only after writing it to `<service>.zip.part` and parsing it, then publishes it by rename;
+  all results of one task go to one writer. A stand-in (`TaskReport::stand_in`: the dead-letter,
+  an unpublishable archive) never replaces a result, and a usable result replaces an accepted
+  Fatal from any attempt ("good result wins"). A report tagged `Info:cortex:retryable` is not a result: it goes back to the
+  retry budget (`defer_retryable`), and an exhausted budget dead-letters with the last such cause.
+  A rerun's fresh fetch of a held task starts a new run (`TaskProgress::run_start`): an earlier
+  run's result is `Stale` and dropped; `mark_done` also applies a report only while its row is at
+  the report's lease mark or completed (a stand-in only at the mark) (D-28).
+  Don't reintroduce a fetch-time lease clock or drop results for tasks not in flight.
 - **The dispatcher panics on purpose** (mutex poisoning → process abort → external restart). Don't
   "fix" those panics into silent recovery; preserve fail-fast where it's the design (see Arm 4/12).
 - **Referential FKs (Arm 3, migrations `…140000` + `…150000`).** The five `log_*` tables have

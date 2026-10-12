@@ -391,6 +391,8 @@ fn an_unplaceable_result_goes_back_to_the_reaper(_: &Client) {
   // sandbox cache has no answer for, `ordinary` on a corpus it knows is not a sandbox.
   let entry = root.join("doc1/doc1.zip").to_string_lossy().into_owned();
   let progress = |id: i64, corpus_id: i32| TaskProgress {
+    run_start: 0,
+    last_cause: Vec::new(),
     task: Task {
       id,
       service_id: service.id,
@@ -401,6 +403,7 @@ fn an_unplaceable_result_goes_back_to_the_reaper(_: &Client) {
     created_at: chrono::Utc::now().timestamp(),
     retries: 0,
     lease_timeout_seconds: 3600,
+    attempt_workers: vec!["layout-worker".to_string()],
   };
   let (unknown, ordinary) = (i64::from(i32::MAX) + 7, i64::from(i32::MAX) + 8);
   let in_flight = Arc::new(InFlightSet::new());

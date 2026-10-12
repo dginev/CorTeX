@@ -60,9 +60,20 @@ impl Ventilator {
     // tasks held in `progress_queue`; resetting those to TODO would re-lease them while their
     // original results are still pending (a double-dispatch). On first start `progress_queue` is
     // empty, so this recovers all leftover Queued tasks exactly as before.
+    // The retries the reaper had queued in the lost queue are queued again too (not reset): a
+    // reset would make them fresh fetches — a new run — and drop their earlier attempts' late
+    // results (D-26/D-28).
     let mut backend = backend::from_address(&self.backend_address);
-    let in_flight_ids: Vec<i64> = progress_queue_arc.ids();
-    backend.clear_limbo_tasks_except(&in_flight_ids)?;
+    // So are the other held tasks: their report (a late result, a dead-letter) may not be written
+    // yet, and a reset would make finalize drop it (its row no longer at the report's mark).
+    let queued_retries = progress_queue_arc.queued_retries();
+    backend.clear_limbo_tasks_except(&progress_queue_arc.kept_on_restart())?;
+    for progress in queued_retries {
+      queues
+        .entry(progress.task.service_id)
+        .or_default()
+        .push(progress);
+    }
     // Ok, let's bind to a port and start broadcasting
     let context = zmq::Context::new();
     let ventilator = context.socket(zmq::ROUTER)?;
@@ -211,6 +222,7 @@ impl Ventilator {
             in_flight = progress_queue_arc.len(),
             requeued = reaped.requeued,
             dead_lettered = reaped.dead_lettered,
+            awaiting_late_results = progress_queue_arc.settling_len(),
             "dispatcher: reaped timed-out in-flight tasks"
           );
         }
@@ -338,10 +350,14 @@ impl Ventilator {
             .map(i64::from)
             .unwrap_or_else(|| crate::config::config().dispatcher.lease_timeout_seconds);
           task_queue.extend(fetched_tasks.into_iter().map(|task| TaskProgress {
+            run_start: 0,
+            last_cause: Vec::new(),
             task,
+            // Re-stamped when the task is leased (D-27): the lease clock starts at dispatch.
             created_at: now,
             retries: 0,
             lease_timeout_seconds: lease,
+            attempt_workers: Vec::new(),
           }));
         }
 
@@ -351,7 +367,9 @@ impl Ventilator {
         if !route_worker_frame(&ventilator, identity, &identity_str, &mut unroutable_log)? {
           continue;
         }
-        if let Some(current_task_progress) = task_queue.pop() {
+        if let Some(current_task_progress) =
+          lease_next(task_queue, progress_queue_arc, &identity_str)
+        {
           dispatched_this_iter = true;
           // A `retries == 0` task is entering the pipeline for the first time; a re-leased task
           // (retries > 0, from the reaper requeue) was already counted on its first dispatch, so
@@ -374,8 +392,7 @@ impl Ventilator {
           // component, not as clean proof of this race alone.
           // higher worker concurrency (KNOWN_ISSUES D-4 / docs/DISPATCHER_BENCH.md 8-worker loss).
           // Recording first also leaves a mid-stream send failure correctly in-flight for the
-          // reaper.
-          progress_queue_arc.insert(current_task_progress.clone());
+          // reaper. (`lease_next` recorded it.)
 
           let current_task = current_task_progress.task;
           let mut taskid = current_task.id;
@@ -489,6 +506,41 @@ impl Ventilator {
       }
     }
   }
+}
+
+/// Lease the next task of `queue` to `worker`: stamp the attempt's dispatch time (the lease clock
+/// starts now — KNOWN_ISSUES D-27), record the worker as this attempt's (D-26), and record it in
+/// flight. A re-queued task whose late result already finished it is dropped instead (it is not
+/// converted twice); the next one is tried. `None` once the queue is empty.
+pub fn lease_next(
+  queue: &mut Vec<TaskProgress>,
+  in_flight: &server::InFlightSet,
+  worker: &str,
+) -> Option<TaskProgress> {
+  // A rerun's first attempt is not handed to a worker that worked an earlier run of the task:
+  // its late result would be taken for the new run's (`attempt_of` matches the newest attempt).
+  let mut passed_over = Vec::new();
+  let leased = loop {
+    let Some(mut progress) = queue.pop() else {
+      break None;
+    };
+    if progress.retries == 0 && in_flight.worked_earlier_run(progress.task.id, worker) {
+      passed_over.push(progress);
+      continue;
+    }
+    progress.created_at = chrono::Utc::now().timestamp();
+    progress.attempt_workers.push(worker.to_string());
+    if in_flight.lease(progress.clone()) {
+      break Some(progress);
+    }
+    info!(
+      task_id = progress.task.id,
+      attempt = progress.retries,
+      "ventilator: a late result already finished this re-queued task; not re-leasing it (D-26)"
+    );
+  };
+  queue.extend(passed_over);
+  leased
 }
 
 /// Send the ROUTER routing (identity) frame for a worker reply under `ZMQ_ROUTER_MANDATORY`

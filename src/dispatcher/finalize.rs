@@ -207,6 +207,7 @@ mod tests {
 
   fn report(id: i64) -> TaskReport {
     TaskReport {
+      stand_in: false,
       task: Task {
         id,
         service_id: 2,

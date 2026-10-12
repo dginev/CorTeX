@@ -63,7 +63,13 @@ impl TaskManager {
     // `InFlightSet` (dispatched-but-unfinished tasks + an O(1) size counter for backpressure).
     let services_arc = Arc::new(ServiceCache::new());
     let sandboxes_arc = Arc::new(SandboxCache::new());
-    let progress_queue_arc = Arc::new(InFlightSet::new());
+    // The in-flight set also holds reaped tasks for late results for the configured window
+    // (KNOWN_ISSUES D-26).
+    let progress_queue_arc = Arc::new(InFlightSet::with_late_result_window(
+      crate::config::config()
+        .dispatcher
+        .late_result_window_seconds,
+    ));
 
     // Shared bounded-run completion signal (KNOWN_ISSUES D-5). The ventilator sets it once it has
     // dispatched the `job_limit`'s worth of real tasks (or drained the source); the sink reads it

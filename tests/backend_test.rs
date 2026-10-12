@@ -19,7 +19,14 @@ use diesel::prelude::*;
 /// used to fabricate `random_mark()` corpus/service ids without inserting the rows — fine before
 /// the FKs, a constraint violation after.)
 fn seed_corpus_service(connection: &mut PgConnection) -> (Corpus, Service) {
-  let tag = random_mark();
+  // Unique across runs: the seeded rows stay behind in the test database, and a bare
+  // `random_mark()` (one of 65,536) collided with an earlier run's often enough to fail ~1 run in
+  // 10 with `services_name_version_key`.
+  let nanos = std::time::SystemTime::now()
+    .duration_since(std::time::UNIX_EPOCH)
+    .map(|d| d.as_nanos())
+    .unwrap_or_default();
+  let tag = format!("{}_{nanos}_{}", std::process::id(), random_mark());
   let corpus_name = format!("backend_test_corpus_{tag}");
   let service_name = format!("backend_test_svc_{tag}");
   NewCorpus {
@@ -48,6 +55,9 @@ fn seed_corpus_service(connection: &mut PgConnection) -> (Corpus, Service) {
 
 #[test]
 fn task_table_crud() {
+  let _leases = LEASE_STATE
+    .lock()
+    .unwrap_or_else(std::sync::PoisonError::into_inner);
   let mut backend = backend::testdb();
   let (mock_corpus, mock_service) = seed_corpus_service(&mut backend.connection);
   let mock_corpus_id = mock_corpus.id;
@@ -81,6 +91,9 @@ fn task_table_crud() {
 
 #[test]
 fn task_lifecycle_test() {
+  let _leases = LEASE_STATE
+    .lock()
+    .unwrap_or_else(std::sync::PoisonError::into_inner);
   let mut backend = backend::testdb();
   // Add 100 tasks, out of which we will mark 17
   let (mock_corpus, mock_service) = seed_corpus_service(&mut backend.connection);
@@ -172,6 +185,7 @@ fn batch_ops_test() {
   let task_reports: Vec<TaskReport> = todo_tasks
     .into_iter()
     .map(|task| TaskReport {
+      stand_in: false,
       status: TaskStatus::NoProblem,
       messages: vec![NewTaskMessage::Info(NewLogInfo {
         task_id: task.id,
@@ -211,6 +225,7 @@ fn batch_ops_test() {
   let empty_reports: Vec<TaskReport> = refinalize_targets
     .into_iter()
     .map(|task| TaskReport {
+      stand_in: false,
       status: TaskStatus::NoProblem,
       messages: vec![],
       task,
@@ -306,6 +321,7 @@ fn mark_done_routes_messages_to_severity_tables() {
   let (id_a, id_b) = (tasks[0].id, tasks[1].id);
   let reports = vec![
     TaskReport {
+      stand_in: false,
       status: TaskStatus::Error,
       messages: vec![
         NewTaskMessage::Warning(NewLogWarning {
@@ -324,6 +340,7 @@ fn mark_done_routes_messages_to_severity_tables() {
       task: tasks[0].clone(),
     },
     TaskReport {
+      stand_in: false,
       status: TaskStatus::Fatal,
       messages: vec![NewTaskMessage::Fatal(NewLogFatal {
         task_id: id_b,
@@ -392,6 +409,9 @@ fn mark_done_routes_messages_to_severity_tables() {
 
 #[test]
 fn clear_limbo_except_preserves_in_flight_tasks() {
+  let _leases = LEASE_STATE
+    .lock()
+    .unwrap_or_else(std::sync::PoisonError::into_inner);
   // A ventilator restart re-runs limbo-clearing while the sink is still processing in-flight tasks;
   // those (held in `progress_queue`) must NOT be reset to TODO, or they get re-leased while their
   // original result is still pending (a double-dispatch). The excluded ids are preserved.
@@ -447,5 +467,200 @@ fn clear_limbo_except_preserves_in_flight_tasks() {
     "the other two Queued tasks were recovered to TODO"
   );
 
+  let _ = backend.delete_by(&mock_task, "service_id");
+}
+
+/// Serializes the tests that hold tasks at a lease mark against those that reset every leased task
+/// in the database to `TODO` (`clear_limbo_tasks`, `clear_limbo_tasks_except`), which libtest
+/// runs in parallel.
+static LEASE_STATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[test]
+fn a_late_result_replaces_never_completed_and_a_dead_letter_never_replaces_a_result() {
+  let _leases = LEASE_STATE
+    .lock()
+    .unwrap_or_else(std::sync::PoisonError::into_inner);
+  // KNOWN_ISSUES D-26, persisted end: the reaper's dead-letter is a stand-in. A result that lands
+  // after it (in a later finalize batch) replaces it — status and messages — and a dead-letter
+  // that lands after a persisted result is not applied at all.
+  use cortex::helpers::NEVER_COMPLETED_WHAT;
+  use cortex::schema::{log_fatals, log_warnings};
+  let mut backend = backend::testdb();
+  let (mock_corpus, mock_service) = seed_corpus_service(&mut backend.connection);
+  let mock_task = NewTask {
+    entry: String::from("late_result_task"),
+    service_id: mock_service.id,
+    corpus_id: mock_corpus.id,
+    status: TaskStatus::TODO.raw(),
+  };
+  for index in 1..=2 {
+    backend
+      .add(&NewTask {
+        entry: format!("late_result_task{index}"),
+        ..mock_task.clone()
+      })
+      .expect("add task");
+  }
+  // Both leased: a positive lease mark, as `fetch_tasks` leaves them.
+  let lease_mark = 4242;
+  diesel::update(tasks::table.filter(service_id.eq(mock_service.id)))
+    .set(status.eq(lease_mark))
+    .execute(&mut backend.connection)
+    .expect("lease");
+  let leased: Vec<Task> = tasks::table
+    .filter(service_id.eq(mock_service.id))
+    .order(tasks::id)
+    .get_results(&mut backend.connection)
+    .expect("fetch tasks");
+  let (late, finished) = (leased[0].clone(), leased[1].clone());
+  let dead_letter = |task: &Task| TaskReport {
+    stand_in: true,
+    task: task.clone(),
+    status: TaskStatus::Fatal,
+    messages: vec![NewTaskMessage::new(
+      task.id,
+      "fatal",
+      String::from("cortex"),
+      NEVER_COMPLETED_WHAT.to_string(),
+      String::new(),
+    )],
+  };
+  let result = |task: &Task, task_status: TaskStatus| TaskReport {
+    stand_in: false,
+    task: task.clone(),
+    status: task_status,
+    messages: vec![NewTaskMessage::new(
+      task.id,
+      "warning",
+      String::from("cat"),
+      String::from("what"),
+      String::new(),
+    )],
+  };
+  let status_of = |backend: &mut backend::Backend, id: i64| -> i32 {
+    tasks::table
+      .find(id)
+      .select(tasks::status)
+      .first(&mut backend.connection)
+      .unwrap()
+  };
+  let fatals_of = |backend: &mut backend::Backend, id: i64| -> i64 {
+    log_fatals::table
+      .filter(log_fatals::task_id.eq(id))
+      .count()
+      .get_result(&mut backend.connection)
+      .unwrap()
+  };
+  let warnings_of = |backend: &mut backend::Backend, id: i64| -> i64 {
+    log_warnings::table
+      .filter(log_warnings::task_id.eq(id))
+      .count()
+      .get_result(&mut backend.connection)
+      .unwrap()
+  };
+
+  // The reaper gives up on `late`, then its result lands.
+  backend
+    .mark_done(&[dead_letter(&late)])
+    .expect("dead-letter");
+  assert_eq!(status_of(&mut backend, late.id), TaskStatus::Fatal.raw());
+  assert_eq!(fatals_of(&mut backend, late.id), 1);
+  backend
+    .mark_done(&[result(&late, TaskStatus::Warning)])
+    .expect("late result");
+  assert_eq!(
+    status_of(&mut backend, late.id),
+    TaskStatus::Warning.raw(),
+    "the late result replaces the never_completed Fatal"
+  );
+  assert_eq!(
+    fatals_of(&mut backend, late.id),
+    0,
+    "the dead-letter's message is gone"
+  );
+  assert_eq!(warnings_of(&mut backend, late.id), 1);
+
+  // `finished`'s result is persisted; a dead-letter after it is not applied.
+  backend
+    .mark_done(&[result(&finished, TaskStatus::Warning)])
+    .expect("result");
+  backend
+    .mark_done(&[dead_letter(&finished)])
+    .expect("dead-letter");
+  assert_eq!(
+    status_of(&mut backend, finished.id),
+    TaskStatus::Warning.raw(),
+    "a dead-letter never replaces a persisted result"
+  );
+  assert_eq!(fatals_of(&mut backend, finished.id), 0);
+  assert_eq!(warnings_of(&mut backend, finished.id), 1);
+
+  let _ = backend.delete_by(&mock_task, "service_id");
+}
+
+#[test]
+fn a_result_of_a_rerun_task_is_not_applied() {
+  // KNOWN_ISSUES D-28: an operator re-ran the task while an old attempt was out — reset to TODO,
+  // or already re-leased under a new mark. The old lease's (late) result must not count for the
+  // new run.
+  let _leases = LEASE_STATE
+    .lock()
+    .unwrap_or_else(std::sync::PoisonError::into_inner);
+  let mut backend = backend::testdb();
+  let (mock_corpus, mock_service) = seed_corpus_service(&mut backend.connection);
+  let mock_task = NewTask {
+    entry: String::from("rerun_task"),
+    service_id: mock_service.id,
+    corpus_id: mock_corpus.id,
+    status: TaskStatus::TODO.raw(),
+  };
+  for index in 1..=2 {
+    backend
+      .add(&NewTask {
+        entry: format!("rerun_task{index}"),
+        ..mock_task.clone()
+      })
+      .expect("add task");
+  }
+  let old_mark = 4243;
+  diesel::update(tasks::table.filter(service_id.eq(mock_service.id)))
+    .set(status.eq(old_mark))
+    .execute(&mut backend.connection)
+    .expect("lease");
+  let leased: Vec<Task> = tasks::table
+    .filter(service_id.eq(mock_service.id))
+    .order(tasks::id)
+    .get_results(&mut backend.connection)
+    .expect("fetch tasks");
+  // The rerun: one back to TODO, the other already re-leased under a new mark.
+  diesel::update(tasks::table.find(leased[0].id))
+    .set(status.eq(TaskStatus::TODO.raw()))
+    .execute(&mut backend.connection)
+    .expect("reset");
+  diesel::update(tasks::table.find(leased[1].id))
+    .set(status.eq(777))
+    .execute(&mut backend.connection)
+    .expect("re-lease");
+  let reports: Vec<TaskReport> = leased
+    .iter()
+    .map(|task| TaskReport {
+      task: task.clone(),
+      status: TaskStatus::NoProblem,
+      messages: Vec::new(),
+      stand_in: false,
+    })
+    .collect();
+  backend.mark_done(&reports).expect("mark_done");
+  let statuses: Vec<i32> = leased
+    .iter()
+    .map(|task| {
+      tasks::table
+        .find(task.id)
+        .select(tasks::status)
+        .first(&mut backend.connection)
+        .unwrap()
+    })
+    .collect();
+  assert_eq!(statuses, vec![TaskStatus::TODO.raw(), 777]);
   let _ = backend.delete_by(&mock_task, "service_id");
 }

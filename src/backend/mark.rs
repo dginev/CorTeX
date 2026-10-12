@@ -88,11 +88,11 @@ pub(crate) fn mark_done(
 ) -> Result<(), Error> {
   use crate::schema::tasks::{id, status};
 
-  // Collect the finalized task ids once, to clear their prior logs in a single batched statement
-  // per table instead of five deletes *per task*. The done-queue yields distinct task ids per
-  // drain, so a batched `task_id = ANY(...)` deletes exactly the same rows as the old per-task
-  // loop — far fewer round-trips on the hot finalize path (KNOWN_ISSUES D-8 write-amplification).
-  let task_ids: Vec<i64> = reports.iter().map(|report| report.task.id).collect();
+  // One report per task: a batch can carry two for the same task — the reaper's
+  // `never_completed_with_retries` and the late result that replaces it, or two attempts' late
+  // results (KNOWN_ISSUES D-26) — and the batched statements below would apply both (an arbitrary
+  // status, both reports' messages). See `latest_report_per_task` for the one that stands.
+  let reports = latest_report_per_task(reports);
   // PostgreSQL caps a single statement at 65535 bind parameters. The finalize path
   // batches across an entire drained burst of reports, so at fleet scale (many papers
   // × many log messages) the per-severity INSERTs and the `eq_any` id lists overflow
@@ -104,6 +104,49 @@ pub(crate) fn mark_done(
   const ID_CHUNK: usize = 50_000;
   const LOG_INSERT_CHUNK: usize = 16_000;
   connection.transaction::<(), Error, _>(|t_connection| {
+    // A report is applied only under the lease it was dispatched with: `report.task.status`, the
+    // lease mark `fetch_tasks` set (KNOWN_ISSUES D-28). A result applies while the task's row is
+    // still at that mark, or already completed (a negative status: an earlier result of the same
+    // lease, which D-26 lets it replace — or a pause's Blocked); a stand-in (the dead-letter, an
+    // unpublishable archive) only at that mark, so a result persisted first keeps the task. A row
+    // an operator re-ran meanwhile — reset to TODO, or re-leased under a new mark — takes neither:
+    // the old run's result must not count for the new run. (A late result of an old run whose
+    // task the dispatcher still held when it was re-fetched never gets here: the dispatcher
+    // refuses it as `Stale`, since the claim would carry the new lease's mark.) Every report's
+    // row is locked, in one global id order, so a concurrent writer can neither slip in between
+    // nor deadlock with this; `FOR NO KEY UPDATE` does not block the log tables' foreign-key
+    // checks.
+    let mut report_ids: Vec<i64> = reports.iter().map(|report| report.task.id).collect();
+    report_ids.sort_unstable();
+    let mut current: HashMap<i64, i32> = HashMap::with_capacity(report_ids.len());
+    for ids in report_ids.chunks(ID_CHUNK) {
+      let rows: Vec<(i64, i32)> = tasks::table
+        .filter(id.eq_any(ids))
+        .select((id, status))
+        .order(id)
+        .for_no_key_update()
+        .load(t_connection)?;
+      current.extend(rows);
+    }
+    let (reports, dropped): (Vec<&TaskReport>, Vec<&TaskReport>) =
+      reports.into_iter().partition(|report| {
+        current.get(&report.task.id).is_some_and(|&now| {
+          now == report.task.status || (!report.stand_in && now < TaskStatus::TODO.raw())
+        })
+      });
+    if !dropped.is_empty() {
+      let first: Vec<i64> = dropped.iter().take(8).map(|report| report.task.id).collect();
+      tracing::warn!(
+        dropped = dropped.len(),
+        first_task_ids = ?first,
+        "mark_done: reports not applied: their task was re-run (or is gone) since their lease (D-28)"
+      );
+    }
+    // Collect the finalized task ids once, to clear their prior logs in a single batched statement
+    // per table instead of five deletes *per task*. With one report per task, a batched
+    // `task_id = ANY(...)` deletes exactly the same rows as the old per-task loop — far fewer
+    // round-trips on the hot finalize path (KNOWN_ISSUES D-8 write-amplification).
+    let task_ids: Vec<i64> = reports.iter().map(|report| report.task.id).collect();
     // Clear the prior log messages for every finalized task (one statement per severity
     // table), chunked over the task-id list to respect the bind-parameter cap.
     for ids in task_ids.chunks(ID_CHUNK) {
@@ -224,6 +267,30 @@ pub(crate) fn mark_done(
     Ok(())
   })?;
   Ok(())
+}
+
+/// One report for each task in `reports`, in the order of the kept reports: the last *result*
+/// for the task, or, when it has none, its last stand-in ([`TaskReport::stand_in`], e.g. the
+/// reaper's dead-letter) — the
+/// reaper's `never_completed` stand-in never replaces an attempt's result, whichever reached the
+/// finalize channel first (KNOWN_ISSUES D-26).
+pub(crate) fn latest_report_per_task(reports: &[TaskReport]) -> Vec<&TaskReport> {
+  let mut last: HashMap<i64, usize> = HashMap::with_capacity(reports.len());
+  for (index, report) in reports.iter().enumerate() {
+    let replaces = match last.get(&report.task.id) {
+      Some(&kept) => !report.stand_in || reports[kept].stand_in,
+      None => true,
+    };
+    if replaces {
+      last.insert(report.task.id, index);
+    }
+  }
+  reports
+    .iter()
+    .enumerate()
+    .filter(|(index, report)| last.get(&report.task.id) == Some(index))
+    .map(|(_, report)| report)
+    .collect()
 }
 
 pub(crate) fn mark_rerun<'a>(
@@ -461,4 +528,74 @@ pub fn snapshot_tasks(
     )
     .into_columns((historical_tasks::task_id, historical_tasks::status))
     .execute(connection)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::latest_report_per_task;
+  use crate::helpers::{NEVER_COMPLETED_WHAT, NewTaskMessage, TaskReport, TaskStatus};
+  use crate::models::Task;
+
+  fn report(id: i64, status: TaskStatus) -> TaskReport {
+    TaskReport {
+      stand_in: false,
+      task: Task {
+        id,
+        service_id: 3,
+        corpus_id: 1,
+        status: 7,
+        entry: String::new(),
+      },
+      status,
+      messages: Vec::new(),
+    }
+  }
+
+  #[test]
+  fn the_later_report_for_a_task_stands() {
+    // The reaper's never_completed Fatal, then the late result that replaces it, in one batch.
+    let batch = [
+      report(1, TaskStatus::Fatal),
+      report(2, TaskStatus::Warning),
+      report(1, TaskStatus::NoProblem),
+    ];
+    let kept: Vec<(i64, i32)> = latest_report_per_task(&batch)
+      .iter()
+      .map(|r| (r.task.id, r.status.raw()))
+      .collect();
+    assert_eq!(
+      kept,
+      vec![
+        (2, TaskStatus::Warning.raw()),
+        (1, TaskStatus::NoProblem.raw())
+      ]
+    );
+  }
+
+  fn dead_letter(id: i64) -> TaskReport {
+    TaskReport {
+      messages: vec![NewTaskMessage::new(
+        id,
+        "fatal",
+        "cortex".to_string(),
+        NEVER_COMPLETED_WHAT.to_string(),
+        String::new(),
+      )],
+      stand_in: true,
+      ..report(id, TaskStatus::Fatal)
+    }
+  }
+
+  #[test]
+  fn a_dead_letter_never_replaces_a_result() {
+    // The late result reached the finalize channel before the reaper's dead-letter (a backpressure
+    // race): the result still stands.
+    let batch = [report(1, TaskStatus::Error), dead_letter(1), dead_letter(2)];
+    assert!(batch[1].stand_in && !batch[0].stand_in);
+    let kept: Vec<(i64, bool)> = latest_report_per_task(&batch)
+      .iter()
+      .map(|r| (r.task.id, r.stand_in))
+      .collect();
+    assert_eq!(kept, vec![(1, false), (2, true)]);
+  }
 }
