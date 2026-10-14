@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ADMIN_COOKIE"],"enum":["AdminReject"],"fn":["actor_carriers","owner_for_token","require_admin","require_admin_to","resolve_carriers","safe_next","sign_in_url"],"struct":["Actor","ActorCarriers","AdminSession","ReturnTo"]};

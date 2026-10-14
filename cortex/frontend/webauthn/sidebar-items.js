@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Ceremony"],"fn":["auth_begin","auth_finish","build_state","passkey_delete","passkeys_page","register_begin","register_finish","routes"],"struct":["CeremonyStore","PasskeyDto","WebauthnState"]};

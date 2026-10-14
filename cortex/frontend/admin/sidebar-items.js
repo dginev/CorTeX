@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["admin_login","admin_login_page","admin_logout","admin_logs_feed","admin_page","admin_status","admin_status_feed","api_logs","api_status","live_activity","routes"],"struct":["ActivityMessageDto","AdminStatusDto","FleetWorkerDto","LastRunDto","LiveActivityDto","LoginForm"]};
