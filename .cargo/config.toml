@@ -1,0 +1,9 @@
+# KNOWN_ISSUES L-2: zmq-sys always builds its vendored libzmq (zeromq-src) without libzmq's own
+# platform detection, so `HAVE_POSIX_MEMALIGN` is never defined and `yqueue_t` falls back to `malloc`
+# (16-byte aligned) for chunks of the 64-byte-aligned `command_t`. Any compile that emits 32-byte AVX
+# moves (`-march=x86-64-v3`, the default gcc on amd64v3 Ubuntu) then SIGSEGVs in `ypipe_t::write`.
+# Supply the define libzmq's autotools build detects, plus the cache-line size its CMake build sets.
+# HOST_/TARGET_CXXFLAGS (native/cross) are appended to any CXXFLAGS you set, so yours can't drop them.
+[env]
+HOST_CXXFLAGS = "-DHAVE_POSIX_MEMALIGN=1 -DZMQ_CACHELINE_SIZE=64"
+TARGET_CXXFLAGS = "-DHAVE_POSIX_MEMALIGN=1 -DZMQ_CACHELINE_SIZE=64"
