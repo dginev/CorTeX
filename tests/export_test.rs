@@ -19,7 +19,7 @@ use cortex::models::{Corpus, NewCorpus, NewService, NewTask, Service};
 fn write_result_zip(dir: &std::path::Path, paper: &str, body: &str) {
   std::fs::create_dir_all(dir).unwrap();
   let mut zip = zip::ZipWriter::new(std::fs::File::create(dir.join("tex_to_html.zip")).unwrap());
-  let opts: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default();
+  let opts = zip::write::SimpleFileOptions::default();
   zip.start_file(format!("{paper}.html"), opts).unwrap();
   zip.write_all(body.as_bytes()).unwrap();
   zip.start_file("cortex.log", opts).unwrap();
