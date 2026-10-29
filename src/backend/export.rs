@@ -94,8 +94,8 @@ pub struct DatasetExportOutcome {
 const EXPORT_PAGE_SIZE: i64 = 10_000;
 
 /// The shared ZIP entry options for every dataset archive (max-deflate, matching the scripts).
-fn zip_options() -> zip::write::FileOptions<'static, ()> {
-  zip::write::FileOptions::default()
+fn zip_options() -> zip::write::SimpleFileOptions {
+  zip::write::SimpleFileOptions::default()
     .compression_method(zip::CompressionMethod::Deflated)
     .compression_level(Some(9))
 }
@@ -492,7 +492,9 @@ fn extract_main_html(result_zip: &PathBuf, paper: &str) -> Option<Vec<u8>> {
   let mut best: Option<usize> = None;
   for i in 0..archive.len() {
     let entry = archive.by_index(i).ok()?;
-    let name = entry.name();
+    // A non-UTF-8 entry name can't be the `<paper>.html` index — skip it rather than fail the
+    // paper.
+    let Ok(name) = entry.name() else { continue };
     // Root-level html only (no `/`): the main document, not a nested asset.
     if name.ends_with(".html") && !name.contains('/') {
       if name == preferred {
@@ -516,7 +518,7 @@ mod tests {
 
   fn write_zip(path: &std::path::Path, files: &[(&str, &str)]) {
     let mut zip = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
-    let opts: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default();
+    let opts = zip::write::SimpleFileOptions::default();
     for (name, body) in files {
       zip.start_file(*name, opts).unwrap();
       zip.write_all(body.as_bytes()).unwrap();
