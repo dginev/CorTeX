@@ -492,8 +492,8 @@ fn extract_main_html(result_zip: &PathBuf, paper: &str) -> Option<Vec<u8>> {
   let mut best: Option<usize> = None;
   for i in 0..archive.len() {
     let entry = archive.by_index(i).ok()?;
-    // A non-UTF-8 entry name can't be the `<paper>.html` index — skip it rather than fail the
-    // paper.
+    // zip 9's `name()` is fallible in type only (UTF-8, else CP437, which accepts every byte), so
+    // this skip is defensive — no `unwrap` on the export path.
     let Ok(name) = entry.name() else { continue };
     // Root-level html only (no `/`): the main document, not a nested asset.
     if name.ends_with(".html") && !name.contains('/') {
