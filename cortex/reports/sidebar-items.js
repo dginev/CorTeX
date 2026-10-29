@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["aggregate_reports","task_detail_reports"],"struct":["AggregateReport","TaskDetailReport"]};

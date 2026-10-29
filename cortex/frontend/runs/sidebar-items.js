@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["all_runs_page","api_all_runs","api_run_current","api_run_diff","api_run_task_diffs","api_runs","history_page","routes","runs_diff_page","runs_page","runs_tasks_page"],"struct":["RunDiffDto","RunDiffTransitionDto","RunDto","RunOverviewDto","TaskDiffDto"]};
