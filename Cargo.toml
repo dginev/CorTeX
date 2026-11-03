@@ -75,7 +75,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # supports Rocket 0.5.1.)
 rocket_okapi = { version = "0.9", features = ["rapidoc"] }
 schemars = "0.8"
-webauthn-rs = "0.5"
+webauthn-rs = "0.6"
 # Pure-Rust archive handling (archive rationalization Path A, docs/archive/ARCHIVE_RATIONALIZATION.md),
 # replacing the self-maintained libarchive-sys C-FFI fork. `zip` reads the per-task result archive via
 # random-access `by_name("cortex.log")` (the dispatcher hot path) + is the importer's `.zip` output;
