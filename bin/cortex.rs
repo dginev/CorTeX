@@ -11,6 +11,9 @@
 //! `sandbox`), the `report`/`runs`/`document` read surface (the CLI twins of the web/agent report
 //! ladder, run-history, and per-article forensics — `report` drills overview → severity → category
 //! → `what` → affected documents), the `snapshot`/`rerun` campaign actions, and dataset export.
+// clap's `#[derive(Subcommand)]` expansion trips this lint in generated code; an item-level allow
+// does not reach the generated impl, so it is allowed crate-wide.
+#![allow(clippy::large_unopt_stack_frames)]
 
 use std::path::PathBuf;
 

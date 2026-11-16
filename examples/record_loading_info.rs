@@ -101,7 +101,7 @@ fn main() -> Result<(), Error> {
           }
           Ok(())
         })?;
-        messages = Vec::new();
+        messages.clear();
       }
     }
   }

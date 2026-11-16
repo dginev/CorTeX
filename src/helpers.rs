@@ -1112,8 +1112,8 @@ mod retryable_tag_tests {
         format!("{}:{}", m.category(), m.what())
       })
       .collect();
-    assert!(!kept.contains(&"cortex:retryable".to_string()), "{kept:?}");
-    assert!(kept.contains(&"timeout:wallclock".to_string()), "{kept:?}");
+    assert!(!kept.iter().any(|k| k == "cortex:retryable"), "{kept:?}");
+    assert!(kept.iter().any(|k| k == "timeout:wallclock"), "{kept:?}");
   }
 
   #[test]

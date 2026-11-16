@@ -518,7 +518,7 @@ mod tests {
     unpack_one_gz(&targz).expect("a tar.gz unpacks");
     let names = zip_names(&prefix_dir.join("paperA/paperA.zip"));
     assert!(
-      names.contains(&"paper.tex".to_string()) && names.contains(&"fig.eps".to_string()),
+      names.iter().any(|n| n == "paper.tex") && names.iter().any(|n| n == "fig.eps"),
       "tar.gz -> zip with both files, got {names:?}"
     );
     assert!(!targz.exists(), "the source .gz is removed");
