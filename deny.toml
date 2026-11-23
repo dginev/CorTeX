@@ -25,6 +25,15 @@ ignore = [
   # the terminal 0.3.x (no back-ported fix), so `cargo update -p h2` is a no-op. Clears
   # itself when Rocket ships a hyper-1.x release — tracked as POSSIBLE_UPGRADES X-14.
   "RUSTSEC-2026-0258",
+  # RUSTSEC-2026-0543 — chrono is UNMAINTAINED (chronotope/chrono#1768: "no safe upgrade"), not vulnerable; no CVE.
+  # A direct dependency used throughout (timestamps in the dispatcher, reports, frontend, telemetry); latexml-oxide
+  # ignores the same advisory with the same reason. Replacing chrono is a separate change. Reviewed 2026-11-23.
+  "RUSTSEC-2026-0543",
+  # RUSTSEC-2026-0555 / RUSTSEC-2026-0559 — chrono-tz and chrono-tz-build are UNMAINTAINED ("no safe upgrade"), not
+  # vulnerable; no CVE. Transitive only: tera 1.x <- rocket_dyn_templates 0.2. Re-check when CorTeX moves to
+  # rocket_dyn_templates 0.3 (Tera 2), as ar5iv does. Reviewed 2026-11-23.
+  "RUSTSEC-2026-0555",
+  "RUSTSEC-2026-0559",
 ]
 
 [licenses]
