@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["db_tuning_guidance","doctor","generate_token","init","revoke_admin_token","set_admin_token"],"struct":["DoctorReport","InitOutcome","RevokeTokenOutcome","SetTokenOutcome"]};

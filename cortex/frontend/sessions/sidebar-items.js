@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["api_revoke_sessions","api_sessions","revoke_owner_sessions","routes","sessions_page"],"struct":["RevokeAckDto","SessionDto"]};

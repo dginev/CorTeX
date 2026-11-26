@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["category","category_is_total","computed_at","corpus_id","id","message_count","service_id","severity","star","task_count","what","what_is_total"]};

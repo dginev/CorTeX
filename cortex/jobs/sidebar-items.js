@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ANALYZE_KIND","POPULATE_REPORT_KIND","REFRESH_REPORTS_KIND","REINDEX_KIND"],"fn":["count_recent_with_status","db_now","find_job","interrupt_orphans","list_recent","reap_stale","report_populate_active","spawn_analyze","spawn_job","spawn_reindex","spawn_report_populate","spawn_report_refresh"],"struct":["Job","JobProgress"]};

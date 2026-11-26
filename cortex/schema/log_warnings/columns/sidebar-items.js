@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["category","details","id","recorded_at","star","task_id","what"]};
